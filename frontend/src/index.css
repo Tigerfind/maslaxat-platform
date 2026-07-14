@@ -1,19 +1,447 @@
+/* MaslaXat Platform - Global Styles */
+/* Design System: Premium Minimalist with Gold/Bronze accents */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+
 * {
   margin: 0;
   padding: 0;
   box-sizing: border-box;
 }
 
-body {
-  margin: 0;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
+html {
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
+body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto',
+    'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
+    sans-serif;
+  background-color: #F5F1EB;
+  color: #2D2D2D;
+  line-height: 1.6;
+  letter-spacing: 0.01em;
+}
+
+/* Selection color */
+::selection {
+  background-color: rgba(184, 149, 110, 0.3);
+  color: #1A1A1A;
+}
+
+::-moz-selection {
+  background-color: rgba(184, 149, 110, 0.3);
+  color: #1A1A1A;
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: #F5F1EB;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #D4C5B5;
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #B8956E;
+}
+
+/* Focus outline */
+*:focus-visible {
+  outline: 2px solid #B8956E;
+  outline-offset: 2px;
+}
+
+/* Links */
+a {
+  color: #B8956E;
+  text-decoration: none;
+  transition: color 0.3s ease;
+}
+
+a:hover {
+  color: #9A7B5A;
+}
+
+/* Code blocks */
 code {
-  font-family: source-code-pro, Menlo, Monaco, Consolas, 'Courier New',
-    monospace;
+  font-family: 'SF Mono', 'Monaco', 'Inconsolata', 'Fira Code', 'Droid Sans Mono',
+    'Source Code Pro', monospace;
+  font-size: 0.875em;
+  background-color: #F5F1EB;
+  padding: 2px 6px;
+  border-radius: 2px;
+  color: #8B7355;
+}
+
+pre {
+  background-color: #1A1A1A;
+  color: #F5F1EB;
+  padding: 16px;
+  border-radius: 4px;
+  overflow-x: auto;
+}
+
+pre code {
+  background: none;
+  padding: 0;
+  color: inherit;
+}
+
+/* Utility classes */
+.text-gold {
+  color: #B8956E;
+}
+
+.text-dark {
+  color: #1A1A1A;
+}
+
+.text-muted {
+  color: #9A9A9A;
+}
+
+.bg-cream {
+  background-color: #F5F1EB;
+}
+
+.bg-white {
+  background-color: #FFFFFF;
+}
+
+.bg-dark {
+  background-color: #1A1A1A;
+}
+
+.bg-gold {
+  background-color: #B8956E;
+}
+
+/* Brand typography */
+.brand-text {
+  font-weight: 300;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+
+.brand-heading {
+  font-weight: 300;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #1A1A1A;
+}
+
+/* Animations */
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeInDown {
+  from {
+    opacity: 0;
+    transform: translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@keyframes shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+/* Animation utilities */
+.animate-fadeIn {
+  animation: fadeIn 0.5s ease-out;
+}
+
+.animate-fadeInUp {
+  animation: fadeInUp 0.5s ease-out;
+}
+
+.animate-fadeInDown {
+  animation: fadeInDown 0.5s ease-out;
+}
+
+.animate-slideInLeft {
+  animation: slideInLeft 0.5s ease-out;
+}
+
+.animate-slideInRight {
+  animation: slideInRight 0.5s ease-out;
+}
+
+.animate-pulse {
+  animation: pulse 2s ease-in-out infinite;
+}
+
+/* Transition utilities */
+.transition-all {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.transition-colors {
+  transition: color 0.3s ease, background-color 0.3s ease, border-color 0.3s ease;
+}
+
+.transition-transform {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Loading skeleton */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    #E8DFD5 25%,
+    #F5F1EB 50%,
+    #E8DFD5 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+/* Print styles */
+@media print {
+  body {
+    background-color: #FFFFFF;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+}
+
+/* ═══════════════════════════════════════════════ */
+/* Mobile-First Responsive Design                */
+/* Priority: 320px-767px → 768px-1023px → 1024px+*/
+/* ═══════════════════════════════════════════════ */
+
+/* Touch-friendly defaults */
+button,
+[role="button"],
+a,
+input[type="submit"],
+input[type="button"],
+.MuiButton-root,
+.MuiIconButton-root,
+.MuiTab-root,
+.MuiChip-root,
+.MuiListItemButton-root {
+  min-height: 44px;
+  min-width: 44px;
+}
+
+input[type="text"],
+input[type="email"],
+input[type="password"],
+input[type="search"],
+input[type="tel"],
+input[type="url"],
+textarea,
+select,
+.MuiInputBase-root {
+  font-size: 16px !important; /* Prevents iOS zoom on focus */
+}
+
+/* ─── Mobile (320px - 767px) ─── */
+@media (max-width: 767px) {
+  html {
+    font-size: 15px;
+  }
+
+  body {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-touch-callout: none;
+  }
+
+  /* Hide scrollbar on mobile */
+  ::-webkit-scrollbar {
+    width: 0;
+    height: 0;
+  }
+
+  /* Mobile container padding */
+  .MuiContainer-root {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  /* Full-width buttons on mobile */
+  .mobile-full-width {
+    width: 100% !important;
+  }
+
+  /* Stack horizontal layouts */
+  .mobile-stack {
+    flex-direction: column !important;
+  }
+
+  /* Hide on mobile */
+  .mobile-hidden {
+    display: none !important;
+  }
+
+  /* Mobile typography scaling */
+  .brand-heading {
+    font-size: 1.25rem;
+    letter-spacing: 0.1em;
+  }
+
+  /* MUI Dialog fullscreen on mobile */
+  .MuiDialog-paper {
+    margin: 8px !important;
+    width: calc(100% - 16px) !important;
+    max-height: calc(100vh - 16px) !important;
+    border-radius: 8px !important;
+  }
+
+  /* MUI Table responsive scroll */
+  .MuiTableContainer-root {
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Tabs scrollable on mobile */
+  .MuiTabs-root {
+    min-height: 48px;
+  }
+
+  .MuiTab-root {
+    font-size: 0.75rem !important;
+    min-width: auto !important;
+    padding: 8px 12px !important;
+  }
+
+  /* Cards compact padding on mobile */
+  .MuiCard-root {
+    overflow: hidden;
+  }
+
+  /* Avatar smaller on mobile */
+  .MuiAvatar-root.avatar-large {
+    width: 48px !important;
+    height: 48px !important;
+    font-size: 1.25rem !important;
+  }
+
+  /* Grid items full-width on mobile */
+  .MuiGrid-item {
+    max-width: 100%;
+  }
+
+  /* Chip compact on mobile */
+  .MuiChip-root {
+    font-size: 0.7rem !important;
+    height: 28px !important;
+  }
+}
+
+/* ─── Tablet (768px - 1023px) ─── */
+@media (min-width: 768px) and (max-width: 1023px) {
+  html {
+    font-size: 15.5px;
+  }
+
+  .MuiContainer-root {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+
+  /* Hide on tablet */
+  .tablet-hidden {
+    display: none !important;
+  }
+}
+
+/* ─── Desktop (1024px+) ─── */
+@media (min-width: 1024px) {
+  /* Hide on desktop */
+  .desktop-hidden {
+    display: none !important;
+  }
+}
+
+/* ─── Safe area for notched phones ─── */
+@supports (padding: env(safe-area-inset-bottom)) {
+  .safe-area-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .safe-area-top {
+    padding-top: env(safe-area-inset-top);
+  }
+}
+
+/* Reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

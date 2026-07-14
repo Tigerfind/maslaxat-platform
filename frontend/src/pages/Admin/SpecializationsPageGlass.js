@@ -38,6 +38,7 @@ import {
   Person,
 } from '@mui/icons-material';
 import { adminSpecializationService } from '../../services/adminService';
+import { axelionColors } from '../../theme/axelionTheme';
 
 const SpecializationsPageGlass = () => {
   const navigate = useNavigate();
@@ -173,13 +174,13 @@ const SpecializationsPageGlass = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#F4F6F8',
+          background: axelionColors.bgCream,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <CircularProgress sx={{ color: '#2563EB' }} size={60} />
+        <CircularProgress sx={{ color: axelionColors.gold }} size={60} />
       </Box>
     );
   }
@@ -188,15 +189,15 @@ const SpecializationsPageGlass = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: '#F4F6F8',
+        background: axelionColors.bgCream,
         pb: 4,
       }}
     >
       {/* Header */}
       <Box
         sx={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E6E9EE',
+          background: axelionColors.bgLight,
+          borderBottom: `1px solid ${axelionColors.borderLight}`,
           py: 3,
           px: 2,
         }}
@@ -208,12 +209,12 @@ const SpecializationsPageGlass = () => {
                 <IconButton
                   onClick={() => navigate('/admin/dashboard')}
                   sx={{
-                    background: '#F4F6F8',
-                    color: '#0B1B2B',
-                    border: '1px solid #E6E9EE',
+                    background: axelionColors.bgCream,
+                    color: axelionColors.textDark,
+                    border: `1px solid ${axelionColors.borderLight}`,
                     '&:hover': {
-                      background: '#E6E9EE',
-                      borderColor: '#2563EB',
+                      background: axelionColors.bgBeige,
+                      borderColor: axelionColors.gold,
                     },
                   }}
                 >
@@ -221,10 +222,18 @@ const SpecializationsPageGlass = () => {
                 </IconButton>
               </Tooltip>
               <Box>
-                <Typography variant="h5" fontWeight="700" sx={{ color: '#0B1B2B' }}>
+                <Typography
+                  variant="h5"
+                  sx={{
+                    fontWeight: 300,
+                    color: axelionColors.textDark,
+                    letterSpacing: '0.1em',
+                    textTransform: 'uppercase',
+                  }}
+                >
                   Управление специализациями
                 </Typography>
-                <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
                   Добавляйте, редактируйте и управляйте специализациями юристов
                 </Typography>
               </Box>
@@ -235,17 +244,18 @@ const SpecializationsPageGlass = () => {
               startIcon={<Add />}
               onClick={() => handleOpenDialog()}
               sx={{
-                background: '#DC2626',
+                background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
                 color: '#FFFFFF',
-                fontWeight: 600,
+                fontWeight: 500,
                 px: 3,
                 py: 1.5,
                 borderRadius: '8px',
                 textTransform: 'none',
-                boxShadow: '0 2px 6px rgba(220, 38, 38, 0.25)',
+                letterSpacing: '0.05em',
+                boxShadow: '0 2px 6px rgba(184, 149, 110, 0.25)',
                 '&:hover': {
-                  background: '#B91C1C',
-                  boxShadow: '0 4px 12px rgba(220, 38, 38, 0.35)',
+                  background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)`,
+                  boxShadow: '0 4px 12px rgba(184, 149, 110, 0.35)',
                 },
               }}
             >
@@ -260,38 +270,38 @@ const SpecializationsPageGlass = () => {
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {[
             {
-              icon: <CheckCircle sx={{ fontSize: 40, color: '#2563EB' }} />,
+              icon: <CheckCircle sx={{ fontSize: 40, color: axelionColors.gold }} />,
               label: 'Всего специализаций',
               value: specializations.length.toString(),
-              color: '#2563EB',
-              bgColor: '#EFF6FF',
+              color: axelionColors.gold,
+              bgColor: axelionColors.accentLight,
             },
             {
-              icon: <Visibility sx={{ fontSize: 40, color: '#059669' }} />,
+              icon: <Visibility sx={{ fontSize: 40, color: axelionColors.success }} />,
               label: 'Активных',
               value: activeCount.toString(),
-              color: '#059669',
-              bgColor: '#ECFDF5',
+              color: axelionColors.success,
+              bgColor: axelionColors.successLight,
             },
             {
-              icon: <Person sx={{ fontSize: 40, color: '#DC2626' }} />,
+              icon: <Person sx={{ fontSize: 40, color: axelionColors.bronze }} />,
               label: 'Юристов',
               value: lawyerCount.toString(),
-              color: '#DC2626',
-              bgColor: '#FEF2F2',
+              color: axelionColors.bronze,
+              bgColor: axelionColors.bgBeige,
             },
           ].map((stat, index) => (
             <Grid item xs={12} sm={6} md={4} key={index}>
               <Card
                 sx={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E6E9EE',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                  background: axelionColors.bgLight,
+                  border: `1px solid ${axelionColors.borderLight}`,
+                  borderRadius: '8px',
+                  boxShadow: 'none',
                   p: 3,
                   transition: 'all 0.3s ease',
                   '&:hover': {
-                    boxShadow: '0 4px 12px rgba(11, 27, 43, 0.12)',
+                    boxShadow: '0 4px 12px rgba(184, 149, 110, 0.12)',
                     transform: 'translateY(-2px)',
                   },
                 }}
@@ -301,7 +311,7 @@ const SpecializationsPageGlass = () => {
                     sx={{
                       width: 64,
                       height: 64,
-                      borderRadius: '12px',
+                      borderRadius: '8px',
                       background: stat.bgColor,
                       display: 'flex',
                       alignItems: 'center',
@@ -311,10 +321,10 @@ const SpecializationsPageGlass = () => {
                     {stat.icon}
                   </Box>
                   <Box>
-                    <Typography variant="body2" sx={{ color: '#6B7280', fontWeight: 500 }} gutterBottom>
+                    <Typography variant="body2" sx={{ color: axelionColors.textMuted, fontWeight: 500 }} gutterBottom>
                       {stat.label}
                     </Typography>
-                    <Typography variant="h5" fontWeight="700" sx={{ color: '#0B1B2B' }}>
+                    <Typography variant="h5" sx={{ fontWeight: 300, color: axelionColors.textDark }}>
                       {stat.value}
                     </Typography>
                   </Box>
@@ -327,15 +337,22 @@ const SpecializationsPageGlass = () => {
         {/* Specializations Table */}
         <Card
           sx={{
-            background: '#FFFFFF',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+            background: axelionColors.bgLight,
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            boxShadow: 'none',
             overflow: 'hidden',
           }}
         >
-          <Box sx={{ p: 3, borderBottom: '1px solid #E6E9EE' }}>
-            <Typography variant="h6" fontWeight="700" sx={{ color: '#0B1B2B' }}>
+          <Box sx={{ p: 3, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
+            <Typography
+              variant="h6"
+              sx={{
+                fontWeight: 300,
+                color: axelionColors.textDark,
+                letterSpacing: '0.05em',
+              }}
+            >
               Специализации
             </Typography>
           </Box>
@@ -344,20 +361,20 @@ const SpecializationsPageGlass = () => {
             <TableContainer>
               <Table>
                 <TableHead>
-                  <TableRow sx={{ background: '#F4F6F8', borderBottom: '1px solid #E6E9EE' }}>
-                    <TableCell sx={{ color: '#0B1B2B', fontWeight: 700, fontSize: '14px' }}>
+                  <TableRow sx={{ background: axelionColors.bgCream, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
+                    <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       Название
                     </TableCell>
-                    <TableCell sx={{ color: '#0B1B2B', fontWeight: 700, fontSize: '14px' }}>
+                    <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       Описание
                     </TableCell>
-                    <TableCell align="center" sx={{ color: '#0B1B2B', fontWeight: 700, fontSize: '14px' }}>
+                    <TableCell align="center" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       Юристов
                     </TableCell>
-                    <TableCell align="center" sx={{ color: '#0B1B2B', fontWeight: 700, fontSize: '14px' }}>
+                    <TableCell align="center" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       Статус
                     </TableCell>
-                    <TableCell align="right" sx={{ color: '#0B1B2B', fontWeight: 700, fontSize: '14px' }}>
+                    <TableCell align="right" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       Действия
                     </TableCell>
                   </TableRow>
@@ -367,9 +384,9 @@ const SpecializationsPageGlass = () => {
                     <TableRow
                       key={spec.id}
                       sx={{
-                        borderBottom: '1px solid #E6E9EE',
+                        borderBottom: `1px solid ${axelionColors.borderLight}`,
                         '&:hover': {
-                          background: '#F9FAFB',
+                          background: axelionColors.bgWarm,
                         },
                         opacity: spec.active ? 1 : 0.6,
                       }}
@@ -378,7 +395,7 @@ const SpecializationsPageGlass = () => {
                         <Typography
                           variant="body2"
                           fontWeight="600"
-                          sx={{ color: '#0B1B2B' }}
+                          sx={{ color: axelionColors.textDark }}
                         >
                           {spec.name}
                         </Typography>
@@ -386,7 +403,7 @@ const SpecializationsPageGlass = () => {
                       <TableCell>
                         <Typography
                           variant="body2"
-                          sx={{ color: '#6B7280' }}
+                          sx={{ color: axelionColors.textMuted }}
                         >
                           {spec.description}
                         </Typography>
@@ -396,11 +413,14 @@ const SpecializationsPageGlass = () => {
                           icon={<Person sx={{ fontSize: 16 }} />}
                           label={spec.lawyerCount || 0}
                           sx={{
-                            background: '#EFF6FF',
-                            color: '#2563EB',
+                            background: axelionColors.accentLight,
+                            color: axelionColors.gold,
                             fontWeight: 600,
-                            border: '1px solid #BFDBFE',
-                            borderRadius: '6px',
+                            border: `1px solid ${axelionColors.goldMuted}`,
+                            borderRadius: '8px',
+                            '& .MuiChip-icon': {
+                              color: axelionColors.gold,
+                            },
                           }}
                         />
                       </TableCell>
@@ -411,11 +431,14 @@ const SpecializationsPageGlass = () => {
                             size="small"
                             icon={<Visibility sx={{ fontSize: 16 }} />}
                             sx={{
-                              background: '#ECFDF5',
-                              color: '#059669',
+                              background: axelionColors.successLight,
+                              color: axelionColors.success,
                               fontWeight: 600,
-                              border: '1px solid #A7F3D0',
-                              borderRadius: '6px',
+                              border: `1px solid ${axelionColors.success}`,
+                              borderRadius: '8px',
+                              '& .MuiChip-icon': {
+                                color: axelionColors.success,
+                              },
                             }}
                           />
                         ) : (
@@ -424,11 +447,14 @@ const SpecializationsPageGlass = () => {
                             size="small"
                             icon={<VisibilityOff sx={{ fontSize: 16 }} />}
                             sx={{
-                              background: '#F4F6F8',
-                              color: '#6B7280',
+                              background: axelionColors.bgCream,
+                              color: axelionColors.textMuted,
                               fontWeight: 600,
-                              border: '1px solid #E6E9EE',
-                              borderRadius: '6px',
+                              border: `1px solid ${axelionColors.borderLight}`,
+                              borderRadius: '8px',
+                              '& .MuiChip-icon': {
+                                color: axelionColors.textMuted,
+                              },
                             }}
                           />
                         )}
@@ -443,11 +469,11 @@ const SpecializationsPageGlass = () => {
                               }
                               sx={{
                                 '& .MuiSwitch-switchBase.Mui-checked': {
-                                  color: '#059669',
+                                  color: axelionColors.success,
                                 },
                                 '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track':
                                 {
-                                  backgroundColor: '#059669',
+                                  backgroundColor: axelionColors.success,
                                 },
                               }}
                             />
@@ -456,12 +482,12 @@ const SpecializationsPageGlass = () => {
                             <IconButton
                               onClick={() => handleOpenDialog(spec)}
                               sx={{
-                                color: '#2563EB',
-                                border: '1px solid #E6E9EE',
-                                borderRadius: '6px',
+                                color: axelionColors.gold,
+                                border: `1px solid ${axelionColors.borderLight}`,
+                                borderRadius: '8px',
                                 '&:hover': {
-                                  background: '#EFF6FF',
-                                  borderColor: '#2563EB',
+                                  background: axelionColors.accentLight,
+                                  borderColor: axelionColors.gold,
                                 },
                               }}
                             >
@@ -472,12 +498,12 @@ const SpecializationsPageGlass = () => {
                             <IconButton
                               onClick={() => handleDeleteClick(spec.id)}
                               sx={{
-                                color: '#DC2626',
-                                border: '1px solid #E6E9EE',
-                                borderRadius: '6px',
+                                color: axelionColors.error,
+                                border: `1px solid ${axelionColors.borderLight}`,
+                                borderRadius: '8px',
                                 '&:hover': {
-                                  background: '#FEF2F2',
-                                  borderColor: '#DC2626',
+                                  background: axelionColors.errorLight,
+                                  borderColor: axelionColors.error,
                                 },
                               }}
                             >
@@ -493,7 +519,7 @@ const SpecializationsPageGlass = () => {
             </TableContainer>
           ) : (
             <Box sx={{ textAlign: 'center', py: 6 }}>
-              <Typography variant="body1" sx={{ color: '#6B7280' }}>
+              <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
                 Нет специализаций. Добавьте первую!
               </Typography>
             </Box>
@@ -509,13 +535,13 @@ const SpecializationsPageGlass = () => {
         fullWidth
         PaperProps={{
           sx: {
-            background: '#FFFFFF',
-            borderRadius: '12px',
-            boxShadow: '0 8px 24px rgba(11, 27, 43, 0.15)',
+            background: axelionColors.bgLight,
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(26, 26, 26, 0.15)',
           },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 700, color: '#0B1B2B', borderBottom: '1px solid #E6E9EE' }}>
+        <DialogTitle sx={{ fontWeight: 300, color: axelionColors.textDark, borderBottom: `1px solid ${axelionColors.borderLight}`, letterSpacing: '0.05em' }}>
           {editMode ? 'Редактировать специализацию' : 'Добавить новую специализацию'}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
@@ -533,14 +559,17 @@ const SpecializationsPageGlass = () => {
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '8px',
                   '& fieldset': {
-                    borderColor: '#E6E9EE',
+                    borderColor: axelionColors.borderLight,
                   },
                   '&:hover fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: axelionColors.gold,
                 },
               }}
             />
@@ -559,19 +588,22 @@ const SpecializationsPageGlass = () => {
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '8px',
                   '& fieldset': {
-                    borderColor: '#E6E9EE',
+                    borderColor: axelionColors.borderLight,
                   },
                   '&:hover fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
+                },
+                '& .MuiInputLabel-root.Mui-focused': {
+                  color: axelionColors.gold,
                 },
               }}
             />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography sx={{ color: '#0B1B2B', fontWeight: 600 }}>Активна:</Typography>
+              <Typography sx={{ color: axelionColors.textDark, fontWeight: 500 }}>Активна:</Typography>
               <Switch
                 checked={currentSpec.active}
                 onChange={(e) =>
@@ -579,31 +611,31 @@ const SpecializationsPageGlass = () => {
                 }
                 sx={{
                   '& .MuiSwitch-switchBase.Mui-checked': {
-                    color: '#059669',
+                    color: axelionColors.success,
                   },
                   '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-                    backgroundColor: '#059669',
+                    backgroundColor: axelionColors.success,
                   },
                 }}
               />
             </Box>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ p: 3, borderTop: '1px solid #E6E9EE' }}>
+        <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
           <Button
             variant="outlined"
             onClick={handleCloseDialog}
             sx={{
-              color: '#6B7280',
-              borderColor: '#E6E9EE',
+              color: axelionColors.textMuted,
+              borderColor: axelionColors.borderLight,
               borderRadius: '8px',
               px: 3,
               py: 1,
               textTransform: 'none',
-              fontWeight: 600,
+              fontWeight: 500,
               '&:hover': {
-                borderColor: '#6B7280',
-                background: '#F4F6F8',
+                borderColor: axelionColors.textMuted,
+                background: axelionColors.bgCream,
               },
             }}
           >
@@ -614,19 +646,19 @@ const SpecializationsPageGlass = () => {
             onClick={handleSave}
             disabled={!currentSpec.name || !currentSpec.description}
             sx={{
-              background: '#DC2626',
+              background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
               color: '#FFFFFF',
               borderRadius: '8px',
               px: 3,
               py: 1,
               textTransform: 'none',
-              fontWeight: 600,
+              fontWeight: 500,
               '&:hover': {
-                background: '#B91C1C',
+                background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)`,
               },
               '&:disabled': {
-                background: '#E6E9EE',
-                color: '#6B7280',
+                background: axelionColors.borderLight,
+                color: axelionColors.textMuted,
               },
             }}
           >
@@ -643,35 +675,35 @@ const SpecializationsPageGlass = () => {
         fullWidth
         PaperProps={{
           sx: {
-            background: '#FFFFFF',
-            borderRadius: '12px',
-            boxShadow: '0 8px 24px rgba(11, 27, 43, 0.15)',
+            background: axelionColors.bgLight,
+            borderRadius: '8px',
+            boxShadow: '0 8px 24px rgba(26, 26, 26, 0.15)',
           },
         }}
       >
-        <DialogTitle sx={{ fontWeight: 700, color: '#0B1B2B', borderBottom: '1px solid #E6E9EE' }}>
+        <DialogTitle sx={{ fontWeight: 300, color: axelionColors.textDark, borderBottom: `1px solid ${axelionColors.borderLight}`, letterSpacing: '0.05em' }}>
           Подтверждение удаления
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
-          <Typography sx={{ color: '#6B7280' }}>
+          <Typography sx={{ color: axelionColors.textMuted }}>
             Вы уверены, что хотите удалить эту специализацию? Это действие нельзя отменить.
           </Typography>
         </DialogContent>
-        <DialogActions sx={{ p: 3, borderTop: '1px solid #E6E9EE' }}>
+        <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
           <Button
             variant="outlined"
             onClick={() => setDeleteConfirm(false)}
             sx={{
-              color: '#6B7280',
-              borderColor: '#E6E9EE',
+              color: axelionColors.textMuted,
+              borderColor: axelionColors.borderLight,
               borderRadius: '8px',
               px: 3,
               py: 1,
               textTransform: 'none',
-              fontWeight: 600,
+              fontWeight: 500,
               '&:hover': {
-                borderColor: '#6B7280',
-                background: '#F4F6F8',
+                borderColor: axelionColors.textMuted,
+                background: axelionColors.bgCream,
               },
             }}
           >
@@ -681,13 +713,13 @@ const SpecializationsPageGlass = () => {
             variant="contained"
             onClick={handleConfirmDelete}
             sx={{
-              background: '#DC2626',
+              background: axelionColors.error,
               color: '#FFFFFF',
               borderRadius: '8px',
               px: 3,
               py: 1,
               textTransform: 'none',
-              fontWeight: 600,
+              fontWeight: 500,
               '&:hover': {
                 background: '#B91C1C',
               },

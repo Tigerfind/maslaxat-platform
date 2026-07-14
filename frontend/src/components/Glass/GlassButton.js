@@ -1,10 +1,15 @@
 import React from 'react';
 import { Button } from '@mui/material';
+import { axelionColors } from '../../theme/axelionTheme';
 
+/**
+ * MaslaXat Premium Button Component
+ * Elegant, minimalist design with gold accents
+ */
 const GlassButton = ({
   children,
-  variant = 'glass',
-  color = 'primary',
+  variant = 'primary',
+  color = 'gold',
   fullWidth = false,
   startIcon,
   endIcon,
@@ -14,87 +19,178 @@ const GlassButton = ({
   sx = {},
   ...props
 }) => {
-  const colorGradients = {
-    primary: {
-      from: '#667eea',
-      to: '#764ba2',
-      hover: '#5a67d8',
+  const colorStyles = {
+    gold: {
+      primary: {
+        backgroundColor: axelionColors.gold,
+        color: '#FFFFFF',
+        border: 'none',
+        '&:hover': {
+          backgroundColor: axelionColors.goldDark,
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.gold,
+        border: `1px solid ${axelionColors.gold}`,
+        '&:hover': {
+          backgroundColor: axelionColors.accentLight,
+          borderColor: axelionColors.goldDark,
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.gold,
+        border: 'none',
+        '&:hover': {
+          backgroundColor: axelionColors.accentLight,
+        },
+      },
     },
-    secondary: {
-      from: '#f093fb',
-      to: '#f5576c',
-      hover: '#d77fe8',
+    dark: {
+      primary: {
+        backgroundColor: axelionColors.textDark,
+        color: '#FFFFFF',
+        border: 'none',
+        '&:hover': {
+          backgroundColor: '#2D2D2D',
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.textDark,
+        border: `1px solid ${axelionColors.textDark}`,
+        '&:hover': {
+          backgroundColor: 'rgba(26, 26, 26, 0.05)',
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.textDark,
+        border: 'none',
+        '&:hover': {
+          backgroundColor: 'rgba(26, 26, 26, 0.05)',
+        },
+      },
+    },
+    bronze: {
+      primary: {
+        backgroundColor: axelionColors.bronze,
+        color: '#FFFFFF',
+        border: 'none',
+        '&:hover': {
+          backgroundColor: axelionColors.bronzeDark,
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.bronze,
+        border: `1px solid ${axelionColors.bronze}`,
+        '&:hover': {
+          backgroundColor: 'rgba(139, 115, 85, 0.1)',
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.bronze,
+        border: 'none',
+        '&:hover': {
+          backgroundColor: 'rgba(139, 115, 85, 0.1)',
+        },
+      },
+    },
+    light: {
+      primary: {
+        backgroundColor: axelionColors.bgLight,
+        color: axelionColors.textDark,
+        border: `1px solid ${axelionColors.borderLight}`,
+        '&:hover': {
+          backgroundColor: axelionColors.bgWarm,
+          borderColor: axelionColors.gold,
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.textSecondary,
+        border: `1px solid ${axelionColors.borderLight}`,
+        '&:hover': {
+          borderColor: axelionColors.gold,
+          color: axelionColors.gold,
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.textSecondary,
+        border: 'none',
+        '&:hover': {
+          color: axelionColors.gold,
+          backgroundColor: axelionColors.bgWarm,
+        },
+      },
     },
     success: {
-      from: '#4ade80',
-      to: '#22c55e',
-      hover: '#16a34a',
+      primary: {
+        backgroundColor: axelionColors.success,
+        color: '#FFFFFF',
+        border: 'none',
+        '&:hover': {
+          backgroundColor: '#6A8A5B',
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.success,
+        border: `1px solid ${axelionColors.success}`,
+        '&:hover': {
+          backgroundColor: axelionColors.successLight,
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.success,
+        border: 'none',
+        '&:hover': {
+          backgroundColor: axelionColors.successLight,
+        },
+      },
     },
     error: {
-      from: '#f87171',
-      to: '#ef4444',
-      hover: '#dc2626',
-    },
-    warning: {
-      from: '#fbbf24',
-      to: '#f59e0b',
-      hover: '#d97706',
-    },
-    info: {
-      from: '#60a5fa',
-      to: '#3b82f6',
-      hover: '#2563eb',
+      primary: {
+        backgroundColor: axelionColors.error,
+        color: '#FFFFFF',
+        border: 'none',
+        '&:hover': {
+          backgroundColor: '#9A5A5A',
+        },
+      },
+      outlined: {
+        backgroundColor: 'transparent',
+        color: axelionColors.error,
+        border: `1px solid ${axelionColors.error}`,
+        '&:hover': {
+          backgroundColor: axelionColors.errorLight,
+        },
+      },
+      text: {
+        backgroundColor: 'transparent',
+        color: axelionColors.error,
+        border: 'none',
+        '&:hover': {
+          backgroundColor: axelionColors.errorLight,
+        },
+      },
     },
   };
 
   const sizeMap = {
-    small: { padding: '8px 16px', fontSize: '0.875rem' },
-    medium: { padding: '10px 24px', fontSize: '0.95rem' },
-    large: { padding: '12px 32px', fontSize: '1rem' },
+    small: { padding: '8px 20px', fontSize: '0.75rem' },
+    medium: { padding: '12px 32px', fontSize: '0.875rem' },
+    large: { padding: '14px 40px', fontSize: '0.9375rem' },
   };
 
-  const selectedColor = colorGradients[color] || colorGradients.primary;
+  const selectedColorStyles = colorStyles[color] || colorStyles.gold;
+  const selectedVariantStyles = selectedColorStyles[variant] || selectedColorStyles.primary;
   const selectedSize = sizeMap[size] || sizeMap.medium;
-
-  const variantStyles = {
-    glass: {
-      background: 'rgba(255, 255, 255, 0.2)',
-      backdropFilter: 'blur(10px)',
-      WebkitBackdropFilter: 'blur(10px)',
-      border: '1px solid rgba(255, 255, 255, 0.3)',
-      color: '#1f2937',
-      '&:hover': {
-        background: 'rgba(255, 255, 255, 0.3)',
-        transform: 'translateY(-2px)',
-        boxShadow: '0 8px 24px 0 rgba(31, 38, 135, 0.2)',
-      },
-    },
-    gradient: {
-      background: `linear-gradient(135deg, ${selectedColor.from} 0%, ${selectedColor.to} 100%)`,
-      backdropFilter: 'blur(10px)',
-      WebkitBackdropFilter: 'blur(10px)',
-      border: 'none',
-      color: 'white',
-      boxShadow: `0 4px 15px 0 ${selectedColor.from}40`,
-      '&:hover': {
-        background: `linear-gradient(135deg, ${selectedColor.hover} 0%, ${selectedColor.to} 100%)`,
-        transform: 'translateY(-2px)',
-        boxShadow: `0 8px 25px 0 ${selectedColor.from}60`,
-      },
-    },
-    outlined: {
-      background: 'transparent',
-      backdropFilter: 'blur(5px)',
-      WebkitBackdropFilter: 'blur(5px)',
-      border: `2px solid ${selectedColor.from}`,
-      color: selectedColor.from,
-      '&:hover': {
-        background: `${selectedColor.from}15`,
-        transform: 'translateY(-2px)',
-        borderColor: selectedColor.hover,
-      },
-    },
-  };
 
   return (
     <Button
@@ -104,18 +200,20 @@ const GlassButton = ({
       startIcon={startIcon}
       endIcon={endIcon}
       sx={{
-        borderRadius: '12px',
-        textTransform: 'none',
-        fontWeight: 600,
+        borderRadius: '8px',
+        textTransform: 'uppercase',
+        fontWeight: 500,
+        letterSpacing: '0.1em',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+        boxShadow: 'none',
         ...selectedSize,
-        ...variantStyles[variant],
+        ...selectedVariantStyles,
         '&:active': {
-          transform: 'translateY(0)',
+          transform: 'translateY(1px)',
         },
         '&.Mui-disabled': {
-          background: 'rgba(156, 163, 175, 0.3)',
-          color: 'rgba(107, 114, 128, 0.5)',
+          backgroundColor: axelionColors.bgBeige,
+          color: axelionColors.textMuted,
           border: 'none',
         },
         ...sx,

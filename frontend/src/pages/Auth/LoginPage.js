@@ -1,324 +1,492 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import {
   Container,
   Box,
   Typography,
+  TextField,
   Button,
-  Grid,
+  Alert,
+  CircularProgress,
+  InputAdornment,
+  IconButton,
   Card,
-  CardContent,
-  CardActions,
-  Avatar,
+  Tabs,
+  Tab,
+  Divider,
 } from '@mui/material';
 import {
+  Visibility,
+  VisibilityOff,
   Person,
+  Lock,
   Gavel,
-  Shield,
-  ArrowForward,
+  AdminPanelSettings,
+  CheckCircle,
 } from '@mui/icons-material';
-import { loginStart, loginSuccess } from '../../store/slices/authSlice';
-import { useTranslation } from '../../i18n';
+import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
+import api from '../../services/api';
+import { axelionColors } from '../../theme/axelionTheme';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 
+/**
+ * MaslaXat Unified Login Page
+ * Single elegant login form for all user types with demo access
+ */
 const LoginPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { t } = useTranslation();
+  const { loading, error } = useSelector((state) => state.auth);
 
-  const roles = [
+  const [activeTab, setActiveTab] = useState(0);
+  const [formData, setFormData] = useState({
+    email: '',
+    password: '',
+  });
+  const [showPassword, setShowPassword] = useState(false);
+
+  const userTypes = [
     {
-      titleKey: 'client',
-      subtitleKey: 'clientSubtitle',
-      icon: <Person sx={{ fontSize: 48 }} />,
-      color: '#3d5a52',
-      gradient: 'linear-gradient(135deg, #3d5a52 0%, #5a7d72 100%)',
-      path: '/login/client',
-      featureKeys: ['clientFeature1', 'clientFeature2', 'clientFeature3'],
-      quickLogin: {
+      label: 'Клиент',
+      icon: <Person sx={{ fontSize: 20 }} />,
+      role: 'client',
+      dashboard: '/dashboard',
+      demoEmail: 'client@maslaxat.uz',
+      demoPassword: 'client123',
+      mockUser: {
+        id: 1,
+        name: 'Клиент Тестовый',
         email: 'client@maslaxat.uz',
-        password: 'client123',
         role: 'client',
-        dashboardPath: '/dashboard',
-        mockUser: {
-          id: 1,
-          name: 'Клиент Тестовый',
-          email: 'client@maslaxat.uz',
-          role: 'client',
-        },
       },
     },
     {
-      titleKey: 'lawyer',
-      subtitleKey: 'lawyerSubtitle',
-      icon: <Gavel sx={{ fontSize: 48 }} />,
-      color: '#a67c52',
-      gradient: 'linear-gradient(135deg, #a67c52 0%, #c29a6e 100%)',
-      path: '/login/lawyer',
-      featureKeys: ['lawyerFeature1', 'lawyerFeature2', 'lawyerFeature3'],
-      quickLogin: {
-        email: 'lawyer@maslaxat.uz',
-        password: 'lawyer123',
+      label: 'Юрист',
+      icon: <Gavel sx={{ fontSize: 20 }} />,
+      role: 'lawyer',
+      dashboard: '/lawyer/dashboard',
+      demoEmail: 'ivanov@maslaxat.uz',
+      demoPassword: 'lawyer123',
+      mockUser: {
+        id: 10,
+        name: 'Иванов Иван Иванович',
+        email: 'ivanov@maslaxat.uz',
         role: 'lawyer',
-        dashboardPath: '/lawyer/dashboard',
-        mockUser: {
-          id: 10,
-          name: 'Иванов Иван Иванович',
-          email: 'ivanov@maslaxat.uz',
-          role: 'lawyer',
-        },
+        specializations: ['Гражданское право', 'Семейное право'],
       },
     },
     {
-      titleKey: 'admin',
-      subtitleKey: 'adminSubtitle',
-      icon: <Shield sx={{ fontSize: 48 }} />,
-      color: '#ef4444',
-      gradient: 'linear-gradient(135deg, #ef4444 0%, #dc2626 100%)',
-      path: '/login/admin',
-      featureKeys: ['adminFeature1', 'adminFeature2', 'adminFeature3'],
-      quickLogin: {
+      label: 'Админ',
+      icon: <AdminPanelSettings sx={{ fontSize: 20 }} />,
+      role: 'admin',
+      dashboard: '/admin/dashboard',
+      demoEmail: 'admin@maslaxat.uz',
+      demoPassword: 'admin123',
+      mockUser: {
+        id: 3,
+        name: 'Администратор',
         email: 'admin@maslaxat.uz',
-        password: 'admin123',
         role: 'admin',
-        dashboardPath: '/admin/dashboard',
-        mockUser: {
-          id: 3,
-          name: 'Администратор Тестовый',
-          email: 'admin@maslaxat.uz',
-          role: 'admin',
-        },
       },
     },
   ];
 
-  const handleQuickLogin = async (role) => {
+  const currentUserType = userTypes[activeTab];
+
+  const handleChange = (e) => {
+    setFormData({
+      ...formData,
+      [e.target.name]: e.target.value,
+    });
+  };
+
+  const performLogin = async (email, password) => {
     dispatch(loginStart());
-
     try {
-      // Simulate network delay
-      await new Promise((resolve) => setTimeout(resolve, 500));
+      const response = await api.post('/auth/login', { email, password });
+      const { user, token, role } = response.data;
 
-      dispatch(
-        loginSuccess({
-          user: role.quickLogin.mockUser,
-          token: `mock-jwt-token-${role.quickLogin.role}`,
-          role: role.quickLogin.role,
-        })
-      );
+      dispatch(loginSuccess({ user, token, role }));
 
-      navigate(role.quickLogin.dashboardPath);
+      const dashboardMap = { client: '/dashboard', lawyer: '/lawyer/dashboard', admin: '/admin/dashboard' };
+      navigate(dashboardMap[role] || '/dashboard');
     } catch (err) {
-      console.error('Quick login error:', err);
+      const message = err.response?.data?.error || err.message || 'Ошибка входа';
+      dispatch(loginFailure(message));
     }
+  };
+
+  const handleDemoLogin = () => {
+    performLogin(currentUserType.demoEmail, currentUserType.demoPassword);
+  };
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    performLogin(formData.email, formData.password);
+  };
+
+  const inputStyles = {
+    '& .MuiOutlinedInput-root': {
+      backgroundColor: axelionColors.bgLight,
+      borderRadius: '8px',
+      '& fieldset': {
+        borderColor: axelionColors.borderLight,
+      },
+      '&:hover fieldset': {
+        borderColor: axelionColors.gold,
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: axelionColors.gold,
+        borderWidth: 1,
+      },
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: axelionColors.gold,
+    },
   };
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        background: 'linear-gradient(135deg, #1a2b4a 0%, #2d4a7c 100%)',
+        backgroundColor: axelionColors.bgCream,
         display: 'flex',
         alignItems: 'center',
+        justifyContent: 'center',
         py: 4,
         position: 'relative',
       }}
     >
-      {/* Language Switcher - Top Right */}
-      <Box
-        sx={{
-          position: 'absolute',
-          top: 20,
-          right: 20,
-          zIndex: 10,
-        }}
-      >
+      {/* Language Switcher */}
+      <Box sx={{ position: 'fixed', top: 20, right: 20, zIndex: 10 }}>
         <LanguageSwitcher variant="buttons" />
       </Box>
 
-      <Container maxWidth="lg">
-        {/* Header */}
-        <Box sx={{ textAlign: 'center', mb: 6 }}>
-          <Box
-            sx={{
-              width: 100,
-              height: 100,
-              borderRadius: '50%',
-              background: 'linear-gradient(135deg, #3d5a52 0%, #a67c52 100%)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              margin: '0 auto',
-              mb: 3,
-              boxShadow: '0 8px 32px rgba(255, 255, 255, 0.1)',
-            }}
-          >
-            <Typography sx={{ fontSize: 60 }}>⚖️</Typography>
-          </Box>
-          <Typography
-            variant="h2"
-            fontWeight="bold"
-            sx={{
-              color: 'white',
-              mb: 2,
-              textShadow: '0 2px 10px rgba(0,0,0,0.3)',
-            }}
-          >
-            {t('login.title')}
-          </Typography>
-          <Typography
-            variant="h6"
-            sx={{
-              color: 'rgba(255,255,255,0.9)',
-              mb: 1,
-            }}
-          >
-            {t('login.subtitle')}
-          </Typography>
-          <Typography
-            variant="body1"
-            sx={{
-              color: 'rgba(255,255,255,0.7)',
-            }}
-          >
-            {t('login.subtitleEn')}
-          </Typography>
-        </Box>
+      {/* Decorative elements */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          width: '200px',
+          height: '200px',
+          borderTop: `1px solid ${axelionColors.gold}15`,
+          borderLeft: `1px solid ${axelionColors.gold}15`,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          right: 0,
+          width: '200px',
+          height: '200px',
+          borderBottom: `1px solid ${axelionColors.gold}15`,
+          borderRight: `1px solid ${axelionColors.gold}15`,
+        }}
+      />
 
-        {/* Role Selection Cards */}
-        <Typography
-          variant="h5"
-          fontWeight="bold"
-          textAlign="center"
-          sx={{ color: 'white', mb: 4 }}
+      <Container maxWidth="sm">
+        <Card
+          sx={{
+            p: { xs: 3, sm: 5 },
+            boxShadow: '0 8px 40px rgba(26, 26, 26, 0.08)',
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            backgroundColor: axelionColors.bgLight,
+          }}
         >
-          {t('login.selectRole')}
-        </Typography>
+          {/* Logo */}
+          <Box sx={{ textAlign: 'center', mb: 4 }}>
+            <Typography
+              sx={{
+                fontWeight: 300,
+                fontSize: '2.5rem',
+                letterSpacing: '0.3em',
+                color: axelionColors.gold,
+                mb: 0.5,
+              }}
+            >
+              M
+            </Typography>
+            <Typography
+              sx={{
+                fontWeight: 300,
+                fontSize: '1.25rem',
+                letterSpacing: '0.2em',
+                textTransform: 'uppercase',
+                color: axelionColors.textDark,
+              }}
+            >
+              MaslaXat
+            </Typography>
+            <Box
+              sx={{
+                width: '50px',
+                height: '1px',
+                backgroundColor: axelionColors.gold,
+                margin: '12px auto',
+              }}
+            />
+            <Typography
+              sx={{
+                color: axelionColors.textMuted,
+                fontSize: '0.75rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Legal Platform
+            </Typography>
+          </Box>
 
-        <Grid container spacing={3} sx={{ mb: 4 }}>
-          {roles.map((role, index) => (
-            <Grid item xs={12} md={4} key={index}>
-              <Card
+          {/* User Type Tabs */}
+          <Tabs
+            value={activeTab}
+            onChange={(e, val) => setActiveTab(val)}
+            variant="fullWidth"
+            sx={{
+              mb: 4,
+              '& .MuiTabs-indicator': {
+                backgroundColor: axelionColors.gold,
+                height: '2px',
+              },
+              '& .MuiTab-root': {
+                color: axelionColors.textMuted,
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                textTransform: 'none',
+                letterSpacing: '0.05em',
+                minHeight: 48,
+                '&.Mui-selected': {
+                  color: axelionColors.gold,
+                },
+              },
+            }}
+          >
+            {userTypes.map((type, index) => (
+              <Tab
+                key={index}
+                icon={type.icon}
+                label={type.label}
+                iconPosition="start"
+                sx={{ gap: 1 }}
+              />
+            ))}
+          </Tabs>
+
+          {/* Error Alert */}
+          {error && (
+            <Alert
+              severity="error"
+              sx={{
+                mb: 3,
+                borderRadius: '8px',
+                backgroundColor: axelionColors.errorLight,
+                border: `1px solid ${axelionColors.error}20`,
+                '& .MuiAlert-icon': {
+                  color: axelionColors.error,
+                },
+              }}
+            >
+              {error}
+            </Alert>
+          )}
+
+          {/* Login Form */}
+          <form onSubmit={handleSubmit}>
+            <TextField
+              fullWidth
+              label="Email"
+              name="email"
+              type="email"
+              value={formData.email}
+              onChange={handleChange}
+              placeholder={currentUserType.demoEmail}
+              sx={{ mb: 2.5, ...inputStyles }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Person sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <TextField
+              fullWidth
+              label="Пароль"
+              name="password"
+              type={showPassword ? 'text' : 'password'}
+              value={formData.password}
+              onChange={handleChange}
+              placeholder="••••••••"
+              sx={{ mb: 3, ...inputStyles }}
+              InputProps={{
+                startAdornment: (
+                  <InputAdornment position="start">
+                    <Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
+                  </InputAdornment>
+                ),
+                endAdornment: (
+                  <InputAdornment position="end">
+                    <IconButton
+                      onClick={() => setShowPassword(!showPassword)}
+                      edge="end"
+                      sx={{ color: axelionColors.textMuted }}
+                    >
+                      {showPassword ? <VisibilityOff /> : <Visibility />}
+                    </IconButton>
+                  </InputAdornment>
+                ),
+              }}
+            />
+
+            <Button
+              fullWidth
+              type="submit"
+              disabled={loading || !formData.email || !formData.password}
+              sx={{
+                background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
+                mb: 2,
+                '&:hover': {
+                  background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)`,
+                  boxShadow: 'none',
+                },
+                '&.Mui-disabled': {
+                  backgroundColor: axelionColors.bgBeige,
+                  color: axelionColors.textMuted,
+                },
+              }}
+            >
+              {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} /> : 'Войти'}
+            </Button>
+
+            <Box sx={{ textAlign: 'right' }}>
+              <Box
+                component="span"
+                onClick={() => navigate('/forgot-password')}
                 sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  borderRadius: 4,
-                  overflow: 'hidden',
-                  transition: 'all 0.3s ease',
-                  border: `2px solid transparent`,
-                  '&:hover': {
-                    transform: 'translateY(-8px)',
-                    borderColor: role.color,
-                    boxShadow: `0 12px 40px ${role.color}40`,
-                  },
+                  color: axelionColors.textMuted,
+                  fontSize: '0.8rem',
+                  cursor: 'pointer',
+                  '&:hover': { color: axelionColors.gold },
                 }}
               >
-                {/* Card Header */}
-                <Box
-                  sx={{
-                    background: role.gradient,
-                    p: 3,
-                    textAlign: 'center',
-                  }}
-                >
-                  <Avatar
-                    sx={{
-                      width: 80,
-                      height: 80,
-                      margin: '0 auto',
-                      mb: 2,
-                      bgcolor: 'white',
-                      color: role.color,
-                    }}
-                  >
-                    {role.icon}
-                  </Avatar>
-                  <Typography variant="h5" fontWeight="bold" color="white">
-                    {t(`login.${role.titleKey}`)}
-                  </Typography>
-                  <Typography variant="body2" color="rgba(255,255,255,0.9)" sx={{ mt: 1 }}>
-                    {t(`login.${role.subtitleKey}`)}
+                Забыли пароль?
+              </Box>
+            </Box>
+          </form>
+
+          {/* Demo Section */}
+          <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+            <Typography
+              sx={{
+                textAlign: 'center',
+                fontSize: '0.7rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: axelionColors.textMuted,
+                mb: 2,
+              }}
+            >
+              Быстрый демо-вход
+            </Typography>
+
+            <Button
+              fullWidth
+              onClick={handleDemoLogin}
+              disabled={loading}
+              sx={{
+                backgroundColor: axelionColors.textDark,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'none',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 1,
+                '&:hover': {
+                  backgroundColor: '#2D2D2D',
+                  boxShadow: 'none',
+                },
+              }}
+            >
+              {currentUserType.icon}
+              Войти как {currentUserType.label}
+            </Button>
+
+            <Box sx={{ mt: 2, p: 2, bgcolor: axelionColors.bgCream, borderRadius: '8px' }}>
+              <Typography sx={{ fontSize: '0.75rem', color: axelionColors.textMuted, mb: 1 }}>
+                Демо-данные для входа:
+              </Typography>
+              <Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary, fontFamily: 'monospace' }}>
+                Email: {currentUserType.demoEmail}
+              </Typography>
+              <Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary, fontFamily: 'monospace' }}>
+                Пароль: {currentUserType.demoPassword}
+              </Typography>
+            </Box>
+          </Box>
+
+          {/* Features */}
+          <Box sx={{ mt: 4, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 2 }}>
+              {['AI-консультант', 'Проверенные юристы', 'Безопасно'].map((feature, index) => (
+                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                  <CheckCircle sx={{ fontSize: 14, color: axelionColors.gold }} />
+                  <Typography sx={{ color: axelionColors.textSecondary, fontSize: '0.75rem' }}>
+                    {feature}
                   </Typography>
                 </Box>
+              ))}
+            </Box>
+          </Box>
 
-                {/* Card Content */}
-                <CardContent sx={{ flexGrow: 1, p: 3 }}>
-                  <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                    {t('login.features')}
-                  </Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
-                    {role.featureKeys.map((featureKey, idx) => (
-                      <Box key={idx} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box
-                          sx={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: '50%',
-                            bgcolor: role.color,
-                          }}
-                        />
-                        <Typography variant="body2" color="text.secondary">
-                          {t(`login.${featureKey}`)}
-                        </Typography>
-                      </Box>
-                    ))}
-                  </Box>
-                </CardContent>
+          {/* Register Link */}
+          <Box sx={{ mt: 3, textAlign: 'center' }}>
+            <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.85rem' }}>
+              Нет аккаунта?{' '}
+              <Box
+                component="span"
+                onClick={() => navigate('/register')}
+                sx={{
+                  color: axelionColors.gold,
+                  cursor: 'pointer',
+                  fontWeight: 500,
+                  '&:hover': { textDecoration: 'underline' },
+                }}
+              >
+                Зарегистрироваться
+              </Box>
+            </Typography>
+          </Box>
 
-                {/* Card Actions */}
-                <CardActions sx={{ p: 3, pt: 0, flexDirection: 'column', gap: 1.5 }}>
-                  <Button
-                    fullWidth
-                    variant="contained"
-                    size="large"
-                    endIcon={<ArrowForward />}
-                    onClick={() => navigate(role.path)}
-                    sx={{
-                      py: 1.5,
-                      background: role.gradient,
-                      fontWeight: 'bold',
-                      '&:hover': {
-                        opacity: 0.9,
-                      },
-                    }}
-                  >
-                    {t('login.loginAs')} {t(`login.${role.titleKey}`)}
-                  </Button>
-                  <Button
-                    fullWidth
-                    variant="outlined"
-                    size="medium"
-                    onClick={() => handleQuickLogin(role)}
-                    sx={{
-                      py: 1,
-                      borderColor: role.color,
-                      color: role.color,
-                      fontWeight: 'bold',
-                      '&:hover': {
-                        borderColor: role.color,
-                        backgroundColor: `${role.color}10`,
-                      },
-                    }}
-                  >
-                    {t('login.quickLogin')}
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-
-        {/* Footer */}
-        <Typography
-          variant="body2"
-          color="white"
-          align="center"
-          sx={{ mt: 4, opacity: 0.7 }}
-        >
-          {t('login.copyright')}
-        </Typography>
+          {/* Footer */}
+          <Typography
+            sx={{
+              textAlign: 'center',
+              color: axelionColors.textMuted,
+              fontSize: '0.7rem',
+              letterSpacing: '0.05em',
+              mt: 3,
+            }}
+          >
+            © 2024 MaslaXat. Все права защищены.
+          </Typography>
+        </Card>
       </Container>
     </Box>
   );

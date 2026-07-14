@@ -38,14 +38,13 @@ import {
   Gavel,
   WorkspacePremium,
   School,
-  Phone,
-  Email,
   LocationOn,
   Language,
   Send,
 } from '@mui/icons-material';
 
 import clientService from '../../services/clientService';
+import { axelionColors } from '../../theme/axelionTheme';
 
 // Mock lawyer data - fallback for demo
 const MOCK_LAWYERS = {
@@ -147,9 +146,49 @@ const LawyerProfilePageGlass = () => {
     const fetchLawyerDetails = async () => {
       try {
         setLoading(true);
-        // Try to fetch from API
         const data = await clientService.lawyers.getLawyerDetails(lawyerId);
-        setLawyer(data);
+
+        // Normalize API data — API may return { id, name, profile: { ... } }
+        const profile = data.profile || {};
+        const normalized = {
+          id: data.id,
+          name: data.name,
+          avatar: data.avatar,
+          rating: profile.rating || data.rating || 0,
+          specializations: profile.specializations
+            ? (Array.isArray(profile.specializations) ? profile.specializations : [profile.specialization])
+            : (data.specializations || [data.specialization || 'Юрист']),
+          experience: profile.experience || data.experience || 0,
+          region: profile.location || data.region || '',
+          priceFrom: profile.price || data.priceFrom || 0,
+          completedConsultations: profile.completedCases || data.completedConsultations || 0,
+          responseTime: profile.responseTime || data.responseTime || 0,
+          successRate: profile.successRate || data.successRate || 0,
+          verified: profile.isVerified || data.verified || false,
+          bio: profile.bio || data.bio || '',
+          education: profile.education || data.education || [],
+          languages: profile.languages || data.languages || [],
+          certifications: profile.certifications || data.certifications || [],
+          workingHours: profile.workingHours || data.workingHours || '',
+          reviewsCount: profile.reviewsCount || data.reviewsCount || 0,
+        };
+        setLawyer(normalized);
+
+        // Also try to load real reviews
+        try {
+          const reviewsData = await clientService.lawyers.getReviews(lawyerId);
+          if (Array.isArray(reviewsData) && reviewsData.length > 0) {
+            setReviews(reviewsData.map(r => ({
+              id: r.id,
+              clientName: r.clientName || r.client?.name || 'Клиент',
+              rating: r.rating,
+              date: new Date(r.createdAt).toLocaleDateString('ru-RU'),
+              comment: r.comment,
+            })));
+          }
+        } catch {
+          // Keep mock reviews as fallback
+        }
       } catch (error) {
         // Fallback to mock data
         console.log('Using mock lawyer data');
@@ -223,7 +262,7 @@ const LawyerProfilePageGlass = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#F4F6F8',
+          background: axelionColors.bgCream,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
@@ -232,7 +271,7 @@ const LawyerProfilePageGlass = () => {
         <Box sx={{ textAlign: 'center' }}>
           <CircularProgress
             sx={{
-              color: '#2563EB',
+              color: axelionColors.gold,
               mb: 2,
             }}
             size={60}
@@ -240,7 +279,7 @@ const LawyerProfilePageGlass = () => {
           <Typography
             variant="h6"
             sx={{
-              color: '#0B1B2B',
+              color: axelionColors.textDark,
               fontWeight: 600,
             }}
           >
@@ -256,13 +295,13 @@ const LawyerProfilePageGlass = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#F4F6F8',
+          background: axelionColors.bgCream,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <Typography variant="h6" sx={{ color: '#0B1B2B' }}>
+        <Typography variant="h6" sx={{ color: axelionColors.textDark }}>
           Юрист не найден
         </Typography>
       </Box>
@@ -273,15 +312,15 @@ const LawyerProfilePageGlass = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: '#F4F6F8',
+        background: axelionColors.bgCream,
         pb: 4,
       }}
     >
       {/* Header */}
       <Box
         sx={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E6E9EE',
+          background: axelionColors.bgLight,
+          borderBottom: `1px solid ${axelionColors.borderLight}`,
           py: 2,
           px: 2,
         }}
@@ -291,11 +330,11 @@ const LawyerProfilePageGlass = () => {
             <IconButton
               onClick={() => navigate('/lawyers')}
               sx={{
-                bgcolor: '#FFFFFF',
-                color: '#0B1B2B',
-                border: '1px solid #E6E9EE',
+                bgcolor: axelionColors.bgLight,
+                color: axelionColors.textDark,
+                border: `1px solid ${axelionColors.borderLight}`,
                 '&:hover': {
-                  bgcolor: '#F4F6F8',
+                  bgcolor: axelionColors.bgCream,
                 },
               }}
             >
@@ -305,7 +344,7 @@ const LawyerProfilePageGlass = () => {
               variant="h5"
               fontWeight="bold"
               sx={{
-                color: '#0B1B2B',
+                color: axelionColors.textDark,
               }}
             >
               Профиль юриста
@@ -321,10 +360,10 @@ const LawyerProfilePageGlass = () => {
             <Card
               sx={{
                 mb: 3,
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
               }}
             >
               <CardContent>
@@ -335,7 +374,7 @@ const LawyerProfilePageGlass = () => {
                       width: 120,
                       height: 120,
                       margin: '0 auto',
-                      background: '#2563EB',
+                      background: axelionColors.gold,
                       fontSize: '3rem',
                       fontWeight: 'bold',
                       color: '#FFFFFF',
@@ -356,12 +395,12 @@ const LawyerProfilePageGlass = () => {
                     <Typography
                       variant="h5"
                       fontWeight="bold"
-                      sx={{ color: '#0B1B2B' }}
+                      sx={{ color: axelionColors.textDark }}
                     >
                       {lawyer.name}
                     </Typography>
                     {lawyer.verified && (
-                      <Verified sx={{ color: '#10b981', fontSize: 24 }} />
+                      <Verified sx={{ color: axelionColors.success, fontSize: 24 }} />
                     )}
                   </Box>
                   <Box
@@ -373,17 +412,17 @@ const LawyerProfilePageGlass = () => {
                       mb: 2,
                     }}
                   >
-                    <Star sx={{ color: '#2563EB', fontSize: 20 }} />
+                    <Star sx={{ color: axelionColors.gold, fontSize: 20 }} />
                     <Typography
                       variant="h6"
                       fontWeight="bold"
-                      sx={{ color: '#0B1B2B' }}
+                      sx={{ color: axelionColors.textDark }}
                     >
                       {lawyer.rating}
                     </Typography>
                     <Typography
                       variant="body2"
-                      sx={{ color: '#6B7280' }}
+                      sx={{ color: axelionColors.textMuted }}
                     >
                       ({lawyer.completedConsultations} консультаций)
                     </Typography>
@@ -395,7 +434,7 @@ const LawyerProfilePageGlass = () => {
                       readOnly
                       sx={{
                         '& .MuiRating-iconFilled': {
-                          color: '#2563EB',
+                          color: axelionColors.gold,
                         },
                       }}
                     />
@@ -405,44 +444,44 @@ const LawyerProfilePageGlass = () => {
                 <Divider
                   sx={{
                     my: 2,
-                    borderColor: '#E6E9EE',
+                    borderColor: axelionColors.borderLight,
                   }}
                 />
 
               {/* Quick Stats */}
               <Box sx={{ mb: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <Schedule sx={{ color: '#2563EB' }} />
+                  <Schedule sx={{ color: axelionColors.gold }} />
                   <Typography
                     variant="body2"
-                    sx={{ color: '#0B1B2B' }}
+                    sx={{ color: axelionColors.textDark }}
                   >
                     Ответ через <strong>{lawyer.responseTime} часа</strong>
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <TrendingUp sx={{ color: '#2563EB' }} />
+                  <TrendingUp sx={{ color: axelionColors.gold }} />
                   <Typography
                     variant="body2"
-                    sx={{ color: '#0B1B2B' }}
+                    sx={{ color: axelionColors.textDark }}
                   >
                     <strong>{lawyer.successRate}%</strong> успешных дел
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <WorkspacePremium sx={{ color: '#2563EB' }} />
+                  <WorkspacePremium sx={{ color: axelionColors.gold }} />
                   <Typography
                     variant="body2"
-                    sx={{ color: '#0B1B2B' }}
+                    sx={{ color: axelionColors.textDark }}
                   >
                     <strong>{lawyer.experience} лет</strong> опыта
                   </Typography>
                 </Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <LocationOn sx={{ color: '#2563EB' }} />
+                  <LocationOn sx={{ color: axelionColors.gold }} />
                   <Typography
                     variant="body2"
-                    sx={{ color: '#0B1B2B' }}
+                    sx={{ color: axelionColors.textDark }}
                   >
                     {lawyer.region}
                   </Typography>
@@ -452,53 +491,50 @@ const LawyerProfilePageGlass = () => {
               <Divider
                 sx={{
                   my: 2,
-                  borderColor: '#E6E9EE',
+                  borderColor: axelionColors.borderLight,
                 }}
               />
 
-              {/* Contact Info */}
+              {/* Contact Info — contacts hidden for platform retention (C1) */}
               <Typography
                 variant="subtitle2"
                 fontWeight="bold"
                 gutterBottom
-                sx={{ color: '#0B1B2B' }}
+                sx={{ color: axelionColors.textDark }}
               >
-                Контактная информация
+                Связь
               </Typography>
               <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Phone sx={{ fontSize: 18, color: '#6B7280' }} />
-                  <Typography
-                    variant="body2"
-                    sx={{ color: '#0B1B2B' }}
-                  >
-                    {lawyer.phone}
+                <Box
+                  sx={{
+                    p: 1.5,
+                    borderRadius: '8px',
+                    bgcolor: axelionColors.accentLight,
+                    border: `1px solid ${axelionColors.borderLight}`,
+                    mb: 1,
+                  }}
+                >
+                  <Typography variant="body2" sx={{ color: axelionColors.textMuted, fontSize: '0.8rem' }}>
+                    Для связи с юристом запишитесь на консультацию через платформу
                   </Typography>
                 </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Email sx={{ fontSize: 18, color: '#6B7280' }} />
-                  <Typography
-                    variant="body2"
-                    sx={{ color: '#0B1B2B' }}
-                  >
-                    {lawyer.email}
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Schedule sx={{ fontSize: 18, color: '#6B7280' }} />
-                  <Typography
-                    variant="body2"
-                    sx={{ color: '#0B1B2B' }}
-                  >
-                    {lawyer.workingHours}
-                  </Typography>
-                </Box>
+                {lawyer.workingHours && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Schedule sx={{ fontSize: 18, color: axelionColors.textMuted }} />
+                    <Typography
+                      variant="body2"
+                      sx={{ color: axelionColors.textDark }}
+                    >
+                      {lawyer.workingHours}
+                    </Typography>
+                  </Box>
+                )}
               </Box>
 
               <Divider
                 sx={{
                   my: 2,
-                  borderColor: '#E6E9EE',
+                  borderColor: axelionColors.borderLight,
                 }}
               />
 
@@ -506,14 +542,14 @@ const LawyerProfilePageGlass = () => {
               <Box sx={{ textAlign: 'center', mb: 3 }}>
                 <Typography
                   variant="body2"
-                  sx={{ color: '#6B7280', mb: 0.5 }}
+                  sx={{ color: axelionColors.textMuted, mb: 0.5 }}
                 >
                   Консультация от
                 </Typography>
                 <Typography
                   variant="h4"
                   fontWeight="bold"
-                  sx={{ color: '#0B1B2B' }}
+                  sx={{ color: axelionColors.textDark }}
                 >
                   {lawyer.priceFrom.toLocaleString()} сум
                 </Typography>
@@ -528,14 +564,14 @@ const LawyerProfilePageGlass = () => {
                   startIcon={<VideoCall />}
                   size="large"
                   sx={{
-                    background: '#2563EB',
+                    background: axelionColors.gold,
                     color: '#FFFFFF',
                     textTransform: 'none',
                     fontWeight: 600,
                     borderRadius: '8px',
                     py: 1.5,
                     '&:hover': {
-                      background: '#1d4ed8',
+                      background: axelionColors.goldDark,
                     },
                   }}
                 >
@@ -548,15 +584,15 @@ const LawyerProfilePageGlass = () => {
                   startIcon={<Chat />}
                   size="large"
                   sx={{
-                    borderColor: '#E6E9EE',
-                    color: '#0B1B2B',
+                    borderColor: axelionColors.borderLight,
+                    color: axelionColors.textDark,
                     textTransform: 'none',
                     fontWeight: 600,
                     borderRadius: '8px',
                     py: 1.5,
                     '&:hover': {
-                      borderColor: '#2563EB',
-                      background: '#F4F6F8',
+                      borderColor: axelionColors.gold,
+                      background: axelionColors.accentLight,
                     },
                   }}
                 >
@@ -569,15 +605,15 @@ const LawyerProfilePageGlass = () => {
                   startIcon={<VideoCall />}
                   size="large"
                   sx={{
-                    borderColor: '#E6E9EE',
-                    color: '#0B1B2B',
+                    borderColor: axelionColors.borderLight,
+                    color: axelionColors.textDark,
                     textTransform: 'none',
                     fontWeight: 600,
                     borderRadius: '8px',
                     py: 1.5,
                     '&:hover': {
-                      borderColor: '#2563EB',
-                      background: '#F4F6F8',
+                      borderColor: axelionColors.gold,
+                      background: axelionColors.accentLight,
                     },
                   }}
                 >
@@ -592,11 +628,11 @@ const LawyerProfilePageGlass = () => {
           <Grid item xs={12} md={8}>
             <Card
               sx={{
-                borderRadius: '12px',
+                borderRadius: '8px',
                 overflow: 'hidden',
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
               }}
             >
               {/* Tabs */}
@@ -604,17 +640,17 @@ const LawyerProfilePageGlass = () => {
                 value={currentTab}
                 onChange={(e, val) => setCurrentTab(val)}
                 sx={{
-                  borderBottom: '1px solid #E6E9EE',
+                  borderBottom: `1px solid ${axelionColors.borderLight}`,
                   '& .MuiTab-root': {
-                    color: '#6B7280',
+                    color: axelionColors.textMuted,
                     fontWeight: 600,
                     textTransform: 'none',
                     '&.Mui-selected': {
-                      color: '#0B1B2B',
+                      color: axelionColors.textDark,
                     },
                   },
                   '& .MuiTabs-indicator': {
-                    background: '#2563EB',
+                    background: axelionColors.gold,
                     height: 3,
                   },
                 }}
@@ -633,14 +669,14 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ color: '#0B1B2B' }}
+                      sx={{ color: axelionColors.textDark }}
                     >
                       О себе
                     </Typography>
                     <Typography
                       variant="body1"
                       paragraph
-                      sx={{ color: '#6B7280' }}
+                      sx={{ color: axelionColors.textMuted }}
                     >
                       {lawyer.bio}
                     </Typography>
@@ -650,7 +686,7 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ mt: 3, color: '#0B1B2B' }}
+                      sx={{ mt: 3, color: axelionColors.textDark }}
                     >
                       Специализации
                     </Typography>
@@ -662,18 +698,18 @@ const LawyerProfilePageGlass = () => {
                         mb: 3,
                       }}
                     >
-                      {lawyer.specializations.map((spec, index) => (
+                      {(lawyer.specializations || []).map((spec, index) => (
                         <Chip
                           key={index}
                           label={spec}
                           icon={<Gavel />}
                           sx={{
-                            background: '#F4F6F8',
-                            color: '#0B1B2B',
+                            background: axelionColors.bgCream,
+                            color: axelionColors.textDark,
                             fontWeight: 600,
-                            border: '1px solid #E6E9EE',
+                            border: `1px solid ${axelionColors.borderLight}`,
                             '& .MuiChip-icon': {
-                              color: '#2563EB',
+                              color: axelionColors.gold,
                             },
                           }}
                         />
@@ -685,17 +721,17 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ mt: 3, color: '#0B1B2B' }}
+                      sx={{ mt: 3, color: axelionColors.textDark }}
                     >
                       Образование
                     </Typography>
                     <List>
-                      {lawyer.education.map((edu, index) => (
+                      {(lawyer.education || []).map((edu, index) => (
                         <ListItem key={index}>
                           <ListItemAvatar>
                             <Avatar
                               sx={{
-                                background: '#2563EB',
+                                background: axelionColors.gold,
                               }}
                             >
                               <School />
@@ -705,7 +741,7 @@ const LawyerProfilePageGlass = () => {
                             primary={
                               <Typography
                                 sx={{
-                                  color: '#0B1B2B',
+                                  color: axelionColors.textDark,
                                   fontWeight: 600,
                                 }}
                               >
@@ -722,7 +758,7 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ mt: 3, color: '#0B1B2B' }}
+                      sx={{ mt: 3, color: axelionColors.textDark }}
                     >
                       Языки
                     </Typography>
@@ -734,18 +770,18 @@ const LawyerProfilePageGlass = () => {
                         mb: 3,
                       }}
                     >
-                      {lawyer.languages.map((lang, index) => (
+                      {(lawyer.languages || []).map((lang, index) => (
                         <Chip
                           key={index}
                           label={lang}
                           icon={<Language />}
                           sx={{
-                            background: '#F4F6F8',
-                            color: '#0B1B2B',
+                            background: axelionColors.bgCream,
+                            color: axelionColors.textDark,
                             fontWeight: 600,
-                            border: '1px solid #E6E9EE',
+                            border: `1px solid ${axelionColors.borderLight}`,
                             '& .MuiChip-icon': {
-                              color: '#2563EB',
+                              color: axelionColors.gold,
                             },
                           }}
                         />
@@ -757,17 +793,17 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ mt: 3, color: '#0B1B2B' }}
+                      sx={{ mt: 3, color: axelionColors.textDark }}
                     >
                       Сертификаты и достижения
                     </Typography>
                     <List>
-                      {lawyer.certifications.map((cert, index) => (
+                      {(lawyer.certifications || []).map((cert, index) => (
                         <ListItem key={index}>
                           <ListItemAvatar>
                             <Avatar
                               sx={{
-                                background: '#2563EB',
+                                background: axelionColors.bronze,
                               }}
                             >
                               <WorkspacePremium />
@@ -777,7 +813,7 @@ const LawyerProfilePageGlass = () => {
                             primary={
                               <Typography
                                 sx={{
-                                  color: '#0B1B2B',
+                                  color: axelionColors.textDark,
                                   fontWeight: 600,
                                 }}
                               >
@@ -805,7 +841,7 @@ const LawyerProfilePageGlass = () => {
                       <Typography
                         variant="h6"
                         fontWeight="bold"
-                        sx={{ color: '#0B1B2B' }}
+                        sx={{ color: axelionColors.textDark }}
                       >
                         Отзывы клиентов
                       </Typography>
@@ -815,13 +851,13 @@ const LawyerProfilePageGlass = () => {
                         startIcon={<Send />}
                         size="small"
                         sx={{
-                          background: '#2563EB',
+                          background: axelionColors.gold,
                           color: '#FFFFFF',
                           textTransform: 'none',
                           fontWeight: 600,
                           borderRadius: '8px',
                           '&:hover': {
-                            background: '#1d4ed8',
+                            background: axelionColors.goldDark,
                           },
                         }}
                       >
@@ -834,8 +870,8 @@ const LawyerProfilePageGlass = () => {
                       sx={{
                         mb: 3,
                         p: 2,
-                        background: '#F4F6F8',
-                        border: '1px solid #E6E9EE',
+                        background: axelionColors.bgCream,
+                        border: `1px solid ${axelionColors.borderLight}`,
                         borderRadius: '8px',
                       }}
                     >
@@ -844,7 +880,7 @@ const LawyerProfilePageGlass = () => {
                           <Typography
                             variant="h2"
                             fontWeight="bold"
-                            sx={{ color: '#0B1B2B' }}
+                            sx={{ color: axelionColors.textDark }}
                           >
                             {lawyer.rating}
                           </Typography>
@@ -862,14 +898,14 @@ const LawyerProfilePageGlass = () => {
                               size="large"
                               sx={{
                                 '& .MuiRating-iconFilled': {
-                                  color: '#2563EB',
+                                  color: axelionColors.gold,
                                 },
                               }}
                             />
                           </Box>
                           <Typography
                             variant="body2"
-                            sx={{ color: '#6B7280' }}
+                            sx={{ color: axelionColors.textMuted }}
                           >
                             На основе {lawyer.completedConsultations} отзывов
                           </Typography>
@@ -889,7 +925,7 @@ const LawyerProfilePageGlass = () => {
                                 variant="body2"
                                 sx={{
                                   width: 60,
-                                  color: '#0B1B2B',
+                                  color: axelionColors.textDark,
                                 }}
                               >
                                 {star} звезд
@@ -906,10 +942,10 @@ const LawyerProfilePageGlass = () => {
                                 sx={{
                                   flexGrow: 1,
                                   height: 8,
-                                  borderRadius: 4,
-                                  background: '#E6E9EE',
+                                  borderRadius: '8px',
+                                  background: axelionColors.borderLight,
                                   '& .MuiLinearProgress-bar': {
-                                    background: '#2563EB',
+                                    background: axelionColors.gold,
                                   },
                                 }}
                               />
@@ -917,7 +953,7 @@ const LawyerProfilePageGlass = () => {
                                 variant="body2"
                                 sx={{
                                   width: 40,
-                                  color: '#6B7280',
+                                  color: axelionColors.textMuted,
                                 }}
                               >
                                 {star === 5
@@ -939,8 +975,8 @@ const LawyerProfilePageGlass = () => {
                         sx={{
                           mb: 2,
                           p: 2,
-                          background: '#FFFFFF',
-                          border: '1px solid #E6E9EE',
+                          background: axelionColors.bgLight,
+                          border: `1px solid ${axelionColors.borderLight}`,
                           borderRadius: '8px',
                         }}
                       >
@@ -954,7 +990,7 @@ const LawyerProfilePageGlass = () => {
                         >
                           <Avatar
                             sx={{
-                              background: '#2563EB',
+                              background: axelionColors.gold,
                             }}
                           >
                             {review.clientName.charAt(0)}
@@ -963,14 +999,14 @@ const LawyerProfilePageGlass = () => {
                             <Typography
                               variant="subtitle1"
                               fontWeight="bold"
-                              sx={{ color: '#0B1B2B' }}
+                              sx={{ color: axelionColors.textDark }}
                             >
                               {review.clientName}
                             </Typography>
                             <Typography
                               variant="caption"
                               sx={{
-                                color: '#6B7280',
+                                color: axelionColors.textMuted,
                               }}
                             >
                               {review.date}
@@ -982,7 +1018,7 @@ const LawyerProfilePageGlass = () => {
                             size="small"
                             sx={{
                               '& .MuiRating-iconFilled': {
-                                color: '#2563EB',
+                                color: axelionColors.gold,
                               },
                             }}
                           />
@@ -990,7 +1026,7 @@ const LawyerProfilePageGlass = () => {
                         <Typography
                           variant="body2"
                           sx={{
-                            color: '#6B7280',
+                            color: axelionColors.textMuted,
                           }}
                         >
                           {review.comment}
@@ -1007,7 +1043,7 @@ const LawyerProfilePageGlass = () => {
                       variant="h6"
                       fontWeight="bold"
                       gutterBottom
-                      sx={{ color: '#0B1B2B' }}
+                      sx={{ color: axelionColors.textDark }}
                     >
                       Портфолио и достижения
                     </Typography>
@@ -1018,8 +1054,8 @@ const LawyerProfilePageGlass = () => {
                           sx={{
                             p: 2,
                             textAlign: 'center',
-                            background: '#F4F6F8',
-                            border: '1px solid #E6E9EE',
+                            background: axelionColors.bgCream,
+                            border: `1px solid ${axelionColors.borderLight}`,
                             borderRadius: '8px',
                           }}
                         >
@@ -1027,7 +1063,7 @@ const LawyerProfilePageGlass = () => {
                             sx={{
                               fontSize: 48,
                               mb: 1,
-                              color: '#2563EB',
+                              color: axelionColors.gold,
                             }}
                           >
                             ✓
@@ -1035,14 +1071,14 @@ const LawyerProfilePageGlass = () => {
                           <Typography
                             variant="h4"
                             fontWeight="bold"
-                            sx={{ color: '#0B1B2B' }}
+                            sx={{ color: axelionColors.textDark }}
                           >
                             {lawyer.completedConsultations}
                           </Typography>
                           <Typography
                             variant="body2"
                             sx={{
-                              color: '#6B7280',
+                              color: axelionColors.textMuted,
                             }}
                           >
                             Завершенных консультаций
@@ -1054,8 +1090,8 @@ const LawyerProfilePageGlass = () => {
                           sx={{
                             p: 2,
                             textAlign: 'center',
-                            background: '#F4F6F8',
-                            border: '1px solid #E6E9EE',
+                            background: axelionColors.bgCream,
+                            border: `1px solid ${axelionColors.borderLight}`,
                             borderRadius: '8px',
                           }}
                         >
@@ -1070,14 +1106,14 @@ const LawyerProfilePageGlass = () => {
                           <Typography
                             variant="h4"
                             fontWeight="bold"
-                            sx={{ color: '#0B1B2B' }}
+                            sx={{ color: axelionColors.textDark }}
                           >
                             {lawyer.successRate}%
                           </Typography>
                           <Typography
                             variant="body2"
                             sx={{
-                              color: '#6B7280',
+                              color: axelionColors.textMuted,
                             }}
                           >
                             Успешных дел
@@ -1089,29 +1125,29 @@ const LawyerProfilePageGlass = () => {
                           sx={{
                             p: 2,
                             textAlign: 'center',
-                            background: '#F4F6F8',
-                            border: '1px solid #E6E9EE',
+                            background: axelionColors.bgCream,
+                            border: `1px solid ${axelionColors.borderLight}`,
                             borderRadius: '8px',
                           }}
                         >
                           <Star
                             sx={{
                               fontSize: 48,
-                              color: '#2563EB',
+                              color: axelionColors.gold,
                               mb: 1,
                             }}
                           />
                           <Typography
                             variant="h4"
                             fontWeight="bold"
-                            sx={{ color: '#0B1B2B' }}
+                            sx={{ color: axelionColors.textDark }}
                           >
                             {lawyer.rating}
                           </Typography>
                           <Typography
                             variant="body2"
                             sx={{
-                              color: '#6B7280',
+                              color: axelionColors.textMuted,
                             }}
                           >
                             Средний рейтинг
@@ -1123,29 +1159,29 @@ const LawyerProfilePageGlass = () => {
                           sx={{
                             p: 2,
                             textAlign: 'center',
-                            background: '#F4F6F8',
-                            border: '1px solid #E6E9EE',
+                            background: axelionColors.bgCream,
+                            border: `1px solid ${axelionColors.borderLight}`,
                             borderRadius: '8px',
                           }}
                         >
                           <WorkspacePremium
                             sx={{
                               fontSize: 48,
-                              color: '#2563EB',
+                              color: axelionColors.bronze,
                               mb: 1,
                             }}
                           />
                           <Typography
                             variant="h4"
                             fontWeight="bold"
-                            sx={{ color: '#0B1B2B' }}
+                            sx={{ color: axelionColors.textDark }}
                           >
                             {lawyer.experience}
                           </Typography>
                           <Typography
                             variant="body2"
                             sx={{
-                              color: '#6B7280',
+                              color: axelionColors.textMuted,
                             }}
                           >
                             Лет опыта
@@ -1159,7 +1195,7 @@ const LawyerProfilePageGlass = () => {
                       sx={{
                         mt: 3,
                         textAlign: 'center',
-                        color: '#6B7280',
+                        color: axelionColors.textMuted,
                       }}
                     >
                       Детальная информация о делах доступна только после
@@ -1181,16 +1217,16 @@ const LawyerProfilePageGlass = () => {
         fullWidth
         PaperProps={{
           sx: {
-            background: '#FFFFFF',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+            background: axelionColors.bgLight,
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
           },
         }}
       >
         <DialogTitle
           sx={{
-            color: '#0B1B2B',
+            color: axelionColors.textDark,
             fontWeight: 'bold',
             fontSize: '1.5rem',
           }}
@@ -1203,7 +1239,7 @@ const LawyerProfilePageGlass = () => {
               <Typography
                 variant="body2"
                 sx={{
-                  color: '#6B7280',
+                  color: axelionColors.textMuted,
                   mb: 1,
                 }}
               >
@@ -1215,10 +1251,10 @@ const LawyerProfilePageGlass = () => {
                 size="large"
                 sx={{
                   '& .MuiRating-iconFilled': {
-                    color: '#2563EB',
+                    color: axelionColors.gold,
                   },
                   '& .MuiRating-iconEmpty': {
-                    color: '#E6E9EE',
+                    color: axelionColors.borderLight,
                   },
                 }}
               />
@@ -1234,29 +1270,29 @@ const LawyerProfilePageGlass = () => {
               placeholder="Поделитесь вашим мнением об этом юристе..."
               sx={{
                 '& .MuiOutlinedInput-root': {
-                  color: '#0B1B2B',
-                  backgroundColor: '#FFFFFF',
+                  color: axelionColors.textDark,
+                  backgroundColor: axelionColors.bgLight,
                   '& fieldset': {
-                    borderColor: '#E6E9EE',
+                    borderColor: axelionColors.borderLight,
                   },
                   '&:hover fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
                   '&.Mui-focused fieldset': {
-                    borderColor: '#2563EB',
+                    borderColor: axelionColors.gold,
                   },
                 },
                 '& .MuiOutlinedInput-input::placeholder': {
-                  color: '#6B7280',
+                  color: axelionColors.textMuted,
                   opacity: 1,
                 },
                 '& .MuiInputBase-input': {
-                  color: '#0B1B2B',
+                  color: axelionColors.textDark,
                 },
                 '& .MuiInputLabel-root': {
-                  color: '#6B7280',
+                  color: axelionColors.textMuted,
                   '&.Mui-focused': {
-                    color: '#2563EB',
+                    color: axelionColors.gold,
                   },
                 },
               }}
@@ -1267,14 +1303,14 @@ const LawyerProfilePageGlass = () => {
           <Button
             onClick={handleCloseReviewModal}
             sx={{
-              color: '#0B1B2B',
-              border: '1px solid #E6E9EE',
-              background: '#FFFFFF',
+              color: axelionColors.textDark,
+              border: `1px solid ${axelionColors.borderLight}`,
+              background: axelionColors.bgLight,
               textTransform: 'none',
               fontWeight: 600,
               borderRadius: '8px',
               '&:hover': {
-                background: '#F4F6F8',
+                background: axelionColors.bgCream,
               },
             }}
           >
@@ -1285,17 +1321,17 @@ const LawyerProfilePageGlass = () => {
             onClick={handleSubmitReview}
             disabled={submittingReview}
             sx={{
-              background: '#2563EB',
+              background: axelionColors.gold,
               color: '#FFFFFF',
               textTransform: 'none',
               fontWeight: 600,
               borderRadius: '8px',
               '&:hover': {
-                background: '#1d4ed8',
+                background: axelionColors.goldDark,
               },
               '&.Mui-disabled': {
-                background: '#E6E9EE',
-                color: '#6B7280',
+                background: axelionColors.borderLight,
+                color: axelionColors.textMuted,
               },
             }}
           >

@@ -11,7 +11,6 @@ import {
   CircularProgress,
   InputAdornment,
   IconButton,
-  Chip,
   Card,
 } from '@mui/material';
 import {
@@ -21,9 +20,20 @@ import {
   Lock,
   Security,
   VerifiedUser,
+  AdminPanelSettings,
+  Analytics,
+  People,
+  Settings,
+  Assessment,
 } from '@mui/icons-material';
 import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
+import { axelionColors } from '../../theme/axelionTheme';
+import api from '../../services/api';
 
+/**
+ * MaslaXat Premium Admin Login
+ * Elegant, minimalist design with dark accents for authority
+ */
 const AdminLoginGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -42,134 +52,154 @@ const AdminLoginGlass = () => {
     });
   };
 
-  const handleQuickLogin = async () => {
-    setFormData({
-      email: 'admin@maslaxat.uz',
-      password: 'admin123',
-    });
-
+  const performLogin = async (email, password) => {
     dispatch(loginStart());
-
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const mockUser = {
-        id: 3,
-        name: 'Администратор',
-        email: 'admin@maslaxat.uz',
-        role: 'admin',
-        permissions: ['all'],
-      };
-
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          token: 'mock-jwt-token-admin',
-          role: 'admin',
-        })
-      );
-
+      const response = await api.post('/auth/login', { email, password });
+      const { user, token, role } = response.data;
+      dispatch(loginSuccess({ user, token, role }));
       navigate('/admin/dashboard');
     } catch (err) {
-      dispatch(loginFailure(err.message || 'Ошибка входа'));
+      const message = err.response?.data?.error || err.message || 'Ошибка входа';
+      dispatch(loginFailure(message));
     }
+  };
+
+  const handleQuickLogin = () => {
+    performLogin('admin@maslaxat.uz', 'admin123');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    dispatch(loginStart());
+    performLogin(formData.email, formData.password);
+  };
 
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const mockUser = {
-        id: 1,
-        name: 'Администратор',
-        email: formData.email,
-        role: 'admin',
-        permissions: ['all'],
-      };
-
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          token: 'mock-jwt-token-admin',
-          role: 'admin',
-        })
-      );
-
-      navigate('/admin/dashboard');
-    } catch (err) {
-      dispatch(loginFailure(err.message || 'Ошибка входа'));
-    }
+  const inputStyles = {
+    '& .MuiOutlinedInput-root': {
+      backgroundColor: axelionColors.bgLight,
+      borderRadius: '8px',
+      '& fieldset': {
+        borderColor: axelionColors.borderLight,
+      },
+      '&:hover fieldset': {
+        borderColor: axelionColors.gold,
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: axelionColors.gold,
+        borderWidth: 1,
+      },
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: axelionColors.gold,
+    },
   };
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        bgcolor: '#F4F6F8',
+        backgroundColor: axelionColors.bgCream,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         py: 4,
       }}
     >
+      {/* Decorative elements */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '150px',
+          height: '150px',
+          borderTop: `1px solid rgba(184, 149, 110, 0.1)`,
+          borderRight: `1px solid rgba(184, 149, 110, 0.1)`,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          width: '150px',
+          height: '150px',
+          borderBottom: `1px solid rgba(184, 149, 110, 0.1)`,
+          borderLeft: `1px solid rgba(184, 149, 110, 0.1)`,
+        }}
+      />
+
       <Container maxWidth="sm">
         <Card
           sx={{
-            p: { xs: 3, sm: 5 },
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
+            p: { xs: 4, sm: 6 },
+            boxShadow: '0 8px 32px rgba(26, 26, 26, 0.08)',
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            backgroundColor: axelionColors.bgLight,
           }}
         >
-          {/* Logo with Security Badge */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
+          {/* Logo */}
+          <Box sx={{ textAlign: 'center', mb: 5 }}>
             <Box
               sx={{
                 width: 80,
                 height: 80,
-                borderRadius: '50%',
-                bgcolor: '#DC2626',
+                borderRadius: '8px',
+                bgcolor: axelionColors.textDark,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
                 margin: '0 auto',
-                mb: 2,
-                boxShadow: '0 4px 12px rgba(220, 38, 38, 0.2)',
+                mb: 3,
               }}
             >
-              <Shield sx={{ fontSize: 48, color: 'white' }} />
+              <Shield sx={{ fontSize: 40, color: axelionColors.gold }} />
             </Box>
             <Typography
-              variant="h4"
-              fontWeight="bold"
-              sx={{ color: '#0B1B2B' }}
-              gutterBottom
-            >
-              Панель администратора
-            </Typography>
-            <Chip
-              icon={<Security sx={{ fontSize: 16 }} />}
-              label="Защищенный вход"
               sx={{
-                mt: 1,
-                bgcolor: '#DC2626',
-                color: 'white',
-                fontWeight: 'bold',
+                fontWeight: 300,
+                fontSize: '1.5rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: axelionColors.textDark,
+                mb: 1,
               }}
-              size="small"
+            >
+              eMaslaXat
+            </Typography>
+            <Box
+              sx={{
+                width: '60px',
+                height: '2px',
+                backgroundColor: axelionColors.gold,
+                margin: '16px auto',
+              }}
             />
+            <Typography
+              sx={{
+                color: axelionColors.textMuted,
+                fontSize: '0.8rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Admin Portal
+            </Typography>
           </Box>
 
           {/* Security Warning */}
           <Alert
             severity="warning"
-            icon={<VerifiedUser />}
+            icon={<VerifiedUser sx={{ color: axelionColors.gold }} />}
             sx={{
               mb: 3,
-              borderRadius: 2,
+              borderRadius: '8px',
+              backgroundColor: axelionColors.bgWarm,
+              border: `1px solid ${axelionColors.borderLight}`,
+              '& .MuiAlert-message': {
+                color: axelionColors.textPrimary,
+              },
             }}
           >
             Только для авторизованных администраторов. Все действия логируются.
@@ -181,7 +211,12 @@ const AdminLoginGlass = () => {
               severity="error"
               sx={{
                 mb: 3,
-                borderRadius: 2,
+                borderRadius: '8px',
+                backgroundColor: axelionColors.errorLight,
+                border: `1px solid ${axelionColors.error}20`,
+                '& .MuiAlert-icon': {
+                  color: axelionColors.error,
+                },
               }}
             >
               {error}
@@ -198,11 +233,11 @@ const AdminLoginGlass = () => {
               value={formData.email}
               onChange={handleChange}
               required
-              sx={{ mb: 3 }}
+              sx={{ mb: 3, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Shield sx={{ color: '#6B7280' }} />
+                    <Shield sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
                   </InputAdornment>
                 ),
               }}
@@ -216,11 +251,11 @@ const AdminLoginGlass = () => {
               value={formData.password}
               onChange={handleChange}
               required
-              sx={{ mb: 2 }}
+              sx={{ mb: 2, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Lock sx={{ color: '#6B7280' }} />
+                    <Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
                   </InputAdornment>
                 ),
                 endAdornment: (
@@ -228,6 +263,7 @@ const AdminLoginGlass = () => {
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
+                      sx={{ color: axelionColors.textMuted }}
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -240,9 +276,10 @@ const AdminLoginGlass = () => {
               <Link
                 to="/admin/forgot-password"
                 style={{
-                  color: '#2563EB',
+                  color: axelionColors.gold,
                   textDecoration: 'none',
-                  fontSize: '0.875rem',
+                  fontSize: '0.8rem',
+                  letterSpacing: '0.05em',
                 }}
               >
                 Забыли пароль?
@@ -252,57 +289,83 @@ const AdminLoginGlass = () => {
             <Button
               fullWidth
               type="submit"
-              variant="contained"
-              size="large"
               disabled={loading}
               sx={{
+                backgroundColor: axelionColors.textDark,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
                 mb: 2,
-                bgcolor: '#DC2626',
                 '&:hover': {
-                  bgcolor: '#B91C1C',
+                  backgroundColor: '#2D2D2D',
+                  boxShadow: 'none',
+                },
+                '&.Mui-disabled': {
+                  backgroundColor: axelionColors.bgBeige,
+                  color: axelionColors.textMuted,
                 },
               }}
             >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Войти в систему'}
+              {loading ? <CircularProgress size={24} sx={{ color: '#FFFFFF' }} /> : 'Войти в систему'}
             </Button>
 
             <Button
               fullWidth
-              variant="outlined"
-              size="large"
               onClick={handleQuickLogin}
               disabled={loading}
-              sx={{ mb: 2 }}
+              sx={{
+                backgroundColor: axelionColors.gold,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
+                mb: 3,
+                '&:hover': {
+                  backgroundColor: axelionColors.goldDark,
+                  boxShadow: 'none',
+                },
+              }}
             >
-              🚀 Быстрый вход (Тест)
+              Quick Login (Demo)
             </Button>
           </form>
 
           {/* Admin Capabilities */}
-          <Box sx={{ mt: 4, pt: 4, borderTop: '1px solid #E6E9EE' }}>
+          <Box sx={{ mt: 5, pt: 4, borderTop: `1px solid ${axelionColors.borderLight}` }}>
             <Typography
-              variant="subtitle2"
-              fontWeight="bold"
-              sx={{ color: '#0B1B2B' }}
-              textAlign="center"
-              gutterBottom
+              sx={{
+                fontWeight: 500,
+                fontSize: '0.7rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: axelionColors.textMuted,
+                textAlign: 'center',
+                mb: 3,
+              }}
             >
-              Возможности администратора:
+              Admin Capabilities
             </Typography>
             <Box
               sx={{
                 display: 'grid',
-                gridTemplateColumns: '1fr',
-                gap: 1.5,
-                mt: 2,
+                gridTemplateColumns: '1fr 1fr',
+                gap: 2,
               }}
             >
               {[
-                'Управление пользователями и юристами',
-                'Мониторинг всех транзакций',
-                'Модерация контента и документов',
-                'Аналитика и отчеты',
-                'Настройка системы и тарифов',
+                { icon: <People />, text: 'Управление юристами' },
+                { icon: <Analytics />, text: 'Мониторинг транзакций' },
+                { icon: <AdminPanelSettings />, text: 'Модерация контента' },
+                { icon: <Assessment />, text: 'Аналитика и отчеты' },
               ].map((capability, index) => (
                 <Box
                   key={index}
@@ -310,15 +373,15 @@ const AdminLoginGlass = () => {
                     display: 'flex',
                     alignItems: 'center',
                     gap: 1.5,
-                    p: 1.5,
-                    borderRadius: 2,
-                    backgroundColor: '#FFFFFF',
-                    border: '1px solid #E6E9EE',
+                    p: 2,
+                    borderRadius: '8px',
+                    backgroundColor: axelionColors.bgWarm,
+                    border: `1px solid ${axelionColors.borderLight}`,
                   }}
                 >
-                  <Security sx={{ fontSize: 20, color: '#DC2626' }} />
-                  <Typography variant="body2" sx={{ color: '#0B1B2B' }}>
-                    {capability}
+                  <Box sx={{ color: axelionColors.gold }}>{capability.icon}</Box>
+                  <Typography sx={{ color: axelionColors.textPrimary, fontSize: '0.8rem' }}>
+                    {capability.text}
                   </Typography>
                 </Box>
               ))}
@@ -326,19 +389,61 @@ const AdminLoginGlass = () => {
           </Box>
 
           {/* Other Login Options */}
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <Typography variant="caption" sx={{ color: '#6B7280' }}>
-              Другие варианты входа:
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <Typography
+              sx={{
+                color: axelionColors.textMuted,
+                fontSize: '0.7rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                mb: 2,
+              }}
+            >
+              Other Portals
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mt: 1, justifyContent: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
               <Link to="/login/client" style={{ textDecoration: 'none' }}>
-                <Button variant="outlined" size="small">
-                  Клиент
+                <Button
+                  sx={{
+                    color: axelionColors.textSecondary,
+                    border: `1px solid ${axelionColors.borderLight}`,
+                    borderRadius: '8px',
+                    px: 3,
+                    py: 1,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    fontWeight: 500,
+                    fontSize: '0.7rem',
+                    '&:hover': {
+                      borderColor: axelionColors.gold,
+                      color: axelionColors.gold,
+                      backgroundColor: axelionColors.accentLight,
+                    },
+                  }}
+                >
+                  Client
                 </Button>
               </Link>
               <Link to="/login/lawyer" style={{ textDecoration: 'none' }}>
-                <Button variant="outlined" size="small">
-                  Юрист
+                <Button
+                  sx={{
+                    color: axelionColors.textSecondary,
+                    border: `1px solid ${axelionColors.borderLight}`,
+                    borderRadius: '8px',
+                    px: 3,
+                    py: 1,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    fontWeight: 500,
+                    fontSize: '0.7rem',
+                    '&:hover': {
+                      borderColor: axelionColors.gold,
+                      color: axelionColors.gold,
+                      backgroundColor: axelionColors.accentLight,
+                    },
+                  }}
+                >
+                  Lawyer
                 </Button>
               </Link>
             </Box>

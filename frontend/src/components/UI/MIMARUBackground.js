@@ -1,7 +1,11 @@
 import React from 'react';
 import { Box } from '@mui/material';
+import { axelionColors } from '../../theme/axelionTheme';
 
-// MIMARU Hotel Style - Minimalist Japanese Background
+/**
+ * MaslaXat Premium Background Component
+ * Elegant minimalist background inspired by luxury brand aesthetics
+ */
 const MIMARUBackground = () => {
   return (
     <Box
@@ -14,10 +18,10 @@ const MIMARUBackground = () => {
         zIndex: 0,
         overflow: 'hidden',
         pointerEvents: 'none',
-        backgroundColor: '#f5f5f0', // Warm off-white (Japanese paper)
+        backgroundColor: axelionColors.bgCream,
       }}
     >
-      {/* Subtle wood grain texture overlay */}
+      {/* Subtle texture overlay */}
       <Box
         sx={{
           position: 'absolute',
@@ -26,71 +30,113 @@ const MIMARUBackground = () => {
           right: 0,
           bottom: 0,
           backgroundImage: `
-            linear-gradient(90deg, rgba(139, 115, 85, 0.02) 1px, transparent 1px),
-            linear-gradient(rgba(139, 115, 85, 0.02) 1px, transparent 1px)
+            linear-gradient(90deg, rgba(184, 149, 110, 0.015) 1px, transparent 1px),
+            linear-gradient(rgba(184, 149, 110, 0.015) 1px, transparent 1px)
           `,
-          backgroundSize: '40px 40px',
-          opacity: 0.5,
+          backgroundSize: '50px 50px',
         }}
       />
 
-      {/* Subtle gradient accent - top */}
+      {/* Top gradient accent */}
       <Box
         sx={{
           position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
-          height: '300px',
-          background: 'linear-gradient(180deg, rgba(26, 43, 74, 0.03) 0%, transparent 100%)',
+          height: '400px',
+          background: `linear-gradient(180deg, rgba(184, 149, 110, 0.03) 0%, transparent 100%)`,
         }}
       />
 
-      {/* Decorative line elements - MIMARU style */}
+      {/* Decorative vertical line - right */}
       <Box
         sx={{
           position: 'absolute',
-          top: '20%',
-          right: '5%',
-          width: '2px',
-          height: '200px',
-          backgroundColor: 'rgba(26, 43, 74, 0.06)',
+          top: '15%',
+          right: '6%',
+          width: '1px',
+          height: '250px',
+          backgroundColor: 'rgba(184, 149, 110, 0.1)',
         }}
       />
 
+      {/* Decorative horizontal line - left */}
       <Box
         sx={{
           position: 'absolute',
-          bottom: '30%',
-          left: '8%',
-          width: '150px',
-          height: '2px',
-          backgroundColor: 'rgba(139, 115, 85, 0.08)',
+          bottom: '25%',
+          left: '5%',
+          width: '180px',
+          height: '1px',
+          backgroundColor: 'rgba(139, 115, 85, 0.1)',
         }}
       />
 
-      {/* Subtle corner accents */}
+      {/* Corner accent - top right */}
       <Box
         sx={{
           position: 'absolute',
           top: 0,
           right: 0,
-          width: '100px',
-          height: '100px',
-          borderTop: '3px solid rgba(26, 43, 74, 0.05)',
-          borderRight: '3px solid rgba(26, 43, 74, 0.05)',
+          width: '120px',
+          height: '120px',
+          borderTop: `2px solid rgba(184, 149, 110, 0.08)`,
+          borderRight: `2px solid rgba(184, 149, 110, 0.08)`,
         }}
       />
 
+      {/* Corner accent - bottom left */}
       <Box
         sx={{
           position: 'absolute',
           bottom: 0,
           left: 0,
-          width: '100px',
-          height: '100px',
-          borderBottom: '3px solid rgba(139, 115, 85, 0.05)',
-          borderLeft: '3px solid rgba(139, 115, 85, 0.05)',
+          width: '120px',
+          height: '120px',
+          borderBottom: `2px solid rgba(139, 115, 85, 0.08)`,
+          borderLeft: `2px solid rgba(139, 115, 85, 0.08)`,
+        }}
+      />
+
+      {/* Subtle gold circle accent */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: 'translate(-50%, -50%)',
+          width: '800px',
+          height: '800px',
+          borderRadius: '50%',
+          background: 'radial-gradient(circle, rgba(184, 149, 110, 0.03) 0%, transparent 50%)',
+          filter: 'blur(100px)',
+        }}
+      />
+
+      {/* Small decorative element - top left */}
+      <Box
+        sx={{
+          position: 'absolute',
+          top: '10%',
+          left: '10%',
+          width: '8px',
+          height: '8px',
+          borderRadius: '50%',
+          backgroundColor: 'rgba(184, 149, 110, 0.15)',
+        }}
+      />
+
+      {/* Small decorative element - bottom right */}
+      <Box
+        sx={{
+          position: 'absolute',
+          bottom: '15%',
+          right: '12%',
+          width: '6px',
+          height: '6px',
+          borderRadius: '50%',
+          backgroundColor: 'rgba(139, 115, 85, 0.12)',
         }}
       />
     </Box>

@@ -21,19 +21,18 @@ import LoadingSpinner from './components/UI/LoadingSpinner';
 import HomePage from './pages/HomePage';
 import LoginPage from './pages/Auth/LoginPage';
 import RegisterPage from './pages/Auth/RegisterPage';
-import ClientLogin from './pages/Auth/ClientLoginGlass';
-import LawyerLogin from './pages/Auth/LawyerLoginGlass';
-import AdminLogin from './pages/Auth/AdminLoginGlass';
 import DashboardPageGlass from './pages/Dashboard/DashboardPageGlass';
 import LawyerDashboard from './pages/Lawyer/LawyerDashboardGlass';
 import LawyerSchedulePage from './pages/Lawyer/LawyerSchedulePage';
 import LawyerReviewsPage from './pages/Lawyer/LawyerReviewsPage';
+import LawyerProfileEditPage from './pages/Lawyer/LawyerProfileEditPage';
 import AdminDashboard from './pages/Admin/AdminDashboardGlass';
 import AIChatPage from './pages/AI/AIChatPage';
 import AIChatPageGlass from './pages/AI/AIChatPageGlass';
 import ConsultationsPage from './pages/Consultations/ConsultationsPage';
 import ConsultationsPageGlass from './pages/Consultations/ConsultationsPageGlass';
 import VideoCallPage from './pages/Consultations/VideoCallPage';
+import ChatPage from './pages/Consultations/ChatPage';
 import LawyersPage from './pages/Lawyers/LawyersPage';
 import LawyersPageGlass from './pages/Lawyers/LawyersPageGlass';
 import LawyerProfilePage from './pages/Lawyers/LawyerProfilePage';
@@ -43,19 +42,25 @@ import DocumentsPageGlass from './pages/Documents/DocumentsPageGlass';
 import ProfilePageGlass from './pages/Profile/ProfilePageGlass';
 import SettingsPageGlass from './pages/Settings/SettingsPageGlass';
 import HelpPage from './pages/Help/HelpPage';
+import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
+import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 import SpecializationsPageGlass from './pages/Admin/SpecializationsPageGlass';
-import { corporateTheme } from './theme/corporateTheme';
+import FavoritesPage from './pages/Client/FavoritesPage';
+import PortfolioPage from './pages/Client/PortfolioPage';
+import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
 
-// Using Corporate Minimalism Theme
-const theme = corporateTheme;
+// MaslaXat Premium Theme
+import { axelionTheme } from './theme/axelionTheme';
+
+const theme = axelionTheme;
 
 // Query client configuration
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       refetchOnWindowFocus: false,
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
+      staleTime: 5 * 60 * 1000,
+      cacheTime: 10 * 60 * 1000,
     },
   },
 });
@@ -66,7 +71,6 @@ const AppContent = () => {
   const { isAuthenticated, loading } = useSelector((state) => state.auth);
 
   useEffect(() => {
-    // Initialize app
     dispatch(initializeApp());
   }, [dispatch]);
 
@@ -77,6 +81,7 @@ const AppContent = () => {
         justifyContent="center"
         alignItems="center"
         minHeight="100vh"
+        sx={{ backgroundColor: '#F5F1EB' }}
       >
         <LoadingSpinner />
       </Box>
@@ -86,19 +91,16 @@ const AppContent = () => {
   return (
     <Router>
       <Routes>
-        {/* Main landing page - redirect based on auth status */}
         <Route path="/" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
         } />
 
-        {/* Public routes - Role-based login */}
-        <Route path="/login/client" element={!isAuthenticated ? <ClientLogin /> : <Navigate to="/dashboard" />} />
-        <Route path="/login/lawyer" element={!isAuthenticated ? <LawyerLogin /> : <Navigate to="/lawyer/dashboard" />} />
-        <Route path="/login/admin" element={!isAuthenticated ? <AdminLogin /> : <Navigate to="/admin/dashboard" />} />
         <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />} />
         <Route path="/register" element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/forgot-password" element={!isAuthenticated ? <ForgotPasswordPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/reset-password" element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/verify-email" element={<VerifyEmailPage />} />
 
-        {/* Protected routes - Client Dashboard */}
         <Route element={
           <ProtectedRoute allowedRoles={['client']}>
             <Layout />
@@ -107,17 +109,30 @@ const AppContent = () => {
           <Route path="dashboard" element={<DashboardPageGlass />} />
           <Route path="ai-chat" element={<AIChatPageGlass />} />
           <Route path="consultations" element={<ConsultationsPageGlass />} />
-          <Route path="consultations/video/:consultationId" element={<VideoCallPage />} />
           <Route path="lawyers" element={<LawyersPageGlass />} />
           <Route path="lawyers/:lawyerId" element={<LawyerProfilePage />} />
           <Route path="documents" element={<DocumentsPageGlass />} />
+          <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="profile" element={<ProfilePageGlass />} />
           <Route path="settings" element={<SettingsPageGlass />} />
           <Route path="help" element={<HelpPage />} />
-          <Route path="admin/specializations" element={<SpecializationsPageGlass />} />
         </Route>
 
-        {/* Protected routes - Lawyer Dashboard */}
+        {/* Video call — accessible to both client and lawyer, fullscreen (no Layout) */}
+        <Route path="/consultations/video/:consultationId" element={
+          <ProtectedRoute allowedRoles={['client', 'lawyer']}>
+            <VideoCallPage />
+          </ProtectedRoute>
+        } />
+
+        {/* Chat — accessible to both client and lawyer */}
+        <Route path="/consultations/chat/:consultationId" element={
+          <ProtectedRoute allowedRoles={['client', 'lawyer']}>
+            <ChatPage />
+          </ProtectedRoute>
+        } />
+
         <Route path="/lawyer/dashboard" element={
           <ProtectedRoute allowedRoles={['lawyer']}>
             <LawyerDashboard />
@@ -128,20 +143,28 @@ const AppContent = () => {
             <LawyerSchedulePage />
           </ProtectedRoute>
         } />
+        <Route path="/lawyer/profile/edit" element={
+          <ProtectedRoute allowedRoles={['lawyer']}>
+            <LawyerProfileEditPage />
+          </ProtectedRoute>
+        } />
         <Route path="/lawyer/reviews" element={
           <ProtectedRoute allowedRoles={['lawyer']}>
             <LawyerReviewsPage />
           </ProtectedRoute>
         } />
 
-        {/* Protected routes - Admin Dashboard */}
         <Route path="/admin/dashboard" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminDashboard />
           </ProtectedRoute>
         } />
+        <Route path="/admin/specializations" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <SpecializationsPageGlass />
+          </ProtectedRoute>
+        } />
 
-        {/* Catch all route */}
         <Route path="*" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
         } />
@@ -161,15 +184,23 @@ function App() {
             <AppContent />
             <ToastContainer
               position="top-right"
-              autoClose={5000}
+              autoClose={4000}
               hideProgressBar={false}
-              newestOnTop={false}
+              newestOnTop
               closeOnClick
               rtl={false}
               pauseOnFocusLoss
               draggable
               pauseOnHover
               theme="light"
+              toastStyle={{
+                backgroundColor: '#FFFFFF',
+                color: '#2D2D2D',
+                borderRadius: '8px',
+                boxShadow: '0 4px 12px rgba(26, 26, 26, 0.08)',
+                border: '1px solid #E8E4DE',
+                fontFamily: '"Inter", sans-serif',
+              }}
             />
           </ThemeProvider>
         </LanguageProvider>

@@ -1,86 +1,123 @@
 import React from 'react';
 import { Button } from '@mui/material';
+import { axelionColors } from '../../theme/axelionTheme';
 
+/**
+ * MaslaXat Premium Button Component (Neumorphic variant)
+ * Now uses the elegant minimalist AXELION-inspired design
+ */
 const NeumorphicButton = ({
   children,
-  variant = 'elevated',
-  color = 'primary',
+  variant = 'primary',
+  color = 'gold',
   fullWidth = false,
   startIcon,
   endIcon,
   onClick,
+  disabled = false,
+  size = 'medium',
   sx = {},
   ...props
 }) => {
   const colorMap = {
-    primary: {
-      bg: 'linear-gradient(145deg, #6aafb5, #5b9aa0)',
-      shadow: '6px 6px 12px rgba(91, 154, 160, 0.4), -6px -6px 12px rgba(126, 180, 186, 0.4)',
-      hoverShadow: '8px 8px 16px rgba(91, 154, 160, 0.5), -8px -8px 16px rgba(126, 180, 186, 0.5)',
-      activeShadow: 'inset 4px 4px 8px rgba(68, 113, 118, 0.6), inset -4px -4px 8px rgba(91, 154, 160, 0.3)',
-      color: '#ffffff',
+    gold: {
+      bg: axelionColors.gold,
+      hover: axelionColors.goldDark,
+      color: '#FFFFFF',
     },
-    secondary: {
-      bg: 'linear-gradient(145deg, #e0ba92, #d4a574)',
-      shadow: '6px 6px 12px rgba(184, 137, 94, 0.4), -6px -6px 12px rgba(224, 186, 146, 0.4)',
-      hoverShadow: '8px 8px 16px rgba(184, 137, 94, 0.5), -8px -8px 16px rgba(224, 186, 146, 0.5)',
-      activeShadow: 'inset 4px 4px 8px rgba(184, 137, 94, 0.6), inset -4px -4px 8px rgba(212, 165, 116, 0.3)',
-      color: '#ffffff',
+    dark: {
+      bg: axelionColors.textDark,
+      hover: '#2D2D2D',
+      color: '#FFFFFF',
+    },
+    bronze: {
+      bg: axelionColors.bronze,
+      hover: axelionColors.bronzeDark,
+      color: '#FFFFFF',
     },
     neutral: {
-      bg: '#e4e9f2',
-      shadow: '6px 6px 12px rgba(163, 177, 198, 0.6), -6px -6px 12px rgba(255, 255, 255, 0.5)',
-      hoverShadow: '8px 8px 16px rgba(163, 177, 198, 0.6), -8px -8px 16px rgba(255, 255, 255, 0.5)',
-      activeShadow: 'inset 4px 4px 8px rgba(163, 177, 198, 0.6), inset -4px -4px 8px rgba(255, 255, 255, 0.5)',
-      color: '#2c3e50',
+      bg: axelionColors.bgLight,
+      hover: axelionColors.bgWarm,
+      color: axelionColors.textDark,
+      border: `1px solid ${axelionColors.borderLight}`,
     },
     success: {
-      bg: 'linear-gradient(145deg, #8fd38e, #6abf69)',
-      shadow: '6px 6px 12px rgba(74, 151, 73, 0.4), -6px -6px 12px rgba(143, 211, 142, 0.4)',
-      hoverShadow: '8px 8px 16px rgba(74, 151, 73, 0.5), -8px -8px 16px rgba(143, 211, 142, 0.5)',
-      activeShadow: 'inset 4px 4px 8px rgba(74, 151, 73, 0.6), inset -4px -4px 8px rgba(106, 191, 105, 0.3)',
-      color: '#ffffff',
+      bg: axelionColors.success,
+      hover: '#6A8A5B',
+      color: '#FFFFFF',
     },
     error: {
-      bg: 'linear-gradient(145deg, #e89884, #e07a5f)',
-      shadow: '6px 6px 12px rgba(192, 98, 74, 0.4), -6px -6px 12px rgba(232, 152, 132, 0.4)',
-      hoverShadow: '8px 8px 16px rgba(192, 98, 74, 0.5), -8px -8px 16px rgba(232, 152, 132, 0.5)',
-      activeShadow: 'inset 4px 4px 8px rgba(192, 98, 74, 0.6), inset -4px -4px 8px rgba(224, 122, 95, 0.3)',
-      color: '#ffffff',
+      bg: axelionColors.error,
+      hover: '#9A5A5A',
+      color: '#FFFFFF',
     },
   };
 
-  const colorStyle = colorMap[color] || colorMap.primary;
+  const sizeMap = {
+    small: { padding: '8px 20px', fontSize: '0.75rem' },
+    medium: { padding: '12px 32px', fontSize: '0.875rem' },
+    large: { padding: '14px 40px', fontSize: '0.9375rem' },
+  };
+
+  const colorStyle = colorMap[color] || colorMap.gold;
+  const selectedSize = sizeMap[size] || sizeMap.medium;
+
+  const getVariantStyles = () => {
+    switch (variant) {
+      case 'outlined':
+        return {
+          backgroundColor: 'transparent',
+          color: color === 'neutral' ? axelionColors.textDark : colorStyle.bg,
+          border: `1px solid ${color === 'neutral' ? axelionColors.borderLight : colorStyle.bg}`,
+          '&:hover': {
+            backgroundColor: color === 'neutral' ? axelionColors.bgWarm : `${colorStyle.bg}10`,
+            borderColor: color === 'neutral' ? axelionColors.gold : colorStyle.hover,
+          },
+        };
+      case 'text':
+        return {
+          backgroundColor: 'transparent',
+          color: color === 'neutral' ? axelionColors.textSecondary : colorStyle.bg,
+          border: 'none',
+          '&:hover': {
+            backgroundColor: color === 'neutral' ? axelionColors.bgWarm : `${colorStyle.bg}10`,
+          },
+        };
+      default:
+        return {
+          backgroundColor: colorStyle.bg,
+          color: colorStyle.color,
+          border: colorStyle.border || 'none',
+          '&:hover': {
+            backgroundColor: colorStyle.hover,
+          },
+        };
+    }
+  };
 
   return (
     <Button
       onClick={onClick}
       fullWidth={fullWidth}
+      disabled={disabled}
       startIcon={startIcon}
       endIcon={endIcon}
       sx={{
-        background: colorStyle.bg,
-        color: colorStyle.color,
-        borderRadius: '12px',
-        padding: '10px 24px',
-        fontWeight: 600,
-        textTransform: 'none',
-        border: 'none',
-        boxShadow: colorStyle.shadow,
+        borderRadius: '8px',
+        fontWeight: 500,
+        textTransform: 'uppercase',
+        letterSpacing: '0.1em',
+        boxShadow: 'none',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-        '&:hover': {
-          background: colorStyle.bg,
-          boxShadow: colorStyle.hoverShadow,
-          transform: 'translateY(-2px)',
-        },
+        ...selectedSize,
+        ...getVariantStyles(),
         '&:active': {
-          boxShadow: colorStyle.activeShadow,
-          transform: 'translateY(0)',
+          transform: 'translateY(1px)',
         },
         '&.Mui-disabled': {
-          background: '#d1d5db',
-          color: '#9ca3af',
-          boxShadow: '2px 2px 4px rgba(163, 177, 198, 0.3), -2px -2px 4px rgba(255, 255, 255, 0.3)',
+          backgroundColor: axelionColors.bgBeige,
+          color: axelionColors.textMuted,
+          border: 'none',
         },
         ...sx,
       }}

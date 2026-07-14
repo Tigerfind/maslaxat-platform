@@ -1,5 +1,5 @@
 /**
- * Shared Constants
+ * MaslaXat Platform - Shared Constants
  * Application-wide constants
  */
 
@@ -83,14 +83,42 @@ export const PAGINATION = {
   MAX_LIMIT: 100,
 };
 
-// Theme colors
+// MaslaXat Premium Theme Colors
 export const COLORS = {
-  PRIMARY: '#3d5a52',
-  SECONDARY: '#a67c52',
-  SUCCESS: '#22c55e',
-  WARNING: '#f59e0b',
-  ERROR: '#ef4444',
-  INFO: '#3b82f6',
+  // Primary Gold/Bronze
+  PRIMARY: '#B8956E',
+  PRIMARY_DARK: '#9A7B5A',
+  PRIMARY_LIGHT: '#C9A980',
+
+  // Secondary Bronze
+  SECONDARY: '#8B7355',
+  SECONDARY_DARK: '#6B5A45',
+  SECONDARY_LIGHT: '#A68B6A',
+
+  // Backgrounds
+  BG_LIGHT: '#FFFFFF',
+  BG_CREAM: '#F5F1EB',
+  BG_WARM: '#FAF8F5',
+  BG_BEIGE: '#E8DFD5',
+  BG_DARK: '#1A1A1A',
+  BG_DARK_CARD: '#2D2D2D',
+
+  // Text
+  TEXT_DARK: '#1A1A1A',
+  TEXT_PRIMARY: '#2D2D2D',
+  TEXT_SECONDARY: '#6B6B6B',
+  TEXT_MUTED: '#9A9A9A',
+  TEXT_LIGHT: '#FFFFFF',
+
+  // Borders
+  BORDER_LIGHT: '#E8E4DE',
+  BORDER_MEDIUM: '#D4C5B5',
+
+  // Status colors
+  SUCCESS: '#7A9A6B',
+  WARNING: '#C4A35A',
+  ERROR: '#B07070',
+  INFO: '#6A8A9A',
 };
 
 // Languages

@@ -117,7 +117,7 @@ const AdminDashboard = () => {
 
   const handleLogout = () => {
     dispatch(logout());
-    navigate('/login/admin');
+    navigate('/login');
   };
 
   const formatCurrency = (amount) => {

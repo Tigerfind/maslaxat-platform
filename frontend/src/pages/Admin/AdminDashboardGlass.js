@@ -42,6 +42,7 @@ import { logout } from '../../store/slices/authSlice';
 import adminService from '../../services/adminService';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
+import { axelionColors } from '../../theme/axelionTheme';
 
 const fadeInUp = keyframes`
   from {
@@ -88,7 +89,7 @@ const AdminDashboardGlass = () => {
 
   const handleLogout = () => {
     dispatch(logout());
-    navigate('/login/admin');
+    navigate('/login');
   };
 
   const formatCurrency = (amount) => {
@@ -116,15 +117,15 @@ const AdminDashboardGlass = () => {
   const getActivityColor = (type) => {
     switch (type) {
       case 'user_registration':
-        return '#60a5fa';
+        return axelionColors.gold;
       case 'consultation_completed':
-        return '#4ade80';
+        return axelionColors.success;
       case 'lawyer_approved':
-        return '#f59e0b';
+        return axelionColors.warning;
       case 'payment':
-        return '#22c55e';
+        return axelionColors.success;
       default:
-        return '#8b5cf6';
+        return axelionColors.bronze;
     }
   };
 
@@ -133,13 +134,13 @@ const AdminDashboardGlass = () => {
       <Box
         sx={{
           minHeight: '100vh',
-          background: '#F4F6F8',
+          background: axelionColors.bgCream,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        <CircularProgress sx={{ color: '#2563EB' }} size={60} />
+        <CircularProgress sx={{ color: axelionColors.gold }} size={60} />
       </Box>
     );
   }
@@ -148,18 +149,18 @@ const AdminDashboardGlass = () => {
     <Box
       sx={{
         minHeight: '100vh',
-        background: '#F4F6F8',
+        background: axelionColors.bgCream,
         pb: 4,
       }}
     >
       {/* Header */}
       <Box
         sx={{
-          background: '#FFFFFF',
-          borderBottom: '1px solid #E6E9EE',
+          background: axelionColors.bgLight,
+          borderBottom: `1px solid ${axelionColors.borderLight}`,
           py: 3,
           px: 2,
-          boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+          boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
         }}
       >
         <Container maxWidth="xl">
@@ -169,29 +170,29 @@ const AdminDashboardGlass = () => {
                 sx={{
                   width: 64,
                   height: 64,
-                  background: '#DC2626',
-                  boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                  background: axelionColors.textDark,
+                  boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 }}
               >
                 <Shield sx={{ fontSize: 36 }} />
               </Avatar>
               <Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="h5" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                     Панель администратора
                   </Typography>
                   <Chip
                     label="ADMIN"
                     size="small"
                     sx={{
-                      background: '#DC2626',
+                      background: axelionColors.textDark,
                       color: '#FFFFFF',
                       fontWeight: 'bold',
                       border: 'none',
                     }}
                   />
                 </Box>
-                <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
+                <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
                   {user?.name || 'Администратор'} | Полный доступ
                 </Typography>
               </Box>
@@ -201,18 +202,18 @@ const AdminDashboardGlass = () => {
               <LanguageSwitcher
                 variant="dropdown"
                 sx={{
-                  color: '#0B1B2B',
-                  bgcolor: '#F4F6F8',
-                  '&:hover': { bgcolor: '#E6E9EE' },
+                  color: axelionColors.textDark,
+                  bgcolor: axelionColors.bgCream,
+                  '&:hover': { bgcolor: axelionColors.bgBeige },
                 }}
               />
               <IconButton
                 sx={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E6E9EE',
-                  color: '#0B1B2B',
+                  background: axelionColors.bgLight,
+                  border: `1px solid ${axelionColors.borderLight}`,
+                  color: axelionColors.textDark,
                   '&:hover': {
-                    background: '#F4F6F8',
+                    background: axelionColors.bgCream,
                   },
                 }}
               >
@@ -222,11 +223,11 @@ const AdminDashboardGlass = () => {
               </IconButton>
               <IconButton
                 sx={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E6E9EE',
-                  color: '#0B1B2B',
+                  background: axelionColors.bgLight,
+                  border: `1px solid ${axelionColors.borderLight}`,
+                  color: axelionColors.textDark,
                   '&:hover': {
-                    background: '#F4F6F8',
+                    background: axelionColors.bgCream,
                   },
                 }}
                 onClick={() => navigate('/settings')}
@@ -238,14 +239,15 @@ const AdminDashboardGlass = () => {
                 startIcon={<Logout />}
                 onClick={handleLogout}
                 sx={{
-                  background: '#DC2626',
+                  background: axelionColors.textDark,
                   color: '#FFFFFF',
                   textTransform: 'none',
                   fontWeight: 600,
                   px: 3,
+                  borderRadius: '8px',
                   boxShadow: 'none',
                   '&:hover': {
-                    background: '#B91C1C',
+                    background: '#2D2D2D',
                     boxShadow: 'none',
                   },
                 }}
@@ -265,25 +267,25 @@ const AdminDashboardGlass = () => {
               icon: <People sx={{ fontSize: 40 }} />,
               label: 'Всего пользователей',
               value: stats?.totalUsers?.toLocaleString() || '0',
-              color: '#2563EB',
+              color: axelionColors.gold,
             },
             {
               icon: <Gavel sx={{ fontSize: 40 }} />,
               label: 'Юристов',
               value: stats?.totalLawyers?.toLocaleString() || '0',
-              color: '#F59E0B',
+              color: axelionColors.warning,
             },
             {
               icon: <People sx={{ fontSize: 40 }} />,
               label: 'Клиентов',
               value: stats?.totalClients?.toLocaleString() || '0',
-              color: '#8B5CF6',
+              color: axelionColors.bronze,
             },
             {
               icon: <CheckCircle sx={{ fontSize: 40 }} />,
               label: 'Активные консультации',
               value: stats?.activeConsultations?.toLocaleString() || '0',
-              color: '#10B981',
+              color: axelionColors.success,
             },
           ].map((stat, index) => (
             <Grid
@@ -300,14 +302,14 @@ const AdminDashboardGlass = () => {
             >
               <Card
                 sx={{
-                  background: '#FFFFFF',
-                  border: '1px solid #E6E9EE',
-                  borderRadius: '12px',
-                  boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                  background: axelionColors.bgLight,
+                  border: `1px solid ${axelionColors.borderLight}`,
+                  borderRadius: '8px',
+                  boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                   p: 3,
                   transition: 'all 0.3s ease',
                   '&:hover': {
-                    boxShadow: '0 4px 12px rgba(11, 27, 43, 0.1)',
+                    boxShadow: '0 4px 12px rgba(26, 26, 26, 0.1)',
                     transform: 'translateY(-2px)',
                   },
                 }}
@@ -317,7 +319,7 @@ const AdminDashboardGlass = () => {
                     sx={{
                       width: 64,
                       height: 64,
-                      borderRadius: '12px',
+                      borderRadius: '8px',
                       background: stat.color,
                       color: '#FFFFFF',
                       display: 'flex',
@@ -328,10 +330,10 @@ const AdminDashboardGlass = () => {
                     {stat.icon}
                   </Box>
                   <Box>
-                    <Typography variant="body2" sx={{ color: '#6B7280' }} gutterBottom>
+                    <Typography variant="body2" sx={{ color: axelionColors.textMuted }} gutterBottom>
                       {stat.label}
                     </Typography>
-                    <Typography variant="h5" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                    <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stat.value}
                     </Typography>
                   </Box>
@@ -346,14 +348,14 @@ const AdminDashboardGlass = () => {
           <Grid item xs={12} sm={6}>
             <Card
               sx={{
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 p: 3,
                 transition: 'all 0.3s ease',
                 '&:hover': {
-                  boxShadow: '0 4px 12px rgba(11, 27, 43, 0.1)',
+                  boxShadow: '0 4px 12px rgba(26, 26, 26, 0.1)',
                   transform: 'translateY(-2px)',
                 },
               }}
@@ -363,8 +365,8 @@ const AdminDashboardGlass = () => {
                   sx={{
                     width: 64,
                     height: 64,
-                    borderRadius: '12px',
-                    background: '#22C55E',
+                    borderRadius: '8px',
+                    background: axelionColors.success,
                     color: '#FFFFFF',
                     display: 'flex',
                     alignItems: 'center',
@@ -374,10 +376,10 @@ const AdminDashboardGlass = () => {
                   <AttachMoney sx={{ fontSize: 40 }} />
                 </Box>
                 <Box>
-                  <Typography variant="body2" sx={{ color: '#6B7280' }} gutterBottom>
+                  <Typography variant="body2" sx={{ color: axelionColors.textMuted }} gutterBottom>
                     Доход за месяц
                   </Typography>
-                  <Typography variant="h5" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                     {formatCurrency(stats?.monthlyRevenue || 0)}
                   </Typography>
                 </Box>
@@ -388,14 +390,14 @@ const AdminDashboardGlass = () => {
           <Grid item xs={12} sm={6}>
             <Card
               sx={{
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 p: 3,
                 transition: 'all 0.3s ease',
                 '&:hover': {
-                  boxShadow: '0 4px 12px rgba(11, 27, 43, 0.1)',
+                  boxShadow: '0 4px 12px rgba(26, 26, 26, 0.1)',
                   transform: 'translateY(-2px)',
                 },
               }}
@@ -405,8 +407,8 @@ const AdminDashboardGlass = () => {
                   sx={{
                     width: 64,
                     height: 64,
-                    borderRadius: '12px',
-                    background: '#F59E0B',
+                    borderRadius: '8px',
+                    background: axelionColors.warning,
                     color: '#FFFFFF',
                     display: 'flex',
                     alignItems: 'center',
@@ -416,10 +418,10 @@ const AdminDashboardGlass = () => {
                   <TrendingUp sx={{ fontSize: 40 }} />
                 </Box>
                 <Box>
-                  <Typography variant="body2" sx={{ color: '#6B7280' }} gutterBottom>
+                  <Typography variant="body2" sx={{ color: axelionColors.textMuted }} gutterBottom>
                     Общий доход
                   </Typography>
-                  <Typography variant="h5" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                  <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                     {formatCurrency(stats?.totalRevenue || 0)}
                   </Typography>
                 </Box>
@@ -431,15 +433,15 @@ const AdminDashboardGlass = () => {
         {/* Quick Actions */}
         <Card
           sx={{
-            background: '#FFFFFF',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+            background: axelionColors.bgLight,
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
             p: 3,
             mb: 4,
           }}
         >
-          <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }} gutterBottom>
+          <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
             Быстрые действия
           </Typography>
           <Grid container spacing={2} sx={{ mt: 1 }}>
@@ -448,25 +450,25 @@ const AdminDashboardGlass = () => {
                 icon: <People />,
                 label: 'Управление пользователями',
                 path: '/admin/users',
-                color: '#2563EB',
+                color: axelionColors.gold,
               },
               {
                 icon: <Gavel />,
                 label: 'Управление юристами',
                 path: '/admin/lawyers',
-                color: '#F59E0B',
+                color: axelionColors.warning,
               },
               {
                 icon: <Assessment />,
                 label: 'Просмотр отчетов',
                 path: '/admin/reports',
-                color: '#10B981',
+                color: axelionColors.success,
               },
               {
                 icon: <Category />,
                 label: 'Специализации',
                 path: '/admin/specializations',
-                color: '#8B5CF6',
+                color: axelionColors.bronze,
               },
             ].map((action, index) => (
               <Grid item xs={12} sm={6} md={3} key={index}>
@@ -478,8 +480,9 @@ const AdminDashboardGlass = () => {
                   sx={{
                     py: 2,
                     justifyContent: 'flex-start',
-                    color: '#0B1B2B',
-                    borderColor: '#E6E9EE',
+                    color: axelionColors.textDark,
+                    borderColor: axelionColors.borderLight,
+                    borderRadius: '8px',
                     textTransform: 'none',
                     fontWeight: 600,
                     '&:hover': {
@@ -503,24 +506,24 @@ const AdminDashboardGlass = () => {
           <Grid item xs={12} lg={8}>
             <Card
               sx={{
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 p: 3,
               }}
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                   Последняя активность
                 </Typography>
                 <Chip
                   label={`${recentActivity.length} записей`}
                   sx={{
-                    background: '#F4F6F8',
-                    color: '#0B1B2B',
+                    background: axelionColors.bgCream,
+                    color: axelionColors.textDark,
                     fontWeight: 'bold',
-                    border: '1px solid #E6E9EE',
+                    border: `1px solid ${axelionColors.borderLight}`,
                   }}
                 />
               </Box>
@@ -530,16 +533,16 @@ const AdminDashboardGlass = () => {
                   <Table>
                     <TableHead>
                       <TableRow>
-                        <TableCell sx={{ color: '#6B7280', fontWeight: 'bold' }}>
+                        <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                           Тип
                         </TableCell>
-                        <TableCell sx={{ color: '#6B7280', fontWeight: 'bold' }}>
+                        <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                           Описание
                         </TableCell>
-                        <TableCell sx={{ color: '#6B7280', fontWeight: 'bold' }}>
+                        <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                           Пользователь
                         </TableCell>
-                        <TableCell sx={{ color: '#6B7280', fontWeight: 'bold' }}>
+                        <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                           Дата
                         </TableCell>
                       </TableRow>
@@ -551,11 +554,11 @@ const AdminDashboardGlass = () => {
                           hover
                           sx={{
                             '&:hover': {
-                              background: '#F4F6F8',
+                              background: axelionColors.bgCream,
                             },
                           }}
                         >
-                          <TableCell>
+                          <TableCell sx={{ borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                             <Box
                               sx={{
                                 width: 40,
@@ -571,23 +574,23 @@ const AdminDashboardGlass = () => {
                               {getActivityIcon(activity.type)}
                             </Box>
                           </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ color: '#0B1B2B' }}>
+                          <TableCell sx={{ borderBottom: `1px solid ${axelionColors.borderLight}` }}>
+                            <Typography variant="body2" sx={{ color: axelionColors.textDark }}>
                               {activity.description}
                             </Typography>
                           </TableCell>
-                          <TableCell>
+                          <TableCell sx={{ borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Avatar sx={{ width: 32, height: 32, bgcolor: '#2563EB' }}>
+                              <Avatar sx={{ width: 32, height: 32, bgcolor: axelionColors.gold }}>
                                 {activity.userName?.charAt(0) || 'U'}
                               </Avatar>
-                              <Typography variant="body2" sx={{ color: '#0B1B2B' }}>
+                              <Typography variant="body2" sx={{ color: axelionColors.textDark }}>
                                 {activity.userName || 'Неизвестно'}
                               </Typography>
                             </Box>
                           </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" sx={{ color: '#6B7280' }}>
+                          <TableCell sx={{ borderBottom: `1px solid ${axelionColors.borderLight}` }}>
+                            <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                               {activity.date || 'Недавно'}
                             </Typography>
                           </TableCell>
@@ -598,7 +601,7 @@ const AdminDashboardGlass = () => {
                 </TableContainer>
               ) : (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="body1" sx={{ color: '#6B7280' }}>
+                  <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
                     Нет данных о последней активности
                   </Typography>
                 </Box>
@@ -610,25 +613,25 @@ const AdminDashboardGlass = () => {
           <Grid item xs={12} lg={4}>
             <Card
               sx={{
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 p: 3,
                 mb: 3,
               }}
             >
-              <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }} gutterBottom>
+              <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
                 Обзор системы
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2" sx={{ color: '#6B7280' }}>
+                    <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                       Всего пользователей
                     </Typography>
-                    <Typography variant="body2" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                    <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.totalUsers?.toLocaleString() || '0'}
                     </Typography>
                   </Box>
@@ -636,7 +639,7 @@ const AdminDashboardGlass = () => {
                     sx={{
                       height: 4,
                       borderRadius: 2,
-                      background: '#F4F6F8',
+                      background: axelionColors.bgCream,
                       overflow: 'hidden',
                     }}
                   >
@@ -644,7 +647,7 @@ const AdminDashboardGlass = () => {
                       sx={{
                         height: '100%',
                         width: '85%',
-                        background: '#2563EB',
+                        background: axelionColors.gold,
                       }}
                     />
                   </Box>
@@ -652,10 +655,10 @@ const AdminDashboardGlass = () => {
 
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2" sx={{ color: '#6B7280' }}>
+                    <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                       Активные юристы
                     </Typography>
-                    <Typography variant="body2" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                    <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.totalLawyers?.toLocaleString() || '0'}
                     </Typography>
                   </Box>
@@ -663,7 +666,7 @@ const AdminDashboardGlass = () => {
                     sx={{
                       height: 4,
                       borderRadius: 2,
-                      background: '#F4F6F8',
+                      background: axelionColors.bgCream,
                       overflow: 'hidden',
                     }}
                   >
@@ -671,7 +674,7 @@ const AdminDashboardGlass = () => {
                       sx={{
                         height: '100%',
                         width: '72%',
-                        background: '#F59E0B',
+                        background: axelionColors.warning,
                       }}
                     />
                   </Box>
@@ -679,10 +682,10 @@ const AdminDashboardGlass = () => {
 
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                    <Typography variant="body2" sx={{ color: '#6B7280' }}>
+                    <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                       Консультации
                     </Typography>
-                    <Typography variant="body2" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                    <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.activeConsultations?.toLocaleString() || '0'}
                     </Typography>
                   </Box>
@@ -690,7 +693,7 @@ const AdminDashboardGlass = () => {
                     sx={{
                       height: 4,
                       borderRadius: 2,
-                      background: '#F4F6F8',
+                      background: axelionColors.bgCream,
                       overflow: 'hidden',
                     }}
                   >
@@ -698,7 +701,7 @@ const AdminDashboardGlass = () => {
                       sx={{
                         height: '100%',
                         width: '65%',
-                        background: '#10B981',
+                        background: axelionColors.success,
                       }}
                     />
                   </Box>
@@ -711,14 +714,15 @@ const AdminDashboardGlass = () => {
                 startIcon={<Assessment />}
                 sx={{
                   mt: 3,
-                  background: '#2563EB',
+                  background: axelionColors.gold,
                   color: '#FFFFFF',
                   textTransform: 'none',
                   fontWeight: 600,
                   py: 1.5,
+                  borderRadius: '8px',
                   boxShadow: 'none',
                   '&:hover': {
-                    background: '#1D4ED8',
+                    background: axelionColors.goldDark,
                     boxShadow: 'none',
                   },
                 }}
@@ -731,14 +735,14 @@ const AdminDashboardGlass = () => {
             {/* System Health */}
             <Card
               sx={{
-                background: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
+                background: axelionColors.bgLight,
+                border: `1px solid ${axelionColors.borderLight}`,
+                borderRadius: '8px',
+                boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
                 p: 3,
               }}
             >
-              <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }} gutterBottom>
+              <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
                 Состояние системы
               </Typography>
 
@@ -754,8 +758,8 @@ const AdminDashboardGlass = () => {
                     sx={{
                       p: 2,
                       borderRadius: '8px',
-                      background: '#F4F6F8',
-                      border: '1px solid #E6E9EE',
+                      background: axelionColors.bgCream,
+                      border: `1px solid ${axelionColors.borderLight}`,
                     }}
                   >
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
@@ -764,14 +768,14 @@ const AdminDashboardGlass = () => {
                           width: 8,
                           height: 8,
                           borderRadius: '50%',
-                          bgcolor: '#10B981',
+                          bgcolor: axelionColors.success,
                         }}
                       />
-                      <Typography variant="body2" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
+                      <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                         {system.label}
                       </Typography>
                     </Box>
-                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
+                    <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>
                       Uptime: {system.uptime}
                     </Typography>
                   </Box>

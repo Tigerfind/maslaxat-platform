@@ -1,581 +1,369 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  Container,
-  Box,
-  Typography,
-  Grid,
-  Paper,
-  Avatar,
-  Button,
-  Chip,
-  Rating,
-  Divider,
-  Tab,
-  Tabs,
-  Card,
-  CardContent,
-  IconButton,
-  List,
-  ListItem,
-  ListItemText,
-  ListItemAvatar,
-  LinearProgress,
-} from '@mui/material';
-import {
-  ArrowBack,
-  Star,
-  Verified,
-  Schedule,
-  TrendingUp,
-  Chat,
-  VideoCall,
-  Gavel,
-  WorkspacePremium,
-  School,
-  Business,
-  Person,
-  CheckCircle,
-  ThumbUp,
-  Language,
-  Phone,
-  Email,
-  LocationOn,
+  SchoolOutlined,
+  TranslateOutlined,
+  WorkspacePremiumOutlined,
+  ChevronRightOutlined,
 } from '@mui/icons-material';
+import clientService from '../../services/clientService';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import BookingModal from '../../components/BookingModal';
 
-// Mock lawyer data - matching the structure from LawyersPage
-const MOCK_LAWYERS = {
-  1: {
-    id: 1,
-    name: 'Иванов Иван Иванович',
-    avatar: null,
-    rating: 4.8,
-    specializations: ['Гражданское право', 'Семейное право'],
-    experience: 15,
-    region: 'Ташкент',
-    priceFrom: 50000,
-    completedConsultations: 234,
-    responseTime: 2,
-    successRate: 96,
-    verified: true,
-    bio: 'Опытный юрист с 15-летним стажем работы в области гражданского и семейного права. Помог более 200 клиентам решить их юридические вопросы. Специализируюсь на семейных спорах, наследственных делах и договорном праве.',
-    education: [
-      'Ташкентский государственный юридический университет (2008)',
-      'Магистратура по гражданскому праву (2010)',
-    ],
-    languages: ['Русский', 'Узбекский', 'Английский'],
-    certifications: [
-      'Сертифицированный медиатор',
-      'Член Адвокатской палаты Узбекистана',
-    ],
-    phone: '+998 90 123-45-67',
-    email: 'ivanov@maslaxat.uz',
-    workingHours: 'Пн-Пт: 9:00-18:00, Сб: 10:00-15:00',
-  },
-  2: {
-    id: 2,
-    name: 'Петрова Мария Сергеевна',
-    avatar: null,
-    rating: 4.9,
-    specializations: ['Корпоративное право', 'Налоговое право'],
-    experience: 12,
-    region: 'Ташкент',
-    priceFrom: 75000,
-    completedConsultations: 189,
-    responseTime: 1,
-    successRate: 98,
-    verified: true,
-    bio: 'Специалист в области корпоративного и налогового права. Работаю с крупными компаниями и стартапами. Помогаю оптимизировать налоговую нагрузку и структурировать бизнес.',
-    education: [
-      'МГУ им. Ломоносова, юридический факультет (2011)',
-      'MBA в области корпоративного управления (2015)',
-    ],
-    languages: ['Русский', 'Английский', 'Немецкий'],
-    certifications: [
-      'Налоговый консультант',
-      'Сертифицированный аудитор',
-    ],
-    phone: '+998 91 234-56-78',
-    email: 'petrova@maslaxat.uz',
-    workingHours: 'Пн-Пт: 10:00-19:00',
-  },
-  3: {
-    id: 3,
-    name: 'Сидоров Петр Александрович',
-    avatar: null,
-    rating: 4.7,
-    specializations: ['Семейное право', 'Недвижимость'],
-    experience: 10,
-    region: 'Самарканд',
-    priceFrom: 45000,
-    completedConsultations: 156,
-    responseTime: 3,
-    successRate: 94,
-    verified: true,
-    bio: 'Практикующий юрист с опытом работы в семейном праве и сделках с недвижимостью. Специализируюсь на разводах, разделе имущества и оформлении купли-продажи недвижимости.',
-    education: [
-      'Самаркандский государственный университет (2013)',
-    ],
-    languages: ['Русский', 'Узбекский'],
-    certifications: [
-      'Риелтор-консультант',
-    ],
-    phone: '+998 93 345-67-89',
-    email: 'sidorov@maslaxat.uz',
-    workingHours: 'Пн-Сб: 9:00-17:00',
-  },
+/*
+  ─────────────────────────────────────────────────────────────
+  CLIENT — LAWYER PROFILE  (/lawyers/:lawyerId)
+  Ported 1:1 from ClaudeDesign → client/05_LAWYER_PROFILE.html.
+  Data: clientService.lawyers.getLawyerDetails(lawyerId)
+        → { lawyer: { …, profile, receivedReviews } }
+  Anti-bypass: lawyer phone/email are NEVER rendered (backend also
+  strips them from this endpoint).
+  Chrome (sidebar + topbar) = <GlassShell>.
+  ─────────────────────────────────────────────────────────────
+*/
+
+const glassCard = {
+  background: 'var(--card-glass)',
+  backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+  border: '1px solid var(--card-brd)',
+  boxShadow: 'var(--card-shadow)',
+  borderRadius: 'var(--radius)',
 };
 
-// Mock reviews
-const MOCK_REVIEWS = [
-  {
-    id: 1,
-    clientName: 'Алексей К.',
-    rating: 5,
-    date: '15 ноября 2024',
-    comment: 'Отличный специалист! Помог решить сложный семейный спор. Всё объяснил понятно и доступно. Рекомендую!',
-  },
-  {
-    id: 2,
-    clientName: 'Марина С.',
-    rating: 5,
-    date: '8 ноября 2024',
-    comment: 'Профессионал своего дела. Быстро разобрался в ситуации и предложил оптимальное решение. Спасибо!',
-  },
-  {
-    id: 3,
-    clientName: 'Дмитрий П.',
-    rating: 4,
-    date: '2 ноября 2024',
-    comment: 'Хороший юрист, но немного долго отвечал на вопросы. В остальном всё отлично.',
-  },
+const AV_BG = [
+  'linear-gradient(135deg,#B8956E,#8B7355)',
+  'linear-gradient(135deg,#6A8A9A,#4A6A7A)',
+  'linear-gradient(135deg,#7A9A6B,#5A7A4B)',
+  'linear-gradient(135deg,#9A6A8A,#7A4A6A)',
 ];
+
+const LANG_NAMES = { uz: 'Узбекский', ru: 'Русский', en: 'Английский' };
+
+const initialsOf = (name = '') =>
+  name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '—';
+
+const starsOf = (rating = 0) => {
+  const full = Math.round(rating);
+  return '★'.repeat(full) + '☆'.repeat(Math.max(0, 5 - full));
+};
+
+const tabBtnStyle = (active) => ({
+  flex: 1,
+  padding: '11px 14px',
+  background: active ? 'var(--accent)' : 'transparent',
+  border: 'none',
+  borderRadius: 'var(--radius)',
+  fontFamily: 'inherit',
+  fontSize: 13,
+  fontWeight: active ? 500 : 400,
+  letterSpacing: '0.04em',
+  color: active ? '#FFFFFF' : 'var(--text2)',
+  cursor: 'pointer',
+  transition: 'background 0.2s, color 0.2s',
+});
+
+const outlineBtn = {
+  flex: 1,
+  background: 'transparent',
+  border: '1px solid var(--border)',
+  color: 'var(--text)',
+  fontSize: 12,
+  letterSpacing: '0.05em',
+  textTransform: 'uppercase',
+  padding: 12,
+  borderRadius: 'var(--radius)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
 
 const LawyerProfilePage = () => {
   const { lawyerId } = useParams();
   const navigate = useNavigate();
-  const [currentTab, setCurrentTab] = useState(0);
 
-  // Get lawyer data
-  const lawyer = MOCK_LAWYERS[lawyerId] || MOCK_LAWYERS[1];
+  const [lawyer, setLawyer] = useState(null);
+  const [reviews, setReviews] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [tab, setTab] = useState('about');
+  const [bookingOpen, setBookingOpen] = useState(false);
 
-  const handleBookConsultation = () => {
-    navigate('/consultations', { state: { lawyer } });
-  };
+  useEffect(() => {
+    let alive = true;
+    (async () => {
+      try {
+        setLoading(true);
+        setError(false);
+        const data = await clientService.lawyers.getLawyerDetails(lawyerId);
+        if (!alive) return;
+        const l = data?.lawyer || data || {};
+        const p = l.profile || {};
+        const normalized = {
+          id: l.id,
+          name: l.name || 'Юрист',
+          avatar: l.avatar,
+          verified: l.isVerified,
+          rating: p.rating || 0,
+          reviewsCount: p.reviewsCount || 0,
+          completedConsultations: p.completedCases || 0,
+          specializations: p.specialization ? [p.specialization] : [],
+          experience: p.experience || 0,
+          region: p.location || '',
+          priceFrom: p.price || 0,
+          bio: p.description || '',
+          education: Array.isArray(p.education) ? p.education : [],
+          certifications: Array.isArray(p.certificates) ? p.certificates : [],
+          languages: Array.isArray(p.languages) ? p.languages : [],
+        };
+        setLawyer(normalized);
+        const rv = (l.receivedReviews || []).map((r) => ({
+          id: r.id,
+          name: r.client?.name || 'Клиент',
+          rating: r.rating || 0,
+          text: r.text || r.comment || '',
+        }));
+        setReviews(rv);
+      } catch (e) {
+        if (alive) setError(true);
+      } finally {
+        if (alive) setLoading(false);
+      }
+    })();
+    return () => { alive = false; };
+  }, [lawyerId]);
 
-  const handleStartChat = () => {
-    navigate('/ai-chat', { state: { lawyerId: lawyer.id } });
-  };
+  const goAiChat = () => navigate('/ai-chat', { state: { lawyerId } });
+  const startVideo = () => navigate(`/consultations/video/${lawyerId}`);
 
-  const handleVideoCall = () => {
-    navigate(`/consultations/video/${lawyer.id}`);
-  };
+  // ── loading / error states (inside the shell so chrome persists) ──
+  if (loading) {
+    return (
+      <GlassShell active="/lawyers" title="Профиль юриста" subtitle="Загрузка…">
+        <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
+          Загрузка профиля…
+        </div>
+      </GlassShell>
+    );
+  }
+
+  if (error || !lawyer) {
+    return (
+      <GlassShell active="/lawyers" title="Профиль юриста" subtitle="Не найдено">
+        <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center' }}>
+          <div style={{ fontSize: 17, fontWeight: 300, color: 'var(--text)', marginBottom: 8 }}>Юрист не найден</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22 }}>Возможно, профиль был удалён или недоступен</div>
+          <button onClick={() => navigate('/lawyers')} style={{ background: 'var(--accent)', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>
+            ← Назад к каталогу
+          </button>
+        </div>
+      </GlassShell>
+    );
+  }
+
+  const specText = lawyer.specializations.join(', ');
+  const langText = lawyer.languages.map((c) => LANG_NAMES[c] || c).join(', ');
+
+  const profileMetrics = [
+    { value: `${lawyer.experience} лет`, label: 'Опыт работы' },
+    { value: lawyer.completedConsultations, label: 'Консультаций' },
+    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: 'Рейтинг' },
+    { value: lawyer.region || '—', label: 'Регион' },
+  ];
+
+  const portfolioMetrics = [
+    { value: lawyer.completedConsultations, label: 'Завершённых консультаций' },
+    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: 'Средний рейтинг' },
+    { value: lawyer.experience, label: 'Лет опыта' },
+    { value: lawyer.reviewsCount, label: 'Отзывов' },
+  ];
+
+  const subtitle = specText || 'Юрист';
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#faf8f6', pb: 4 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          background: 'linear-gradient(135deg, #3d5a52 0%, #2a403a 100%)',
-          color: 'white',
-          py: 3,
-          px: 2,
-        }}
-      >
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton
-              color="inherit"
-              onClick={() => navigate('/lawyers')}
-              sx={{
-                bgcolor: 'rgba(255, 255, 255, 0.1)',
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.2)' },
-              }}
+    <GlassShell active="/lawyers" title="Профиль юриста" subtitle={subtitle}>
+      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+        <button
+          onClick={() => navigate('/lawyers')}
+          style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', color: 'var(--accent-dark)', fontSize: 13, letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 22 }}
+        >
+          ← Назад к каталогу
+        </button>
+
+        <div className="lp-grid" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
+          {/* ── LEFT ── */}
+          <div style={{ ...glassCard, padding: 30, textAlign: 'center' }}>
+            <div style={{ width: 100, height: 100, margin: '0 auto 18px', borderRadius: '50%', background: AV_BG[0], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 34, fontWeight: 300, position: 'relative' }}>
+              {initialsOf(lawyer.name)}
+              {lawyer.verified && (
+                <span style={{ position: 'absolute', bottom: 2, right: 8, width: 26, height: 26, borderRadius: '50%', background: '#7A9A6B', border: '3px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 14 }}>✓</span>
+              )}
+            </div>
+            <div style={{ fontSize: 22, fontWeight: 400, color: 'var(--text)' }}>{lawyer.name}</div>
+            {specText && (
+              <div style={{ fontSize: 13, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4 }}>{specText}</div>
+            )}
+            <div style={{ color: 'var(--accent)', fontSize: 17, margin: '14px 0' }}>
+              ★ {lawyer.rating ? lawyer.rating.toFixed(1) : '—'}{' '}
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>({lawyer.reviewsCount} отзывов)</span>
+            </div>
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '22px 0', textAlign: 'left' }}>
+              {profileMetrics.map((pm, i) => (
+                <div key={i} style={{ background: 'var(--canvas)', borderRadius: 'var(--radius)', padding: '13px 15px' }}>
+                  <div style={{ fontSize: 18, fontWeight: 400, color: 'var(--text)' }}>{pm.value}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em', marginTop: 3 }}>{pm.label}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={{ textAlign: 'left', padding: '16px 0', borderTop: '1px solid var(--canvas)', marginBottom: 18 }}>
+              <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Стоимость консультации</div>
+              <div style={{ fontSize: 26, fontWeight: 300, color: 'var(--text)', marginTop: 4 }}>
+                {lawyer.priceFrom.toLocaleString()} <span style={{ fontSize: 14, color: 'var(--text3)' }}>сум</span>
+              </div>
+            </div>
+
+            <button
+              onClick={() => setBookingOpen(true)}
+              style={{ width: '100%', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10 }}
             >
-              <ArrowBack />
-            </IconButton>
-            <Typography variant="h5" fontWeight="bold">
-              Профиль юриста
-            </Typography>
-          </Box>
-        </Container>
-      </Box>
+              Записаться на консультацию
+            </button>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={goAiChat} style={outlineBtn}>Написать</button>
+              <button onClick={startVideo} style={outlineBtn}>Видео</button>
+            </div>
+          </div>
 
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Grid container spacing={3}>
-          {/* Left Column - Lawyer Info */}
-          <Grid item xs={12} md={4}>
-            <Paper sx={{ p: 3, borderRadius: 3 }}>
-              {/* Avatar and Name */}
-              <Box sx={{ textAlign: 'center', mb: 3 }}>
-                <Avatar
-                  sx={{
-                    width: 120,
-                    height: 120,
-                    margin: '0 auto',
-                    bgcolor: '#3d5a52',
-                    fontSize: '3rem',
-                    mb: 2,
-                  }}
-                >
-                  {lawyer.name.charAt(0)}
-                </Avatar>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, mb: 1 }}>
-                  <Typography variant="h5" fontWeight="bold">
-                    {lawyer.name}
-                  </Typography>
-                  {lawyer.verified && (
-                    <Verified sx={{ color: '#3d5a52', fontSize: 24 }} />
-                  )}
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5, mb: 2 }}>
-                  <Star sx={{ color: '#fbbf24', fontSize: 20 }} />
-                  <Typography variant="h6" fontWeight="bold">
-                    {lawyer.rating}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    ({lawyer.completedConsultations} консультаций)
-                  </Typography>
-                </Box>
-                <Rating value={lawyer.rating} precision={0.1} readOnly />
-              </Box>
+          {/* ── RIGHT ── */}
+          <div>
+            <div style={{ ...glassCard, display: 'flex', gap: 4, padding: 5, marginBottom: 20 }}>
+              {[
+                { key: 'about', label: 'О юристе' },
+                { key: 'reviews', label: 'Отзывы' },
+                { key: 'portfolio', label: 'Портфолио' },
+              ].map((pt) => (
+                <button key={pt.key} onClick={() => setTab(pt.key)} style={tabBtnStyle(tab === pt.key)}>
+                  {pt.label}
+                </button>
+              ))}
+            </div>
 
-              <Divider sx={{ my: 2 }} />
+            {/* About */}
+            {tab === 'about' && (
+              <div style={{ ...glassCard, padding: 28 }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>О юристе</div>
+                <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text2)', marginBottom: 24 }}>
+                  {lawyer.bio || 'Юрист пока не добавил описание.'}
+                </p>
 
-              {/* Quick Stats */}
-              <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <Schedule sx={{ color: '#3d5a52' }} />
-                  <Typography variant="body2">
-                    Ответ через <strong>{lawyer.responseTime} часа</strong>
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <TrendingUp sx={{ color: '#3d5a52' }} />
-                  <Typography variant="body2">
-                    <strong>{lawyer.successRate}%</strong> успешных дел
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
-                  <WorkspacePremium sx={{ color: '#3d5a52' }} />
-                  <Typography variant="body2">
-                    <strong>{lawyer.experience} лет</strong> опыта
-                  </Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <LocationOn sx={{ color: '#3d5a52' }} />
-                  <Typography variant="body2">
-                    {lawyer.region}
-                  </Typography>
-                </Box>
-              </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              {/* Contact Info */}
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom>
-                Контактная информация
-              </Typography>
-              <Box sx={{ mb: 2 }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Phone sx={{ fontSize: 18, color: 'text.secondary' }} />
-                  <Typography variant="body2">{lawyer.phone}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                  <Email sx={{ fontSize: 18, color: 'text.secondary' }} />
-                  <Typography variant="body2">{lawyer.email}</Typography>
-                </Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Schedule sx={{ fontSize: 18, color: 'text.secondary' }} />
-                  <Typography variant="body2">{lawyer.workingHours}</Typography>
-                </Box>
-              </Box>
-
-              <Divider sx={{ my: 2 }} />
-
-              {/* Price */}
-              <Box sx={{ textAlign: 'center', mb: 3 }}>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  Консультация от
-                </Typography>
-                <Typography variant="h4" fontWeight="bold" color="primary">
-                  {lawyer.priceFrom.toLocaleString()} сум
-                </Typography>
-              </Box>
-
-              {/* Action Buttons */}
-              <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  fullWidth
-                  startIcon={<VideoCall />}
-                  onClick={handleBookConsultation}
-                  sx={{
-                    py: 1.5,
-                    background: 'linear-gradient(135deg, #3d5a52 0%, #2a403a 100%)',
-                  }}
-                >
-                  Записаться на консультацию
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  fullWidth
-                  startIcon={<Chat />}
-                  onClick={handleStartChat}
-                  sx={{ py: 1.5 }}
-                >
-                  Начать чат
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  fullWidth
-                  startIcon={<VideoCall />}
-                  onClick={handleVideoCall}
-                  sx={{ py: 1.5 }}
-                >
-                  Видеозвонок
-                </Button>
-              </Box>
-            </Paper>
-          </Grid>
-
-          {/* Right Column - Details */}
-          <Grid item xs={12} md={8}>
-            <Paper sx={{ borderRadius: 3, overflow: 'hidden' }}>
-              {/* Tabs */}
-              <Tabs
-                value={currentTab}
-                onChange={(e, val) => setCurrentTab(val)}
-                sx={{
-                  borderBottom: 1,
-                  borderColor: 'divider',
-                  bgcolor: '#faf8f6',
-                }}
-              >
-                <Tab label="О юристе" />
-                <Tab label="Отзывы" />
-                <Tab label="Портфолио" />
-              </Tabs>
-
-              <Box sx={{ p: 3 }}>
-                {/* Tab 0: About */}
-                {currentTab === 0 && (
-                  <Box>
-                    {/* Bio */}
-                    <Typography variant="h6" fontWeight="bold" gutterBottom>
-                      О себе
-                    </Typography>
-                    <Typography variant="body1" color="text.secondary" paragraph>
-                      {lawyer.bio}
-                    </Typography>
-
-                    {/* Specializations */}
-                    <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mt: 3 }}>
-                      Специализации
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-                      {lawyer.specializations.map((spec, index) => (
-                        <Chip
-                          key={index}
-                          label={spec}
-                          icon={<Gavel />}
-                          sx={{
-                            bgcolor: '#f0fdf4',
-                            color: '#3d5a52',
-                            fontWeight: 600,
-                            border: '1px solid #3d5a52',
-                          }}
-                        />
-                      ))}
-                    </Box>
-
-                    {/* Education */}
-                    <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mt: 3 }}>
-                      Образование
-                    </Typography>
-                    <List>
-                      {lawyer.education.map((edu, index) => (
-                        <ListItem key={index}>
-                          <ListItemAvatar>
-                            <Avatar sx={{ bgcolor: '#3d5a52' }}>
-                              <School />
-                            </Avatar>
-                          </ListItemAvatar>
-                          <ListItemText primary={edu} />
-                        </ListItem>
-                      ))}
-                    </List>
-
-                    {/* Languages */}
-                    <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mt: 3 }}>
-                      Языки
-                    </Typography>
-                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mb: 3 }}>
-                      {lawyer.languages.map((lang, index) => (
-                        <Chip
-                          key={index}
-                          label={lang}
-                          icon={<Language />}
-                          variant="outlined"
-                        />
-                      ))}
-                    </Box>
-
-                    {/* Certifications */}
-                    <Typography variant="h6" fontWeight="bold" gutterBottom sx={{ mt: 3 }}>
-                      Сертификаты и достижения
-                    </Typography>
-                    <List>
-                      {lawyer.certifications.map((cert, index) => (
-                        <ListItem key={index}>
-                          <ListItemAvatar>
-                            <Avatar sx={{ bgcolor: '#a67c52' }}>
-                              <WorkspacePremium />
-                            </Avatar>
-                          </ListItemAvatar>
-                          <ListItemText primary={cert} />
-                        </ListItem>
-                      ))}
-                    </List>
-                  </Box>
+                {(lawyer.education.length > 0 || langText) && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                    {lawyer.education.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <SchoolOutlined sx={{ fontSize: 15 }} /> Образование
+                        </div>
+                        <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>
+                          {lawyer.education.map((edu, i) => (
+                            <div key={i}>{typeof edu === 'string' ? edu : (edu.title || edu.name || '')}</div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {langText && (
+                      <div>
+                        <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <TranslateOutlined sx={{ fontSize: 15 }} /> Языки
+                        </div>
+                        <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>{langText}</div>
+                      </div>
+                    )}
+                  </div>
                 )}
 
-                {/* Tab 1: Reviews */}
-                {currentTab === 1 && (
-                  <Box>
-                    <Typography variant="h6" fontWeight="bold" gutterBottom>
-                      Отзывы клиентов
-                    </Typography>
-
-                    {/* Rating Summary */}
-                    <Card sx={{ mb: 3, bgcolor: '#f0fdf4', borderRadius: 2 }}>
-                      <CardContent>
-                        <Grid container spacing={2} alignItems="center">
-                          <Grid item xs={12} md={4} sx={{ textAlign: 'center' }}>
-                            <Typography variant="h2" fontWeight="bold" color="primary">
-                              {lawyer.rating}
-                            </Typography>
-                            <Rating value={lawyer.rating} precision={0.1} readOnly size="large" />
-                            <Typography variant="body2" color="text.secondary">
-                              На основе {lawyer.completedConsultations} отзывов
-                            </Typography>
-                          </Grid>
-                          <Grid item xs={12} md={8}>
-                            {[5, 4, 3, 2, 1].map((star) => (
-                              <Box key={star} sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                                <Typography variant="body2" sx={{ width: 60 }}>
-                                  {star} звезд
-                                </Typography>
-                                <LinearProgress
-                                  variant="determinate"
-                                  value={star === 5 ? 80 : star === 4 ? 15 : 5}
-                                  sx={{ flexGrow: 1, height: 8, borderRadius: 4 }}
-                                />
-                                <Typography variant="body2" color="text.secondary" sx={{ width: 40 }}>
-                                  {star === 5 ? '80%' : star === 4 ? '15%' : '5%'}
-                                </Typography>
-                              </Box>
-                            ))}
-                          </Grid>
-                        </Grid>
-                      </CardContent>
-                    </Card>
-
-                    {/* Review List */}
-                    {MOCK_REVIEWS.map((review) => (
-                      <Card key={review.id} sx={{ mb: 2, borderRadius: 2 }}>
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
-                            <Avatar sx={{ bgcolor: '#3d5a52' }}>
-                              {review.clientName.charAt(0)}
-                            </Avatar>
-                            <Box sx={{ flexGrow: 1 }}>
-                              <Typography variant="subtitle1" fontWeight="bold">
-                                {review.clientName}
-                              </Typography>
-                              <Typography variant="caption" color="text.secondary">
-                                {review.date}
-                              </Typography>
-                            </Box>
-                            <Rating value={review.rating} readOnly size="small" />
-                          </Box>
-                          <Typography variant="body2" color="text.secondary">
-                            {review.comment}
-                          </Typography>
-                        </CardContent>
-                      </Card>
-                    ))}
-                  </Box>
+                {lawyer.certifications.length > 0 && (
+                  <>
+                    <div style={{ height: 1, background: 'var(--card-brd)', margin: '24px 0' }} />
+                    <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 16 }}>
+                      Достижения и квалификация
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} className="lp-ach">
+                      {lawyer.certifications.map((ach, i) => {
+                        const title = typeof ach === 'string' ? ach : (ach.title || ach.name || '');
+                        const sub = typeof ach === 'string' ? '' : (ach.sub || ach.description || '');
+                        return (
+                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, background: 'rgba(184,149,110,0.06)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: '16px 18px' }}>
+                            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, rgba(184,149,110,0.22), rgba(154,123,90,0.14))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--accent)' }}>
+                              <WorkspacePremiumOutlined sx={{ fontSize: 20 }} />
+                            </div>
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{title}</div>
+                              {sub && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.5 }}>{sub}</div>}
+                            </div>
+                            <ChevronRightOutlined sx={{ fontSize: 18, color: 'var(--text3)', flexShrink: 0, mt: '2px' }} />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
+              </div>
+            )}
 
-                {/* Tab 2: Portfolio */}
-                {currentTab === 2 && (
-                  <Box>
-                    <Typography variant="h6" fontWeight="bold" gutterBottom>
-                      Портфолио и достижения
-                    </Typography>
+            {/* Reviews — list only (rating/count live in the left column) */}
+            {tab === 'reviews' && (
+              reviews.length === 0 ? (
+                <div style={{ ...glassCard, padding: 48, textAlign: 'center' }}>
+                  <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>Пока нет отзывов</div>
+                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>Станьте первым, кто оставит отзыв после консультации</div>
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {reviews.map((rv, i) => (
+                    <div key={rv.id || i} style={{ ...glassCard, padding: '20px 22px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
+                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 13 }}>
+                            {initialsOf(rv.name)}
+                          </div>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{rv.name}</div>
+                        </div>
+                        <div style={{ color: 'var(--accent)', fontSize: 14 }}>{starsOf(rv.rating)}</div>
+                      </div>
+                      <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text2)' }}>{rv.text}</p>
+                    </div>
+                  ))}
+                </div>
+              )
+            )}
 
-                    <Grid container spacing={2}>
-                      <Grid item xs={12} sm={6}>
-                        <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#f0fdf4', borderRadius: 2 }}>
-                          <CheckCircle sx={{ fontSize: 48, color: '#3d5a52', mb: 1 }} />
-                          <Typography variant="h4" fontWeight="bold" color="primary">
-                            {lawyer.completedConsultations}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Завершенных консультаций
-                          </Typography>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#fef3c7', borderRadius: 2 }}>
-                          <ThumbUp sx={{ fontSize: 48, color: '#a67c52', mb: 1 }} />
-                          <Typography variant="h4" fontWeight="bold" sx={{ color: '#a67c52' }}>
-                            {lawyer.successRate}%
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Успешных дел
-                          </Typography>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#fef2f2', borderRadius: 2 }}>
-                          <Star sx={{ fontSize: 48, color: '#fbbf24', mb: 1 }} />
-                          <Typography variant="h4" fontWeight="bold" sx={{ color: '#fbbf24' }}>
-                            {lawyer.rating}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Средний рейтинг
-                          </Typography>
-                        </Card>
-                      </Grid>
-                      <Grid item xs={12} sm={6}>
-                        <Card sx={{ p: 2, textAlign: 'center', bgcolor: '#f0f9ff', borderRadius: 2 }}>
-                          <WorkspacePremium sx={{ fontSize: 48, color: '#3b82f6', mb: 1 }} />
-                          <Typography variant="h4" fontWeight="bold" sx={{ color: '#3b82f6' }}>
-                            {lawyer.experience}
-                          </Typography>
-                          <Typography variant="body2" color="text.secondary">
-                            Лет опыта
-                          </Typography>
-                        </Card>
-                      </Grid>
-                    </Grid>
+            {/* Portfolio */}
+            {tab === 'portfolio' && (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }} className="lp-port">
+                {portfolioMetrics.map((po, i) => (
+                  <div key={i} style={{ ...glassCard, padding: 24 }}>
+                    <div style={{ fontSize: 30, fontWeight: 300, color: 'var(--accent)' }}>{po.value}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6 }}>{po.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
 
-                    <Typography variant="body2" color="text.secondary" sx={{ mt: 3, textAlign: 'center' }}>
-                      Детальная информация о делах доступна только после начала консультации
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            </Paper>
-          </Grid>
-        </Grid>
-      </Container>
-    </Box>
+      <BookingModal
+        open={bookingOpen}
+        onClose={() => setBookingOpen(false)}
+        lawyer={lawyer}
+      />
+
+      <style>{`@media (max-width: 900px){
+        .lp-grid { grid-template-columns: 1fr !important; }
+        .lp-ach, .lp-port { grid-template-columns: 1fr !important; }
+      }`}</style>
+    </GlassShell>
   );
 };
 

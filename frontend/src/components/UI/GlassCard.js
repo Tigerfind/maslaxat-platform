@@ -1,23 +1,27 @@
 import React from 'react';
 import { Card, keyframes } from '@mui/material';
+import { axelionColors } from '../../theme/axelionTheme';
+
+/**
+ * MaslaXat Premium Card Component (UI variant)
+ * Elegant, minimalist card with subtle animations
+ */
 
 const shimmer = keyframes`
   0% {
-    background-position: -1000px 0;
+    background-position: -500px 0;
   }
   100% {
-    background-position: 1000px 0;
+    background-position: 500px 0;
   }
 `;
 
 const glow = keyframes`
   0%, 100% {
-    box-shadow: 0 0 20px rgba(99, 102, 241, 0.1),
-                0 0 40px rgba(236, 72, 153, 0.1);
+    box-shadow: 0 2px 8px rgba(26, 26, 26, 0.04);
   }
   50% {
-    box-shadow: 0 0 30px rgba(99, 102, 241, 0.2),
-                0 0 60px rgba(236, 72, 153, 0.2);
+    box-shadow: 0 4px 16px rgba(184, 149, 110, 0.12);
   }
 `;
 
@@ -27,25 +31,55 @@ const GlassCard = ({
   hover = true,
   glow: glowEffect = false,
   shimmer: shimmerEffect = false,
+  accentBorder = false,
+  variant = 'default',
   ...props
 }) => {
+  const getVariantStyles = () => {
+    switch (variant) {
+      case 'elevated':
+        return {
+          backgroundColor: axelionColors.bgLight,
+          boxShadow: '0 4px 16px rgba(26, 26, 26, 0.06)',
+        };
+      case 'cream':
+        return {
+          backgroundColor: axelionColors.bgCream,
+          boxShadow: '0 2px 8px rgba(26, 26, 26, 0.04)',
+        };
+      case 'dark':
+        return {
+          backgroundColor: axelionColors.bgDarkCard,
+          color: axelionColors.textLight,
+          border: `1px solid ${axelionColors.borderDark}`,
+        };
+      default:
+        return {
+          backgroundColor: axelionColors.bgLight,
+          boxShadow: '0 2px 8px rgba(26, 26, 26, 0.04)',
+        };
+    }
+  };
+
   return (
     <Card
       {...props}
       sx={{
-        background: 'rgba(255, 255, 255, 0.7)',
-        backdropFilter: 'blur(20px)',
-        border: '1px solid rgba(255, 255, 255, 0.3)',
-        borderRadius: 4,
-        boxShadow: '0 8px 32px rgba(0, 0, 0, 0.1)',
+        border: `1px solid ${axelionColors.borderLight}`,
+        borderRadius: '8px',
         transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
         position: 'relative',
         overflow: 'hidden',
+        ...getVariantStyles(),
+        ...(accentBorder && {
+          borderLeft: `3px solid ${axelionColors.gold}`,
+          borderRadius: '0 8px 8px 0',
+        }),
         ...(hover && {
           '&:hover': {
-            transform: 'translateY(-4px)',
-            boxShadow: '0 12px 40px rgba(99, 102, 241, 0.2)',
-            border: '1px solid rgba(99, 102, 241, 0.3)',
+            transform: 'translateY(-2px)',
+            boxShadow: '0 8px 24px rgba(26, 26, 26, 0.08)',
+            borderColor: axelionColors.gold,
           },
         }),
         ...(glowEffect && {
@@ -59,8 +93,8 @@ const GlassCard = ({
             left: '-100%',
             width: '100%',
             height: '100%',
-            background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent)',
-            animation: `${shimmer} 3s infinite`,
+            background: `linear-gradient(90deg, transparent, rgba(184, 149, 110, 0.1), transparent)`,
+            animation: `${shimmer} 2s infinite`,
             pointerEvents: 'none',
           },
         }),

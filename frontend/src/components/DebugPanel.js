@@ -15,6 +15,7 @@ import {
   Delete,
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
+import { axelionColors } from '../theme/axelionTheme';
 
 const DebugPanel = () => {
   const [open, setOpen] = useState(false);
@@ -65,12 +66,12 @@ const DebugPanel = () => {
         <IconButton
           onClick={() => setOpen(true)}
           sx={{
-            bgcolor: '#FF6B6B',
+            bgcolor: axelionColors.gold,
             color: '#FFFFFF',
             '&:hover': {
-              bgcolor: '#EE5A5A',
+              bgcolor: axelionColors.goldDark,
             },
-            boxShadow: '0 4px 12px rgba(255, 107, 107, 0.3)',
+            boxShadow: '0 4px 12px rgba(184, 149, 110, 0.3)',
           }}
         >
           <BugReport />
@@ -84,23 +85,24 @@ const DebugPanel = () => {
             maxHeight: '80vh',
             overflow: 'auto',
             p: 3,
-            bgcolor: '#FFFFFF',
-            border: '2px solid #FF6B6B',
+            bgcolor: axelionColors.bgLight,
+            border: `2px solid ${axelionColors.gold}`,
+            borderRadius: '8px',
             boxShadow: '0 8px 24px rgba(0, 0, 0, 0.15)',
           }}
         >
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              <BugReport sx={{ color: '#FF6B6B' }} />
-              <Typography variant="h6" fontWeight="bold">
+              <BugReport sx={{ color: axelionColors.gold }} />
+              <Typography variant="h6" sx={{ fontWeight: 300, letterSpacing: '0.05em' }}>
                 Debug Panel
               </Typography>
             </Box>
             <Box>
-              <IconButton size="small" onClick={loadDebugData}>
+              <IconButton size="small" onClick={loadDebugData} sx={{ color: axelionColors.textSecondary }}>
                 <Refresh />
               </IconButton>
-              <IconButton size="small" onClick={() => setOpen(false)}>
+              <IconButton size="small" onClick={() => setOpen(false)} sx={{ color: axelionColors.textSecondary }}>
                 <ExpandLess />
               </IconButton>
             </Box>
@@ -108,17 +110,17 @@ const DebugPanel = () => {
 
           {/* Current User Info */}
           <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle2" fontWeight="bold" sx={{ color: '#6B7280', mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: axelionColors.textMuted, mb: 1 }}>
               Current User:
             </Typography>
-            <Paper sx={{ bgcolor: '#F4F6F8', p: 2 }}>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+            <Paper sx={{ bgcolor: axelionColors.bgCream, p: 2, borderRadius: '8px', boxShadow: 'none' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: axelionColors.textSecondary }}>
                 ID: {data.currentUser?.id || 'N/A'}
               </Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: axelionColors.textSecondary }}>
                 Name: {data.currentUser?.name || 'N/A'}
               </Typography>
-              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem' }}>
+              <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '0.75rem', color: axelionColors.textSecondary }}>
                 Role: {data.currentUser?.role || 'N/A'}
               </Typography>
             </Paper>
@@ -126,28 +128,30 @@ const DebugPanel = () => {
 
           {/* Requests Stats */}
           <Box sx={{ mb: 3 }}>
-            <Typography variant="subtitle2" fontWeight="bold" sx={{ color: '#6B7280', mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: axelionColors.textMuted, mb: 1 }}>
               Consultation Requests Stats:
             </Typography>
-            <Paper sx={{ bgcolor: '#F4F6F8', p: 2 }}>
-              <Typography variant="body2">Total: {data.totalRequests || 0}</Typography>
-              <Typography variant="body2">Pending: {data.pendingRequests || 0}</Typography>
-              <Typography variant="body2">Accepted: {data.acceptedRequests || 0}</Typography>
-              <Typography variant="body2">Rejected: {data.rejectedRequests || 0}</Typography>
+            <Paper sx={{ bgcolor: axelionColors.bgCream, p: 2, borderRadius: '8px', boxShadow: 'none' }}>
+              <Typography variant="body2" sx={{ color: axelionColors.textSecondary }}>Total: {data.totalRequests || 0}</Typography>
+              <Typography variant="body2" sx={{ color: axelionColors.textSecondary }}>Pending: {data.pendingRequests || 0}</Typography>
+              <Typography variant="body2" sx={{ color: axelionColors.textSecondary }}>Accepted: {data.acceptedRequests || 0}</Typography>
+              <Typography variant="body2" sx={{ color: axelionColors.textSecondary }}>Rejected: {data.rejectedRequests || 0}</Typography>
             </Paper>
           </Box>
 
           {/* All Requests */}
           <Box sx={{ mb: 2 }}>
-            <Typography variant="subtitle2" fontWeight="bold" sx={{ color: '#6B7280', mb: 1 }}>
+            <Typography variant="subtitle2" sx={{ fontWeight: 600, color: axelionColors.textMuted, mb: 1 }}>
               All Consultation Requests:
             </Typography>
             <Paper
               sx={{
-                bgcolor: '#F4F6F8',
+                bgcolor: axelionColors.bgCream,
                 p: 2,
                 maxHeight: 300,
                 overflow: 'auto',
+                borderRadius: '8px',
+                boxShadow: 'none',
               }}
             >
               {data.consultationRequests && data.consultationRequests.length > 0 ? (
@@ -157,36 +161,36 @@ const DebugPanel = () => {
                     sx={{
                       mb: 2,
                       pb: 2,
-                      borderBottom: index < data.consultationRequests.length - 1 ? '1px solid #E6E9EE' : 'none',
+                      borderBottom: index < data.consultationRequests.length - 1 ? `1px solid ${axelionColors.borderLight}` : 'none',
                     }}
                   >
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       ID: {req.id}
                     </Typography>
                     <br />
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       Lawyer ID: {req.lawyerId || 'N/A'}
                     </Typography>
                     <br />
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       Lawyer Name: {req.lawyerName || 'N/A'}
                     </Typography>
                     <br />
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       Client: {req.client?.name || 'N/A'}
                     </Typography>
                     <br />
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       Status: {req.status}
                     </Typography>
                     <br />
-                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem' }}>
+                    <Typography variant="caption" sx={{ fontFamily: 'monospace', fontSize: '0.7rem', color: axelionColors.textSecondary }}>
                       Question: {req.question?.substring(0, 50)}...
                     </Typography>
                   </Box>
                 ))
               ) : (
-                <Typography variant="body2" sx={{ color: '#6B7280' }}>
+                <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                   No requests in localStorage
                 </Typography>
               )}
@@ -198,10 +202,19 @@ const DebugPanel = () => {
             <Button
               size="small"
               variant="outlined"
-              color="error"
               startIcon={<Delete />}
               onClick={handleClearRequests}
               fullWidth
+              sx={{
+                borderColor: axelionColors.error,
+                color: axelionColors.error,
+                borderRadius: '8px',
+                textTransform: 'none',
+                '&:hover': {
+                  borderColor: axelionColors.error,
+                  bgcolor: axelionColors.errorLight,
+                },
+              }}
             >
               Clear All Requests
             </Button>
@@ -211,6 +224,16 @@ const DebugPanel = () => {
               startIcon={<Refresh />}
               onClick={loadDebugData}
               fullWidth
+              sx={{
+                borderColor: axelionColors.gold,
+                color: axelionColors.gold,
+                borderRadius: '8px',
+                textTransform: 'none',
+                '&:hover': {
+                  borderColor: axelionColors.goldDark,
+                  bgcolor: axelionColors.accentLight,
+                },
+              }}
             >
               Refresh
             </Button>

@@ -1,67 +1,155 @@
-import React, { useState } from 'react';
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Box,
-  Typography,
-  TextField,
-  Button,
-  Alert,
-  FormControl,
-  InputLabel,
-  Select,
-  MenuItem,
-  CircularProgress,
-  Chip,
-  Avatar,
-  Divider,
-} from '@mui/material';
-import {
-  CalendarToday,
-  AccessTime,
-  AttachMoney,
-  Send,
-  Close,
-} from '@mui/icons-material';
+import React, { useState, useMemo } from 'react';
+import { Dialog } from '@mui/material';
+import { CalendarTodayOutlined, MailOutline } from '@mui/icons-material';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import clientService from '../services/clientService';
 import ConflictDetector from '../shared/validators/conflict-detector';
 
-const BookingModal = ({ open, onClose, lawyer }) => {
-  const [loading, setLoading] = useState(false);
-  const [formData, setFormData] = useState({
-    question: '',
-    description: '',
-    preferredDate: '',
-    preferredTime: '',
-    consultationType: 'video',
-  });
+/**
+ * MaslaXat Booking Modal — 4-step consultation booking flow.
+ * Re-skinned 1:1 to ClaudeDesign mockup 15_BOOKING_MODAL.html (+ success
+ * animation from 16_ACHIEVEMENT_MODAL / glass.css checkPop/checkDraw).
+ * Data-wiring preserved: clientService.lawyers.bookConsultation + ConflictDetector.
+ */
 
-  const handleChange = (field, value) => {
-    setFormData((prev) => ({ ...prev, [field]: value }));
+const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
+const DOWS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
+
+const DURATIONS = [
+  { l: '30 мин', value: 30 },
+  { l: '60 мин', value: 60 },
+  { l: '90 мин', value: 90 },
+];
+
+const TIME_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+
+const STEPS = [1, 2, 3];
+
+const emptyForm = {
+  question: '',
+  description: '',
+  preferredDate: '',
+  preferredTime: '',
+  consultationType: 'video',
+};
+
+const BookingModal = ({ open, onClose, lawyer }) => {
+  const navigate = useNavigate();
+  const [loading, setLoading] = useState(false);
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState(emptyForm);
+  const [duration, setDuration] = useState(60);
+  const [dateLabel, setDateLabel] = useState('');
+  const [promo, setPromo] = useState('');
+  const [promoApplied, setPromoApplied] = useState(false);
+  const [promoBad, setPromoBad] = useState(false);
+  const [notify, setNotify] = useState(true);
+  const [payMethod, setPayMethod] = useState('payme');
+
+  const dates = useMemo(() => {
+    const arr = [];
+    for (let i = 1; i <= 5; i += 1) {
+      const dt = new Date();
+      dt.setDate(dt.getDate() + i);
+      arr.push({
+        iso: dt.toISOString().split('T')[0],
+        dow: DOWS[dt.getDay()],
+        d: dt.getDate(),
+        label: `${dt.getDate()} ${MONTHS[dt.getMonth()]}`,
+      });
+    }
+    return arr;
+  }, []);
+
+  if (!lawyer) return null;
+
+  // ---- Derived pricing (UI stub — no real payment yet) ----
+  const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
+  const subtotal = Math.round((basePrice * duration) / 60);
+  const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
+  const total = subtotal - discount;
+  const fmt = (n) => Number(n || 0).toLocaleString('ru-RU');
+
+  const profName = lawyer.name || '';
+  const profInitials = profName
+    .split(' ')
+    .map((p) => p.charAt(0))
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+  const profRating = lawyer.rating || lawyer.profile?.rating || '5.0';
+  const durLabel = DURATIONS.find((d) => d.value === duration)?.l || `${duration} мин`;
+
+  const handleChange = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
+
+  const resetAll = () => {
+    setStep(1);
+    setFormData(emptyForm);
+    setDuration(60);
+    setDateLabel('');
+    setPromo('');
+    setPromoApplied(false);
+    setPromoBad(false);
+    setNotify(true);
+    setPayMethod('payme');
+    setLoading(false);
   };
 
-  const handleSubmit = async () => {
-    if (!formData.question.trim()) {
-      toast.error('Пожалуйста, опишите ваш вопрос');
-      return;
-    }
+  const handleClose = () => {
+    onClose();
+    // defer reset so it doesn't flash the first step during close animation
+    setTimeout(resetAll, 250);
+  };
 
-    if (!formData.preferredDate || !formData.preferredTime) {
-      toast.error('Пожалуйста, выберите желаемую дату и время');
-      return;
+  const applyPromo = () => {
+    if (promo.trim().toUpperCase() === 'EMAS10') {
+      setPromoApplied(true);
+      setPromoBad(false);
+    } else {
+      setPromoApplied(false);
+      setPromoBad(true);
     }
+  };
 
+  const goNext = () => {
+    if (step === 1) {
+      if (!formData.question.trim()) {
+        toast.error('Пожалуйста, опишите ваш вопрос');
+        return;
+      }
+      setStep(2);
+    } else if (step === 2) {
+      if (!formData.preferredDate || !formData.preferredTime) {
+        toast.error('Пожалуйста, выберите дату и время');
+        return;
+      }
+      setStep(3);
+    }
+  };
+
+  const goBack = () => {
+    if (step === 1) {
+      handleClose();
+    } else {
+      setStep((s) => s - 1);
+    }
+  };
+
+  // ---- Real booking logic runs on the "Оплатить" button (payment is a UI stub) ----
+  const handlePayNow = async () => {
     try {
       setLoading(true);
 
-      // Get current user from localStorage
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
       const bookingData = {
         ...formData,
+        // captured UI choices (cosmetic until backend consumes them)
+        duration,
+        amount: total,
+        paymentMethod: payMethod,
+        notify,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
         client: {
@@ -72,22 +160,18 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         status: 'pending',
       };
 
-      // Get existing consultations from localStorage
       const existingConsultations = JSON.parse(
         localStorage.getItem('consultationRequests') || '[]'
       );
 
-      // Validate with conflict detector
       const validation = ConflictDetector.validateConsultationBooking(bookingData, {
         existingConsultations,
         minHoursAhead: 2,
         maxConsultationsPerDay: 10,
       });
 
-      // Log conflicts in development mode
       ConflictDetector.logConflicts(validation);
 
-      // Show conflicts if any critical ones exist
       if (!validation.isValid) {
         const message = ConflictDetector.formatConflictMessage(validation);
         toast.error(message || 'Обнаружены конфликты при бронировании');
@@ -95,27 +179,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         return;
       }
 
-      // Show warnings but allow to proceed
       if (validation.warnings.length > 0) {
         validation.warnings.forEach((warning) => {
           toast.warning(warning.message, { autoClose: 5000 });
         });
       }
 
-      // Proceed with booking if valid
       await clientService.lawyers.bookConsultation(lawyer.id, bookingData);
 
-      toast.success('Запрос отправлен юристу! Ожидайте подтверждения.');
-      onClose();
-
-      // Сброс формы
-      setFormData({
-        question: '',
-        description: '',
-        preferredDate: '',
-        preferredTime: '',
-        consultationType: 'video',
-      });
+      setStep(4);
     } catch (error) {
       toast.error('Ошибка отправки запроса');
     } finally {
@@ -123,229 +195,654 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
-  if (!lawyer) return null;
+  const addToCalendar = () => {
+    toast.info('Событие добавлено в календарь');
+  };
 
-  // Генерация доступных временных слотов
-  const timeSlots = [
-    '09:00', '10:00', '11:00', '12:00',
-    '14:00', '15:00', '16:00', '17:00',
-    '18:00', '19:00', '20:00',
+  const bookDone = () => {
+    handleClose();
+    navigate('/consultations');
+  };
+
+  // ---- Shared style recipes ----
+  const label = {
+    fontSize: 12,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    color: 'var(--text3)',
+    marginBottom: 10,
+  };
+
+  const pill = (active) => ({
+    flex: 1,
+    textAlign: 'center',
+    padding: '11px 0',
+    borderRadius: 'var(--radius)',
+    fontSize: 14,
+    cursor: 'pointer',
+    userSelect: 'none',
+    transition: 'all 0.15s ease',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'rgba(184,149,110,0.12)' : 'var(--surface)',
+    color: active ? 'var(--accent-dark)' : 'var(--text2)',
+    fontWeight: active ? 600 : 400,
+  });
+
+  const datePill = (active) => ({
+    flex: 1,
+    textAlign: 'center',
+    padding: '10px 0',
+    borderRadius: 'var(--radius)',
+    cursor: 'pointer',
+    userSelect: 'none',
+    transition: 'all 0.15s ease',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'rgba(184,149,110,0.12)' : 'var(--surface)',
+  });
+
+  const timePill = (active) => ({
+    textAlign: 'center',
+    padding: '11px 0',
+    borderRadius: 'var(--radius)',
+    fontSize: 14,
+    cursor: 'pointer',
+    userSelect: 'none',
+    transition: 'all 0.15s ease',
+    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+    background: active ? 'rgba(184,149,110,0.12)' : 'var(--surface)',
+    color: active ? 'var(--accent-dark)' : 'var(--text)',
+    fontWeight: active ? 600 : 400,
+  });
+
+  const inputBase = {
+    width: '100%',
+    border: '1px solid var(--border)',
+    borderRadius: 'var(--radius)',
+    padding: '13px 15px',
+    fontSize: 14,
+    color: 'var(--text)',
+    background: 'var(--surface)',
+    fontFamily: 'inherit',
+    outline: 'none',
+    boxSizing: 'border-box',
+  };
+
+  const insetPanel = {
+    background: 'var(--canvas)',
+    borderRadius: 'var(--radius)',
+    padding: '16px 18px',
+    marginBottom: 20,
+    display: 'flex',
+    flexDirection: 'column',
+    gap: 8,
+  };
+
+  const rowStyle = {
+    display: 'flex',
+    justifyContent: 'space-between',
+    fontSize: 13,
+    color: 'var(--text2)',
+  };
+  const rowVal = { color: 'var(--text)', fontWeight: 500 };
+
+  const secondaryBtn = {
+    flexShrink: 0,
+    background: 'transparent',
+    border: '1px solid var(--border)',
+    color: 'var(--text2)',
+    fontSize: 13,
+    letterSpacing: '0.05em',
+    textTransform: 'uppercase',
+    padding: '15px 20px',
+    borderRadius: 'var(--radius)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+  };
+
+  const primaryBtn = {
+    flex: 1,
+    background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+    color: '#FFFFFF',
+    border: 'none',
+    fontSize: 13,
+    fontWeight: 500,
+    letterSpacing: '0.07em',
+    textTransform: 'uppercase',
+    padding: 15,
+    borderRadius: 'var(--radius)',
+    cursor: 'pointer',
+    fontFamily: 'inherit',
+    opacity: loading ? 0.6 : 1,
+  };
+
+  const payMethods = [
+    { id: 'payme', n: 'Payme', d: 'Оплата картой UZCARD / HUMO' },
+    { id: 'click', n: 'Click', d: 'Быстрая оплата через Click' },
+    { id: 'uzcard', n: 'Банковская карта', d: 'Visa / Mastercard' },
   ];
 
-  // Минимальная дата - завтра
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const minDate = tomorrow.toISOString().split('T')[0];
+  const notDone = step <= 3;
 
   return (
     <Dialog
       open={open}
-      onClose={onClose}
-      maxWidth="md"
-      fullWidth
+      onClose={handleClose}
+      maxWidth={false}
+      slotProps={{
+        backdrop: {
+          sx: { background: 'rgba(26,26,26,0.55)', animation: 'modalFade 0.22s ease' },
+        },
+      }}
       PaperProps={{
         sx: {
-          borderRadius: '12px',
-          boxShadow: '0 4px 12px rgba(11, 27, 43, 0.12)',
+          width: 480,
+          maxWidth: '100%',
+          m: 2,
+          overflow: 'hidden',
+          background: 'var(--surface)',
+          borderRadius: 'var(--radius)',
+          boxShadow: '0 24px 56px rgba(26,26,26,0.24)',
+          animation: 'modalPop 0.32s cubic-bezier(.34,1.56,.64,1)',
         },
       }}
     >
-      <DialogTitle
-        sx={{
-          bgcolor: '#FFFFFF',
-          borderBottom: '1px solid #E6E9EE',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-        }}
-      >
-        <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
-          Запрос на консультацию
-        </Typography>
-        <Button
-          onClick={onClose}
-          sx={{ minWidth: 'auto', color: '#6B7280' }}
-        >
-          <Close />
-        </Button>
-      </DialogTitle>
-
-      <DialogContent sx={{ bgcolor: '#F4F6F8', py: 3 }}>
-        {/* Информация о юристе */}
-        <Box
-          sx={{
-            bgcolor: '#FFFFFF',
-            borderRadius: '12px',
-            p: 3,
-            mb: 3,
-            border: '1px solid #E6E9EE',
+      {/* ---------- Header + step indicator ---------- */}
+      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--border)' }}>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            marginBottom: 18,
           }}
         >
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-            <Avatar
-              sx={{
-                width: 60,
-                height: 60,
-                bgcolor: '#2563EB',
-                fontSize: '1.5rem',
-                fontWeight: 'bold',
-              }}
-            >
-              {lawyer.name.charAt(0)}
-            </Avatar>
-            <Box sx={{ flex: 1 }}>
-              <Typography variant="h6" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
-                {lawyer.name}
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#6B7280' }}>
-                {lawyer.specialization}
-              </Typography>
-            </Box>
-            <Chip
-              icon={<AttachMoney sx={{ fontSize: 16 }} />}
-              label={`${lawyer.price.toLocaleString()} сум`}
-              sx={{
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                fontWeight: 'bold',
-                color: '#0B1B2B',
-              }}
-            />
-          </Box>
-        </Box>
+          <div
+            style={{
+              fontSize: 18,
+              fontWeight: 400,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+              color: 'var(--text)',
+            }}
+          >
+            Запись на консультацию
+          </div>
+          <button
+            onClick={handleClose}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text3)',
+              fontSize: 22,
+              cursor: 'pointer',
+              lineHeight: 1,
+            }}
+          >
+            ×
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center' }}>
+          {STEPS.map((n, idx) => {
+            const activeStep = Math.min(step, 4);
+            const doneOrActive = n <= activeStep;
+            return (
+              <React.Fragment key={n}>
+                <div
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: '50%',
+                    flexShrink: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: 12,
+                    fontWeight: 500,
+                    background: doneOrActive ? 'var(--accent)' : 'var(--canvas)',
+                    color: doneOrActive ? '#FFFFFF' : 'var(--text3)',
+                    border: doneOrActive ? 'none' : '1px solid var(--border)',
+                  }}
+                >
+                  {n}
+                </div>
+                {idx < STEPS.length - 1 && (
+                  <div
+                    style={{
+                      flex: 1,
+                      height: 2,
+                      margin: '0 6px',
+                      background: n < activeStep ? 'var(--accent)' : 'var(--border)',
+                    }}
+                  />
+                )}
+              </React.Fragment>
+            );
+          })}
+        </div>
+      </div>
 
-        <Alert
-          severity="info"
-          sx={{
-            mb: 3,
-            borderRadius: 2,
-            bgcolor: '#EFF6FF',
-            border: '1px solid #DBEAFE',
+      {/* ---------- Body ---------- */}
+      <div style={{ padding: '24px 28px' }}>
+        {/* Lawyer summary */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            paddingBottom: 18,
+            borderBottom: '1px solid var(--canvas)',
+            marginBottom: 20,
           }}
         >
-          Ваш запрос будет отправлен юристу. После подтверждения с его стороны, дата и время консультации будут зафиксированы.
-        </Alert>
+          <div
+            style={{
+              width: 44,
+              height: 44,
+              borderRadius: '50%',
+              background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              color: '#FFFFFF',
+              fontSize: 15,
+              fontWeight: 500,
+              flexShrink: 0,
+            }}
+          >
+            {profInitials}
+          </div>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{profName}</div>
+            <div style={{ fontSize: 13, color: 'var(--accent)' }}>
+              ★ {profRating} · {fmt(basePrice)} сум
+            </div>
+          </div>
+        </div>
 
-        {/* Форма */}
-        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-          {/* Тип консультации */}
-          <FormControl fullWidth>
-            <InputLabel>Тип консультации</InputLabel>
-            <Select
-              value={formData.consultationType}
-              onChange={(e) => handleChange('consultationType', e.target.value)}
-              label="Тип консультации"
-              sx={{ bgcolor: '#FFFFFF' }}
-            >
-              <MenuItem value="video">Видео-консультация</MenuItem>
-              <MenuItem value="chat">Чат-консультация</MenuItem>
-            </Select>
-          </FormControl>
-
-          {/* Вопрос */}
-          <TextField
-            label="Опишите ваш вопрос *"
-            multiline
-            rows={3}
-            value={formData.question}
-            onChange={(e) => handleChange('question', e.target.value)}
-            placeholder="Кратко опишите суть вашего вопроса..."
-            sx={{ bgcolor: '#FFFFFF' }}
-          />
-
-          {/* Дополнительное описание */}
-          <TextField
-            label="Дополнительная информация"
-            multiline
-            rows={4}
-            value={formData.description}
-            onChange={(e) => handleChange('description', e.target.value)}
-            placeholder="Предоставьте дополнительные детали, если необходимо..."
-            sx={{ bgcolor: '#FFFFFF' }}
-          />
-
-          <Divider />
-
-          {/* Дата и время */}
-          <Typography variant="subtitle1" fontWeight="bold" sx={{ color: '#0B1B2B' }}>
-            Желаемая дата и время
-          </Typography>
-
-          <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 2 }}>
-            <TextField
-              label="Дата *"
-              type="date"
-              value={formData.preferredDate}
-              onChange={(e) => handleChange('preferredDate', e.target.value)}
-              InputProps={{
-                startAdornment: <CalendarToday sx={{ mr: 1, color: '#6B7280' }} />,
-              }}
-              inputProps={{
-                min: minDate,
-              }}
-              sx={{ bgcolor: '#FFFFFF' }}
-            />
-
-            <FormControl fullWidth>
-              <InputLabel>Время *</InputLabel>
-              <Select
-                value={formData.preferredTime}
-                onChange={(e) => handleChange('preferredTime', e.target.value)}
-                label="Время *"
-                startAdornment={<AccessTime sx={{ mr: 1, color: '#6B7280' }} />}
-                sx={{ bgcolor: '#FFFFFF' }}
+        {/* STEP 1: type + duration + question */}
+        {step === 1 && (
+          <>
+            <div style={label}>Тип консультации</div>
+            <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
+              <div
+                onClick={() => handleChange('consultationType', 'video')}
+                style={pill(formData.consultationType === 'video')}
               >
-                {timeSlots.map((time) => (
-                  <MenuItem key={time} value={time}>
-                    {time}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
+                Видео
+              </div>
+              <div
+                onClick={() => handleChange('consultationType', 'chat')}
+                style={pill(formData.consultationType === 'chat')}
+              >
+                Чат
+              </div>
+            </div>
 
-          <Alert severity="warning" sx={{ borderRadius: 2 }}>
-            Обратите внимание: дата и время будут зафиксированы только после подтверждения юриста. Вы получите уведомление о статусе вашего запроса.
-          </Alert>
-        </Box>
-      </DialogContent>
+            <div style={label}>Длительность</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              {DURATIONS.map((d) => (
+                <div key={d.value} onClick={() => setDuration(d.value)} style={pill(duration === d.value)}>
+                  {d.l}
+                </div>
+              ))}
+            </div>
 
-      <DialogActions
-        sx={{
-          bgcolor: '#FFFFFF',
-          borderTop: '1px solid #E6E9EE',
-          p: 3,
-          gap: 2,
-        }}
-      >
-        <Button
-          onClick={onClose}
-          variant="outlined"
-          sx={{
-            borderColor: '#E6E9EE',
-            color: '#6B7280',
-            '&:hover': {
-              borderColor: '#6B7280',
-            },
-          }}
-        >
-          Отмена
-        </Button>
-        <Button
-          onClick={handleSubmit}
-          variant="contained"
-          disabled={loading}
-          startIcon={loading ? <CircularProgress size={16} /> : <Send />}
-          sx={{
-            bgcolor: '#2563EB',
-            '&:hover': {
-              bgcolor: '#1D4ED8',
-            },
-          }}
-        >
-          {loading ? 'Отправка...' : 'Отправить запрос'}
-        </Button>
-      </DialogActions>
+            <div style={label}>Ваш вопрос</div>
+            <textarea
+              value={formData.question}
+              onChange={(e) => handleChange('question', e.target.value)}
+              placeholder="Коротко опишите ситуацию…"
+              style={{ ...inputBase, minHeight: 92, resize: 'none', marginBottom: 22 }}
+            />
+          </>
+        )}
+
+        {/* STEP 2: date + time */}
+        {step === 2 && (
+          <>
+            <div style={label}>Дата</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+              {dates.map((d) => {
+                const active = formData.preferredDate === d.iso;
+                return (
+                  <div
+                    key={d.iso}
+                    onClick={() => {
+                      handleChange('preferredDate', d.iso);
+                      setDateLabel(d.label);
+                    }}
+                    style={datePill(active)}
+                  >
+                    <div style={{ fontSize: 11, color: 'var(--text3)' }}>{d.dow}</div>
+                    <div
+                      style={{
+                        fontSize: 17,
+                        fontWeight: 500,
+                        color: active ? 'var(--accent-dark)' : 'var(--text)',
+                        marginTop: 2,
+                      }}
+                    >
+                      {d.d}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            <div style={label}>Время</div>
+            <div
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(3, 1fr)',
+                gap: 8,
+                marginBottom: 22,
+              }}
+            >
+              {TIME_SLOTS.map((t) => (
+                <div
+                  key={t}
+                  onClick={() => handleChange('preferredTime', t)}
+                  style={timePill(formData.preferredTime === t)}
+                >
+                  {t}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+
+        {/* STEP 3: payment (UI stub — no real gateway wired) */}
+        {step === 3 && (
+          <>
+            <div style={insetPanel}>
+              <div style={rowStyle}>
+                <span>Дата и время</span>
+                <span style={rowVal}>
+                  {dateLabel}, {formData.preferredTime}
+                </span>
+              </div>
+              <div style={rowStyle}>
+                <span>Длительность</span>
+                <span style={rowVal}>{durLabel}</span>
+              </div>
+              <div style={rowStyle}>
+                <span>Стоимость</span>
+                <span style={rowVal}>{fmt(subtotal)} сум</span>
+              </div>
+              {promoApplied && (
+                <>
+                  <div style={{ ...rowStyle, color: '#1F8A5B' }}>
+                    <span>Промокод EMAS10</span>
+                    <span style={{ fontWeight: 500 }}>−{fmt(discount)} сум</span>
+                  </div>
+                  <div
+                    style={{
+                      display: 'flex',
+                      justifyContent: 'space-between',
+                      fontSize: 14,
+                      color: 'var(--text)',
+                      paddingTop: 8,
+                      borderTop: '1px solid var(--border)',
+                    }}
+                  >
+                    <span style={{ fontWeight: 500 }}>Итого</span>
+                    <span style={{ fontWeight: 600 }}>{fmt(total)} сум</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            <div style={label}>Промокод</div>
+            <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+              <input
+                value={promo}
+                onChange={(e) => setPromo(e.target.value)}
+                placeholder="Введите код"
+                style={{ ...inputBase, flex: 1, padding: '12px 14px', textTransform: 'uppercase' }}
+              />
+              <button
+                onClick={applyPromo}
+                style={{
+                  flexShrink: 0,
+                  background: 'var(--canvas)',
+                  border: '1px solid var(--border)',
+                  color: 'var(--text)',
+                  fontSize: 13,
+                  letterSpacing: '0.04em',
+                  textTransform: 'uppercase',
+                  padding: '0 18px',
+                  borderRadius: 'var(--radius)',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                }}
+              >
+                Применить
+              </button>
+            </div>
+            {promoApplied && (
+              <div style={{ fontSize: 12, color: '#1F8A5B', marginBottom: 18 }}>
+                ✓ Промокод применён — скидка 10%
+              </div>
+            )}
+            {promoBad && (
+              <div style={{ fontSize: 12, color: '#C0492F', marginBottom: 18 }}>
+                Код недействителен
+              </div>
+            )}
+
+            <div
+              onClick={() => setNotify((v) => !v)}
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 12,
+                padding: '14px 16px',
+                marginBottom: 22,
+                border: '1px solid var(--border)',
+                borderRadius: 'var(--radius)',
+                cursor: 'pointer',
+              }}
+            >
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
+                  Уведомить о подтверждении
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>Email и SMS о записи</div>
+              </div>
+              <div
+                style={{
+                  width: 42,
+                  height: 24,
+                  borderRadius: 12,
+                  flexShrink: 0,
+                  background: notify ? 'var(--accent)' : 'var(--border)',
+                  transition: 'background 0.2s ease',
+                  position: 'relative',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 3,
+                    left: notify ? 21 : 3,
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    background: '#FFFFFF',
+                    transition: 'left 0.2s ease',
+                    boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                  }}
+                />
+              </div>
+            </div>
+
+            <div style={label}>Способ оплаты</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+              {payMethods.map((m) => {
+                const active = payMethod === m.id;
+                return (
+                  <div
+                    key={m.id}
+                    onClick={() => setPayMethod(m.id)}
+                    style={{
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                      padding: '13px 15px',
+                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                      background: active ? 'rgba(184,149,110,0.08)' : 'var(--surface)',
+                      borderRadius: 'var(--radius)',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 18,
+                        height: 18,
+                        flexShrink: 0,
+                        borderRadius: '50%',
+                        border: `2px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                        boxShadow: active ? 'inset 0 0 0 3px var(--accent)' : 'none',
+                        background: active ? '#FFFFFF' : 'transparent',
+                      }}
+                    />
+                    <div style={{ flex: 1 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{m.n}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)' }}>{m.d}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </>
+        )}
+
+        {/* STEP 4: confirmation */}
+        {step === 4 && (
+          <div style={{ textAlign: 'center', padding: '8px 0 4px' }}>
+            <div
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: '50%',
+                background: 'linear-gradient(135deg, rgba(31,138,91,0.16), rgba(31,138,91,0.06))',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                margin: '0 auto 20px',
+                animation: 'checkPop 0.42s cubic-bezier(.34,1.56,.64,1)',
+              }}
+            >
+              <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#1F8A5B" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M20 6L9 17l-5-5" style={{ strokeDasharray: 32, animation: 'checkDraw 0.5s ease 0.2s both' }} />
+              </svg>
+            </div>
+            <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>
+              Консультация забронирована
+            </div>
+            <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text2)', marginBottom: 22 }}>
+              Мы отправили подтверждение. Юрист {profName} свяжется с вами в назначенное время.
+            </p>
+            <div style={{ ...insetPanel, textAlign: 'left', marginBottom: 24, gap: 10 }}>
+              <div style={rowStyle}>
+                <span>Юрист</span>
+                <span style={rowVal}>{profName}</span>
+              </div>
+              <div style={rowStyle}>
+                <span>Дата и время</span>
+                <span style={rowVal}>
+                  {dateLabel}, {formData.preferredTime}
+                </span>
+              </div>
+              <div style={rowStyle}>
+                <span>Длительность</span>
+                <span style={rowVal}>{durLabel}</span>
+              </div>
+              <div style={rowStyle}>
+                <span>Оплачено</span>
+                <span style={rowVal}>{fmt(total)} сум</span>
+              </div>
+            </div>
+            {notify && (
+              <div
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  justifyContent: 'center',
+                  marginBottom: 18,
+                  fontSize: 13,
+                  color: 'var(--text2)',
+                }}
+              >
+                <MailOutline sx={{ fontSize: 15, color: '#1F8A5B' }} />
+                Подтверждение отправлено на email и SMS
+              </div>
+            )}
+            <button
+              onClick={addToCalendar}
+              style={{
+                width: '100%',
+                background: 'transparent',
+                border: '1px solid var(--border)',
+                color: 'var(--text)',
+                fontSize: 13,
+                letterSpacing: '0.05em',
+                textTransform: 'uppercase',
+                padding: 14,
+                borderRadius: 'var(--radius)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+                marginBottom: 10,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: 8,
+              }}
+            >
+              <CalendarTodayOutlined sx={{ fontSize: 16 }} />
+              Добавить в календарь
+            </button>
+            <button
+              onClick={bookDone}
+              style={{
+                width: '100%',
+                background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+                color: '#FFFFFF',
+                border: 'none',
+                fontSize: 13,
+                fontWeight: 500,
+                letterSpacing: '0.07em',
+                textTransform: 'uppercase',
+                padding: 15,
+                borderRadius: 'var(--radius)',
+                cursor: 'pointer',
+                fontFamily: 'inherit',
+              }}
+            >
+              Мои консультации
+            </button>
+          </div>
+        )}
+
+        {/* ---------- Footer nav (steps 1-3) ---------- */}
+        {notDone && (
+          <div style={{ display: 'flex', gap: 10 }}>
+            <button onClick={goBack} style={secondaryBtn}>
+              Назад
+            </button>
+            {step === 3 ? (
+              <button onClick={handlePayNow} disabled={loading} style={primaryBtn}>
+                {loading ? 'Оплата…' : `Оплатить · ${fmt(total)} сум`}
+              </button>
+            ) : (
+              <button onClick={goNext} style={primaryBtn}>
+                Далее
+              </button>
+            )}
+          </div>
+        )}
+      </div>
     </Dialog>
   );
 };

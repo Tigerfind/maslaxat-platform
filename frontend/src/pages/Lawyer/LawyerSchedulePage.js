@@ -1,51 +1,88 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Container,
-  Box,
-  Typography,
-  Grid,
-  IconButton,
-  Avatar,
-  Chip,
-  Badge,
-} from '@mui/material';
-import {
-  ArrowBack,
-  ChevronLeft,
-  ChevronRight,
-  VideoCall,
-  Message,
-  Check,
-  Close,
+  VideocamOutlined,
+  ChatBubbleOutline,
+  CheckOutlined,
+  CloseOutlined,
 } from '@mui/icons-material';
-import NeumorphicCard from '../../components/Neumorphic/NeumorphicCard';
-import NeumorphicButton from '../../components/Neumorphic/NeumorphicButton';
 import { toast } from 'react-toastify';
+import lawyerService from '../../services/lawyerService';
+import GlassShell from '../../components/GlassKit/GlassShell';
+
+/*
+  ─────────────────────────────────────────────────────────────
+  LAWYER SCHEDULE  (/lawyer/schedule)
+  Ported 1:1 from ClaudeDesign → LawyerApp "SCHEDULE".
+   • Monthly calendar (RU names) with day-dots for events
+     ← lawyerService.schedule.getSchedule(year, month)
+   • Right panel = selected day's events (time / type / client / topic)
+     pending → Принять / Отклонить
+       → lawyerService.schedule.confirmConsultation / rejectConsultation
+  Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
+  ─────────────────────────────────────────────────────────────
+*/
+
+const glassCard = {
+  background: 'var(--card-glass)',
+  backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+  border: '1px solid var(--card-brd)',
+  boxShadow: 'var(--card-shadow)',
+  borderRadius: 'var(--radius)',
+};
 
 const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const MONTHS = [
   'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'
+  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
+];
+const MONTHS_GEN = [
+  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
+  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
 ];
 
-const MOCK_EVENTS = {
-  '2024-12-08': [
-    { id: 1, time: '14:00', client: 'Иван Петров', topic: 'Договор купли-продажи', type: 'video', status: 'pending' },
-    { id: 2, time: '16:30', client: 'Анна Сидорова', topic: 'Трудовой спор', type: 'chat', status: 'confirmed' },
-  ],
-  '2024-12-09': [
-    { id: 3, time: '10:00', client: 'Михаил Козлов', topic: 'Регистрация бизнеса', type: 'video', status: 'confirmed' },
-  ],
-  '2024-12-10': [
-    { id: 4, time: '15:00', client: 'Ольга Смирнова', topic: 'Семейное право', type: 'video', status: 'pending' },
-  ],
+const navArrowBtn = {
+  width: 34,
+  height: 34,
+  border: '1px solid var(--border)',
+  background: 'transparent',
+  borderRadius: 'var(--radius)',
+  color: 'var(--text2)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  fontSize: 18,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
 };
 
 const LawyerSchedulePage = () => {
-  const navigate = useNavigate();
   const [currentDate, setCurrentDate] = useState(new Date());
-  const [selectedDate, setSelectedDate] = useState(null);
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
+  const [events, setEvents] = useState({});
+  const [loading, setLoading] = useState(true);
+
+  const loadSchedule = useCallback(async () => {
+    try {
+      setLoading(true);
+      const year = currentDate.getFullYear();
+      const month = currentDate.getMonth() + 1;
+      const data = await lawyerService.schedule.getSchedule(year, month);
+      setEvents(data.events || {});
+    } catch (error) {
+      console.error('Error loading schedule:', error);
+      setEvents({});
+    } finally {
+      setLoading(false);
+    }
+  }, [currentDate]);
+
+  useEffect(() => {
+    loadSchedule();
+  }, [loadSchedule]);
 
   const getDaysInMonth = (date) => {
     const year = date.getFullYear();
@@ -54,7 +91,6 @@ const LawyerSchedulePage = () => {
     const lastDay = new Date(year, month + 1, 0);
     const daysInMonth = lastDay.getDate();
     const startingDayOfWeek = firstDay.getDay() === 0 ? 6 : firstDay.getDay() - 1;
-
     return { daysInMonth, startingDayOfWeek };
   };
 
@@ -68,210 +104,229 @@ const LawyerSchedulePage = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1));
   };
 
-  const handleDateClick = (day) => {
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    setSelectedDate(dateStr);
+  const dateStrOf = (day) =>
+    `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+
+  const handleDateClick = (day) => setSelectedDate(dateStrOf(day));
+
+  const eventCount = (day) => events[dateStrOf(day)]?.length || 0;
+
+  const handleConfirm = async (eventId) => {
+    try {
+      await lawyerService.schedule.confirmConsultation(eventId);
+      toast.success('Консультация подтверждена');
+      loadSchedule();
+    } catch {
+      toast.error('Ошибка подтверждения');
+    }
   };
 
-  const hasEvents = (day) => {
-    const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return MOCK_EVENTS[dateStr]?.length > 0;
+  const handleReject = async (eventId) => {
+    try {
+      await lawyerService.schedule.rejectConsultation(eventId);
+      toast.info('Консультация отклонена');
+      loadSchedule();
+    } catch {
+      toast.error('Ошибка отклонения');
+    }
   };
 
-  const handleConfirm = (eventId) => {
-    toast.success('Консультация подтверждена');
-  };
-
-  const handleReject = (eventId) => {
-    toast.info('Консультация отклонена');
-  };
+  const dayEvents = (selectedDate && events[selectedDate]) || [];
+  const selectedLabel = selectedDate
+    ? `${Number(selectedDate.split('-')[2])} ${MONTHS_GEN[Number(selectedDate.split('-')[1]) - 1]}`
+    : 'Выберите дату';
+  const selectedSub = !selectedDate
+    ? 'Нажмите на дату в календаре'
+    : dayEvents.length
+      ? `${dayEvents.length} ${dayEvents.length === 1 ? 'консультация' : 'консультаций'}`
+      : 'Свободный день';
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: '#e4e9f2', pb: 4 }}>
-      <Box
-        sx={{
-          background: 'linear-gradient(145deg, #6aafb5, #5b9aa0)',
-          color: 'white',
-          py: 3,
-          px: 2,
-          boxShadow: '0 8px 24px rgba(91, 154, 160, 0.3)',
+    <GlassShell active="/lawyer/schedule" title="Расписание" subtitle="Календарь консультаций" role="lawyer">
+      <div
+        className="sched-grid"
+        style={{
+          maxWidth: 1120,
+          margin: '0 auto',
+          display: 'grid',
+          gridTemplateColumns: '1fr 340px',
+          gap: 24,
+          alignItems: 'start',
         }}
       >
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton
-              onClick={() => navigate('/lawyer/dashboard')}
-              sx={{
-                bgcolor: 'rgba(255, 255, 255, 0.2)',
-                color: 'white',
-                '&:hover': { bgcolor: 'rgba(255, 255, 255, 0.3)' },
-              }}
-            >
-              <ArrowBack />
-            </IconButton>
-            <Typography variant="h5" fontWeight="bold">
-              Календарь консультаций
-            </Typography>
-          </Box>
-        </Container>
-      </Box>
+        {/* CALENDAR */}
+        <div style={{ ...glassCard, padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+            <div style={{ fontSize: 18, fontWeight: 400, letterSpacing: '0.04em', color: 'var(--text)' }}>
+              {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <button onClick={handlePrevMonth} style={navArrowBtn} aria-label="Предыдущий месяц">‹</button>
+              <button onClick={handleNextMonth} style={navArrowBtn} aria-label="Следующий месяц">›</button>
+            </div>
+          </div>
 
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
-        <Grid container spacing={3}>
-          <Grid item xs={12} lg={8}>
-            <NeumorphicCard>
-              <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-                <IconButton onClick={handlePrevMonth} sx={{ color: '#5b9aa0' }}>
-                  <ChevronLeft />
-                </IconButton>
-                <Typography variant="h5" fontWeight="bold" color="#2c3e50">
-                  {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
-                </Typography>
-                <IconButton onClick={handleNextMonth} sx={{ color: '#5b9aa0' }}>
-                  <ChevronRight />
-                </IconButton>
-              </Box>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 6 }}>
+            {DAYS.map((w) => (
+              <div key={w} style={{ textAlign: 'center', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', padding: '6px 0' }}>
+                {w}
+              </div>
+            ))}
+          </div>
 
-              <Grid container spacing={1}>
-                {DAYS.map((day) => (
-                  <Grid item xs={12 / 7} key={day}>
-                    <Box sx={{ textAlign: 'center', py: 1 }}>
-                      <Typography variant="body2" fontWeight="bold" color="#5a6c7d">
-                        {day}
-                      </Typography>
-                    </Box>
-                  </Grid>
-                ))}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+            {[...Array(startingDayOfWeek)].map((_, index) => (
+              <div key={`empty-${index}`} style={{ aspectRatio: '1' }} />
+            ))}
 
-                {[...Array(startingDayOfWeek)].map((_, index) => (
-                  <Grid item xs={12 / 7} key={`empty-${index}`}>
-                    <Box sx={{ height: 80 }} />
-                  </Grid>
-                ))}
+            {[...Array(loading ? 0 : daysInMonth)].map((_, index) => {
+              const day = index + 1;
+              const dateStr = dateStrOf(day);
+              const isSelected = selectedDate === dateStr;
+              const count = eventCount(day);
+              return (
+                <button
+                  key={day}
+                  onClick={() => handleDateClick(day)}
+                  style={{
+                    aspectRatio: '1',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    borderRadius: 'var(--radius)',
+                    fontFamily: 'inherit',
+                    fontSize: 14,
+                    cursor: 'pointer',
+                    border: `1px solid ${isSelected ? 'var(--accent)' : 'transparent'}`,
+                    background: isSelected ? 'rgba(184,149,110,0.12)' : 'transparent',
+                    color: isSelected ? 'var(--text)' : 'var(--text2)',
+                    fontWeight: isSelected ? 600 : 400,
+                  }}
+                >
+                  <span>{day}</span>
+                  {count > 0 && (
+                    <span
+                      style={{
+                        width: 5,
+                        height: 5,
+                        borderRadius: '50%',
+                        background: count >= 2 ? 'var(--accent)' : 'var(--info)',
+                        marginTop: 3,
+                      }}
+                    />
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
 
-                {[...Array(daysInMonth)].map((_, index) => {
-                  const day = index + 1;
-                  const isSelected = selectedDate === `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-                  const hasEvent = hasEvents(day);
+        {/* SELECTED DAY EVENTS */}
+        <div style={{ ...glassCard, padding: 24 }}>
+          <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{selectedLabel}</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{selectedSub}</div>
 
-                  return (
-                    <Grid item xs={12 / 7} key={day}>
-                      <NeumorphicCard
-                        variant={isSelected ? 'pressed' : 'elevated'}
-                        hover
-                        onClick={() => handleDateClick(day)}
-                        sx={{
-                          height: 80,
-                          display: 'flex',
-                          flexDirection: 'column',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          p: 1,
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <Typography
-                          variant="body1"
-                          fontWeight={isSelected ? 'bold' : 'normal'}
-                          color={isSelected ? '#5b9aa0' : '#2c3e50'}
-                        >
-                          {day}
-                        </Typography>
-                        {hasEvent && (
-                          <Box
-                            sx={{
-                              width: 6,
-                              height: 6,
-                              borderRadius: '50%',
-                              bgcolor: '#d4a574',
-                              mt: 0.5,
-                            }}
-                          />
-                        )}
-                      </NeumorphicCard>
-                    </Grid>
-                  );
-                })}
-              </Grid>
-            </NeumorphicCard>
-          </Grid>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {loading ? (
+              <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>Загрузка…</div>
+            ) : dayEvents.length === 0 ? (
+              <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>
+                Нет консультаций в этот день
+              </div>
+            ) : (
+              dayEvents.map((e) => {
+                const isVideo = e.type === 'video';
+                const accent = isVideo ? 'var(--accent)' : 'var(--info)';
+                const isPending = e.status === 'pending';
+                return (
+                  <div
+                    key={e.id}
+                    style={{
+                      border: '1px solid var(--border)',
+                      borderRadius: 'var(--radius)',
+                      padding: 15,
+                      borderLeft: `3px solid ${accent}`,
+                    }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{e.time}</div>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: accent }}>
+                        {isVideo ? <VideocamOutlined sx={{ fontSize: 14 }} /> : <ChatBubbleOutline sx={{ fontSize: 14 }} />}
+                        {isVideo ? 'Видео' : 'Чат'}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 14, color: 'var(--text)' }}>{e.client}</div>
+                    <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>{e.topic}</div>
 
-          <Grid item xs={12} lg={4}>
-            <NeumorphicCard>
-              <Typography variant="h6" fontWeight="bold" color="#2c3e50" gutterBottom>
-                {selectedDate ? `События на ${selectedDate}` : 'Выберите дату'}
-              </Typography>
-
-              <Box sx={{ mt: 2 }}>
-                {selectedDate && MOCK_EVENTS[selectedDate] ? (
-                  MOCK_EVENTS[selectedDate].map((event) => (
-                    <NeumorphicCard key={event.id} variant="flat" sx={{ mb: 2, p: 2 }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 1 }}>
-                        <Typography variant="subtitle2" fontWeight="bold" color="#2c3e50">
-                          {event.time}
-                        </Typography>
-                        <Chip
-                          icon={event.type === 'video' ? <VideoCall /> : <Message />}
-                          label={event.type === 'video' ? 'Видео' : 'Чат'}
-                          size="small"
-                          sx={{
-                            bgcolor: event.type === 'video' ? '#5b9aa0' : '#d4a574',
-                            color: 'white',
+                    {isPending && (
+                      <div style={{ display: 'flex', gap: 8, marginTop: 14 }}>
+                        <button
+                          onClick={() => handleConfirm(e.id)}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            background: 'var(--accent)',
+                            color: '#FFFFFF',
+                            border: 'none',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            letterSpacing: '0.05em',
+                            textTransform: 'uppercase',
+                            padding: '10px 12px',
+                            borderRadius: 'var(--radius)',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
                           }}
-                        />
-                      </Box>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                        <Avatar sx={{ width: 32, height: 32, bgcolor: '#5b9aa0' }}>
-                          {event.client.charAt(0)}
-                        </Avatar>
-                        <Typography variant="body2" color="#2c3e50">
-                          {event.client}
-                        </Typography>
-                      </Box>
-                      <Typography variant="body2" color="#5a6c7d" sx={{ mb: 2 }}>
-                        {event.topic}
-                      </Typography>
-                      {event.status === 'pending' && (
-                        <Box sx={{ display: 'flex', gap: 1 }}>
-                          <NeumorphicButton
-                            color="success"
-                            size="small"
-                            startIcon={<Check />}
-                            onClick={() => handleConfirm(event.id)}
-                            sx={{ flex: 1 }}
-                          >
-                            Принять
-                          </NeumorphicButton>
-                          <NeumorphicButton
-                            color="error"
-                            size="small"
-                            startIcon={<Close />}
-                            onClick={() => handleReject(event.id)}
-                            sx={{ flex: 1 }}
-                          >
-                            Отклонить
-                          </NeumorphicButton>
-                        </Box>
-                      )}
-                      {event.status === 'confirmed' && (
-                        <Chip label="Подтверждено" color="success" size="small" />
-                      )}
-                    </NeumorphicCard>
-                  ))
-                ) : (
-                  <Box sx={{ textAlign: 'center', py: 4 }}>
-                    <Typography variant="body2" color="#5a6c7d">
-                      {selectedDate ? 'Нет событий на эту дату' : 'Выберите дату в календаре'}
-                    </Typography>
-                  </Box>
-                )}
-              </Box>
-            </NeumorphicCard>
-          </Grid>
-        </Grid>
-      </Container>
-    </Box>
+                        >
+                          <CheckOutlined sx={{ fontSize: 16 }} /> Принять
+                        </button>
+                        <button
+                          onClick={() => handleReject(e.id)}
+                          style={{
+                            flex: 1,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            gap: 6,
+                            background: 'transparent',
+                            color: 'var(--error)',
+                            border: '1px solid var(--error)',
+                            fontSize: 12,
+                            fontWeight: 500,
+                            letterSpacing: '0.05em',
+                            textTransform: 'uppercase',
+                            padding: '10px 12px',
+                            borderRadius: 'var(--radius)',
+                            cursor: 'pointer',
+                            fontFamily: 'inherit',
+                          }}
+                        >
+                          <CloseOutlined sx={{ fontSize: 16 }} /> Отклонить
+                        </button>
+                      </div>
+                    )}
+
+                    {(e.status === 'accepted' || e.status === 'confirmed') && (
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--success)', background: 'rgba(122,154,107,0.12)', padding: '7px 12px', borderRadius: 'var(--radius)' }}>
+                        <CheckOutlined sx={{ fontSize: 15 }} /> Подтверждено
+                      </div>
+                    )}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      </div>
+
+      <style>{`@media (max-width: 900px){ .sched-grid { grid-template-columns: 1fr !important; } }`}</style>
+    </GlassShell>
   );
 };
 
 export default LawyerSchedulePage;
+

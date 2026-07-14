@@ -1,0 +1,121 @@
+/* ============================================================
+   eMaslaXat — Liquid Glass design system (ported from ClaudeDesign)
+   Single source of design tokens + keyframes for the re-skin.
+   Light + Dark themes driven by [data-theme] on <html>.
+   ============================================================ */
+
+:root,
+:root[data-theme="light"] {
+  --canvas: #F5F1EB;          /* page background */
+  --surface: #FFFFFF;         /* sidebar / topbar / solid cards */
+  --accent: #B8956E;          /* gold */
+  --accent-dark: #9A7B5A;
+  --accent-light: #C9A980;
+  --radius: 8px;
+
+  /* glass surfaces */
+  --card-glass: rgba(255, 255, 255, 0.55);
+  --card-brd: rgba(255, 255, 255, 0.7);
+  --card-shadow: 0 8px 28px rgba(26, 26, 26, 0.06), inset 0 1px 0 rgba(255, 255, 255, 0.5);
+
+  /* text ramp */
+  --text: #1A1A1A;
+  --text2: #6B6B6B;
+  --text3: #9A9A9A;
+
+  --border: #E8E4DE;
+  --border-strong: #D4C5B5;
+
+  /* status */
+  --success: #7A9A6B;
+  --warning: #C4A35A;
+  --error: #B07070;
+  --info: #6A8A9A;
+}
+
+:root[data-theme="dark"] {
+  --canvas: #1A1A1A;
+  --surface: #2D2D2D;
+  --accent: #C9A980;
+  --accent-dark: #B8956E;
+  --accent-light: #D4C5B5;
+
+  --card-glass: rgba(45, 45, 45, 0.55);
+  --card-brd: rgba(255, 255, 255, 0.08);
+  --card-shadow: 0 8px 28px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+
+  --text: #F5F1EB;
+  --text2: #B8B0A5;
+  --text3: #8A8A8A;
+
+  --border: #3A3A3A;
+  --border-strong: #4A4A4A;
+}
+
+/* ---------- Reusable glass surface ---------- */
+.glass-card {
+  background: var(--card-glass);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+  backdrop-filter: blur(24px) saturate(180%);
+  border: 1px solid var(--card-brd);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--radius);
+}
+
+/* ---------- Screen enter ---------- */
+.screen { animation: fadeUp 0.35s cubic-bezier(.4, 0, .2, 1); }
+
+/* ============================================================
+   Keyframes (merged from Client / Lawyer / Mobile design files)
+   ============================================================ */
+@keyframes fadeUp   { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes pulse    { 0%,100% { opacity: 0.35; } 50% { opacity: 1; } }
+@keyframes growBar  { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes barFill  { from { transform: scaleY(0); } to { transform: scaleY(1); } }
+@keyframes cardRise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes popIn    { 0% { opacity: 0; transform: scale(0.9); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes ring     { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.5); opacity: 0; } }
+
+@keyframes modalFade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes modalPop  { from { opacity: 0; transform: translateY(16px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes checkPop  { 0% { opacity: 0; transform: scale(0.3); } 60% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes checkDraw { from { stroke-dashoffset: 32; } to { stroke-dashoffset: 0; } }
+
+@keyframes aiReveal { from { opacity: 0; transform: translateY(9px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes aiPop    { 0% { opacity: 0; transform: scale(0.4); } 60% { transform: scale(1.12); } 100% { opacity: 1; transform: scale(1); } }
+@keyframes menuPop  { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@keyframes pushSlideIn { from { opacity: 0; transform: translateX(120%); } to { opacity: 1; transform: translateX(0); } }
+@keyframes pushDrop    { from { opacity: 0; transform: translateY(-90px) scale(0.94); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+@keyframes voiceRing { 0% { transform: scale(1); opacity: 0.55; } 100% { transform: scale(2.5); opacity: 0; } }
+@keyframes voiceBar  { 0%,100% { transform: scaleY(0.25); } 50% { transform: scaleY(1); } }
+@keyframes voiceGlow { 0%,100% { box-shadow: 0 0 0 0 rgba(184,149,110,0.5), 0 8px 26px rgba(184,149,110,0.5); } 50% { box-shadow: 0 0 0 10px rgba(184,149,110,0), 0 8px 26px rgba(184,149,110,0.7); } }
+@keyframes voiceIn   { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+
+@keyframes sendGlow   { 0%,100% { box-shadow: 0 2px 10px rgba(184,149,110,0.35); } 50% { box-shadow: 0 2px 18px rgba(184,149,110,0.7); } }
+@keyframes sendLaunch { 0% { transform: translate(0,0) rotate(0); opacity: 1; } 45% { transform: translate(3px,-3px) rotate(8deg); opacity: 0.6; } 46% { transform: translate(-6px,6px) rotate(-4deg); opacity: 0; } 60% { transform: translate(-6px,6px); opacity: 0; } 100% { transform: translate(0,0) rotate(0); opacity: 1; } }
+
+@keyframes slideFwd  { from { opacity: 0; transform: translateX(40px); } to { opacity: 1; transform: translateX(0); } }
+@keyframes slideBack { from { opacity: 0; transform: translateX(-40px); } to { opacity: 1; transform: translateX(0); } }
+
+/* ---------- Staggered AI reveal helper ---------- */
+.ai-reveal > * { animation: aiReveal 0.45s cubic-bezier(.4,0,.2,1) both; }
+.ai-reveal > *:nth-child(1) { animation-delay: 0.05s; }
+.ai-reveal > *:nth-child(2) { animation-delay: 0.16s; }
+.ai-reveal > *:nth-child(3) { animation-delay: 0.27s; }
+.ai-reveal > *:nth-child(4) { animation-delay: 0.38s; }
+.ai-reveal > *:nth-child(n+5) { animation-delay: 0.49s; }
+
+/* ---------- Send button micro-interaction ---------- */
+.send-btn { transition: transform 0.18s cubic-bezier(.34,1.56,.64,1), box-shadow 0.25s ease, background 0.25s ease; }
+.send-btn.armed { animation: sendGlow 2.2s ease-in-out infinite; }
+.send-btn:hover { transform: translateY(-2px) scale(1.07); }
+.send-btn:active { transform: scale(0.9); transition-duration: 0.08s; }
+
+/* ---------- Voice bar ---------- */
+.vbar { width: 4px; border-radius: 3px; background: linear-gradient(var(--accent), var(--accent-dark)); transform-origin: center; animation: voiceBar 0.9s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .screen, .ai-reveal > *, .send-btn, .vbar { animation: none !important; }
+}

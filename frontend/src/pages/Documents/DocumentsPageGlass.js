@@ -1,50 +1,98 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import {
-  Container,
   Box,
-  Typography,
   Grid,
-  IconButton,
-  LinearProgress,
   Dialog,
-  DialogTitle,
   DialogContent,
-  DialogActions,
-  Chip,
-  Divider,
   Alert,
   Snackbar,
   CircularProgress,
   Tooltip,
-  Button,
-  Card,
 } from '@mui/material';
 import {
-  ArrowBack,
-  CloudUpload,
-  Description,
-  VerifiedUser,
-  AutoAwesome,
-  Download,
-  Delete,
-  CheckCircle,
-  Warning,
-  Error as ErrorIcon,
-  InsertDriveFile,
-  Folder,
+  CloudUploadOutlined,
+  DescriptionOutlined,
+  DownloadOutlined,
+  DeleteOutlined,
+  AutoAwesomeOutlined,
+  CloseOutlined,
+  GavelOutlined,
+  WarningAmberOutlined,
+  LightbulbOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
+import GlassShell from '../../components/GlassKit/GlassShell';
+
+/*
+  ─────────────────────────────────────────────────────────────
+  CLIENT DOCUMENTS  (/documents)
+  Ported 1:1 from ClaudeDesign → client/07_DOCUMENTS + 08_DOCUMENT_UPLOAD.
+  What it shows / how it works:
+   • Grid of glass document cards  ← clientService.documents.getDocuments()
+       (icon, status pill, name, type·size·date, AI-score bar, actions)
+   • Upload dialog (dropzone, category, ≤10MB PDF/DOC/DOCX, progress)
+                                    → clientService.documents.uploadDocument()
+   • Per-doc: download (stub) · delete dialog → deleteDocument()
+              "AI-проверка" dialog (loader → analysis) → checkDocument()
+  Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
+  ─────────────────────────────────────────────────────────────
+*/
+
+const glassCard = {
+  background: 'var(--card-glass)',
+  backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+  border: '1px solid var(--card-brd)',
+  boxShadow: 'var(--card-shadow)',
+  borderRadius: 'var(--radius)',
+};
+
+const goldGradientBtn = {
+  background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+  color: '#FFFFFF',
+  border: 'none',
+  fontSize: 13,
+  fontWeight: 500,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  borderRadius: 'var(--radius)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const ghostBtn = {
+  background: 'transparent',
+  color: 'var(--text)',
+  border: '1px solid var(--border)',
+  fontSize: 13,
+  fontWeight: 500,
+  borderRadius: 'var(--radius)',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+};
+
+const DOC_CATEGORIES = ['Договор', 'Доверенность', 'Заявление', 'Иск', 'Другое'];
+
+// status enum from backend: pending | verified | issues | rejected
+const STATUS_MAP = {
+  verified: { label: 'Проверен', color: 'var(--success)', bg: 'rgba(122,154,107,0.15)' },
+  issues: { label: 'Замечания', color: 'var(--warning)', bg: 'rgba(196,163,90,0.16)' },
+  rejected: { label: 'Ошибки', color: 'var(--error)', bg: 'rgba(176,112,112,0.16)' },
+  pending: { label: 'В обработке', color: 'var(--text2)', bg: 'rgba(154,154,154,0.15)' },
+};
+const statusMeta = (status) => STATUS_MAP[status] || STATUS_MAP.pending;
+
+const scoreColor = (score) =>
+  score >= 80 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--error)';
 
 const DocumentsPageGlass = () => {
-  const navigate = useNavigate();
-
   // State management
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedCategory, setSelectedCategory] = useState(null);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -52,14 +100,8 @@ const DocumentsPageGlass = () => {
   const [aiCheckLoading, setAiCheckLoading] = useState(false);
   const [aiCheckResult, setAiCheckResult] = useState(null);
 
-  // Snackbar state
-  const [snackbar, setSnackbar] = useState({
-    open: false,
-    message: '',
-    severity: 'success',
-  });
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
-  // Fetch documents on mount
   useEffect(() => {
     fetchDocuments();
   }, []);
@@ -68,11 +110,10 @@ const DocumentsPageGlass = () => {
     try {
       setIsLoading(true);
       const data = await clientService.documents.getDocuments();
-      setDocuments(data);
+      setDocuments(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching documents:', error);
       showSnackbar('Ошибка при загрузке документов', 'error');
-      // Set mock data as fallback
       setDocuments([]);
     } finally {
       setIsLoading(false);
@@ -83,29 +124,35 @@ const DocumentsPageGlass = () => {
     setSnackbar({ open: true, message, severity });
   };
 
-  const handleFileSelect = (event) => {
-    const file = event.target.files[0];
-    if (file) {
-      // Validate file size (max 10MB)
-      if (file.size > 10 * 1024 * 1024) {
-        showSnackbar('Файл слишком большой. Максимальный размер: 10MB', 'error');
-        return;
-      }
-
-      // Validate file type
-      const allowedTypes = [
-        'application/pdf',
-        'application/msword',
-        'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      ];
-
-      if (!allowedTypes.includes(file.type)) {
-        showSnackbar('Неподдерживаемый формат файла. Используйте PDF, DOC или DOCX', 'error');
-        return;
-      }
-
-      setSelectedFile(file);
+  const validateAndSetFile = (file) => {
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      showSnackbar('Файл слишком большой. Максимальный размер: 10MB', 'error');
+      return;
     }
+    const allowedTypes = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    ];
+    if (!allowedTypes.includes(file.type)) {
+      showSnackbar('Неподдерживаемый формат файла. Используйте PDF, DOC или DOCX', 'error');
+      return;
+    }
+    setSelectedFile(file);
+  };
+
+  const handleFileSelect = (event) => validateAndSetFile(event.target.files[0]);
+
+  const handleDrop = (event) => {
+    event.preventDefault();
+    validateAndSetFile(event.dataTransfer.files?.[0]);
+  };
+
+  const closeUploadDialog = () => {
+    setUploadDialogOpen(false);
+    setSelectedFile(null);
+    setSelectedCategory(null);
   };
 
   const handleUploadSubmit = async () => {
@@ -119,7 +166,6 @@ const DocumentsPageGlass = () => {
       setIsUploading(true);
       setUploadProgress(0);
 
-      // Simulate progress for better UX
       const progressInterval = setInterval(() => {
         setUploadProgress((prev) => {
           if (prev >= 90) {
@@ -134,860 +180,532 @@ const DocumentsPageGlass = () => {
         name: selectedFile.name,
         type: selectedFile.type,
         size: selectedFile.size,
+        category: selectedCategory || undefined,
         uploadDate: new Date().toISOString(),
       };
 
-      const result = await clientService.documents.uploadDocument(selectedFile, metadata);
+      await clientService.documents.uploadDocument(selectedFile, metadata);
 
       clearInterval(progressInterval);
       setUploadProgress(100);
 
-      // Wait a bit to show 100% completion
       setTimeout(() => {
         setIsUploading(false);
         setUploadProgress(0);
         setSelectedFile(null);
+        setSelectedCategory(null);
         showSnackbar('Документ успешно загружен!', 'success');
-        fetchDocuments(); // Refresh the list
+        fetchDocuments();
       }, 500);
-
     } catch (error) {
       console.error('Error uploading document:', error);
       setIsUploading(false);
       setUploadProgress(0);
-      showSnackbar(
-        error.response?.data?.message || 'Ошибка при загрузке документа',
-        'error'
-      );
+      showSnackbar(error.response?.data?.message || 'Ошибка при загрузке документа', 'error');
     }
   };
 
   const handleDeleteDocument = async () => {
     if (!selectedDocument) return;
-
     try {
       await clientService.documents.deleteDocument(selectedDocument.id);
       setDeleteDialogOpen(false);
       setSelectedDocument(null);
       showSnackbar('Документ успешно удален!', 'success');
-      fetchDocuments(); // Refresh the list
+      fetchDocuments();
     } catch (error) {
       console.error('Error deleting document:', error);
-      showSnackbar(
-        error.response?.data?.message || 'Ошибка при удалении документа',
-        'error'
-      );
+      showSnackbar(error.response?.data?.message || 'Ошибка при удалении документа', 'error');
     }
   };
 
-  const handleAICheck = async (document) => {
+  const handleAICheck = async (doc) => {
     try {
-      setSelectedDocument(document);
+      setSelectedDocument(doc);
       setAiDialogOpen(true);
       setAiCheckLoading(true);
       setAiCheckResult(null);
 
-      const result = await clientService.documents.checkDocument(document.id);
+      const result = await clientService.documents.checkDocument(doc.id);
       setAiCheckResult(result);
+      fetchDocuments(); // status/score may update after analysis
     } catch (error) {
       console.error('Error checking document:', error);
-      showSnackbar(
-        error.response?.data?.message || 'Ошибка при проверке документа',
-        'error'
-      );
+      showSnackbar(error.response?.data?.message || 'Ошибка при проверке документа', 'error');
       setAiDialogOpen(false);
     } finally {
       setAiCheckLoading(false);
     }
   };
 
-  const handleDownload = (document) => {
-    // In a real implementation, this would download the file
-    console.log('Downloading document:', document);
-    showSnackbar(`Загрузка "${document.filename || document.name}" начата`, 'info');
+  const handleDownload = (doc) => {
+    // No download endpoint in the service layer yet — stubbed notification.
+    console.log('Downloading document:', doc);
+    showSnackbar(`Загрузка "${doc.name}" начата`, 'info');
   };
 
-  const getStatusIcon = (status) => {
-    switch (status) {
-      case 'verified':
-      case 'checked':
-        return <CheckCircle sx={{ color: '#10b981' }} />;
-      case 'warning':
-        return <Warning sx={{ color: '#f59e0b' }} />;
-      case 'error':
-      case 'failed':
-        return <ErrorIcon sx={{ color: '#ef4444' }} />;
-      default:
-        return <Folder sx={{ color: '#64748b' }} />;
-    }
-  };
+  const docScore = (doc) =>
+    doc.aiAnalysis?.score ?? doc.aiScore ?? null;
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'verified':
-      case 'checked':
-        return '#10b981';
-      case 'warning':
-        return '#f59e0b';
-      case 'error':
-      case 'failed':
-        return '#ef4444';
-      default:
-        return '#64748b';
-    }
-  };
-
-  const getStatusLabel = (status) => {
-    switch (status) {
-      case 'verified':
-      case 'checked':
-        return 'Проверен';
-      case 'warning':
-        return 'Внимание';
-      case 'error':
-      case 'failed':
-        return 'Ошибки';
-      case 'pending':
-        return 'В обработке';
-      default:
-        return 'Не проверен';
-    }
+  const fileBadge = (name = '') => {
+    const ext = name.split('.').pop();
+    return ext && ext !== name ? ext.toUpperCase().slice(0, 4) : 'FILE';
   };
 
   const formatFileSize = (bytes) => {
-    if (!bytes) return 'N/A';
+    if (!bytes) return '—';
     if (bytes < 1024) return bytes + ' B';
-    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(2) + ' KB';
-    return (bytes / (1024 * 1024)).toFixed(2) + ' MB';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   };
 
   const formatDate = (dateString) => {
-    if (!dateString) return 'N/A';
+    if (!dateString) return '';
     try {
       return new Date(dateString).toLocaleDateString('ru-RU', {
-        year: 'numeric',
-        month: 'long',
         day: 'numeric',
+        month: 'short',
+        year: 'numeric',
       });
     } catch {
-      return 'N/A';
+      return '';
     }
   };
 
-  return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        bgcolor: '#F4F6F8',
-        pb: 4,
-      }}
-    >
-      {/* Header */}
-      <Box sx={{ bgcolor: '#FFFFFF', borderBottom: '1px solid #E6E9EE', py: 3, px: 2 }}>
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton
-              onClick={() => navigate('/dashboard')}
-              sx={{
-                border: '1px solid #E6E9EE',
-                color: '#0B1B2B',
-                '&:hover': {
-                  bgcolor: '#F4F6F8',
-                },
-                transition: 'all 0.2s ease',
-              }}
-            >
-              <ArrowBack />
-            </IconButton>
-            <Box sx={{ flexGrow: 1 }}>
-              <Typography
-                variant="h4"
-                fontWeight="600"
-                sx={{ color: '#0B1B2B', mb: 0.5 }}
-              >
-                Мои документы
-              </Typography>
-              <Typography variant="body1" sx={{ color: '#6B7280' }}>
-                Управляйте документами и проверяйте их с помощью AI
-              </Typography>
-            </Box>
-            <Button
-              variant="contained"
-              startIcon={<CloudUpload />}
-              onClick={() => setUploadDialogOpen(true)}
-              sx={{
-                bgcolor: '#2563EB',
-                color: '#FFFFFF',
-                textTransform: 'none',
-                fontWeight: 600,
-                px: 3,
-                py: 1.25,
-                borderRadius: '8px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                '&:hover': {
-                  bgcolor: '#1d4ed8',
-                  boxShadow: '0 4px 8px rgba(11, 27, 43, 0.1)',
-                },
-              }}
-            >
-              Загрузить документ
-            </Button>
-          </Box>
-        </Container>
-      </Box>
+  // ── AI result field mapping (backend keys) ──────────────────
+  const aiRisks = aiCheckResult?.risks?.length ? aiCheckResult.risks : aiCheckResult?.issues || [];
+  const aiRecs = aiCheckResult?.recommendations?.length
+    ? aiCheckResult.recommendations
+    : aiCheckResult?.suggestions || [];
+  const aiLaws = aiCheckResult?.relevantLaws || [];
 
-      {/* Main Content */}
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
-        {/* Upload Progress */}
-        {isUploading && (
-          <Card
-            sx={{
-              mb: 3,
-              p: 3,
-              bgcolor: '#FFFFFF',
-              border: '1px solid #E6E9EE',
-              borderRadius: '12px',
-              boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-            }}
+  return (
+    <GlassShell
+      active="/documents"
+      title="Документы"
+      subtitle="Управляйте документами и проверяйте их с помощью AI"
+    >
+      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+        {/* Upload CTA */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}>
+          <button
+            onClick={() => setUploadDialogOpen(true)}
+            style={{ ...goldGradientBtn, padding: '13px 24px', display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
-              <AutoAwesome sx={{ color: '#2563EB', fontSize: 32 }} />
-              <Box sx={{ flexGrow: 1 }}>
-                <Typography variant="h6" fontWeight="600" sx={{ mb: 0.5, color: '#0B1B2B' }}>
-                  Загрузка документа...
-                </Typography>
-                <Typography variant="body2" sx={{ color: '#6B7280' }}>
-                  {uploadProgress}% - Загрузка и анализ документа
-                </Typography>
-              </Box>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={uploadProgress}
-              sx={{
-                height: 8,
-                borderRadius: 4,
-                bgcolor: '#E6E9EE',
-                '& .MuiLinearProgress-bar': {
-                  bgcolor: '#2563EB',
-                  borderRadius: 4,
-                },
-              }}
-            />
-          </Card>
+            <CloudUploadOutlined sx={{ fontSize: 18 }} /> Загрузить документ
+          </button>
+        </div>
+
+        {/* Upload progress */}
+        {isUploading && (
+          <div style={{ ...glassCard, padding: 22, marginBottom: 18 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 14 }}>
+              <AutoAwesomeOutlined sx={{ color: 'var(--accent)', fontSize: 28 }} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>
+                  Загрузка документа…
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
+                  {uploadProgress}% · загрузка и анализ документа
+                </div>
+              </div>
+            </div>
+            <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+              <div style={{ width: `${uploadProgress}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.2s ease' }} />
+            </div>
+          </div>
         )}
 
-        {/* Loading State */}
+        {/* Content states */}
         {isLoading ? (
-          <Box
-            sx={{
-              display: 'flex',
-              justifyContent: 'center',
-              alignItems: 'center',
-              minHeight: '400px',
-            }}
-          >
-            <CircularProgress sx={{ color: '#2563EB' }} size={60} />
+          <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
+            <CircularProgress sx={{ color: 'var(--accent)' }} size={56} />
           </Box>
         ) : documents.length === 0 ? (
-          // Empty State
-          <Card
-            sx={{
-              textAlign: 'center',
-              py: 8,
-              px: 4,
-              bgcolor: '#FFFFFF',
-              border: '1px solid #E6E9EE',
-              borderRadius: '12px',
-              boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-            }}
-          >
-            <Description sx={{ fontSize: 80, color: '#E6E9EE', mb: 2 }} />
-            <Typography variant="h5" fontWeight="600" gutterBottom sx={{ color: '#0B1B2B' }}>
+          <div style={{ ...glassCard, textAlign: 'center', padding: '64px 32px' }}>
+            <DescriptionOutlined sx={{ fontSize: 72, color: 'var(--border-strong)', mb: 2 }} />
+            <div style={{ fontSize: 20, fontWeight: 300, letterSpacing: '0.04em', color: 'var(--text)', marginBottom: 8 }}>
               Нет документов
-            </Typography>
-            <Typography variant="body1" sx={{ color: '#6B7280', mb: 3 }}>
-              Загрузите первый документ для начала работы
-            </Typography>
-            <Button
-              variant="contained"
-              startIcon={<CloudUpload />}
+            </div>
+            <div style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 24 }}>
+              Загрузите первый документ для анализа AI
+            </div>
+            <button
               onClick={() => setUploadDialogOpen(true)}
-              sx={{
-                bgcolor: '#2563EB',
-                color: '#FFFFFF',
-                textTransform: 'none',
-                fontWeight: 600,
-                px: 3,
-                py: 1.25,
-                borderRadius: '8px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                '&:hover': {
-                  bgcolor: '#1d4ed8',
-                },
-              }}
+              style={{ ...goldGradientBtn, padding: '13px 24px', display: 'inline-flex', alignItems: 'center', gap: 8 }}
             >
-              Загрузить документ
-            </Button>
-          </Card>
+              <CloudUploadOutlined sx={{ fontSize: 18 }} /> Загрузить документ
+            </button>
+          </div>
         ) : (
-          // Documents Grid
-          <Grid container spacing={3}>
-            {documents.map((doc) => (
-              <Grid item xs={12} md={6} lg={4} key={doc.id}>
-                <Card
-                  sx={{
-                    p: 3,
-                    bgcolor: '#FFFFFF',
-                    border: '1px solid #E6E9EE',
-                    borderRadius: '12px',
-                    boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      boxShadow: '0 4px 12px rgba(11, 27, 43, 0.1)',
-                      transform: 'translateY(-2px)',
-                    },
-                  }}
-                >
-                  <Box
-                    sx={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      alignItems: 'flex-start',
-                      mb: 2,
-                    }}
-                  >
-                    <Box
-                      sx={{
-                        width: 56,
-                        height: 56,
-                        borderRadius: '8px',
-                        bgcolor: '#2563EB',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        color: 'white',
-                      }}
-                    >
-                      <Description sx={{ fontSize: 32 }} />
-                    </Box>
-                    {getStatusIcon(doc.status)}
-                  </Box>
+          <Grid container spacing={2.25}>
+            {documents.map((doc) => {
+              const meta = statusMeta(doc.status);
+              const score = docScore(doc);
+              return (
+                <Grid item xs={12} sm={6} lg={4} key={doc.id}>
+                  <div style={{ ...glassCard, padding: 22, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                    {/* Header row */}
+                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 16 }}>
+                      <div
+                        style={{
+                          width: 44, height: 44, borderRadius: 'var(--radius)',
+                          background: 'var(--accent-tint, rgba(184,149,110,0.16))',
+                          display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)',
+                        }}
+                      >
+                        <DescriptionOutlined sx={{ fontSize: 24 }} />
+                      </div>
+                      <span
+                        style={{
+                          fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase',
+                          color: meta.color, background: meta.bg, padding: '5px 11px', borderRadius: 'var(--radius)',
+                        }}
+                      >
+                        {meta.label}
+                      </span>
+                    </div>
 
-                  <Tooltip title={doc.filename || doc.name}>
-                    <Typography
-                      variant="h6"
-                      fontWeight="600"
-                      gutterBottom
-                      sx={{
-                        color: '#0B1B2B',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                    >
-                      {doc.filename || doc.name}
-                    </Typography>
-                  </Tooltip>
+                    {/* Name */}
+                    <Tooltip title={doc.name}>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {doc.name}
+                      </div>
+                    </Tooltip>
+                    <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>
+                      {[doc.type, formatFileSize(doc.size), formatDate(doc.createdAt || doc.uploadDate)]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </div>
 
-                  {doc.type && (
-                    <Chip
-                      label={doc.type}
-                      size="small"
-                      sx={{
-                        mb: 2,
-                        bgcolor: '#F4F6F8',
-                        color: '#2563EB',
-                        border: '1px solid #E6E9EE',
-                        fontWeight: 600,
-                      }}
-                    />
-                  )}
+                    {/* AI score */}
+                    {score !== null && score !== undefined && (
+                      <>
+                        <div style={{ margin: '18px 0 6px', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text2)' }}>
+                          <span>AI-оценка</span>
+                          <span style={{ color: scoreColor(score), fontWeight: 600 }}>{score}%</span>
+                        </div>
+                        <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+                          <div style={{ width: `${score}%`, height: '100%', background: scoreColor(score) }} />
+                        </div>
+                      </>
+                    )}
 
-                  {/* AI Score */}
-                  {doc.aiScore !== undefined && (
-                    <Box sx={{ mb: 2 }}>
-                      <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
-                        <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                          AI оценка:
-                        </Typography>
-                        <Typography
-                          variant="caption"
-                          fontWeight="600"
-                          sx={{ color: getStatusColor(doc.status) }}
+                    {/* Actions */}
+                    <div style={{ display: 'flex', gap: 8, marginTop: score !== null ? 18 : 'auto', paddingTop: score !== null ? 0 : 18 }}>
+                      <button
+                        onClick={() => handleAICheck(doc)}
+                        style={{
+                          flex: 1, background: 'var(--canvas)', border: '1px solid var(--accent)', color: 'var(--text)',
+                          fontSize: 12, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase',
+                          padding: 10, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                        }}
+                      >
+                        <AutoAwesomeOutlined sx={{ fontSize: 16 }} /> AI-проверка
+                      </button>
+                      <Tooltip title="Скачать">
+                        <button
+                          onClick={() => handleDownload(doc)}
+                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
-                          {doc.aiScore}% - {getStatusLabel(doc.status)}
-                        </Typography>
-                      </Box>
-                      <LinearProgress
-                        variant="determinate"
-                        value={doc.aiScore}
-                        sx={{
-                          height: 6,
-                          borderRadius: 3,
-                          bgcolor: '#E6E9EE',
-                          '& .MuiLinearProgress-bar': {
-                            bgcolor: getStatusColor(doc.status),
-                            borderRadius: 3,
-                          },
-                        }}
-                      />
-                    </Box>
-                  )}
-
-                  {/* File Info */}
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 2 }}>
-                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                      Размер: {formatFileSize(doc.size)}
-                    </Typography>
-                    <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                      {formatDate(doc.uploadDate || doc.createdAt)}
-                    </Typography>
-                  </Box>
-
-                  <Divider sx={{ my: 2, borderColor: '#E6E9EE' }} />
-
-                  {/* Actions */}
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Tooltip title="Скачать">
-                      <IconButton
-                        size="small"
-                        sx={{
-                          color: '#2563EB',
-                          border: '1px solid #E6E9EE',
-                          '&:hover': {
-                            bgcolor: '#F4F6F8',
-                          },
-                        }}
-                        onClick={() => handleDownload(doc)}
-                      >
-                        <Download />
-                      </IconButton>
-                    </Tooltip>
-                    <Tooltip title="Удалить">
-                      <IconButton
-                        size="small"
-                        sx={{
-                          color: '#ef4444',
-                          border: '1px solid #E6E9EE',
-                          '&:hover': {
-                            bgcolor: '#FEF2F2',
-                          },
-                        }}
-                        onClick={() => {
-                          setSelectedDocument(doc);
-                          setDeleteDialogOpen(true);
-                        }}
-                      >
-                        <Delete />
-                      </IconButton>
-                    </Tooltip>
-                    <Button
-                      size="small"
-                      variant="contained"
-                      startIcon={<VerifiedUser />}
-                      onClick={() => handleAICheck(doc)}
-                      sx={{
-                        ml: 'auto',
-                        bgcolor: '#2563EB',
-                        color: '#FFFFFF',
-                        textTransform: 'none',
-                        fontWeight: 600,
-                        borderRadius: '8px',
-                        px: 2,
-                        '&:hover': {
-                          bgcolor: '#1d4ed8',
-                        },
-                      }}
-                    >
-                      AI проверка
-                    </Button>
-                  </Box>
-                </Card>
-              </Grid>
-            ))}
+                          <DownloadOutlined sx={{ fontSize: 18 }} />
+                        </button>
+                      </Tooltip>
+                      <Tooltip title="Удалить">
+                        <button
+                          onClick={() => {
+                            setSelectedDocument(doc);
+                            setDeleteDialogOpen(true);
+                          }}
+                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--error)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <DeleteOutlined sx={{ fontSize: 18 }} />
+                        </button>
+                      </Tooltip>
+                    </div>
+                  </div>
+                </Grid>
+              );
+            })}
           </Grid>
         )}
-      </Container>
+      </div>
 
-      {/* Upload Dialog */}
+      {/* ── Upload dialog (07 CTA → 08 layout) ─────────────────── */}
       <Dialog
         open={uploadDialogOpen}
-        onClose={() => setUploadDialogOpen(false)}
+        onClose={closeUploadDialog}
         maxWidth="sm"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '12px',
-            bgcolor: '#FFFFFF',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-          },
-        }}
+        PaperProps={{ sx: { ...glassCard, backgroundImage: 'none' } }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <CloudUpload sx={{ color: '#2563EB', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight="600" sx={{ color: '#0B1B2B' }}>
+        <DialogContent sx={{ p: '28px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)', letterSpacing: '0.02em' }}>
               Загрузка документа
-            </Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent>
-          <Box sx={{ pt: 2 }}>
-            <input
-              accept=".pdf,.doc,.docx"
-              style={{ display: 'none' }}
-              id="file-upload"
-              type="file"
-              onChange={handleFileSelect}
-            />
-            <label htmlFor="file-upload">
-              <Button
-                variant="outlined"
-                component="span"
-                fullWidth
-                startIcon={<InsertDriveFile />}
-                sx={{
-                  py: 4,
-                  borderStyle: 'dashed',
-                  borderWidth: 2,
-                  borderColor: '#2563EB',
-                  color: '#2563EB',
-                  fontSize: '1rem',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  '&:hover': {
-                    borderColor: '#1d4ed8',
-                    bgcolor: '#F4F6F8',
-                  },
-                }}
-              >
-                {selectedFile
-                  ? selectedFile.name
-                  : 'Выберите файл (PDF, DOC, DOCX)'}
-              </Button>
-            </label>
-            {selectedFile && (
-              <Alert severity="success" sx={{ mt: 2, borderRadius: '8px' }}>
-                <Typography variant="body2" fontWeight="600">
-                  Файл выбран: {selectedFile.name}
-                </Typography>
-                <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                  Размер: {formatFileSize(selectedFile.size)}
-                </Typography>
-              </Alert>
-            )}
-          </Box>
-        </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button
-            variant="outlined"
-            onClick={() => {
-              setUploadDialogOpen(false);
-              setSelectedFile(null);
-            }}
-            sx={{
-              borderColor: '#E6E9EE',
-              color: '#6B7280',
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '8px',
-              px: 3,
-              '&:hover': {
-                borderColor: '#0B1B2B',
-                bgcolor: '#F4F6F8',
-              },
-            }}
-          >
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
+            </div>
+            <button onClick={closeUploadDialog} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+              <CloseOutlined sx={{ fontSize: 22 }} />
+            </button>
+          </div>
+
+          {/* Category */}
+          <div style={{ fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 12 }}>
+            Категория документа
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+            {DOC_CATEGORIES.map((cat) => {
+              const active = selectedCategory === cat;
+              return (
+                <button
+                  key={cat}
+                  onClick={() => setSelectedCategory(active ? null : cat)}
+                  style={{
+                    fontSize: 13, fontWeight: 500, padding: '9px 16px', borderRadius: 'var(--radius)',
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    background: active ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
+                    color: active ? '#FFFFFF' : 'var(--text2)',
+                    border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+                  }}
+                >
+                  {cat}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Dropzone */}
+          <label htmlFor="doc-file-input">
+            <div
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={handleDrop}
+              style={{
+                ...glassCard, border: '1.5px dashed var(--accent)', padding: '40px 28px',
+                textAlign: 'center', marginBottom: 22, cursor: 'pointer', display: 'block',
+              }}
+            >
+              <div style={{ width: 64, height: 64, margin: '0 auto 16px', borderRadius: '50%', background: 'var(--accent-tint, rgba(184,149,110,0.18))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)' }}>
+                <CloudUploadOutlined sx={{ fontSize: 30 }} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
+                Перетащите файл сюда
+              </div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
+                PDF, DOC, DOCX · до 10 MB
+              </div>
+              <span style={{ ...goldGradientBtn, padding: '11px 22px', display: 'inline-block' }}>
+                Выбрать файл
+              </span>
+            </div>
+          </label>
+          <input
+            id="doc-file-input"
+            accept=".pdf,.doc,.docx"
+            type="file"
+            onChange={handleFileSelect}
+            style={{ display: 'none' }}
+          />
+
+          {/* Selected file with progress placeholder */}
+          {selectedFile && (
+            <>
+              <div style={{ fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 12 }}>
+                Файл (1)
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14, ...glassCard, padding: '14px 16px', marginBottom: 24 }}>
+                <span style={{ width: 40, height: 40, borderRadius: 'var(--radius)', background: 'var(--accent-tint, rgba(184,149,110,0.16))', color: 'var(--accent)', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {fileBadge(selectedFile.name)}
+                </span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 6 }}>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      {selectedFile.name}
+                    </span>
+                    <span style={{ fontSize: 12, color: 'var(--text3)', flexShrink: 0 }}>{formatFileSize(selectedFile.size)}</span>
+                  </div>
+                  <div style={{ height: 5, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
+                    <div style={{ width: '100%', height: '100%', background: 'var(--success)' }} />
+                  </div>
+                </div>
+                <button onClick={() => setSelectedFile(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex' }}>
+                  <CloseOutlined sx={{ fontSize: 20 }} />
+                </button>
+              </div>
+            </>
+          )}
+
+          <button
             onClick={handleUploadSubmit}
             disabled={!selectedFile}
-            sx={{
-              bgcolor: '#2563EB',
-              color: '#FFFFFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '8px',
-              px: 3,
-              '&:hover': {
-                bgcolor: '#1d4ed8',
-              },
-              '&:disabled': {
-                bgcolor: '#E6E9EE',
-                color: '#6B7280',
-              },
+            style={{
+              ...goldGradientBtn, width: '100%', padding: 15, fontSize: 14,
+              opacity: selectedFile ? 1 : 0.5, cursor: selectedFile ? 'pointer' : 'not-allowed',
             }}
           >
-            Загрузить
-          </Button>
-        </DialogActions>
+            Загрузить и запустить AI-анализ
+          </button>
+        </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* ── Delete confirmation ────────────────────────────────── */}
       <Dialog
         open={deleteDialogOpen}
         onClose={() => setDeleteDialogOpen(false)}
-        maxWidth="sm"
+        maxWidth="xs"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '12px',
-            bgcolor: '#FFFFFF',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-          },
-        }}
+        PaperProps={{ sx: { ...glassCard, backgroundImage: 'none' } }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <ErrorIcon sx={{ color: '#ef4444', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight="600" sx={{ color: '#0B1B2B' }}>
-              Удалить документ?
-            </Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ p: '28px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
+            <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(176,112,112,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)', flexShrink: 0 }}>
+              <DeleteOutlined sx={{ fontSize: 22 }} />
+            </div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>Удалить документ?</div>
+          </div>
           {selectedDocument && (
-            <Typography variant="body1" sx={{ color: '#6B7280' }}>
-              Вы уверены, что хотите удалить документ "
-              {selectedDocument.filename || selectedDocument.name}"? Это действие нельзя
-              отменить.
-            </Typography>
+            <div style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 24 }}>
+              Вы уверены, что хотите удалить «{selectedDocument.name}»? Это действие нельзя отменить.
+            </div>
           )}
+          <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+            <button
+              onClick={() => {
+                setDeleteDialogOpen(false);
+                setSelectedDocument(null);
+              }}
+              style={{ ...ghostBtn, padding: '11px 20px' }}
+            >
+              Отмена
+            </button>
+            <button
+              onClick={handleDeleteDocument}
+              style={{ background: 'var(--error)', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, padding: '11px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}
+            >
+              Удалить
+            </button>
+          </div>
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button
-            variant="outlined"
-            onClick={() => {
-              setDeleteDialogOpen(false);
-              setSelectedDocument(null);
-            }}
-            sx={{
-              borderColor: '#E6E9EE',
-              color: '#6B7280',
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '8px',
-              px: 3,
-              '&:hover': {
-                borderColor: '#0B1B2B',
-                bgcolor: '#F4F6F8',
-              },
-            }}
-          >
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
-            onClick={handleDeleteDocument}
-            sx={{
-              bgcolor: '#ef4444',
-              color: '#FFFFFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '8px',
-              px: 3,
-              '&:hover': {
-                bgcolor: '#dc2626',
-              },
-            }}
-          >
-            Удалить
-          </Button>
-        </DialogActions>
       </Dialog>
 
-      {/* AI Check Dialog */}
+      {/* ── AI check dialog ────────────────────────────────────── */}
       <Dialog
         open={aiDialogOpen}
         onClose={() => !aiCheckLoading && setAiDialogOpen(false)}
         maxWidth="md"
         fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: '12px',
-            bgcolor: '#FFFFFF',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-          },
-        }}
+        PaperProps={{ sx: { ...glassCard, backgroundImage: 'none' } }}
       >
-        <DialogTitle>
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <AutoAwesome sx={{ color: '#2563EB', fontSize: 32 }} />
-            <Typography variant="h5" fontWeight="600" sx={{ color: '#0B1B2B' }}>
-              AI-анализ документа
-            </Typography>
-          </Box>
-        </DialogTitle>
-        <DialogContent>
+        <DialogContent sx={{ p: '28px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <AutoAwesomeOutlined sx={{ color: 'var(--accent)', fontSize: 26 }} />
+              <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)', letterSpacing: '0.02em' }}>
+                AI-анализ документа
+              </div>
+            </div>
+            {!aiCheckLoading && (
+              <button onClick={() => { setAiDialogOpen(false); setAiCheckResult(null); }} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+                <CloseOutlined sx={{ fontSize: 22 }} />
+              </button>
+            )}
+          </div>
+
           {aiCheckLoading ? (
-            <Box
-              sx={{
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                py: 6,
-              }}
-            >
-              <CircularProgress sx={{ color: '#2563EB', mb: 2 }} size={60} />
-              <Typography variant="h6" sx={{ color: '#0B1B2B' }}>
-                Анализируем документ...
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#6B7280' }}>
-                Это может занять несколько секунд
-              </Typography>
-            </Box>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
+              <CircularProgress sx={{ color: 'var(--accent)', mb: 2 }} size={52} />
+              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>Анализируем документ…</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 4 }}>Это может занять несколько секунд</div>
+            </div>
           ) : aiCheckResult ? (
-            <Box sx={{ pt: 2 }}>
-              {/* Document Info */}
-              <Card
-                sx={{
-                  mb: 3,
-                  p: 3,
-                  bgcolor: '#F4F6F8',
-                  border: '1px solid #E6E9EE',
-                  borderRadius: '8px',
-                  boxShadow: 'none',
-                }}
-              >
-                <Typography variant="subtitle2" sx={{ color: '#6B7280' }} gutterBottom>
-                  Документ:
-                </Typography>
-                <Typography variant="h6" fontWeight="600" gutterBottom sx={{ color: '#0B1B2B' }}>
-                  {selectedDocument?.filename || selectedDocument?.name}
-                </Typography>
-                {aiCheckResult.score !== undefined && (
-                  <Chip
-                    label={`AI оценка: ${aiCheckResult.score}%`}
-                    sx={{
-                      bgcolor:
-                        aiCheckResult.score >= 80
-                          ? '#10b981'
-                          : aiCheckResult.score >= 50
-                          ? '#f59e0b'
-                          : '#ef4444',
-                      color: 'white',
-                      fontWeight: 'bold',
-                    }}
-                  />
-                )}
-              </Card>
+            <div className="ai-reveal">
+              {/* Summary card */}
+              <div style={{ ...glassCard, background: 'var(--canvas)', boxShadow: 'none', padding: 20, marginBottom: 20 }}>
+                <div style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }}>
+                  {aiCheckResult.documentType || 'Документ'}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>
+                  {selectedDocument?.name}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                  {aiCheckResult.score !== undefined && aiCheckResult.score !== null && (
+                    <span style={{ fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: scoreColor(aiCheckResult.score), padding: '5px 12px', borderRadius: 'var(--radius)' }}>
+                      AI-оценка: {aiCheckResult.score}%
+                    </span>
+                  )}
+                  {aiCheckResult.risk && (
+                    <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text2)', border: '1px solid var(--border)', padding: '5px 12px', borderRadius: 'var(--radius)' }}>
+                      Риск: {aiCheckResult.risk}
+                    </span>
+                  )}
+                </div>
+              </div>
 
               {/* Summary */}
               {aiCheckResult.summary && (
-                <Box sx={{ mb: 3 }}>
-                  <Typography variant="h6" fontWeight="600" gutterBottom sx={{ color: '#0B1B2B' }}>
-                    Резюме
-                  </Typography>
-                  <Typography variant="body1" sx={{ color: '#6B7280' }}>
-                    {aiCheckResult.summary}
-                  </Typography>
-                </Box>
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>Резюме</div>
+                  <div style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.65 }}>{aiCheckResult.summary}</div>
+                </div>
               )}
 
-              {/* Issues */}
-              {aiCheckResult.issues && aiCheckResult.issues.length > 0 && (
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    fontWeight="600"
-                    gutterBottom
-                    sx={{ color: '#ef4444' }}
-                  >
-                    Обнаруженные проблемы
-                  </Typography>
-                  {aiCheckResult.issues.map((issue, index) => (
-                    <Alert
-                      key={index}
-                      severity="error"
-                      sx={{ mb: 1, borderRadius: '8px' }}
-                    >
-                      {issue}
-                    </Alert>
-                  ))}
-                </Box>
+              {/* Risks */}
+              {aiRisks.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--error)', marginBottom: 10 }}>
+                    <WarningAmberOutlined sx={{ fontSize: 20 }} /> Обнаруженные риски
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {aiRisks.map((risk, i) => (
+                      <div key={i} style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, padding: '11px 14px', borderRadius: 'var(--radius)', background: 'rgba(176,112,112,0.10)', border: '1px solid rgba(176,112,112,0.25)' }}>
+                        {risk}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              {/* Suggestions */}
-              {aiCheckResult.suggestions && aiCheckResult.suggestions.length > 0 && (
-                <Box sx={{ mb: 3 }}>
-                  <Typography
-                    variant="h6"
-                    fontWeight="600"
-                    gutterBottom
-                    sx={{ color: '#10b981' }}
-                  >
-                    Рекомендации
-                  </Typography>
-                  {aiCheckResult.suggestions.map((suggestion, index) => (
-                    <Alert
-                      key={index}
-                      severity="success"
-                      sx={{ mb: 1, borderRadius: '8px' }}
-                    >
-                      {suggestion}
-                    </Alert>
-                  ))}
-                </Box>
+              {/* Recommendations */}
+              {aiRecs.length > 0 && (
+                <div style={{ marginBottom: 20 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--success)', marginBottom: 10 }}>
+                    <LightbulbOutlined sx={{ fontSize: 20 }} /> Рекомендации
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {aiRecs.map((rec, i) => (
+                      <div key={i} style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, padding: '11px 14px', borderRadius: 'var(--radius)', background: 'rgba(122,154,107,0.10)', border: '1px solid rgba(122,154,107,0.25)' }}>
+                        {rec}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
-              {/* Risk Level */}
-              {aiCheckResult.risk && (
-                <Alert
-                  severity={
-                    aiCheckResult.score >= 80
-                      ? 'success'
-                      : aiCheckResult.score >= 50
-                      ? 'warning'
-                      : 'error'
-                  }
-                  sx={{ borderRadius: '8px' }}
-                >
-                  <Typography variant="subtitle2" fontWeight="600">
-                    Уровень риска: {aiCheckResult.risk}
-                  </Typography>
-                </Alert>
+              {/* Relevant laws */}
+              {aiLaws.length > 0 && (
+                <div style={{ marginBottom: 4 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--accent)', marginBottom: 10 }}>
+                    <GavelOutlined sx={{ fontSize: 20 }} /> Применимые нормы
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                    {aiLaws.map((law, i) => (
+                      <span key={i} style={{ fontSize: 12, fontWeight: 500, color: 'var(--accent-dark)', background: 'var(--accent-tint, rgba(184,149,110,0.14))', padding: '6px 12px', borderRadius: 'var(--radius)' }}>
+                        {law}
+                      </span>
+                    ))}
+                  </div>
+                </div>
               )}
-            </Box>
+            </div>
           ) : (
-            <Alert severity="error" sx={{ borderRadius: '8px' }}>
+            <Alert severity="error" sx={{ borderRadius: 'var(--radius)' }}>
               Не удалось получить результаты анализа
             </Alert>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button
-            variant="contained"
-            onClick={() => {
-              setAiDialogOpen(false);
-              setAiCheckResult(null);
-            }}
-            disabled={aiCheckLoading}
-            sx={{
-              bgcolor: '#2563EB',
-              color: '#FFFFFF',
-              textTransform: 'none',
-              fontWeight: 600,
-              borderRadius: '8px',
-              px: 3,
-              '&:hover': {
-                bgcolor: '#1d4ed8',
-              },
-              '&:disabled': {
-                bgcolor: '#E6E9EE',
-                color: '#6B7280',
-              },
-            }}
-          >
-            Закрыть
-          </Button>
-        </DialogActions>
       </Dialog>
 
-      {/* Snackbar for notifications */}
+      {/* Snackbar */}
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}
@@ -997,16 +715,12 @@ const DocumentsPageGlass = () => {
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
           severity={snackbar.severity}
-          sx={{
-            width: '100%',
-            borderRadius: '8px',
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-          }}
+          sx={{ width: '100%', borderRadius: 'var(--radius)' }}
         >
           {snackbar.message}
         </Alert>
       </Snackbar>
-    </Box>
+    </GlassShell>
   );
 };
 

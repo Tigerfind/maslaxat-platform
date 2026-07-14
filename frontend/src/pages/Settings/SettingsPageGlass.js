@@ -1,52 +1,153 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
+import { Slider, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import {
-  Container,
-  Box,
-  Typography,
-  Switch,
-  Radio,
-  RadioGroup,
-  FormControlLabel,
-  FormControl,
-  FormLabel,
-  Slider,
-  IconButton,
-  Divider,
-  Stack,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  Card,
-  Button,
-} from '@mui/material';
-import {
-  ArrowBack,
-  Notifications,
-  Language,
-  Brightness4,
-  Lock,
-  TextFields,
-  RestartAlt,
-  Logout,
-  Check,
-  Close,
+  NotificationsNoneOutlined,
+  LockOutlined,
+  LanguageOutlined,
+  DarkModeOutlined,
+  TextFieldsOutlined,
+  LogoutOutlined,
+  CheckOutlined,
+  RestartAltOutlined,
+  CloseOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { logout } from '../../store/slices/authSlice';
+import { useTranslation, LANGUAGES } from '../../i18n';
+import GlassShell from '../../components/GlassKit/GlassShell';
+
+/*
+  ─────────────────────────────────────────────────────────────
+  SETTINGS  (/settings)
+  Ported 1:1 from ClaudeDesign → client/12_SETTINGS_light_stub.html.
+  Sections: Уведомления · Приватность · Язык · Тема · Отображение.
+  Data wiring (kept from previous implementation):
+   • appSettings (email/push, privacy, showEmail/Phone, dataSharing,
+     fontSize, compactMode) ← persisted to localStorage 'appSettings'.
+     Backend persistence (PUT /api/users/profile settings) is a
+     SEPARATE task — not wired here yet.
+   • Тема toggle → same mechanism as GlassShell: localStorage 'theme'
+     + document.documentElement[data-theme] so glass.css dark vars
+     apply globally and stay in sync with the topbar toggle.
+   • Язык → useTranslation().setLanguage (persists to 'language').
+  Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
+  ─────────────────────────────────────────────────────────────
+*/
+
+const glassCard = {
+  background: 'var(--card-glass)',
+  backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
+  border: '1px solid var(--card-brd)',
+  boxShadow: 'var(--card-shadow)',
+  borderRadius: 'var(--radius)',
+  padding: 24,
+};
+
+const sectionTitle = {
+  fontSize: 14,
+  fontWeight: 600,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: 'var(--text)',
+};
+
+const iconBox = {
+  width: 34,
+  height: 34,
+  flexShrink: 0,
+  display: 'flex',
+  alignItems: 'center',
+  justifyContent: 'center',
+  borderRadius: 'var(--radius)',
+  background: 'var(--canvas)',
+  border: '1px solid var(--border)',
+  color: 'var(--accent)',
+};
+
+// ── Custom glass toggle (matches mockup <button><knob/></button>) ──
+const Toggle = ({ on, onClick }) => (
+  <button
+    type="button"
+    onClick={onClick}
+    aria-pressed={on}
+    style={{
+      width: 46,
+      height: 26,
+      flexShrink: 0,
+      borderRadius: 13,
+      border: 'none',
+      cursor: 'pointer',
+      padding: 3,
+      background: on ? 'var(--accent)' : 'var(--border-strong)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: on ? 'flex-end' : 'flex-start',
+      transition: 'background 0.22s',
+    }}
+  >
+    <div
+      style={{
+        width: 20,
+        height: 20,
+        borderRadius: '50%',
+        background: '#FFFFFF',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.28)',
+        transition: 'all 0.22s',
+      }}
+    />
+  </button>
+);
+
+const Section = ({ icon, title, subtitle, children }) => (
+  <div style={glassCard}>
+    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+      <span style={iconBox}>{icon}</span>
+      <div>
+        <div style={sectionTitle}>{title}</div>
+        {subtitle && (
+          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3, textTransform: 'none', letterSpacing: 0 }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+    </div>
+    {children}
+  </div>
+);
+
+const Row = ({ label, description, control, last }) => (
+  <div
+    style={{
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'space-between',
+      gap: 16,
+      padding: '14px 0',
+      borderBottom: last ? 'none' : '1px solid var(--border)',
+    }}
+  >
+    <div style={{ minWidth: 0 }}>
+      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{label}</div>
+      {description && (
+        <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>{description}</div>
+      )}
+    </div>
+    {control}
+  </div>
+);
 
 const SettingsPageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { language, setLanguage } = useTranslation();
 
-  // Default settings
+  // ── appSettings: local-only preferences (NOT theme/language) ──
   const defaultSettings = {
     emailNotifications: true,
     pushNotifications: true,
-    language: 'ru',
-    darkMode: false,
     profileVisibility: 'public',
     dataSharing: false,
     showEmail: true,
@@ -55,7 +156,6 @@ const SettingsPageGlass = () => {
     compactMode: false,
   };
 
-  // Load settings from localStorage or use defaults
   const loadSettings = () => {
     const saved = localStorage.getItem('appSettings');
     if (saved) {
@@ -68,782 +168,467 @@ const SettingsPageGlass = () => {
     return defaultSettings;
   };
 
-  // State management
   const [settings, setSettings] = useState(loadSettings);
   const [hasChanges, setHasChanges] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
 
-  // Detect changes
+  // ── Тема: wired to the SAME mechanism as GlassShell's toggle ──
+  const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
+  const toggleDark = () =>
+    setDark((prev) => {
+      const next = !prev;
+      localStorage.setItem('theme', next ? 'dark' : 'light');
+      document.documentElement.setAttribute('data-theme', next ? 'dark' : 'light');
+      return next;
+    });
+
   useEffect(() => {
     const saved = loadSettings();
-    const isChanged = JSON.stringify(saved) !== JSON.stringify(settings);
-    setHasChanges(isChanged);
+    setHasChanges(JSON.stringify(saved) !== JSON.stringify(settings));
   }, [settings]);
 
-  // Handler functions
-  const handleToggle = (key, label) => {
-    setSettings((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
-  };
-
-  const handleLanguageChange = (event) => {
-    const newLang = event.target.value;
-    setSettings((prev) => ({
-      ...prev,
-      language: newLang,
-    }));
-  };
-
-  const handleVisibilityChange = (event) => {
-    const newVisibility = event.target.value;
-    setSettings((prev) => ({
-      ...prev,
-      profileVisibility: newVisibility,
-    }));
-  };
-
-  const handleFontSizeChange = (event, newValue) => {
-    setSettings((prev) => ({
-      ...prev,
-      fontSize: newValue,
-    }));
-  };
+  const handleToggle = (key) =>
+    setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
   const handleSaveSettings = () => {
     localStorage.setItem('appSettings', JSON.stringify(settings));
     setHasChanges(false);
-    toast.success('Настройки сохранены успешно', {
-      position: 'bottom-center',
-      autoClose: 2000,
-    });
+    toast.success('Настройки сохранены успешно', { position: 'bottom-center', autoClose: 2000 });
   };
 
   const handleResetToDefaults = () => {
     setSettings(defaultSettings);
-    toast.success('Настройки сброшены к значениям по умолчанию', {
-      position: 'bottom-center',
-      autoClose: 2000,
-    });
+    toast.success('Настройки сброшены к значениям по умолчанию', { position: 'bottom-center', autoClose: 2000 });
   };
 
-  // Section component for consistent styling
-  const SettingSection = ({ icon, title, subtitle, children }) => (
-    <Card
-      sx={{
-        bgcolor: '#FFFFFF',
-        border: '1px solid #E6E9EE',
-        borderRadius: '12px',
-        boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-        p: 3,
-      }}
-    >
-      <Box sx={{ display: 'flex', alignItems: 'flex-start', mb: 3 }}>
-        <Box
-          sx={{
-            width: 48,
-            height: 48,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            bgcolor: '#EFF6FF',
-            border: '1px solid #BFDBFE',
-            borderRadius: '10px',
-            color: '#2563EB',
-            mr: 3,
-            flexShrink: 0,
-          }}
-        >
-          {icon}
-        </Box>
-        <Box>
-          <Typography
-            variant="h6"
-            fontWeight="700"
-            sx={{
-              color: '#0B1B2B',
-              mb: 0.5,
-            }}
-          >
-            {title}
-          </Typography>
-          {subtitle && (
-            <Typography variant="body2" sx={{ color: '#6B7280' }}>
-              {subtitle}
-            </Typography>
-          )}
-        </Box>
-      </Box>
-      {children}
-    </Card>
-  );
+  const handleLogout = () => {
+    dispatch(logout());
+    toast.success('Вы вышли из аккаунта');
+    navigate('/login');
+  };
 
-  // Toggle item component
-  const ToggleItem = ({ label, description, checked, onChange }) => (
-    <Box
-      sx={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        py: 2,
-        '&:not(:last-child)': {
-          borderBottom: '1px solid #E6E9EE',
-        },
-      }}
-    >
-      <Box>
-        <Typography variant="body2" fontWeight="600" sx={{ color: '#0B1B2B', mb: 0.5 }}>
-          {label}
-        </Typography>
-        {description && (
-          <Typography variant="caption" sx={{ color: '#6B7280' }}>
-            {description}
-          </Typography>
-        )}
-      </Box>
-      <Switch
-        checked={checked}
-        onChange={onChange}
-        sx={{
-          '& .MuiSwitch-switchBase.Mui-checked': {
-            color: '#2563EB',
-          },
-          '& .MuiSwitch-switchBase.Mui-checked + .MuiSwitch-track': {
-            backgroundColor: '#2563EB',
-          },
-          '& .MuiSwitch-track': {
-            backgroundColor: '#E6E9EE',
-          },
-        }}
-      />
-    </Box>
-  );
+  const visOptions = [
+    { value: 'public', label: 'Публичный', desc: 'Ваш профиль виден всем пользователям' },
+    { value: 'contacts', label: 'Только контакты', desc: 'Только ваши контакты могут видеть профиль' },
+    { value: 'private', label: 'Приватный', desc: 'Ваш профиль скрыт от всех' },
+  ];
+
+  const accentSlider = {
+    color: 'var(--accent)',
+    '& .MuiSlider-thumb': { backgroundColor: 'var(--accent)', boxShadow: '0 2px 6px rgba(184,149,110,0.35)' },
+    '& .MuiSlider-track': { backgroundColor: 'var(--accent)', border: 'none' },
+    '& .MuiSlider-rail': { backgroundColor: 'var(--border)' },
+    '& .MuiSlider-mark': { backgroundColor: 'var(--text3)' },
+    '& .MuiSlider-markLabel': { color: 'var(--text3)', fontSize: '0.72rem', fontWeight: 500 },
+  };
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        bgcolor: '#F4F6F8',
-        pb: 6,
-      }}
-    >
+    <GlassShell active="/settings" title="Настройки" subtitle="Управление параметрами приложения">
+      <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {/* ── Уведомления ── */}
+        <Section
+          icon={<NotificationsNoneOutlined sx={{ fontSize: 20 }} />}
+          title="Уведомления"
+          subtitle="Управление параметрами уведомлений"
+        >
+          <Row
+            label="Email уведомления"
+            description="Получать уведомления на электронную почту"
+            control={<Toggle on={settings.emailNotifications} onClick={() => handleToggle('emailNotifications')} />}
+          />
+          <Row
+            label="Push-уведомления"
+            description="Получать push-уведомления в браузере"
+            control={<Toggle on={settings.pushNotifications} onClick={() => handleToggle('pushNotifications')} />}
+            last
+          />
+        </Section>
 
-      {/* Header */}
-      <Box
-        sx={{
-          bgcolor: '#FFFFFF',
-          borderBottom: '1px solid #E6E9EE',
-          pt: 3,
-          pb: 3,
-        }}
-      >
-        <Container maxWidth="lg">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton
-              onClick={() => navigate(-1)}
-              sx={{
-                color: '#0B1B2B',
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                '&:hover': {
-                  bgcolor: '#F4F6F8',
-                  borderColor: '#2563EB',
-                },
-              }}
-            >
-              <ArrowBack />
-            </IconButton>
-            <Box>
-              <Typography
-                variant="h4"
-                fontWeight="700"
-                sx={{
-                  color: '#0B1B2B',
-                  letterSpacing: '-0.02em',
-                }}
-              >
-                Настройки
-              </Typography>
-              <Typography variant="body2" sx={{ color: '#6B7280', mt: 0.5 }}>
-                Управление параметрами приложения
-              </Typography>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
-
-      {/* Main Content */}
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
-        <Stack spacing={3}>
-          {/* Notifications Section */}
-          <SettingSection
-            icon={<Notifications sx={{ fontSize: 28 }} />}
-            title="Уведомления"
-            subtitle="Управление параметрами уведомлений"
-          >
-            <ToggleItem
-              label="Email уведомления"
-              description="Получать уведомления на электронную почту"
-              checked={settings.emailNotifications}
-              onChange={() => handleToggle('emailNotifications')}
-            />
-            <ToggleItem
-              label="Push-уведомления"
-              description="Получать push-уведомления в браузере"
-              checked={settings.pushNotifications}
-              onChange={() => handleToggle('pushNotifications')}
-            />
-          </SettingSection>
-
-          {/* Privacy Section */}
-          <SettingSection
-            icon={<Lock sx={{ fontSize: 28 }} />}
-            title="Приватность"
-            subtitle="Управление видимостью вашего профиля"
-          >
-            <FormControl component="fieldset" sx={{ width: '100%' }}>
-              <FormLabel
-                component="legend"
-                sx={{
-                  color: '#0B1B2B',
-                  fontWeight: 600,
-                  mb: 2,
-                  fontSize: '0.95rem',
-                  '&.Mui-focused': {
-                    color: '#0B1B2B',
-                  },
-                }}
-              >
-                Видимость профиля
-              </FormLabel>
-              <RadioGroup value={settings.profileVisibility} onChange={handleVisibilityChange}>
-                <Box sx={{ mb: 2 }}>
-                  <FormControlLabel
-                    value="public"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <Box sx={{ ml: 1 }}>
-                        <Typography
-                          variant="body2"
-                          fontWeight="600"
-                          sx={{ color: '#0B1B2B', mb: 0.25 }}
-                        >
-                          Публичный
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                          Ваш профиль виден всем пользователям
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-                <Box sx={{ mb: 2 }}>
-                  <FormControlLabel
-                    value="contacts"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <Box sx={{ ml: 1 }}>
-                        <Typography
-                          variant="body2"
-                          fontWeight="600"
-                          sx={{ color: '#0B1B2B', mb: 0.25 }}
-                        >
-                          Только контакты
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                          Только ваши контакты могут видеть профиль
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-                <Box>
-                  <FormControlLabel
-                    value="private"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={
-                      <Box sx={{ ml: 1 }}>
-                        <Typography
-                          variant="body2"
-                          fontWeight="600"
-                          sx={{ color: '#0B1B2B', mb: 0.25 }}
-                        >
-                          Приватный
-                        </Typography>
-                        <Typography variant="caption" sx={{ color: '#6B7280' }}>
-                          Ваш профиль скрыт от всех
-                        </Typography>
-                      </Box>
-                    }
-                  />
-                </Box>
-              </RadioGroup>
-            </FormControl>
-
-            <Divider sx={{ my: 3, borderColor: '#E6E9EE' }} />
-
-            <ToggleItem
-              label="Показывать email"
-              description="Ваш email будет виден другим пользователям"
-              checked={settings.showEmail}
-              onChange={() => handleToggle('showEmail')}
-            />
-
-            <ToggleItem
-              label="Показывать телефон"
-              description="Ваш номер телефона будет виден другим пользователям"
-              checked={settings.showPhone}
-              onChange={() => handleToggle('showPhone')}
-            />
-
-            <Divider sx={{ my: 3, borderColor: '#E6E9EE' }} />
-
-            <ToggleItem
-              label="Общий доступ данных"
-              description="Разрешить анализ данных для улучшения сервиса"
-              checked={settings.dataSharing}
-              onChange={() => handleToggle('dataSharing')}
-            />
-          </SettingSection>
-
-          {/* Language Section */}
-          <SettingSection
-            icon={<Language sx={{ fontSize: 28 }} />}
-            title="Язык"
-            subtitle="Выберите язык интерфейса"
-          >
-            <FormControl component="fieldset" sx={{ width: '100%' }}>
-              <RadioGroup value={settings.language} onChange={handleLanguageChange}>
-                <Box sx={{ mb: 2 }}>
-                  <FormControlLabel
-                    value="ru"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={<Typography sx={{ color: '#0B1B2B', fontWeight: 500 }}>Русский</Typography>}
-                  />
-                </Box>
-                <Box sx={{ mb: 2 }}>
-                  <FormControlLabel
-                    value="uz"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={<Typography sx={{ color: '#0B1B2B', fontWeight: 500 }}>O'zbekcha</Typography>}
-                  />
-                </Box>
-                <Box>
-                  <FormControlLabel
-                    value="en"
-                    control={
-                      <Radio
-                        sx={{
-                          color: '#6B7280',
-                          '&.Mui-checked': {
-                            color: '#2563EB',
-                          },
-                        }}
-                      />
-                    }
-                    label={<Typography sx={{ color: '#0B1B2B', fontWeight: 500 }}>English</Typography>}
-                  />
-                </Box>
-              </RadioGroup>
-            </FormControl>
-          </SettingSection>
-
-          {/* Theme Section */}
-          <SettingSection
-            icon={<Brightness4 sx={{ fontSize: 28 }} />}
-            title="Тема"
-            subtitle="Параметры отображения интерфейса"
-          >
-            <ToggleItem
-              label="Темная тема"
-              description="Включить темный режим интерфейса"
-              checked={settings.darkMode}
-              onChange={() => handleToggle('darkMode')}
-            />
-            <Box
-              sx={{
-                mt: 3,
-                p: 3,
-                bgcolor: settings.darkMode ? '#1F2937' : '#F9FAFB',
-                border: '1px solid #E6E9EE',
-                borderRadius: '10px',
-                transition: 'all 0.3s ease',
-              }}
-            >
-              <Typography variant="body2" sx={{ color: settings.darkMode ? '#F9FAFB' : '#0B1B2B', fontWeight: 500 }}>
-                Предварительный просмотр темы
-              </Typography>
-            </Box>
-          </SettingSection>
-
-          {/* Display Section */}
-          <SettingSection
-            icon={<TextFields sx={{ fontSize: 28 }} />}
-            title="Отображение"
-            subtitle="Настройки размера и расположения элементов"
-          >
-            <Box sx={{ mb: 4 }}>
-              <Box
-                sx={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  mb: 3,
-                }}
-              >
-                <Typography variant="body2" fontWeight="600" sx={{ color: '#0B1B2B' }}>
-                  Размер шрифта
-                </Typography>
-                <Box
-                  sx={{
-                    bgcolor: '#EFF6FF',
-                    border: '1px solid #BFDBFE',
-                    color: '#2563EB',
-                    px: 2,
-                    py: 0.75,
-                    borderRadius: '8px',
-                    fontWeight: 700,
-                    fontSize: '0.875rem',
+        {/* ── Приватность ── */}
+        <Section
+          icon={<LockOutlined sx={{ fontSize: 20 }} />}
+          title="Приватность"
+          subtitle="Управление видимостью вашего профиля"
+        >
+          <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginBottom: 12 }}>
+            Видимость профиля
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {visOptions.map((o) => {
+              const active = settings.profileVisibility === o.value;
+              return (
+                <button
+                  key={o.value}
+                  type="button"
+                  onClick={() => setSettings((prev) => ({ ...prev, profileVisibility: o.value }))}
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 14,
+                    width: '100%',
+                    textAlign: 'left',
+                    padding: '13px 15px',
+                    borderRadius: 'var(--radius)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    background: active ? 'var(--canvas)' : 'transparent',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    transition: 'all 0.2s',
                   }}
                 >
-                  {settings.fontSize}px
-                </Box>
-              </Box>
-              <Slider
-                value={settings.fontSize}
-                onChange={handleFontSizeChange}
-                min={12}
-                max={24}
-                step={1}
-                marks={[
-                  { value: 12, label: '12px' },
-                  { value: 16, label: '16px' },
-                  { value: 20, label: '20px' },
-                  { value: 24, label: '24px' },
-                ]}
-                sx={{
-                  color: '#2563EB',
-                  '& .MuiSlider-thumb': {
-                    backgroundColor: '#2563EB',
-                    boxShadow: '0 2px 6px rgba(37, 99, 235, 0.2)',
-                  },
-                  '& .MuiSlider-track': {
-                    backgroundColor: '#2563EB',
-                  },
-                  '& .MuiSlider-rail': {
-                    backgroundColor: '#E6E9EE',
-                  },
-                  '& .MuiSlider-mark': {
-                    backgroundColor: '#9CA3AF',
-                  },
-                  '& .MuiSlider-markLabel': {
-                    color: '#6B7280',
-                    fontSize: '0.75rem',
+                  <span
+                    style={{
+                      width: 18,
+                      height: 18,
+                      flexShrink: 0,
+                      borderRadius: '50%',
+                      border: `2px solid ${active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                    }}
+                  >
+                    {active && (
+                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)' }} />
+                    )}
+                  </span>
+                  <span style={{ minWidth: 0 }}>
+                    <span style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{o.label}</span>
+                    <span style={{ display: 'block', fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{o.desc}</span>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ height: 18 }} />
+
+          <Row
+            label="Показывать email"
+            description="Ваш email будет виден другим пользователям"
+            control={<Toggle on={settings.showEmail} onClick={() => handleToggle('showEmail')} />}
+          />
+          <Row
+            label="Показывать телефон"
+            description="Ваш номер телефона будет виден другим пользователям"
+            control={<Toggle on={settings.showPhone} onClick={() => handleToggle('showPhone')} />}
+          />
+          <Row
+            label="Общий доступ данных"
+            description="Разрешить анализ данных для улучшения сервиса"
+            control={<Toggle on={settings.dataSharing} onClick={() => handleToggle('dataSharing')} />}
+            last
+          />
+        </Section>
+
+        {/* ── Язык интерфейса ── */}
+        <Section
+          icon={<LanguageOutlined sx={{ fontSize: 20 }} />}
+          title="Язык интерфейса"
+          subtitle="Применяется мгновенно ко всему приложению"
+        >
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            {Object.values(LANGUAGES).map((l) => {
+              const active = language === l.code;
+              return (
+                <button
+                  key={l.code}
+                  type="button"
+                  onClick={() => setLanguage(l.code)}
+                  style={{
+                    flex: '1 1 0',
+                    minWidth: 120,
+                    padding: '13px 14px',
+                    borderRadius: 'var(--radius)',
+                    cursor: 'pointer',
+                    fontFamily: 'inherit',
+                    fontSize: 14,
                     fontWeight: 500,
-                  },
+                    background: active ? 'var(--accent)' : 'transparent',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    color: active ? '#FFFFFF' : 'var(--text2)',
+                    transition: 'all 0.2s',
+                  }}
+                >
+                  {l.flag}&nbsp; {l.nativeName}
+                </button>
+              );
+            })}
+          </div>
+        </Section>
+
+        {/* ── Тема ── */}
+        <Section
+          icon={<DarkModeOutlined sx={{ fontSize: 20 }} />}
+          title="Тема"
+          subtitle="Параметры отображения интерфейса"
+        >
+          <Row
+            label="Темная тема"
+            description="Включить темный режим интерфейса (применяется сразу)"
+            control={<Toggle on={dark} onClick={toggleDark} />}
+            last
+          />
+          <div
+            style={{
+              marginTop: 16,
+              padding: 18,
+              borderRadius: 'var(--radius)',
+              background: 'var(--canvas)',
+              border: '1px solid var(--border)',
+            }}
+          >
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>Предпросмотр темы</div>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <div
+                style={{
+                  width: 40,
+                  height: 40,
+                  borderRadius: '50%',
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+                  flexShrink: 0,
                 }}
               />
-              <Box
-                sx={{
-                  mt: 4,
-                  p: 3,
-                  bgcolor: '#F9FAFB',
-                  border: '1px solid #E6E9EE',
-                  borderRadius: '10px',
-                }}
-              >
-                <Typography
-                  variant="body2"
-                  sx={{
-                    fontSize: `${settings.fontSize}px`,
-                    color: '#0B1B2B',
-                    fontWeight: 500,
-                  }}
-                >
-                  Пример текста с выбранным размером шрифта
-                </Typography>
-              </Box>
-            </Box>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>eMaslaXat</div>
+                <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
+                  Пример карточки в текущей теме
+                </div>
+              </div>
+            </div>
+          </div>
+        </Section>
 
-            <Divider sx={{ my: 3, borderColor: '#E6E9EE' }} />
-
-            <ToggleItem
-              label="Компактный режим"
-              description="Уменьшить отступы для более плотного интерфейса"
-              checked={settings.compactMode}
-              onChange={() => handleToggle('compactMode')}
+        {/* ── Отображение ── */}
+        <Section
+          icon={<TextFieldsOutlined sx={{ fontSize: 20 }} />}
+          title="Отображение"
+          subtitle="Настройки размера и расположения элементов"
+        >
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>Размер шрифта</div>
+            <div
+              style={{
+                background: 'var(--canvas)',
+                border: '1px solid var(--border)',
+                color: 'var(--accent)',
+                padding: '4px 12px',
+                borderRadius: 'var(--radius)',
+                fontWeight: 600,
+                fontSize: 13,
+              }}
+            >
+              {settings.fontSize}px
+            </div>
+          </div>
+          <div style={{ padding: '0 6px' }}>
+            <Slider
+              value={settings.fontSize}
+              onChange={(e, v) => setSettings((prev) => ({ ...prev, fontSize: v }))}
+              min={12}
+              max={24}
+              step={1}
+              marks={[
+                { value: 12, label: '12px' },
+                { value: 16, label: '16px' },
+                { value: 20, label: '20px' },
+                { value: 24, label: '24px' },
+              ]}
+              sx={accentSlider}
             />
-          </SettingSection>
-
-          {/* Action Buttons */}
-          <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr' }, gap: 3 }}>
-            {/* Save Button */}
-            <Card
-              sx={{
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                p: 3,
-              }}
-            >
-              <Button
-                variant="contained"
-                fullWidth
-                size="large"
-                startIcon={<Check />}
-                onClick={handleSaveSettings}
-                disabled={!hasChanges}
-                sx={{
-                  bgcolor: '#2563EB',
-                  color: '#FFFFFF',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  py: 1.5,
-                  borderRadius: '8px',
-                  boxShadow: hasChanges ? '0 2px 6px rgba(37, 99, 235, 0.2)' : 'none',
-                  '&:hover': {
-                    bgcolor: '#1D4ED8',
-                  },
-                  '&:disabled': {
-                    bgcolor: '#E6E9EE',
-                    color: '#9CA3AF',
-                  },
-                }}
-              >
-                Сохранить изменения
-              </Button>
-              {hasChanges && (
-                <Typography
-                  variant="caption"
-                  sx={{
-                    color: '#2563EB',
-                    display: 'block',
-                    mt: 2,
-                    textAlign: 'center',
-                    fontWeight: 600,
-                  }}
-                >
-                  У вас есть несохраненные изменения
-                </Typography>
-              )}
-            </Card>
-
-            {/* Reset Button */}
-            <Card
-              sx={{
-                bgcolor: '#FFFFFF',
-                border: '1px solid #E6E9EE',
-                borderRadius: '12px',
-                boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-                p: 3,
-              }}
-            >
-              <Button
-                variant="outlined"
-                fullWidth
-                size="large"
-                startIcon={<RestartAlt />}
-                onClick={handleResetToDefaults}
-                sx={{
-                  borderColor: '#E6E9EE',
-                  color: '#0B1B2B',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  py: 1.5,
-                  borderRadius: '8px',
-                  '&:hover': {
-                    borderColor: '#2563EB',
-                    bgcolor: '#F4F6F8',
-                  },
-                }}
-              >
-                Сбросить
-              </Button>
-            </Card>
-          </Box>
-
-          {/* Logout Section */}
-          <Card
-            sx={{
-              bgcolor: '#FFFFFF',
-              border: '1px solid #E6E9EE',
-              borderRadius: '12px',
-              boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-              p: 3,
+          </div>
+          <div
+            style={{
+              marginTop: 12,
+              marginBottom: 6,
+              padding: 18,
+              borderRadius: 'var(--radius)',
+              background: 'var(--canvas)',
+              border: '1px solid var(--border)',
             }}
           >
-            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <Box>
-                <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                  <Logout sx={{ color: '#DC2626', mr: 1.5, fontSize: 24 }} />
-                  <Typography variant="h6" fontWeight="700" sx={{ color: '#0B1B2B' }}>
-                    Выйти из аккаунта
-                  </Typography>
-                </Box>
-                <Typography variant="caption" sx={{ color: '#6B7280', display: 'block' }}>
-                  Завершить текущий сеанс и вернуться на страницу входа
-                </Typography>
-              </Box>
-              <Button
-                variant="contained"
-                onClick={() => setConfirmDialog(true)}
-                sx={{
-                  bgcolor: '#DC2626',
-                  color: '#FFFFFF',
-                  fontWeight: 600,
-                  textTransform: 'none',
-                  px: 3,
-                  py: 1,
-                  borderRadius: '8px',
-                  '&:hover': {
-                    bgcolor: '#B91C1C',
-                  },
-                }}
-              >
-                Выйти
-              </Button>
-            </Box>
-          </Card>
+            <div style={{ fontSize: `${settings.fontSize}px`, color: 'var(--text)', fontWeight: 500 }}>
+              Пример текста с выбранным размером шрифта
+            </div>
+          </div>
 
-          {/* Info Card */}
-          <Card
-            sx={{
-              bgcolor: '#F9FAFB',
-              border: '1px solid #E6E9EE',
-              borderRadius: '12px',
-              boxShadow: 'none',
-              p: 3,
+          <Row
+            label="Компактный режим"
+            description="Уменьшить отступы для более плотного интерфейса"
+            control={<Toggle on={settings.compactMode} onClick={() => handleToggle('compactMode')} />}
+            last
+          />
+        </Section>
+
+        {/* ── Действия: Сохранить / Сбросить ── */}
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+          <button
+            type="button"
+            onClick={handleSaveSettings}
+            disabled={!hasChanges}
+            style={{
+              flex: '1 1 240px',
+              padding: 15,
+              borderRadius: 'var(--radius)',
+              border: 'none',
+              cursor: hasChanges ? 'pointer' : 'default',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              letterSpacing: '0.06em',
+              textTransform: 'uppercase',
+              color: '#FFFFFF',
+              background: hasChanges
+                ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))'
+                : 'var(--border)',
+              opacity: hasChanges ? 1 : 0.7,
+              transition: 'all 0.2s',
             }}
           >
-            <Typography variant="body2" sx={{ color: '#6B7280', textAlign: 'center' }}>
-              Все настройки сохраняются в локальном хранилище браузера
-            </Typography>
-          </Card>
-        </Stack>
-      </Container>
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <CheckOutlined sx={{ fontSize: 18 }} /> Сохранить изменения
+            </span>
+          </button>
+          <button
+            type="button"
+            onClick={handleResetToDefaults}
+            style={{
+              flexShrink: 0,
+              padding: '15px 24px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text2)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              transition: 'all 0.2s',
+            }}
+          >
+            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+              <RestartAltOutlined sx={{ fontSize: 18 }} /> Сбросить
+            </span>
+          </button>
+        </div>
+        {hasChanges && (
+          <div style={{ fontSize: 12, color: 'var(--accent)', textAlign: 'center', fontWeight: 500 }}>
+            У вас есть несохраненные изменения
+          </div>
+        )}
 
-      {/* Logout Confirmation Dialog */}
+        {/* ── Выход из аккаунта ── */}
+        <div style={{ ...glassCard, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <LogoutOutlined sx={{ fontSize: 20, color: 'var(--error)' }} />
+              <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>Выйти из аккаунта</span>
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>
+              Завершить текущий сеанс и вернуться на страницу входа
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setConfirmDialog(true)}
+            style={{
+              flexShrink: 0,
+              padding: '13px 26px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--error)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              letterSpacing: '0.05em',
+              textTransform: 'uppercase',
+              transition: 'all 0.2s',
+            }}
+          >
+            Выйти
+          </button>
+        </div>
+
+        {/* ── Info footer ── */}
+        <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', padding: '4px 0 8px' }}>
+          Настройки сохраняются в браузере. Синхронизация с сервером — в разработке.
+        </div>
+      </div>
+
+      {/* ── Logout confirmation dialog ── */}
       <Dialog
         open={confirmDialog}
         onClose={() => setConfirmDialog(false)}
         PaperProps={{
           sx: {
-            bgcolor: '#FFFFFF',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
-            boxShadow: '0 8px 24px rgba(11, 27, 43, 0.12)',
+            background: 'var(--surface)',
+            border: '1px solid var(--border)',
+            borderRadius: 'var(--radius)',
+            boxShadow: 'var(--card-shadow)',
+            color: 'var(--text)',
           },
         }}
       >
-        <DialogTitle
-          sx={{
-            color: '#0B1B2B',
-            fontWeight: 700,
-            fontSize: '1.25rem',
-          }}
-        >
+        <DialogTitle sx={{ color: 'var(--text)', fontWeight: 500, letterSpacing: '0.02em' }}>
           Подтверждение выхода
         </DialogTitle>
         <DialogContent>
-          <Typography sx={{ color: '#6B7280', mt: 2 }}>
+          <div style={{ color: 'var(--text2)', marginTop: 6, fontSize: 14 }}>
             Вы уверены, что хотите выйти из аккаунта?
-          </Typography>
+          </div>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
-          <Button
-            variant="outlined"
+          <button
+            type="button"
             onClick={() => setConfirmDialog(false)}
-            startIcon={<Close />}
-            sx={{
-              borderColor: '#E6E9EE',
-              color: '#0B1B2B',
-              fontWeight: 600,
-              textTransform: 'none',
-              px: 2,
-              py: 1,
-              borderRadius: '8px',
-              '&:hover': {
-                borderColor: '#2563EB',
-                bgcolor: '#F4F6F8',
-              },
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 'var(--radius)',
+              border: '1px solid var(--border)',
+              background: 'transparent',
+              color: 'var(--text2)',
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
             }}
           >
-            Отмена
-          </Button>
-          <Button
-            variant="contained"
-            onClick={() => {
-              dispatch(logout());
-              toast.success('Вы вышли из аккаунта');
-              navigate('/login');
-            }}
-            startIcon={<Check />}
-            sx={{
-              bgcolor: '#DC2626',
+            <CloseOutlined sx={{ fontSize: 17 }} /> Отмена
+          </button>
+          <button
+            type="button"
+            onClick={handleLogout}
+            style={{
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '10px 18px',
+              borderRadius: 'var(--radius)',
+              border: 'none',
+              background: 'var(--error)',
               color: '#FFFFFF',
-              fontWeight: 600,
-              textTransform: 'none',
-              px: 2,
-              py: 1,
-              borderRadius: '8px',
-              '&:hover': {
-                bgcolor: '#B91C1C',
-              },
+              cursor: 'pointer',
+              fontFamily: 'inherit',
+              fontSize: 13,
+              fontWeight: 500,
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
             }}
           >
-            Выйти
-          </Button>
+            <CheckOutlined sx={{ fontSize: 17 }} /> Выйти
+          </button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </GlassShell>
   );
 };
 

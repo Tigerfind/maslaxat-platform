@@ -12,7 +12,6 @@ import {
   InputAdornment,
   IconButton,
   Card,
-  CardContent,
 } from '@mui/material';
 import {
   Visibility,
@@ -22,7 +21,13 @@ import {
   CheckCircle,
 } from '@mui/icons-material';
 import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
+import { axelionColors } from '../../theme/axelionTheme';
+import api from '../../services/api';
 
+/**
+ * MaslaXat Premium Client Login
+ * Elegant, minimalist design with gold accents
+ */
 const ClientLoginGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
@@ -41,114 +46,135 @@ const ClientLoginGlass = () => {
     });
   };
 
-  const handleQuickLogin = async () => {
-    setFormData({
-      email: 'client@maslaxat.uz',
-      password: 'client123',
-    });
-
+  const performLogin = async (email, password) => {
     dispatch(loginStart());
-
     try {
-      await new Promise((resolve) => setTimeout(resolve, 500));
-
-      const mockUser = {
-        id: 1,
-        name: 'Клиент Тестовый',
-        email: 'client@maslaxat.uz',
-        role: 'client',
-      };
-
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          token: 'mock-jwt-token-client',
-          role: 'client',
-        })
-      );
-
+      const response = await api.post('/auth/login', { email, password });
+      const { user, token, role } = response.data;
+      dispatch(loginSuccess({ user, token, role }));
       navigate('/dashboard');
     } catch (err) {
-      dispatch(loginFailure(err.message || 'Ошибка входа'));
+      const message = err.response?.data?.error || err.message || 'Ошибка входа';
+      dispatch(loginFailure(message));
     }
+  };
+
+  const handleQuickLogin = () => {
+    performLogin('client@maslaxat.uz', 'client123');
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    dispatch(loginStart());
+    performLogin(formData.email, formData.password);
+  };
 
-    try {
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-
-      const mockUser = {
-        id: 1,
-        name: 'Клиент Тестовый',
-        email: formData.email,
-        role: 'client',
-      };
-
-      dispatch(
-        loginSuccess({
-          user: mockUser,
-          token: 'mock-jwt-token-client',
-          role: 'client',
-        })
-      );
-
-      navigate('/dashboard');
-    } catch (err) {
-      dispatch(loginFailure(err.message || 'Ошибка входа'));
-    }
+  const inputStyles = {
+    '& .MuiOutlinedInput-root': {
+      backgroundColor: axelionColors.bgLight,
+      borderRadius: '8px',
+      '& fieldset': {
+        borderColor: axelionColors.borderLight,
+      },
+      '&:hover fieldset': {
+        borderColor: axelionColors.gold,
+      },
+      '&.Mui-focused fieldset': {
+        borderColor: axelionColors.gold,
+        borderWidth: 1,
+      },
+    },
+    '& .MuiInputLabel-root.Mui-focused': {
+      color: axelionColors.gold,
+    },
   };
 
   return (
     <Box
       sx={{
         minHeight: '100vh',
-        bgcolor: '#F4F6F8',
+        backgroundColor: axelionColors.bgCream,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
         py: 4,
       }}
     >
+      {/* Decorative elements */}
+      <Box
+        sx={{
+          position: 'fixed',
+          top: 0,
+          right: 0,
+          width: '150px',
+          height: '150px',
+          borderTop: `1px solid rgba(184, 149, 110, 0.1)`,
+          borderRight: `1px solid rgba(184, 149, 110, 0.1)`,
+        }}
+      />
+      <Box
+        sx={{
+          position: 'fixed',
+          bottom: 0,
+          left: 0,
+          width: '150px',
+          height: '150px',
+          borderBottom: `1px solid rgba(184, 149, 110, 0.1)`,
+          borderLeft: `1px solid rgba(184, 149, 110, 0.1)`,
+        }}
+      />
+
       <Container maxWidth="sm">
         <Card
           sx={{
-            p: { xs: 3, sm: 5 },
-            boxShadow: '0 2px 6px rgba(11, 27, 43, 0.06)',
-            border: '1px solid #E6E9EE',
-            borderRadius: '12px',
+            p: { xs: 4, sm: 6 },
+            boxShadow: '0 8px 32px rgba(26, 26, 26, 0.08)',
+            border: `1px solid ${axelionColors.borderLight}`,
+            borderRadius: '8px',
+            backgroundColor: axelionColors.bgLight,
           }}
         >
           {/* Logo */}
-          <Box sx={{ textAlign: 'center', mb: 4 }}>
-            <Box
+          <Box sx={{ textAlign: 'center', mb: 5 }}>
+            <Typography
               sx={{
-                width: 80,
-                height: 80,
-                borderRadius: '50%',
-                bgcolor: '#2563EB',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto',
-                mb: 2,
-                boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+                fontWeight: 300,
+                fontSize: '2.5rem',
+                letterSpacing: '0.2em',
+                color: axelionColors.gold,
+                mb: 1,
               }}
             >
-              <Person sx={{ fontSize: 48, color: 'white' }} />
-            </Box>
-            <Typography
-              variant="h4"
-              fontWeight="bold"
-              sx={{ color: '#0B1B2B' }}
-              gutterBottom
-            >
-              Вход для клиентов
+              M
             </Typography>
-            <Typography variant="body2" sx={{ color: '#6B7280' }}>
-              Получите доступ к юридическим консультациям
+            <Typography
+              sx={{
+                fontWeight: 300,
+                fontSize: '1.5rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: axelionColors.textDark,
+                mb: 1,
+              }}
+            >
+              eMaslaXat
+            </Typography>
+            <Box
+              sx={{
+                width: '60px',
+                height: '2px',
+                backgroundColor: axelionColors.gold,
+                margin: '16px auto',
+              }}
+            />
+            <Typography
+              sx={{
+                color: axelionColors.textMuted,
+                fontSize: '0.8rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+              }}
+            >
+              Client Portal
             </Typography>
           </Box>
 
@@ -158,7 +184,12 @@ const ClientLoginGlass = () => {
               severity="error"
               sx={{
                 mb: 3,
-                borderRadius: 2,
+                borderRadius: '8px',
+                backgroundColor: axelionColors.errorLight,
+                border: `1px solid ${axelionColors.error}20`,
+                '& .MuiAlert-icon': {
+                  color: axelionColors.error,
+                },
               }}
             >
               {error}
@@ -175,11 +206,11 @@ const ClientLoginGlass = () => {
               value={formData.email}
               onChange={handleChange}
               required
-              sx={{ mb: 3 }}
+              sx={{ mb: 3, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Person sx={{ color: '#6B7280' }} />
+                    <Person sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
                   </InputAdornment>
                 ),
               }}
@@ -193,11 +224,11 @@ const ClientLoginGlass = () => {
               value={formData.password}
               onChange={handleChange}
               required
-              sx={{ mb: 2 }}
+              sx={{ mb: 2, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
-                    <Lock sx={{ color: '#6B7280' }} />
+                    <Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} />
                   </InputAdornment>
                 ),
                 endAdornment: (
@@ -205,6 +236,7 @@ const ClientLoginGlass = () => {
                     <IconButton
                       onClick={() => setShowPassword(!showPassword)}
                       edge="end"
+                      sx={{ color: axelionColors.textMuted }}
                     >
                       {showPassword ? <VisibilityOff /> : <Visibility />}
                     </IconButton>
@@ -217,9 +249,10 @@ const ClientLoginGlass = () => {
               <Link
                 to="/forgot-password"
                 style={{
-                  color: '#2563EB',
+                  color: axelionColors.gold,
                   textDecoration: 'none',
-                  fontSize: '0.875rem',
+                  fontSize: '0.8rem',
+                  letterSpacing: '0.05em',
                 }}
               >
                 Забыли пароль?
@@ -229,33 +262,69 @@ const ClientLoginGlass = () => {
             <Button
               fullWidth
               type="submit"
-              variant="contained"
-              size="large"
               disabled={loading}
-              sx={{ mb: 2 }}
+              sx={{
+                backgroundColor: axelionColors.gold,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
+                mb: 2,
+                '&:hover': {
+                  backgroundColor: axelionColors.goldDark,
+                  boxShadow: 'none',
+                },
+                '&.Mui-disabled': {
+                  backgroundColor: axelionColors.bgBeige,
+                  color: axelionColors.textMuted,
+                },
+              }}
             >
-              {loading ? <CircularProgress size={24} color="inherit" /> : 'Войти'}
+              {loading ? <CircularProgress size={24} sx={{ color: '#FFFFFF' }} /> : 'Войти'}
             </Button>
 
             <Button
               fullWidth
-              variant="outlined"
-              size="large"
               onClick={handleQuickLogin}
               disabled={loading}
-              sx={{ mb: 2 }}
+              sx={{
+                backgroundColor: axelionColors.textDark,
+                color: '#FFFFFF',
+                py: 1.5,
+                borderRadius: '8px',
+                textTransform: 'uppercase',
+                letterSpacing: '0.1em',
+                fontWeight: 500,
+                fontSize: '0.85rem',
+                boxShadow: 'none',
+                mb: 3,
+                '&:hover': {
+                  backgroundColor: '#2D2D2D',
+                  boxShadow: 'none',
+                },
+              }}
             >
-              🚀 Быстрый вход (Тест)
+              Quick Login (Demo)
             </Button>
 
-            <Typography variant="body2" textAlign="center" sx={{ color: '#6B7280' }}>
+            <Typography
+              sx={{
+                textAlign: 'center',
+                color: axelionColors.textSecondary,
+                fontSize: '0.85rem',
+              }}
+            >
               Нет аккаунта?{' '}
               <Link
                 to="/register/client"
                 style={{
-                  color: '#2563EB',
+                  color: axelionColors.gold,
                   textDecoration: 'none',
-                  fontWeight: 'bold',
+                  fontWeight: 500,
                 }}
               >
                 Зарегистрироваться
@@ -264,26 +333,30 @@ const ClientLoginGlass = () => {
           </form>
 
           {/* Benefits */}
-          <Box sx={{ mt: 4, pt: 4, borderTop: '1px solid #E6E9EE' }}>
+          <Box sx={{ mt: 5, pt: 4, borderTop: `1px solid ${axelionColors.borderLight}` }}>
             <Typography
-              variant="subtitle2"
-              fontWeight="bold"
-              sx={{ color: '#0B1B2B' }}
-              textAlign="center"
-              gutterBottom
+              sx={{
+                fontWeight: 500,
+                fontSize: '0.7rem',
+                letterSpacing: '0.15em',
+                textTransform: 'uppercase',
+                color: axelionColors.textMuted,
+                textAlign: 'center',
+                mb: 3,
+              }}
             >
-              Преимущества платформы:
+              Platform Benefits
             </Typography>
-            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 2 }}>
+            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
               {[
                 'AI-консультант 24/7',
                 'Проверенные юристы',
                 'Анализ документов',
                 'Быстрые ответы',
               ].map((benefit, index) => (
-                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <CheckCircle sx={{ fontSize: 18, color: '#10B981' }} />
-                  <Typography variant="body2" sx={{ color: '#0B1B2B' }}>
+                <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  <CheckCircle sx={{ fontSize: 16, color: axelionColors.success }} />
+                  <Typography sx={{ color: axelionColors.textPrimary, fontSize: '0.85rem' }}>
                     {benefit}
                   </Typography>
                 </Box>
@@ -292,19 +365,61 @@ const ClientLoginGlass = () => {
           </Box>
 
           {/* Other Login Options */}
-          <Box sx={{ mt: 3, textAlign: 'center' }}>
-            <Typography variant="caption" sx={{ color: '#6B7280' }}>
-              Другие варианты входа:
+          <Box sx={{ mt: 4, textAlign: 'center' }}>
+            <Typography
+              sx={{
+                color: axelionColors.textMuted,
+                fontSize: '0.7rem',
+                letterSpacing: '0.1em',
+                textTransform: 'uppercase',
+                mb: 2,
+              }}
+            >
+              Other Portals
             </Typography>
-            <Box sx={{ display: 'flex', gap: 2, mt: 1, justifyContent: 'center' }}>
+            <Box sx={{ display: 'flex', gap: 2, justifyContent: 'center' }}>
               <Link to="/login/lawyer" style={{ textDecoration: 'none' }}>
-                <Button variant="outlined" size="small">
-                  Юрист
+                <Button
+                  sx={{
+                    color: axelionColors.textSecondary,
+                    border: `1px solid ${axelionColors.borderLight}`,
+                    borderRadius: '8px',
+                    px: 3,
+                    py: 1,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    fontWeight: 500,
+                    fontSize: '0.7rem',
+                    '&:hover': {
+                      borderColor: axelionColors.gold,
+                      color: axelionColors.gold,
+                      backgroundColor: axelionColors.accentLight,
+                    },
+                  }}
+                >
+                  Lawyer
                 </Button>
               </Link>
               <Link to="/login/admin" style={{ textDecoration: 'none' }}>
-                <Button variant="outlined" size="small">
-                  Админ
+                <Button
+                  sx={{
+                    color: axelionColors.textSecondary,
+                    border: `1px solid ${axelionColors.borderLight}`,
+                    borderRadius: '8px',
+                    px: 3,
+                    py: 1,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.1em',
+                    fontWeight: 500,
+                    fontSize: '0.7rem',
+                    '&:hover': {
+                      borderColor: axelionColors.gold,
+                      color: axelionColors.gold,
+                      backgroundColor: axelionColors.accentLight,
+                    },
+                  }}
+                >
+                  Admin
                 </Button>
               </Link>
             </Box>

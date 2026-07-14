@@ -30,187 +30,39 @@ export const clientDashboardService = {
   },
 };
 
-// Mock lawyers data
-const mockLawyers = [
-  {
-    id: 1,
-    name: 'Акбаров Азиз',
-    specialization: 'Гражданское право',
-    rating: 4.9,
-    reviewsCount: 127,
-    experience: 12,
-    price: 250000,
-    location: 'Ташкент, Мирзо-Улугбекский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 234,
-    description: 'Специализируюсь на гражданских делах, защите прав потребителей и семейном праве',
-  },
-  {
-    id: 2,
-    name: 'Карим ова Дилора',
-    specialization: 'Семейное право',
-    rating: 4.8,
-    reviewsCount: 98,
-    experience: 8,
-    price: 200000,
-    location: 'Ташкент, Юнусабадский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 156,
-    description: 'Опытный юрист по семейным спорам, разводам и алиментам',
-  },
-  {
-    id: 3,
-    name: 'Рахимов Жасур',
-    specialization: 'Уголовное право',
-    rating: 4.7,
-    reviewsCount: 145,
-    experience: 15,
-    price: 350000,
-    location: 'Ташкент, Яшнабадский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 312,
-    description: 'Защита в уголовных делах, представительство в суде',
-  },
-  {
-    id: 4,
-    name: 'Мирзаева Нигора',
-    specialization: 'Трудовое право',
-    rating: 4.9,
-    reviewsCount: 87,
-    experience: 10,
-    price: 180000,
-    location: 'Ташкент, Чиланзарский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 198,
-    description: 'Консультации по трудовым спорам, защита прав работников',
-  },
-  {
-    id: 5,
-    name: 'Усманов Бахтиёр',
-    specialization: 'Коммерческое право',
-    rating: 4.6,
-    reviewsCount: 112,
-    experience: 14,
-    price: 400000,
-    location: 'Ташкент, Мирабадский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 267,
-    description: 'Юридическое сопровождение бизнеса, договорное право',
-  },
-  {
-    id: 6,
-    name: 'Хасанова Гульнара',
-    specialization: 'Налоговое право',
-    rating: 4.8,
-    reviewsCount: 76,
-    experience: 9,
-    price: 300000,
-    location: 'Ташкент, Сергелийский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 145,
-    description: 'Налоговые консультации, споры с налоговыми органами',
-  },
-  {
-    id: 7,
-    name: 'Салимов Тимур',
-    specialization: 'Административное право',
-    rating: 4.7,
-    reviewsCount: 93,
-    experience: 11,
-    price: 220000,
-    location: 'Ташкент, Алмазарский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 187,
-    description: 'Административные правонарушения, оспаривание штрафов',
-  },
-  {
-    id: 8,
-    name: 'Юнусова Зарина',
-    specialization: 'Земельное право',
-    rating: 4.9,
-    reviewsCount: 68,
-    experience: 7,
-    price: 190000,
-    location: 'Ташкент, Шайхантахурский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 123,
-    description: 'Сделки с недвижимостью, земельные споры',
-  },
-  {
-    id: 9,
-    name: 'Алимов Фаррух',
-    specialization: 'Интеллектуальная собственность',
-    rating: 4.8,
-    reviewsCount: 54,
-    experience: 13,
-    price: 450000,
-    location: 'Ташкент, Учтепинский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 156,
-    description: 'Защита авторских прав, патентование, товарные знаки',
-  },
-  {
-    id: 10,
-    name: 'Иванов Иван Иванович',
-    specialization: 'Корпоративное право',
-    rating: 4.9,
-    reviewsCount: 142,
-    experience: 16,
-    price: 380000,
-    location: 'Ташкент, Яккасарайский район',
-    avatar: null,
-    isVerified: true,
-    completedCases: 289,
-    description: 'Корпоративные споры, слияния и поглощения, юридическое сопровождение бизнеса',
-  },
-];
-
 // Client Lawyer Search Service
 export const clientLawyerService = {
   // Search lawyers
   searchLawyers: async (filters) => {
     try {
-      const response = await api.get('/client/lawyers/search', { params: filters });
-      return response.data;
+      const response = await api.get('/client/lawyers', { params: filters });
+      const data = response.data;
+      const rawLawyers = data.lawyers || data || [];
+      const lawyers = rawLawyers.map((l) => ({
+        id: l.id,
+        name: l.name,
+        avatar: l.avatar,
+        isVerified: l.isVerified,
+        rating: l.profile?.rating || 0,
+        reviewsCount: l.profile?.reviewsCount || 0,
+        completedConsultations: l.profile?.completedCases || 0,
+        specializations: l.profile?.specialization ? [l.profile.specialization] : [],
+        experience: l.profile?.experience || 0,
+        priceFrom: l.profile?.price || 0,
+        region: l.profile?.location || '',
+        description: l.profile?.description || '',
+        languages: l.profile?.languages || [],
+        schedule: l.profile?.schedule || {},
+        isAvailable: l.profile?.isAvailable ?? true,
+      }));
+      return {
+        lawyers,
+        totalPages: data.totalPages || 1,
+        total: data.total || lawyers.length,
+      };
     } catch (error) {
       console.error('Error searching lawyers:', error);
-      // Return mock data with filtering
-      let filtered = [...mockLawyers];
-
-      if (filters?.specialization) {
-        filtered = filtered.filter(l => l.specialization === filters.specialization);
-      }
-
-      if (filters?.minRating) {
-        filtered = filtered.filter(l => l.rating >= filters.minRating);
-      }
-
-      if (filters?.search) {
-        const search = filters.search.toLowerCase();
-        filtered = filtered.filter(l =>
-          l.name.toLowerCase().includes(search) ||
-          l.specialization.toLowerCase().includes(search)
-        );
-      }
-
-      if (filters?.sortBy === 'rating') {
-        filtered.sort((a, b) => b.rating - a.rating);
-      } else if (filters?.sortBy === 'price_low') {
-        filtered.sort((a, b) => a.price - b.price);
-      } else if (filters?.sortBy === 'price_high') {
-        filtered.sort((a, b) => b.price - a.price);
-      }
-
-      return filtered;
+      return { lawyers: [], totalPages: 1, total: 0 };
     }
   },
 
@@ -225,65 +77,16 @@ export const clientLawyerService = {
     }
   },
 
-  // Book consultation
+  // Book consultation — directly through API, no localStorage fallback
   bookConsultation: async (lawyerId, consultationData) => {
-    try {
-      const response = await api.post(`/client/lawyers/${lawyerId}/book`, consultationData);
-      return response.data;
-    } catch (error) {
-      console.error('Error booking consultation:', error);
+    const response = await api.post(`/client/lawyers/${lawyerId}/book`, consultationData);
+    return response.data;
+  },
 
-      // Get current user from localStorage
-      const user = JSON.parse(localStorage.getItem('user') || '{}');
-      console.log('📝 DEBUG: Booking - Current User:', user);
-
-      // Find lawyer from mock data
-      const lawyer = mockLawyers.find(l => l.id === lawyerId);
-      console.log('📝 DEBUG: Booking - Selected Lawyer:', lawyer);
-
-      // Create new consultation request
-      const newRequest = {
-        id: Date.now(),
-        lawyerId: lawyerId,
-        lawyerName: lawyer?.name || 'Юрист',
-        client: {
-          id: user.id || Date.now(),
-          name: user.name || 'Клиент',
-          avatar: null,
-        },
-        question: consultationData.question,
-        description: consultationData.description,
-        consultationType: consultationData.consultationType,
-        preferredDate: consultationData.preferredDate,
-        preferredTime: consultationData.preferredTime,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        price: lawyer?.price || 250000,
-      };
-
-      console.log('📝 DEBUG: Booking - New Request Created:', newRequest);
-
-      // Get existing requests from localStorage
-      const existingRequests = JSON.parse(localStorage.getItem('consultationRequests') || '[]');
-      console.log('📝 DEBUG: Booking - Existing Requests:', existingRequests);
-
-      // Add new request
-      existingRequests.push(newRequest);
-
-      // Save to localStorage
-      localStorage.setItem('consultationRequests', JSON.stringify(existingRequests));
-      console.log('📝 DEBUG: Booking - Saved to localStorage. Total requests now:', existingRequests.length);
-
-      // Verify save
-      const verifyRequests = JSON.parse(localStorage.getItem('consultationRequests') || '[]');
-      console.log('📝 DEBUG: Booking - Verification read from localStorage:', verifyRequests);
-
-      return {
-        success: true,
-        message: 'Запрос отправлен юристу',
-        requestId: newRequest.id,
-      };
-    }
+  // Get lawyer reviews
+  getReviews: async (lawyerId) => {
+    const response = await api.get(`/client/lawyers/${lawyerId}/reviews`);
+    return response.data.reviews || response.data || [];
   },
 
   // Leave review
@@ -304,7 +107,8 @@ export const clientConsultationService = {
   getConsultations: async (status = 'all') => {
     try {
       const response = await api.get('/client/consultations', { params: { status } });
-      return response.data;
+      const data = response.data;
+      return Array.isArray(data) ? data : (data.consultations || []);
     } catch (error) {
       console.error('Error fetching consultations:', error);
       return [];
@@ -391,12 +195,20 @@ export const clientDocumentService = {
 
 // Client AI Chat Service
 export const clientAIChatService = {
-  // Send message to AI
-  sendMessage: async (message, conversationId = null) => {
+  // Send message to AI (supports file attachments)
+  sendMessage: async (message, conversationId = null, files = []) => {
     try {
-      const response = await api.post('/client/ai-chat/message', {
-        message,
-        conversationId,
+      const formData = new FormData();
+      formData.append('message', message);
+      if (conversationId) {
+        formData.append('conversationId', conversationId);
+      }
+      for (const file of files) {
+        formData.append('files', file);
+      }
+      const response = await api.post('/client/ai-chat/message', formData, {
+        timeout: 60000,
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
       return response.data;
     } catch (error) {
@@ -428,10 +240,74 @@ export const clientAIChatService = {
   },
 };
 
-export default {
+// Client Favorites Service
+export const clientFavoritesService = {
+  // Get all favorite lawyers
+  getFavorites: async () => {
+    try {
+      const response = await api.get('/client/favorites');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching favorites:', error);
+      return [];
+    }
+  },
+
+  // Add lawyer to favorites
+  addFavorite: async (lawyerId) => {
+    try {
+      const response = await api.post(`/client/favorites/${lawyerId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error adding to favorites:', error);
+      throw error;
+    }
+  },
+
+  // Remove lawyer from favorites
+  removeFavorite: async (lawyerId) => {
+    try {
+      const response = await api.delete(`/client/favorites/${lawyerId}`);
+      return response.data;
+    } catch (error) {
+      console.error('Error removing from favorites:', error);
+      throw error;
+    }
+  },
+
+  // Check if lawyer is favorited
+  checkFavorite: async (lawyerId) => {
+    try {
+      const response = await api.get(`/client/favorites/check/${lawyerId}`);
+      return response.data.isFavorite;
+    } catch (error) {
+      console.error('Error checking favorite:', error);
+      return false;
+    }
+  },
+};
+
+// Client Subscription Service (free / basic / pro + daily AI usage)
+export const clientSubscriptionService = {
+  getMy: async () => {
+    try {
+      const response = await api.get('/subscriptions/my');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching subscription:', error);
+      return null;
+    }
+  },
+};
+
+const clientService = {
   dashboard: clientDashboardService,
   lawyers: clientLawyerService,
   consultations: clientConsultationService,
   documents: clientDocumentService,
   aiChat: clientAIChatService,
+  favorites: clientFavoritesService,
+  subscription: clientSubscriptionService,
 };
+
+export default clientService;
