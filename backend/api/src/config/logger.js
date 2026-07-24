@@ -10,9 +10,11 @@ if (!fs.existsSync(logsDir)) {
 
 const isDev = process.env.NODE_ENV !== 'production';
 
+const isTest = process.env.NODE_ENV === 'test';
 const logger = createLogger({
   levels: { error: 0, warn: 1, info: 2, http: 3, debug: 4 },
   level: isDev ? 'debug' : 'info',
+  silent: isTest, // в тестах не шумим в консоль/файлы
   format: format.combine(
     format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
     format.errors({ stack: true }),

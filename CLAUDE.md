@@ -429,6 +429,15 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - [ ] ОСТАЛОСЬ (требует ключей/сервисов от пользователя): реальные ANTHROPIC/PAYME/SMTP,
       свой TURN, сам деплой, переход sync→миграции. Всё описано в DEPLOY.md.
 
+### АВТОТЕСТЫ (jest + supertest, критичный флоу):
+- Настроены jest.config.js + tests/ (env.setup переключает на БД emaslaxat_test, maxWorkers:1).
+- `backend/api/tests/escrow.test.js` — идемпотентный эскроу: выплата ровно один раз,
+  повтор не платит второй раз, статус completed, без оплаты не высвобождает (4 теста).
+- `backend/api/tests/security.test.js` — гейт /payments/simulate (403 при PAYME_KEY, 401 без токена),
+  подделка отзывов (403/400), whitelist статусов (400), чужой юрист (403) — 7 тестов.
+- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 2 набора, 11 тестов, зелёные.
+- server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
+
 ### Исправленные баги:
 - Subscription.upsert → findOne + update/create (upsert не работал без уникального индекса)
 - User.toJSON() теперь скрывает resetToken, resetTokenExpiry, verificationToken

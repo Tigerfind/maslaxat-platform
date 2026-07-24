@@ -198,4 +198,10 @@ async function start() {
 process.on('SIGTERM', () => process.exit(0));
 process.on('SIGINT', () => process.exit(0));
 
-start();
+// Автозапуск только при прямом запуске (`node src/server.js`).
+// При импорте из тестов (supertest) сервер НЕ слушает порт — тесты сами управляют БД.
+if (require.main === module) {
+  start();
+}
+
+module.exports = app;
