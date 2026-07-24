@@ -24,12 +24,24 @@ api.interceptors.request.use(
 );
 
 // Response interceptor for error handling
+const AUTH_ENDPOINT = /\/auth\/(login|register|forgot-password|reset-password|verify-email)/;
+const AUTH_PAGE = /\/(login|register|forgot-password|reset-password|verify-email)/;
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const status = error.response?.status;
+    const url = error.config?.url || '';
+
+    // Истёкшая/битая сессия: чистим ВСЕ ключи авторизации и уводим на вход.
+    // Но НЕ на самих auth-запросах (неверный пароль ≠ разлогин) и не зациклим редирект.
+    if (status === 401 && !AUTH_ENDPOINT.test(url)) {
       localStorage.removeItem('token');
-      window.location.href = '/login';
+      localStorage.removeItem('role');
+      localStorage.removeItem('user');
+      if (!AUTH_PAGE.test(window.location.pathname)) {
+        window.location.href = '/login';
+      }
     }
     return Promise.reject(error);
   }

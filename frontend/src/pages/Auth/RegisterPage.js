@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Container,
@@ -28,13 +28,28 @@ import {
 import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
+import { useTranslation } from '../../i18n';
+
+// Оценка силы пароля: 0..4 (по длине и разнообразию символов)
+const getPasswordScore = (pw) => {
+  if (!pw) return 0;
+  let score = 0;
+  if (pw.length >= 8) score++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) score++;
+  if (/\d/.test(pw)) score++;
+  if (/[^A-Za-z0-9]/.test(pw)) score++;
+  return score;
+};
 
 const RegisterPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { loading } = useSelector((state) => state.auth);
+  const { t } = useTranslation();
 
-  const [role, setRole] = useState('client');
+  const [searchParams] = useSearchParams();
+  const roleFromUrl = searchParams.get('role');
+  const [role, setRole] = useState(roleFromUrl === 'lawyer' ? 'lawyer' : 'client');
   const [formData, setFormData] = useState({
     name: '',
     email: '',
@@ -53,23 +68,23 @@ const RegisterPage = () => {
 
   const validate = () => {
     if (!formData.name || formData.name.length < 2) {
-      setError('Имя должно содержать минимум 2 символа');
+      setError(t('register.nameMin'));
       return false;
     }
     if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) {
-      setError('Введите корректный email');
+      setError(t('register.emailInvalid'));
       return false;
     }
     if (!formData.password || formData.password.length < 6) {
-      setError('Пароль должен содержать минимум 6 символов');
+      setError(t('register.passwordMin'));
       return false;
     }
     if (formData.password !== formData.confirmPassword) {
-      setError('Пароли не совпадают');
+      setError(t('register.passwordsMismatch'));
       return false;
     }
     if (role === 'lawyer' && !formData.specialization) {
-      setError('Укажите специализацию');
+      setError(t('register.specRequired'));
       return false;
     }
     return true;
@@ -103,7 +118,7 @@ const RegisterPage = () => {
       };
       navigate(dashboardMap[user.role] || '/dashboard');
     } catch (err) {
-      const message = err.response?.data?.error || 'Ошибка регистрации';
+      const message = err.response?.data?.error || t('register.regError');
       dispatch(loginFailure(message));
       setError(message);
     }
@@ -152,7 +167,7 @@ const RegisterPage = () => {
               '&:hover': { color: axelionColors.gold },
             }}
           >
-            Назад ко входу
+            {t('register.backToLogin')}
           </Button>
 
           {/* Logo */}
@@ -177,7 +192,7 @@ const RegisterPage = () => {
                 color: axelionColors.textDark,
               }}
             >
-              Регистрация
+              {t('register.title')}
             </Typography>
             <Box
               sx={{
@@ -201,7 +216,7 @@ const RegisterPage = () => {
                 textAlign: 'center',
               }}
             >
-              Я регистрируюсь как
+              {t('register.registerAs')}
             </Typography>
             <ToggleButtonGroup
               value={role}
@@ -226,11 +241,11 @@ const RegisterPage = () => {
             >
               <ToggleButton value="client">
                 <Person sx={{ mr: 1, fontSize: 20 }} />
-                Клиент
+                {t('register.roleClient')}
               </ToggleButton>
               <ToggleButton value="lawyer">
                 <Gavel sx={{ mr: 1, fontSize: 20 }} />
-                Юрист
+                {t('register.roleLawyer')}
               </ToggleButton>
             </ToggleButtonGroup>
           </Box>
@@ -254,11 +269,11 @@ const RegisterPage = () => {
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
-              label="Полное имя"
+              label={t('register.fullName')}
               name="name"
               value={formData.name}
               onChange={handleChange}
-              placeholder={role === 'lawyer' ? 'Иванов Иван Иванович' : 'Ваше имя'}
+              placeholder={role === 'lawyer' ? 'Иванов Иван Иванович' : t('register.namePlaceholder')}
               sx={{ mb: 2, ...inputStyles }}
               InputProps={{
                 startAdornment: (
@@ -289,7 +304,7 @@ const RegisterPage = () => {
 
             <TextField
               fullWidth
-              label="Телефон (необязательно)"
+              label={t('register.phoneOptional')}
               name="phone"
               value={formData.phone}
               onChange={handleChange}
@@ -308,11 +323,11 @@ const RegisterPage = () => {
             {role === 'lawyer' && (
               <TextField
                 fullWidth
-                label="Специализация"
+                label={t('register.specialization')}
                 name="specialization"
                 value={formData.specialization}
                 onChange={handleChange}
-                placeholder="Например: Гражданское право"
+                placeholder={t('register.specPlaceholder')}
                 sx={{ mb: 2, ...inputStyles }}
                 InputProps={{
                   startAdornment: (
@@ -326,12 +341,12 @@ const RegisterPage = () => {
 
             <TextField
               fullWidth
-              label="Пароль"
+              label={t('register.password')}
               name="password"
               type={showPassword ? 'text' : 'password'}
               value={formData.password}
               onChange={handleChange}
-              placeholder="Минимум 6 символов"
+              placeholder={t('register.passwordPlaceholder')}
               sx={{ mb: 2, ...inputStyles }}
               InputProps={{
                 startAdornment: (
@@ -353,14 +368,36 @@ const RegisterPage = () => {
               }}
             />
 
+            {/* Индикатор силы пароля */}
+            {formData.password && (() => {
+              const score = getPasswordScore(formData.password);
+              const meta = [
+                { label: t('register.pwWeak'), color: axelionColors.error },
+                { label: t('register.pwWeak'), color: axelionColors.error },
+                { label: t('register.pwMedium'), color: axelionColors.warning },
+                { label: t('register.pwGood'), color: axelionColors.gold },
+                { label: t('register.pwStrong'), color: axelionColors.success },
+              ][score];
+              return (
+                <Box sx={{ mt: -0.5, mb: 2 }}>
+                  <Box sx={{ display: 'flex', gap: 0.75, mb: 0.75 }}>
+                    {[0, 1, 2, 3].map((i) => (
+                      <Box key={i} sx={{ flex: 1, height: 4, borderRadius: 2, background: i < score ? meta.color : axelionColors.borderLight, transition: 'background .3s' }} />
+                    ))}
+                  </Box>
+                  <Typography sx={{ fontSize: '0.72rem', color: meta.color }}>{meta.label}</Typography>
+                </Box>
+              );
+            })()}
+
             <TextField
               fullWidth
-              label="Подтвердите пароль"
+              label={t('register.confirmPassword')}
               name="confirmPassword"
               type={showPassword ? 'text' : 'password'}
               value={formData.confirmPassword}
               onChange={handleChange}
-              placeholder="Повторите пароль"
+              placeholder={t('register.confirmPlaceholder')}
               sx={{ mb: 3, ...inputStyles }}
               InputProps={{
                 startAdornment: (
@@ -397,7 +434,7 @@ const RegisterPage = () => {
               {loading ? (
                 <CircularProgress size={22} sx={{ color: '#FFFFFF' }} />
               ) : (
-                role === 'lawyer' ? 'Зарегистрироваться как юрист' : 'Зарегистрироваться'
+                role === 'lawyer' ? t('register.submitLawyer') : t('register.submit')
               )}
             </Button>
           </form>
@@ -414,8 +451,7 @@ const RegisterPage = () => {
               }}
             >
               <Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary }}>
-                После регистрации заполните профиль — фото, описание, расписание и прайс.
-                Как только заполните все шаги, ваш профиль появится в каталоге юристов.
+                {t('register.lawyerNote')}
               </Typography>
             </Box>
           )}
@@ -430,7 +466,7 @@ const RegisterPage = () => {
               mt: 4,
             }}
           >
-            © 2024 MaslaXat. Все права защищены.
+            {t('register.copyright')}
           </Typography>
         </Card>
       </Container>

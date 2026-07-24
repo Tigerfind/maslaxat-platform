@@ -1,13 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useDispatch, useSelector } from 'react-redux';
 import { Box, Typography, CircularProgress, Button } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
-import axios from 'axios';
+import api from '../../services/api';
+import { updateProfile } from '../../store/slices/authSlice';
 
 const VerifyEmailPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const { isAuthenticated } = useSelector((state) => state.auth);
   const [status, setStatus] = useState('loading'); // loading | success | error
   const [message, setMessage] = useState('');
 
@@ -19,16 +23,21 @@ const VerifyEmailPage = () => {
       return;
     }
 
-    axios.get(`/api/auth/verify-email/${token}`)
+    api.get(`/auth/verify-email/${token}`)
       .then(() => {
         setStatus('success');
         setMessage('Email успешно подтверждён!');
+        // Обновляем redux/localStorage, чтобы баннер «подтвердите email» исчез сразу
+        if (isAuthenticated) dispatch(updateProfile({ isVerified: true }));
       })
       .catch((err) => {
         setStatus('error');
         setMessage(err.response?.data?.error || 'Недействительная или просроченная ссылка');
       });
-  }, [searchParams]);
+  }, [searchParams, isAuthenticated, dispatch]);
+
+  // Куда вести после успеха: залогинен → кабинет, иначе → вход
+  const goHome = () => navigate(isAuthenticated ? '/dashboard' : '/login');
 
   return (
     <Box
@@ -78,10 +87,10 @@ const VerifyEmailPage = () => {
             </Typography>
             <Button
               variant="contained"
-              onClick={() => navigate('/dashboard')}
+              onClick={goHome}
               sx={{ backgroundColor: '#B8956E', '&:hover': { backgroundColor: '#A07A5A' } }}
             >
-              Перейти в личный кабинет
+              {isAuthenticated ? 'Перейти в личный кабинет' : 'Войти'}
             </Button>
           </>
         )}
@@ -97,10 +106,10 @@ const VerifyEmailPage = () => {
             </Typography>
             <Button
               variant="outlined"
-              onClick={() => navigate('/dashboard')}
+              onClick={goHome}
               sx={{ borderColor: '#B8956E', color: '#B8956E' }}
             >
-              На главную
+              {isAuthenticated ? 'На главную' : 'Войти'}
             </Button>
           </>
         )}

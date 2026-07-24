@@ -14,8 +14,10 @@ import {
   Card,
   Tabs,
   Tab,
-  Divider,
+  Checkbox,
+  FormControlLabel,
 } from '@mui/material';
+import { motion } from 'framer-motion';
 import {
   Visibility,
   VisibilityOff,
@@ -28,6 +30,7 @@ import {
 import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
+import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 
 /**
@@ -38,68 +41,38 @@ const LoginPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.auth);
+  const { t } = useTranslation();
+
+  const isDev = process.env.NODE_ENV === 'development';
 
   const [activeTab, setActiveTab] = useState(0);
   const [formData, setFormData] = useState({
-    email: '',
+    email: localStorage.getItem('rememberedEmail') || '',
     password: '',
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(Boolean(localStorage.getItem('rememberedEmail')));
+  const [touched, setTouched] = useState({ email: false, password: false });
 
   const userTypes = [
-    {
-      label: 'Клиент',
-      icon: <Person sx={{ fontSize: 20 }} />,
-      role: 'client',
-      dashboard: '/dashboard',
-      demoEmail: 'client@maslaxat.uz',
-      demoPassword: 'client123',
-      mockUser: {
-        id: 1,
-        name: 'Клиент Тестовый',
-        email: 'client@maslaxat.uz',
-        role: 'client',
-      },
-    },
-    {
-      label: 'Юрист',
-      icon: <Gavel sx={{ fontSize: 20 }} />,
-      role: 'lawyer',
-      dashboard: '/lawyer/dashboard',
-      demoEmail: 'ivanov@maslaxat.uz',
-      demoPassword: 'lawyer123',
-      mockUser: {
-        id: 10,
-        name: 'Иванов Иван Иванович',
-        email: 'ivanov@maslaxat.uz',
-        role: 'lawyer',
-        specializations: ['Гражданское право', 'Семейное право'],
-      },
-    },
-    {
-      label: 'Админ',
-      icon: <AdminPanelSettings sx={{ fontSize: 20 }} />,
-      role: 'admin',
-      dashboard: '/admin/dashboard',
-      demoEmail: 'admin@maslaxat.uz',
-      demoPassword: 'admin123',
-      mockUser: {
-        id: 3,
-        name: 'Администратор',
-        email: 'admin@maslaxat.uz',
-        role: 'admin',
-      },
-    },
+    { label: t('login.client'), icon: <Person sx={{ fontSize: 20 }} />, role: 'client', dashboard: '/dashboard', demoEmail: 'client@maslaxat.uz', demoPassword: 'client123' },
+    { label: t('login.lawyer'), icon: <Gavel sx={{ fontSize: 20 }} />, role: 'lawyer', dashboard: '/lawyer/dashboard', demoEmail: 'ivanov@maslaxat.uz', demoPassword: 'lawyer123' },
+    { label: t('login.admin'), icon: <AdminPanelSettings sx={{ fontSize: 20 }} />, role: 'admin', dashboard: '/admin/dashboard', demoEmail: 'admin@maslaxat.uz', demoPassword: 'admin123' },
   ];
 
   const currentUserType = userTypes[activeTab];
 
+  // Инлайн-валидация
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email);
+  const emailError = touched.email && !formData.email ? t('login.errEmailRequired')
+    : touched.email && !emailValid ? t('login.errEmailInvalid') : '';
+  const passwordError = touched.password && !formData.password ? t('login.errPasswordRequired') : '';
+  const formValid = emailValid && Boolean(formData.password);
+
   const handleChange = (e) => {
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
-    });
+    setFormData({ ...formData, [e.target.name]: e.target.value });
   };
+  const handleBlur = (e) => setTouched((prev) => ({ ...prev, [e.target.name]: true }));
 
   const performLogin = async (email, password) => {
     dispatch(loginStart());
@@ -107,12 +80,16 @@ const LoginPage = () => {
       const response = await api.post('/auth/login', { email, password });
       const { user, token, role } = response.data;
 
+      // «Запомнить меня» — сохраняем e-mail для подстановки при следующем входе
+      if (rememberMe) localStorage.setItem('rememberedEmail', email);
+      else localStorage.removeItem('rememberedEmail');
+
       dispatch(loginSuccess({ user, token, role }));
 
       const dashboardMap = { client: '/dashboard', lawyer: '/lawyer/dashboard', admin: '/admin/dashboard' };
       navigate(dashboardMap[role] || '/dashboard');
     } catch (err) {
-      const message = err.response?.data?.error || err.message || 'Ошибка входа';
+      const message = err.response?.data?.error || err.message || t('login.loginError');
       dispatch(loginFailure(message));
     }
   };
@@ -123,6 +100,8 @@ const LoginPage = () => {
 
   const handleSubmit = (e) => {
     e.preventDefault();
+    setTouched({ email: true, password: true });
+    if (!formValid) return;
     performLogin(formData.email, formData.password);
   };
 
@@ -160,7 +139,7 @@ const LoginPage = () => {
     >
       {/* Language Switcher */}
       <Box sx={{ position: 'fixed', top: 20, right: 20, zIndex: 10 }}>
-        <LanguageSwitcher variant="buttons" />
+        <LanguageSwitcher variant="dropdown" />
       </Box>
 
       {/* Decorative elements */}
@@ -188,6 +167,11 @@ const LoginPage = () => {
       />
 
       <Container maxWidth="sm">
+        <motion.div
+          initial={{ opacity: 0, y: 24 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
+        >
         <Card
           sx={{
             p: { xs: 3, sm: 5 },
@@ -303,8 +287,11 @@ const LoginPage = () => {
               type="email"
               value={formData.email}
               onChange={handleChange}
+              onBlur={handleBlur}
+              error={Boolean(emailError)}
+              helperText={emailError}
               placeholder={currentUserType.demoEmail}
-              sx={{ mb: 2.5, ...inputStyles }}
+              sx={{ mb: emailError ? 1.5 : 2.5, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -316,13 +303,16 @@ const LoginPage = () => {
 
             <TextField
               fullWidth
-              label="Пароль"
+              label={t('login.password')}
               name="password"
               type={showPassword ? 'text' : 'password'}
               value={formData.password}
               onChange={handleChange}
+              onBlur={handleBlur}
+              error={Boolean(passwordError)}
+              helperText={passwordError}
               placeholder="••••••••"
-              sx={{ mb: 3, ...inputStyles }}
+              sx={{ mb: passwordError ? 1.5 : 3, ...inputStyles }}
               InputProps={{
                 startAdornment: (
                   <InputAdornment position="start">
@@ -343,10 +333,32 @@ const LoginPage = () => {
               }}
             />
 
+            {/* Remember me + forgot password */}
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <FormControlLabel
+                control={
+                  <Checkbox
+                    checked={rememberMe}
+                    onChange={(e) => setRememberMe(e.target.checked)}
+                    size="small"
+                    sx={{ color: axelionColors.textMuted, '&.Mui-checked': { color: axelionColors.gold } }}
+                  />
+                }
+                label={<Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary }}>{t('login.rememberMe')}</Typography>}
+              />
+              <Box
+                component="span"
+                onClick={() => navigate('/forgot-password')}
+                sx={{ color: axelionColors.textMuted, fontSize: '0.8rem', cursor: 'pointer', '&:hover': { color: axelionColors.gold } }}
+              >
+                {t('login.forgotPassword')}
+              </Box>
+            </Box>
+
             <Button
               fullWidth
               type="submit"
-              disabled={loading || !formData.email || !formData.password}
+              disabled={loading || !formValid}
               sx={{
                 background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
                 color: '#FFFFFF',
@@ -368,83 +380,58 @@ const LoginPage = () => {
                 },
               }}
             >
-              {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} /> : 'Войти'}
+              {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} /> : t('login.login')}
             </Button>
-
-            <Box sx={{ textAlign: 'right' }}>
-              <Box
-                component="span"
-                onClick={() => navigate('/forgot-password')}
-                sx={{
-                  color: axelionColors.textMuted,
-                  fontSize: '0.8rem',
-                  cursor: 'pointer',
-                  '&:hover': { color: axelionColors.gold },
-                }}
-              >
-                Забыли пароль?
-              </Box>
-            </Box>
           </form>
 
-          {/* Demo Section */}
-          <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
-            <Typography
-              sx={{
-                textAlign: 'center',
-                fontSize: '0.7rem',
-                letterSpacing: '0.15em',
-                textTransform: 'uppercase',
-                color: axelionColors.textMuted,
-                mb: 2,
-              }}
-            >
-              Быстрый демо-вход
-            </Typography>
+          {/* Demo Section — только в dev, не попадает в прод-сборку */}
+          {isDev && (
+            <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+              <Typography
+                sx={{
+                  textAlign: 'center',
+                  fontSize: '0.7rem',
+                  letterSpacing: '0.15em',
+                  textTransform: 'uppercase',
+                  color: axelionColors.textMuted,
+                  mb: 2,
+                }}
+              >
+                {t('login.demoQuickLogin')}
+              </Typography>
 
-            <Button
-              fullWidth
-              onClick={handleDemoLogin}
-              disabled={loading}
-              sx={{
-                backgroundColor: axelionColors.textDark,
-                color: '#FFFFFF',
-                py: 1.5,
-                borderRadius: '8px',
-                textTransform: 'none',
-                fontWeight: 500,
-                fontSize: '0.85rem',
-                boxShadow: 'none',
-                display: 'flex',
-                alignItems: 'center',
-                gap: 1,
-                '&:hover': {
-                  backgroundColor: '#2D2D2D',
+              <Button
+                fullWidth
+                onClick={handleDemoLogin}
+                disabled={loading}
+                sx={{
+                  backgroundColor: axelionColors.textDark,
+                  color: '#FFFFFF',
+                  py: 1.5,
+                  borderRadius: '8px',
+                  textTransform: 'none',
+                  fontWeight: 500,
+                  fontSize: '0.85rem',
                   boxShadow: 'none',
-                },
-              }}
-            >
-              {currentUserType.icon}
-              Войти как {currentUserType.label}
-            </Button>
-
-            <Box sx={{ mt: 2, p: 2, bgcolor: axelionColors.bgCream, borderRadius: '8px' }}>
-              <Typography sx={{ fontSize: '0.75rem', color: axelionColors.textMuted, mb: 1 }}>
-                Демо-данные для входа:
-              </Typography>
-              <Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary, fontFamily: 'monospace' }}>
-                Email: {currentUserType.demoEmail}
-              </Typography>
-              <Typography sx={{ fontSize: '0.8rem', color: axelionColors.textSecondary, fontFamily: 'monospace' }}>
-                Пароль: {currentUserType.demoPassword}
-              </Typography>
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 1,
+                  '&:hover': {
+                    backgroundColor: '#2D2D2D',
+                    boxShadow: 'none',
+                  },
+                }}
+              >
+                {currentUserType.icon}
+                {t('login.loginAs')} {currentUserType.label}
+              </Button>
             </Box>
-          </Box>
+          )}
 
           {/* Features */}
           <Box sx={{ mt: 4, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
             <Box sx={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', gap: 2 }}>
-              {['AI-консультант', 'Проверенные юристы', 'Безопасно'].map((feature, index) => (
+              {[t('login.featureAi'), t('login.featureVerified'), t('login.featureSecure')].map((feature, index) => (
                 <Box key={index} sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
                   <CheckCircle sx={{ fontSize: 14, color: axelionColors.gold }} />
                   <Typography sx={{ color: axelionColors.textSecondary, fontSize: '0.75rem' }}>
@@ -458,7 +445,7 @@ const LoginPage = () => {
           {/* Register Link */}
           <Box sx={{ mt: 3, textAlign: 'center' }}>
             <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.85rem' }}>
-              Нет аккаунта?{' '}
+              {t('login.noAccount')}{' '}
               <Box
                 component="span"
                 onClick={() => navigate('/register')}
@@ -469,7 +456,7 @@ const LoginPage = () => {
                   '&:hover': { textDecoration: 'underline' },
                 }}
               >
-                Зарегистрироваться
+                {t('login.register')}
               </Box>
             </Typography>
           </Box>
@@ -487,6 +474,7 @@ const LoginPage = () => {
             © 2024 MaslaXat. Все права защищены.
           </Typography>
         </Card>
+        </motion.div>
       </Container>
     </Box>
   );
