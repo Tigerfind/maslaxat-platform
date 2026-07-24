@@ -12,9 +12,16 @@ import {
   CheckOutlined,
   BookmarkBorderOutlined,
   CloseOutlined,
+  GavelOutlined,
+  WarningAmberOutlined,
+  PersonSearchOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import AILimitUpsell from '../../components/AILimitUpsell';
+import BookingModal from '../../components/BookingModal';
+import { renderRichText, extractLaws } from './aiFormat';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -45,12 +52,12 @@ const glassPanel = {
 
 // Empty-state legal category chips → full prompt keys used by handleCategoryClick
 const LAW_CATS = [
-  { label: 'Гражданское', full: 'Гражданское право' },
-  { label: 'Семейное', full: 'Семейное право' },
-  { label: 'Трудовое', full: 'Трудовое право' },
-  { label: 'Уголовное', full: 'Уголовное право' },
-  { label: 'Корпоративное', full: 'Корпоративное право' },
-  { label: 'Земельное', full: 'Земельное право' },
+  { k: 'catCivil', full: 'Гражданское право' },
+  { k: 'catFamily', full: 'Семейное право' },
+  { k: 'catLabor', full: 'Трудовое право' },
+  { k: 'catCriminal', full: 'Уголовное право' },
+  { k: 'catCorporate', full: 'Корпоративное право' },
+  { k: 'catLand', full: 'Земельное право' },
 ];
 
 const AV_BG = [
@@ -64,6 +71,7 @@ const initialsOf = (name = '') =>
 
 const AIChatPageGlass = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -75,6 +83,9 @@ const AIChatPageGlass = () => {
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [showLimitUpsell, setShowLimitUpsell] = useState(false);
+  const [bookingLawyer, setBookingLawyer] = useState(null);
+  const [bookingLoadingCat, setBookingLoadingCat] = useState(null);
   const [matchedLawyers, setMatchedLawyers] = useState([]);
   const [currentCategory, setCurrentCategory] = useState(null);
   const [attachedFiles, setAttachedFiles] = useState([]);
@@ -190,7 +201,7 @@ const AIChatPageGlass = () => {
     const files = Array.from(event.target.files);
     const validFiles = files.filter((f) => {
       if (f.size > 10 * 1024 * 1024) {
-        toast.error(`${f.name} превышает 10MB`);
+        toast.error(`${f.name} ${t('ai.exceeds')} 10MB`);
         return false;
       }
       return true;
@@ -207,7 +218,7 @@ const AIChatPageGlass = () => {
     if ((!inputMessage.trim() && attachedFiles.length === 0) || isLoading) return;
 
     const fileNames = attachedFiles.map((f) => f.name);
-    const msgText = inputMessage.trim() + (fileNames.length > 0 ? `\n\n📎 Прикреплено: ${fileNames.join(', ')}` : '');
+    const msgText = inputMessage.trim() + (fileNames.length > 0 ? `\n\n📎 ${t('ai.attached')}: ${fileNames.join(', ')}` : '');
 
     const userMessage = {
       text: msgText,
@@ -245,12 +256,20 @@ const AIChatPageGlass = () => {
       }
     } catch (error) {
       console.error('Error sending message:', error);
-      setMessages((prev) => [...prev, {
-        text: 'Извините, произошла ошибка. Пожалуйста, попробуйте еще раз.',
-        isUser: false,
-        timestamp: new Date().toISOString(),
-        isError: true,
-      }]);
+      // Дневной лимит бесплатных AI-запросов исчерпан → показываем красивый апселл,
+      // а не сообщение об ошибке. Возвращаем текст в поле ввода, чтобы не потерялся.
+      if (error?.response?.status === 429) {
+        setMessages((prev) => prev.filter((m) => m !== userMessage));
+        setInputMessage(sentMessage);
+        setShowLimitUpsell(true);
+      } else {
+        setMessages((prev) => [...prev, {
+          text: t('ai.errorMsg'),
+          isUser: false,
+          timestamp: new Date().toISOString(),
+          isError: true,
+        }]);
+      }
     } finally {
       setIsLoading(false);
     }
@@ -260,6 +279,29 @@ const AIChatPageGlass = () => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSendMessage();
+    }
+  };
+
+  // «Записаться к юристу по этой теме» — находим лучшего юриста по категории ответа
+  // и открываем окно брони. Если по теме никого нет — ведём в каталог.
+  const handleBookByTopic = async (category) => {
+    if (!category || bookingLoadingCat) return;
+    setBookingLoadingCat(category);
+    try {
+      let { lawyers } = await clientService.lawyers.searchLawyers({ specialization: category, sortBy: 'rating' });
+      if (!lawyers || lawyers.length === 0) {
+        const all = await clientService.lawyers.searchLawyers({ sortBy: 'rating' });
+        lawyers = all.lawyers || [];
+      }
+      if (lawyers.length > 0) {
+        setBookingLawyer(lawyers[0]);
+      } else {
+        navigate('/lawyers');
+      }
+    } catch (e) {
+      navigate('/lawyers');
+    } finally {
+      setBookingLoadingCat(null);
     }
   };
 
@@ -273,7 +315,7 @@ const AIChatPageGlass = () => {
     if (voiceOn) { stopVoice(); return; }
     const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
     if (!SR) {
-      toast.info('Голосовой ввод не поддерживается вашим браузером');
+      toast.info(t('ai.voiceNotSupported'));
       return;
     }
     const rec = new SR();
@@ -326,13 +368,13 @@ const AIChatPageGlass = () => {
             textTransform: 'uppercase', padding: 13, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
           }}
         >
-          + Новый разговор
+          + {t('ai.newChat')}
         </button>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
         {conversations.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '20px 8px', color: 'var(--text3)', fontSize: 12.5 }}>
-            Нет сохранённых разговоров
+            {t('ai.noConversations')}
           </div>
         ) : (
           conversations.map((c) => {
@@ -349,7 +391,7 @@ const AIChatPageGlass = () => {
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {c.title || 'Новый разговор'}
+                  {c.title || t('ai.newChat')}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                   {new Date(c.updatedAt || c.createdAt).toLocaleDateString('ru-RU')}
@@ -367,16 +409,16 @@ const AIChatPageGlass = () => {
     <div style={lawyersStyle}>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text)' }}>
-          Подходящие юристы
+          {t('ai.matchedLawyers')}
         </div>
         <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>
-          {currentCategory ? `По теме «${currentCategory}»` : 'Задайте вопрос — подберём специалистов'}
+          {currentCategory ? `${t('ai.topicPrefix')} «${currentCategory}»` : t('ai.askToMatch')}
         </div>
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: 14 }}>
         {matchedLawyers.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '24px 10px', color: 'var(--text3)', fontSize: 12.5, lineHeight: 1.5 }}>
-            Здесь появятся юристы, подходящие под вашу ситуацию
+            {t('ai.lawyersHint')}
           </div>
         ) : (
           matchedLawyers.map((m, i) => (
@@ -390,7 +432,7 @@ const AIChatPageGlass = () => {
             >
               {m.isExactMatch && (
                 <div style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: '#7A9A6B', marginBottom: 8 }}>
-                  ✦ Рекомендован
+                  ✦ {t('ai.recommended')}
                 </div>
               )}
               <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
@@ -405,7 +447,7 @@ const AIChatPageGlass = () => {
                     {m.name}
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--accent)' }}>
-                    ★ {m.rating || '—'}{m.experience ? ` · ${m.experience} лет` : ''}
+                    ★ {m.rating || '—'}{m.experience ? ` · ${m.experience} ${t('ai.years')}` : ''}
                   </div>
                 </div>
               </div>
@@ -417,7 +459,7 @@ const AIChatPageGlass = () => {
                   padding: 9, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                Записаться
+                {t('ai.book')}
               </button>
             </div>
           ))
@@ -441,21 +483,21 @@ const AIChatPageGlass = () => {
             }}>
               <AutoAwesomeOutlined sx={{ fontSize: 26 }} />
             </div>
-            <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Юридический AI-помощник</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('ai.assistantTitle')}</div>
             <div style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5 }}>
-              Опишите ситуацию — отвечу по законам Узбекистана<br />со ссылками на статьи и планом действий.
+              {t('ai.welcomeSub')}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'center', marginTop: 18 }}>
               {LAW_CATS.map((cat) => (
                 <button
-                  key={cat.label}
+                  key={cat.k}
                   onClick={() => handleCategoryClick(cat.full)}
                   style={{
                     background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 20,
                     padding: '8px 14px', fontSize: 13, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit',
                   }}
                 >
-                  {cat.label}
+                  {t('ai.' + cat.k)}
                 </button>
               ))}
             </div>
@@ -463,10 +505,12 @@ const AIChatPageGlass = () => {
         )}
 
         {isLoadingHistory && (
-          <div style={{ margin: 'auto', color: 'var(--text3)', fontSize: 13 }}>Загрузка…</div>
+          <div style={{ margin: 'auto', color: 'var(--text3)', fontSize: 13 }}>{t('common.loading')}</div>
         )}
 
-        {messages.map((m, index) => (
+        {messages.map((m, index) => {
+          const laws = !m.isUser && !m.isError && m.category ? extractLaws(m.text) : [];
+          return (
           m.isUser ? (
             <div key={index} style={{ alignSelf: 'flex-end', maxWidth: '70%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }}>
               {m.files && m.files.length > 0 && m.files.map((fn, fi) => (
@@ -510,30 +554,72 @@ const AIChatPageGlass = () => {
                     <span style={{ fontSize: 10, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--accent-dark)', fontWeight: 600 }}>{m.category}</span>
                   </div>
                 )}
-                <div style={{ fontSize: 14, lineHeight: 1.6, color: m.isError ? '#B07070' : '#2D2D2D', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                  {m.text}
-                </div>
+                {m.isError ? (
+                  <div style={{ fontSize: 14, lineHeight: 1.6, color: '#B07070', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                    {m.text}
+                  </div>
+                ) : (
+                  <div style={{ fontSize: 14, color: '#2D2D2D', wordBreak: 'break-word' }}>
+                    {renderRichText(m.text)}
+                  </div>
+                )}
+
+                {/* Карточка «Статьи закона» — извлечённые ссылки на кодексы РУз */}
+                {laws.length > 0 && (
+                  <div style={{ marginTop: 13, padding: '12px 14px', background: 'rgba(184,149,110,0.07)', border: '1px solid rgba(184,149,110,0.22)', borderRadius: 12 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+                      <GavelOutlined sx={{ fontSize: 16, color: 'var(--accent-dark)' }} />
+                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-dark)' }}>{t('ai.lawsTitle')}</span>
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
+                      {laws.map((law, li) => (
+                        <span key={li} style={{ fontSize: 12, color: 'var(--text)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px' }}>
+                          {law}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Карточка «Важно» — предупреждение, что AI-ответ не заменяет юриста */}
+                {!m.isError && m.category && (
+                  <div style={{ marginTop: 10, padding: '11px 14px', background: 'rgba(196,163,90,0.10)', border: '1px solid rgba(196,163,90,0.3)', borderRadius: 12, display: 'flex', gap: 9 }}>
+                    <WarningAmberOutlined sx={{ fontSize: 17, color: '#B08A3A', flexShrink: 0, mt: '1px' }} />
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text2)' }}>{t('ai.cautionText')}</div>
+                  </div>
+                )}
                 {!m.isError && (
                   <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginTop: 14, paddingTop: 13, borderTop: '1px dashed var(--border)' }}>
+                    {m.category && (
+                      <button
+                        onClick={() => handleBookByTopic(m.category)}
+                        disabled={bookingLoadingCat !== null}
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', border: 'none', borderRadius: 20, padding: '6px 14px', cursor: bookingLoadingCat ? 'default' : 'pointer', boxShadow: '0 3px 10px rgba(184,149,110,0.32)' }}
+                      >
+                        <PersonSearchOutlined sx={{ fontSize: 16 }} />
+                        {bookingLoadingCat === m.category ? t('ai.searching') : t('ai.bookByTopic')}
+                      </button>
+                    )}
                     <button
                       onClick={() => navigate('/portfolio')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 12, color: 'var(--text2)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 20, padding: '6px 13px', cursor: 'pointer' }}
                     >
-                      <BookmarkBorderOutlined sx={{ fontSize: 15 }} /> Сохранить в Досье
+                      <BookmarkBorderOutlined sx={{ fontSize: 15 }} /> {t('ai.saveToPortfolio')}
                     </button>
                     <button
                       onClick={() => handleCopyMessage(m.text, index)}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontFamily: 'inherit', fontSize: 12, color: copiedMessageIndex === index ? '#7A9A6B' : 'var(--accent-dark)', background: 'rgba(184,149,110,0.1)', border: '1px solid rgba(184,149,110,0.28)', borderRadius: 20, padding: '6px 13px', cursor: 'pointer' }}
                     >
                       {copiedMessageIndex === index ? <CheckOutlined sx={{ fontSize: 15 }} /> : <ContentCopyOutlined sx={{ fontSize: 15 }} />}
-                      {copiedMessageIndex === index ? 'Скопировано' : 'Копировать'}
+                      {copiedMessageIndex === index ? t('ai.copied') : t('ai.copy')}
                     </button>
                   </div>
                 )}
               </div>
             </div>
           )
-        ))}
+          );
+        })}
 
         {isLoading && (
           <div style={{ alignSelf: 'flex-start', display: 'flex', gap: 5, background: 'var(--canvas)', padding: '15px 18px', borderRadius: '12px 12px 12px 4px' }}>
@@ -568,7 +654,7 @@ const AIChatPageGlass = () => {
             </span>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{file.name}</div>
-              <div style={{ fontSize: 11, color: 'var(--text3)' }}>Готов к анализу · {formatSize(file.size)}</div>
+              <div style={{ fontSize: 11, color: 'var(--text3)' }}>{t('ai.readyToAnalyze')} · {formatSize(file.size)}</div>
             </div>
             <button
               onClick={() => removeFile(i)}
@@ -598,12 +684,12 @@ const AIChatPageGlass = () => {
                 <span key={b} className="vbar" style={{ height: 34, animationDelay: `${b * 0.09}s` }} />
               ))}
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text2)', textAlign: 'center', minHeight: 20 }}>Слушаю…</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', textAlign: 'center', minHeight: 20 }}>{t('ai.listening')}…</div>
             <button
               onClick={stopVoice}
               style={{ background: 'var(--accent)', border: 'none', color: '#FFFFFF', fontSize: 13, fontWeight: 500, letterSpacing: '0.05em', padding: '11px 26px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              Остановить
+              {t('ai.stop')}
             </button>
           </div>
         )}
@@ -620,14 +706,14 @@ const AIChatPageGlass = () => {
             value={inputMessage}
             onChange={(e) => setInputMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Напишите сообщение…"
+            placeholder={t('ai.placeholder')}
             rows={1}
             disabled={isLoading}
             style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', resize: 'none', fontFamily: 'inherit', fontSize: 14, color: 'var(--text)', padding: '8px 0', lineHeight: 1.4, maxHeight: 120 }}
           />
           <button
             onClick={toggleVoice}
-            title="Голосовой ввод"
+            title={t('ai.voiceInput')}
             style={{
               background: voiceOn ? 'var(--accent)' : 'transparent', border: 'none', width: 38, height: 38, borderRadius: 'var(--radius)',
               display: 'flex', alignItems: 'center', justifyContent: 'center', color: voiceOn ? '#FFFFFF' : 'var(--text3)', cursor: 'pointer',
@@ -653,12 +739,22 @@ const AIChatPageGlass = () => {
   );
 
   return (
-    <GlassShell active="/ai-chat" title="AI-помощник" subtitle="Юридическая помощь с подбором специалистов" role="client">
+    <GlassShell active="/ai-chat" title={t('ai.title')} subtitle={t('ai.subtitle')} role="client">
       <div style={containerStyle}>
         {conversationsPanel}
         {chatPanel}
         {lawyersPanel}
       </div>
+      <AILimitUpsell
+        open={showLimitUpsell}
+        onClose={() => setShowLimitUpsell(false)}
+        onUpgraded={() => setShowLimitUpsell(false)}
+      />
+      <BookingModal
+        open={Boolean(bookingLawyer)}
+        onClose={() => setBookingLawyer(null)}
+        lawyer={bookingLawyer || {}}
+      />
     </GlassShell>
   );
 };
