@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { Subscription } = require('../models');
+const { Subscription, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { getRedis } = require('../config/redis');
 
@@ -56,8 +56,9 @@ router.get('/my', authenticate, async (req, res, next) => {
 });
 
 // ─── POST /api/subscriptions/upgrade ─────────────────────────
-// Создать/обновить подписку (вызывается после успешной оплаты)
-// В будущем — интеграция с Payme, пока ручное подтверждение
+// Оформление платной подписки. БЕЗОПАСНОСТЬ/ДЕНЬГИ: раньше активировалась БЕСПЛАТНО.
+// Теперь проходит через оплату: в dev/test — тестовый платёж (как у консультаций),
+// в проде с реальным Payme — активация только после webhook (Фаза 6).
 router.post('/upgrade', authenticate, async (req, res, next) => {
   try {
     const { plan } = req.body;
@@ -66,21 +67,39 @@ router.post('/upgrade', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Допустимые планы: basic, pro' });
     }
 
+    // В проде подписка активируется только после реальной оплаты Payme (Фаза 6).
+    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
+      return res.status(501).json({ error: 'Оплата подписки через Payme ещё не подключена' });
+    }
+
+    const price = PLANS[plan].price;
+
+    // ТЕСТ-ОПЛАТА подписки: фиксируем платёж в леджере, затем активируем.
+    await Payment.create({
+      userId: req.userId,
+      consultationId: null,
+      amount: price,
+      currency: 'UZS',
+      provider: 'payme',
+      status: 'paid',
+      providerResponse: { test: true, subscription: plan, paidAt: Date.now() },
+    });
+
     const expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + 1); // +1 месяц
 
     let subscription = await Subscription.findOne({ where: { userId: req.userId } });
     if (subscription) {
-      await subscription.update({ plan, price: PLANS[plan].price, expiresAt });
+      await subscription.update({ plan, price, expiresAt });
     } else {
-      subscription = await Subscription.create({ userId: req.userId, plan, price: PLANS[plan].price, expiresAt });
+      subscription = await Subscription.create({ userId: req.userId, plan, price, expiresAt });
     }
 
     res.json({
       success: true,
       plan,
       expiresAt,
-      message: `Подписка "${PLANS[plan].label}" активирована до ${expiresAt.toLocaleDateString('ru-RU')}`,
+      message: `Подписка "${PLANS[plan].label}" оплачена (тест) и активирована до ${expiresAt.toLocaleDateString('ru-RU')}`,
     });
   } catch (err) {
     next(err);

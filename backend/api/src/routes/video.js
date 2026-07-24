@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { Consultation, User, LawyerProfile } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const { completeConsultation } = require('../services/escrow');
 
 // All routes require authentication (any role)
 router.use(authenticate);
@@ -91,8 +92,9 @@ router.post('/consultation/:id/end', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    consultation.status = 'completed';
-    await consultation.save();
+    // Единый идемпотентный путь: завершение + высвобождение эскроу (раньше видео-
+    // завершение НЕ платило юристу — деньги застревали в pendingBalance).
+    await completeConsultation(consultation.id);
 
     res.json({ success: true, status: 'completed' });
   } catch (err) {

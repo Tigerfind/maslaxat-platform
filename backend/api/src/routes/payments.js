@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { Op } = require('sequelize');
 const { Payment, Consultation, User, LawyerProfile } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
@@ -77,6 +78,74 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
     const checkoutUrl = `https://checkout.paycom.uz/${params}`;
 
     res.json({ paymentId: payment.id, checkoutUrl, amount, amountTiyin });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── POST /api/payments/simulate ──────────────────────────────
+// ТЕСТОВАЯ оплата без реального Payme. Повторяет ветку PerformTransaction
+// вебхука: помечает платёж оплаченным, переводит консультацию в pending,
+// начисляет юристу pendingBalance и уведомляет его.
+// БЕЗОПАСНОСТЬ: в проде отключён ВСЕГДА (fail-closed по NODE_ENV), даже если забыли
+// задать PAYME_KEY — иначе любой клиент оплачивал бы консультации бесплатно.
+// Работает только в dev/test И когда не подключён реальный Payme.
+router.post('/simulate', authenticate, authorize('client'), async (req, res, next) => {
+  try {
+    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
+      return res.status(403).json({ error: 'Тестовая оплата недоступна в этом режиме' });
+    }
+
+    const { consultationId } = req.body;
+    const consultation = await Consultation.findOne({
+      where: { id: consultationId, clientId: req.userId },
+    });
+    if (!consultation) {
+      return res.status(404).json({ error: 'Консультация не найдена' });
+    }
+    if (consultation.status !== 'payment_pending') {
+      return res.status(400).json({ error: 'Консультацию нельзя оплатить (уже оплачена или отменена)' });
+    }
+
+    let payment = await Payment.findOne({ where: { consultationId } });
+    if (payment && payment.status === 'paid') {
+      return res.status(400).json({ error: 'Консультация уже оплачена' });
+    }
+    if (!payment) {
+      payment = await Payment.create({
+        consultationId,
+        userId: req.userId,
+        amount: consultation.price,
+        currency: 'UZS',
+        provider: 'payme',
+        status: 'pending',
+      });
+    }
+
+    await payment.update({
+      status: 'paid',
+      providerResponse: { test: true, paidAt: Date.now() },
+    });
+
+    // Консультация ждёт подтверждения юриста
+    await consultation.update({ status: 'pending' });
+
+    // Эскроу: деньги резервируются на pendingBalance юриста
+    const lawyerProfile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
+    if (lawyerProfile) {
+      await lawyerProfile.increment('pendingBalance', { by: payment.amount });
+    }
+
+    // Уведомляем юриста об оплаченной консультации
+    await notificationService.createNotification(
+      consultation.lawyerId,
+      'new_booking',
+      'Новая консультация',
+      'Клиент оплатил консультацию. Подтвердите или отклоните.',
+      { consultationId: consultation.id }
+    );
+
+    res.json({ success: true, message: 'Оплата прошла', paymentId: payment.id });
   } catch (err) {
     next(err);
   }
@@ -293,28 +362,32 @@ router.get('/balance', authenticate, authorize('lawyer'), async (req, res, next)
 // Запрос на вывод баланса юристом (B3)
 router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, next) => {
   try {
-    const { amount, cardNumber, cardHolder } = req.body;
+    const { amount } = req.body;
 
-    if (!amount || amount <= 0) {
-      return res.status(400).json({ error: 'Укажите сумму вывода' });
+    // Валидация суммы: положительное конечное число
+    const amt = Number(amount);
+    if (!Number.isFinite(amt) || amt <= 0) {
+      return res.status(400).json({ error: 'Укажите корректную сумму вывода' });
     }
 
-    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
-    if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
-
-    if (parseFloat(profile.balance) < amount) {
+    // БЕЗОПАСНОСТЬ: атомарное списание одним UPDATE с условием balance >= amt —
+    // защита от гонки/овердрафта при параллельных запросах (amt — проверенное число).
+    const [affected] = await LawyerProfile.update(
+      { balance: LawyerProfile.sequelize.literal(`balance - ${amt}`) },
+      { where: { userId: req.userId, balance: { [Op.gte]: amt } } }
+    );
+    if (affected === 0) {
       return res.status(400).json({ error: 'Недостаточно средств на балансе' });
     }
 
-    // Списываем с баланса
-    await profile.decrement('balance', { by: amount });
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'] });
 
-    // В реальной интеграции здесь был бы вызов API выплат (Payme Transfer / Click)
-    // Пока создаём запись как подтверждение
+    // В реальной интеграции здесь был бы вызов API выплат (Payme Transfer / Click).
+    // Пока подтверждаем заявку; реальный перевод — Фаза 6.
     res.json({
       success: true,
-      message: `Заявка на вывод ${amount.toLocaleString()} сум принята. Средства поступят в течение 1-3 рабочих дней.`,
-      newBalance: parseFloat(profile.balance) - amount,
+      message: `Заявка на вывод ${amt.toLocaleString()} сум принята. Средства поступят в течение 1-3 рабочих дней.`,
+      newBalance: profile ? parseFloat(profile.balance) : null,
     });
   } catch (err) {
     next(err);

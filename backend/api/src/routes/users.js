@@ -39,6 +39,7 @@ router.put('/profile', authenticate, upload.single('avatar'), async (req, res, n
     const { name, phone, address } = req.body;
     if (name && name.trim()) user.name = name.trim();
     if (phone !== undefined) user.phone = phone;
+    if (address !== undefined) user.address = address;
 
     // Avatar upload
     if (req.file) {
@@ -82,6 +83,35 @@ router.put('/password', authenticate, async (req, res, next) => {
     await user.save();
 
     res.json({ success: true, message: 'Пароль успешно изменён' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/users/settings — get user preferences
+router.get('/settings', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.userId, { attributes: ['settings'] });
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    res.json({ settings: user.settings || {} });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/users/settings — save user preferences
+router.put('/settings', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.userId);
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
+    // Merge incoming settings over existing ones
+    user.settings = { ...(user.settings || {}), ...(req.body.settings || req.body || {}) };
+    await user.save();
+    res.json({ success: true, settings: user.settings });
   } catch (err) {
     next(err);
   }

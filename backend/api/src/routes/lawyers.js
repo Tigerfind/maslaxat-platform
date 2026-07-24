@@ -12,7 +12,13 @@ router.get('/', async (req, res, next) => {
 
     const profileWhere = {};
     if (specialization) profileWhere.specialization = specialization;
-    if (minRating) profileWhere.rating = { [Op.gte]: parseFloat(minRating) };
+    // Фильтр по звёздам: показываем юристов, чей рейтинг округляется до выбранной звезды
+    // (напр. «5 звёзд» → рейтинг 4.5–5.0; «2 звезды» → 1.5–2.49). Совпадает с тем,
+    // сколько звёзд показано на карточке.
+    if (minRating) {
+      const r = parseFloat(minRating);
+      profileWhere.rating = { [Op.gte]: r - 0.5, [Op.lt]: r + 0.5 };
+    }
 
     const userWhere = { role: 'lawyer', isActive: true };
     if (search) {
@@ -80,6 +86,21 @@ router.get('/:id', async (req, res, next) => {
   }
 });
 
+// GET /api/lawyers/:id/reviews — отзывы конкретного юриста
+router.get('/:id/reviews', async (req, res, next) => {
+  try {
+    const reviews = await Review.findAll({
+      where: { lawyerId: req.params.id },
+      include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 50,
+    });
+    res.json({ reviews });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/lawyers/:id/book — бронирование консультации
 router.post('/:id/book', authenticate, authorize('client'), async (req, res, next) => {
   try {
@@ -92,6 +113,23 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
+    // Акция «каждая 3-я бесплатно»: право всегда пересчитываем на сервере,
+    // клиентскому флагу не доверяем.
+    let price = lawyer.profile.price;
+    let isFree = false;
+    let notes = req.body.notes || null;
+    if (req.body.useFreePromo) {
+      const { computeLoyalty } = require('../services/loyaltyService');
+      const loyalty = await computeLoyalty(req.userId);
+      if (loyalty.freeNow) {
+        price = 0;
+        isFree = true;
+        notes = 'Бесплатно по акции «первая консультация бесплатно»';
+      }
+    }
+
+    // Бесплатная бронь (акция) сразу уходит юристу; платная ждёт оплаты
+    // (status = payment_pending), а юрист узнаёт о ней только после оплаты.
     const consultation = await Consultation.create({
       clientId: req.userId,
       lawyerId: lawyer.id,
@@ -100,17 +138,22 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,
-      price: lawyer.profile.price,
-      status: 'pending',
+      price,
+      isFree,
+      notes,
+      status: isFree ? 'pending' : 'payment_pending',
     });
 
-    // Notify the lawyer about the new booking
-    const client = await User.findByPk(req.userId, { attributes: ['name'] });
-    notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);
+    // Уведомляем юриста только о бесплатной брони; платную — после оплаты
+    if (isFree) {
+      const client = await User.findByPk(req.userId, { attributes: ['name'] });
+      notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);
+    }
 
     res.status(201).json({
       success: true,
-      message: 'Запрос отправлен юристу',
+      message: isFree ? 'Запрос отправлен юристу' : 'Требуется оплата',
+      requiresPayment: !isFree,
       consultation,
     });
   } catch (err) {
@@ -121,26 +164,47 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
 // POST /api/lawyers/:id/review — оставить отзыв
 router.post('/:id/review', authenticate, authorize('client'), async (req, res, next) => {
   try {
-    const review = await Review.create({
-      clientId: req.userId,
-      lawyerId: req.params.id,
-      consultationId: req.body.consultationId,
-      rating: req.body.rating,
-      text: req.body.text,
+    const { consultationId, rating, text } = req.body;
+    const lawyerId = req.params.id;
+
+    // Валидация оценки
+    const r = Number(rating);
+    if (!Number.isInteger(r) || r < 1 || r > 5) {
+      return res.status(400).json({ error: 'Оценка должна быть от 1 до 5' });
+    }
+    if (!consultationId) {
+      return res.status(400).json({ error: 'Не указана консультация' });
+    }
+
+    // БЕЗОПАСНОСТЬ: отзыв — только по СВОЕЙ завершённой консультации с этим юристом
+    const consultation = await Consultation.findByPk(consultationId);
+    if (!consultation || consultation.clientId !== req.userId || consultation.lawyerId !== lawyerId) {
+      return res.status(403).json({ error: 'Нет доступа к этой консультации' });
+    }
+    if (consultation.status !== 'completed') {
+      return res.status(400).json({ error: 'Оценить можно только завершённую консультацию' });
+    }
+
+    // Один отзыв на консультацию (idempotent — заодно чинит дубли из backlog)
+    const [review, created] = await Review.findOrCreate({
+      where: { consultationId },
+      defaults: { clientId: req.userId, lawyerId, consultationId, rating: r, text },
     });
+    if (!created) {
+      return res.status(409).json({ error: 'Вы уже оценили эту консультацию' });
+    }
 
-    // Update lawyer rating
-    const allReviews = await Review.findAll({ where: { lawyerId: req.params.id } });
-    const avgRating = allReviews.reduce((sum, r) => sum + r.rating, 0) / allReviews.length;
-
+    // Пересчёт агрегата рейтинга юриста
+    const allReviews = await Review.findAll({ where: { lawyerId } });
+    const avgRating = allReviews.reduce((sum, rv) => sum + rv.rating, 0) / allReviews.length;
     await LawyerProfile.update(
       { rating: Math.round(avgRating * 10) / 10, reviewsCount: allReviews.length },
-      { where: { userId: req.params.id } }
+      { where: { userId: lawyerId } }
     );
 
-    // Notify the lawyer about the new review
+    // Уведомляем юриста о новом отзыве
     const reviewer = await User.findByPk(req.userId, { attributes: ['name'] });
-    notifications.notifyNewReview(req.params.id, reviewer?.name || 'Клиент', req.body.rating);
+    notifications.notifyNewReview(lawyerId, reviewer?.name || 'Клиент', r);
 
     res.status(201).json({ review });
   } catch (err) {

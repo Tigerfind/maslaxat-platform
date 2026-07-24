@@ -26,6 +26,13 @@ const User = sequelize.define('User', {
   phone: {
     type: DataTypes.STRING,
   },
+  address: {
+    type: DataTypes.STRING,
+  },
+  settings: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+  },
   role: {
     type: DataTypes.ENUM('client', 'lawyer', 'admin'),
     defaultValue: 'client',
@@ -177,12 +184,25 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+  isFree: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
   videoRoomUrl: {
     type: DataTypes.STRING,
   },
   notes: {
     type: DataTypes.TEXT,
   },
+  // Напоминание за 1 час отправлено (чтобы не слать повторно)
+  reminderSent: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  // ⚠️ DEPRECATED — НЕ ПИСАТЬ СЮДА. Оценка консультации живёт в таблице Review
+  // (Consultation.hasOne(Review, as: 'consultationReview')). Эти два столбца —
+  // мёртвые (всегда NULL), оставлены только чтобы не ломать схему до отдельной
+  // миграции. Единственный источник правды по оценке — Review. См. BACKLOG в CLAUDE.md.
   rating: {
     type: DataTypes.INTEGER,
   },
@@ -429,6 +449,26 @@ const Payment = sequelize.define('Payment', {
   },
 });
 
+// ─── SUPPORT TICKET MODEL ───────────────────────────────────
+const SupportTicket = sequelize.define('SupportTicket', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  subject: {
+    type: DataTypes.STRING,
+  },
+  message: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+  },
+  status: {
+    type: DataTypes.ENUM('open', 'in_progress', 'closed'),
+    defaultValue: 'open',
+  },
+});
+
 // ─── ASSOCIATIONS ───────────────────────────────────────────
 
 // User <-> LawyerProfile (1:1 for lawyers)
@@ -499,6 +539,10 @@ Payment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 User.hasOne(Subscription, { foreignKey: 'userId', as: 'subscription' });
 Subscription.belongsTo(User, { foreignKey: 'userId' });
 
+// User <-> SupportTicket
+User.hasMany(SupportTicket, { foreignKey: 'userId', as: 'supportTickets' });
+SupportTicket.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   sequelize,
   User,
@@ -514,4 +558,5 @@ module.exports = {
   FavoriteLawyer,
   Payment,
   Subscription,
+  SupportTicket,
 };
