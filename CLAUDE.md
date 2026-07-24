@@ -375,6 +375,60 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - [x] Кнопка поддержки (SupportFAB.js с FAQ + контактная форма)
 - [x] Удалены мок-данные из clientService.js
 
+### ФАЗА 3 — Ключевые фичи (готово, проверено):
+- [x] 3.1 «Записаться снова» на завершённых/архивных консультациях (BookingModal с тем же юристом)
+- [x] 3.2 Красивый апселл при лимите 3/день → Pro (AILimitUpsell.js, ловим 429, upgrade в тест-режиме)
+- [x] 3.3 AI: структурный ответ карточками (форматирование **жирного**/списков + карточка «Статьи
+      закона» через extractLaws + карточка «Важно») + кнопка «Записаться к юристу по теме»
+      (aiFormat.js; парсинг на фронте — работает и для истории, и в fallback-режиме AI)
+- [x] 3.4 Realtime-уведомления через socket (socket/io.js реестр + персональная комната user:<id> +
+      emit из notificationService; фронт NotificationCenter слушает 'notification:new', поллинг → 60с
+      fallback). ПРОВЕРЕНО вживую: юрист получил пуш мгновенно после оплаты клиентом.
+- [x] 3.5 Напоминание за 1 час до консультации (reminderService.js: джоб каждые 5 мин, колонка
+      Consultation.reminderSent, уведомление обоим + email). ПРОВЕРЕНО: оба участника, email,
+      идемпотентность (повторный прогон = 0).
+
+### ФАЗА 4 — Кабинеты и данные (готово, проверено):
+- [x] 4.1 Аналитика юриста: страница /lawyer/analytics + пункт меню. Бэкенд
+      GET /lawyer/dashboard/analytics (доход по месяцам за 6 мес по факт. цене завершённых,
+      воронка requests→accepted→completed с %, разбивка оценок по звёздам, баланс/pending).
+      ПРОВЕРЕНО: Иванов — воронка 7→6→6, рейтинг 4.8, 5★×5/4★×1.
+- [x] 4.2 Управление слотами расписания: редактор «Часы приёма» на /lawyer/schedule
+      (7 дней, тумблер + время from/to). Бэкенд GET/PUT /lawyer/availability (schedule JSONB +
+      валидация HH:mm). ПРОВЕРЕНО: сохранение/чтение, невалидное время → дефолт.
+- [x] 4.3 Реальные отчёты админки: секция в AdminDashboardGlass (выручка по месяцам,
+      топ юристов, консультации по статусам). Бэкенд GET /admin/dashboard/reports
+      (totalRevenue по paid Payments, monthlyRevenue, consultationsByStatus, usersGrowth, topLawyers).
+      ПРОВЕРЕНО: выручка 3 209 000, разбивка по статусам, топ-5 юристов.
+- [x] 4.4 Фикс анализа .doc/.docx: установлен mammoth, extractRawText вместо чтения бинаря как
+      utf-8 (.txt отдельно, .doc с graceful-фолбэком → просьба .docx/PDF). ПРОВЕРЕНО: чистый
+      русский текст из реального .docx.
+
+### ФАЗА 5 — Премиум-UX (готово, проверено):
+- [x] 5.1 Авторизация: анимация входа (framer-motion), «запомнить меня» (rememberedEmail),
+      инлайн-валидация email/пароль, индикатор силы пароля на регистрации (0-4), убраны мёртвые
+      mockUser; демо-логины теперь только в dev (process.env.NODE_ENV) без плашки с паролем.
+- [x] 5.2 VerifyEmailPage: dispatch updateProfile({isVerified:true}) после успеха + корректная
+      навигация (залогинен → кабинет, иначе → вход).
+- [x] 5.3 Скелетоны загрузки: components/UI/Skeleton.js (shimmer) на каталоге юристов и консультациях.
+- [x] 5.4 401-хендлинг: api.js чистит token+role+user, не редиректит на auth-запросах и не зацикливает;
+      ErrorBoundary.js оборачивает приложение (брендовый фолбэк вместо белого экрана).
+- [x] 5.5 Удалено 8 мёртвых файлов: PageTransition, AnimatedBackground, DebugPanel, ResponsiveTable,
+      UI/GlassCard (дубль; Glass/GlassCard оставлен — нужен лендингу), Lawyers/VideoIntroModal,
+      Neumorphic/ (2 файла), src/modules/ (сломанный export). 0 повисших импортов.
+
+### ФАЗА 6 — Деплой: подготовка без ключей (готово):
+- [x] 6.1 PWA-иконки: сгенерированы PNG 64/180/192/512 из app-icon.svg; manifest.json больше не
+      ссылается на несуществующий favicon.ico; index.html → apple-touch-icon.png + favicon PNG.
+- [x] 6.2 Socket.io Redis-адаптер: socket/redisAdapter.js, подключается по флагу SOCKET_REDIS=1
+      (по умолчанию выкл, одиночный инстанс без изменений). Установлен @socket.io/redis-adapter.
+- [x] 6.3 Прод-харденинг: errorHandler уже скрывает stack при NODE_ENV=production; .env.example
+      дополнен SOCKET_REDIS и TURN_*.
+- [x] 6.4 DEPLOY.md — чеклист деплоя: где взять каждый ключ, что включается автоматически,
+      шаги Railway/Docker, пост-деплой проверка.
+- [ ] ОСТАЛОСЬ (требует ключей/сервисов от пользователя): реальные ANTHROPIC/PAYME/SMTP,
+      свой TURN, сам деплой, переход sync→миграции. Всё описано в DEPLOY.md.
+
 ### Исправленные баги:
 - Subscription.upsert → findOne + update/create (upsert не работал без уникального индекса)
 - User.toJSON() теперь скрывает resetToken, resetTokenExpiry, verificationToken
@@ -384,3 +438,14 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - sequelize.fn('DATE') может отличаться между PostgreSQL и SQLite — проверить в проде
 - Нужна реальная SMTP конфигурация для email (сброс пароля использует Ethereal в dev)
 - Payme ключи нужно получить на merchant.payme.uz и прописать в .env
+
+### BACKLOG (техдолг, отдельными решениями):
+- **Удалить мёртвые столбцы `Consultation.rating` и `Consultation.review`** (миграция). Оценка
+  консультации живёт ТОЛЬКО в таблице `Review` (`consultationReview`). Эти столбцы всегда NULL,
+  сейчас помечены DEPRECATED в models/index.js. Убрать после отдельного решения по миграции,
+  чтобы никто случайно не начал писать в них (два источника правды).
+- **Сделать `POST /lawyers/:id/review` идемпотентным** (один отзыв на консультацию): сейчас
+  `Review.create` без проверки → повторная оценка создаёт дубликат Review (найдено: 1 дубль в
+  dev-данных, консультация 2c660517 x2). Из-за этого `hasOne`-include может задвоить строку
+  консультации — на фронте временно защищено дедупликацией по id. Правильный фикс — findOrCreate/
+  update по (consultationId, clientId) + чистка существующих дублей. Отдельное решение.
