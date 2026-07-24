@@ -36,7 +36,7 @@ const upload = multer({
   storage,
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.doc', '.docx', '.jpg', '.jpeg', '.png'];
+    const allowed = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png'];
     const ext = path.extname(file.originalname).toLowerCase();
     if (allowed.includes(ext)) {
       cb(null, true);
@@ -106,6 +106,27 @@ router.delete('/:id', authenticate, async (req, res, next) => {
   }
 });
 
+// GET /api/documents/:id/download — download the original file
+router.get('/:id/download', authenticate, async (req, res, next) => {
+  try {
+    const document = await Document.findOne({
+      where: { id: req.params.id, userId: req.userId },
+    });
+
+    if (!document) {
+      return res.status(404).json({ error: 'Документ не найден' });
+    }
+
+    if (!document.path || !fs.existsSync(document.path)) {
+      return res.status(404).json({ error: 'Файл не найден на сервере' });
+    }
+
+    res.download(document.path, document.name || path.basename(document.path));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/documents/:id/ai-check — AI analysis of document via Claude
 router.post('/:id/ai-check', authenticate, async (req, res, next) => {
   try {
@@ -142,7 +163,25 @@ router.post('/:id/ai-check', authenticate, async (req, res, next) => {
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
         { type: 'text', text: `Проанализируй этот документ-изображение "${document.name}".` },
       ];
-    } else if (['.doc', '.docx', '.txt'].includes(ext)) {
+    } else if (ext === '.docx' || ext === '.doc') {
+      // .docx (и по возможности .doc) — извлекаем текст через mammoth,
+      // а не читаем бинарь как utf-8 (раньше в AI шёл мусор).
+      try {
+        const mammoth = require('mammoth');
+        const { value } = await mammoth.extractRawText({ path: filePath });
+        documentContent = (value || '').substring(0, 15000);
+      } catch (e) {
+        documentContent = '';
+      }
+      if (!documentContent || !documentContent.trim()) {
+        return res.status(400).json({
+          error: ext === '.doc'
+            ? 'Старый формат .doc не удалось прочитать. Пожалуйста, загрузите файл в формате .docx или PDF.'
+            : 'Не удалось извлечь текст из документа. Попробуйте формат .docx или PDF.',
+        });
+      }
+      contentBlocks = [{ type: 'text', text: `Содержимое документа "${document.name}":\n\n${documentContent}` }];
+    } else if (ext === '.txt') {
       documentContent = fs.readFileSync(filePath, 'utf-8').substring(0, 15000);
       contentBlocks = [{ type: 'text', text: `Содержимое документа "${document.name}":\n\n${documentContent}` }];
     } else {

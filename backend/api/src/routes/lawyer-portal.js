@@ -2,9 +2,10 @@ const router = require('express').Router();
 const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
-const { Consultation, User, LawyerProfile, Review, Notification } = require('../models');
+const { Consultation, User, LawyerProfile, Review, Notification, Payment } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { completeConsultation } = require('../services/escrow');
 
 // Avatar upload config (reuse same setup as users.js)
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -247,15 +248,14 @@ router.post('/consultations/:id/end', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    consultation.status = 'completed';
-    if (req.body.notes) consultation.notes = req.body.notes;
-    await consultation.save();
+    // Единый идемпотентный путь: завершение + высвобождение эскроу
+    const { consultation: updated } = await completeConsultation(consultation.id, req.body.notes);
 
     // Notify client that consultation completed
     const lawyerEnd = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyConsultationCompleted(consultation.clientId, lawyerEnd?.name || 'Юрист', consultation);
+    notificationService.notifyConsultationCompleted(updated.clientId, lawyerEnd?.name || 'Юрист', updated);
 
-    res.json({ success: true, message: 'Консультация завершена', consultation });
+    res.json({ success: true, message: 'Консультация завершена', consultation: updated });
   } catch (err) {
     next(err);
   }
@@ -610,6 +610,50 @@ router.put('/status', async (req, res, next) => {
     );
 
     res.json({ success: true, status, isAvailable });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── WEEKLY AVAILABILITY SLOTS ──────────────────────────────
+// Формат schedule: { mon:{enabled,from,to}, tue:{...}, ..., sun:{...} }
+
+// GET /availability — текущие недельные слоты доступности
+router.get('/availability', async (req, res, next) => {
+  try {
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    res.json({
+      schedule: (profile && profile.schedule) || {},
+      isAvailable: profile ? profile.isAvailable : true,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /availability — сохранить недельные слоты
+router.put('/availability', async (req, res, next) => {
+  try {
+    const { schedule } = req.body;
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
+
+    // Валидация времени HH:mm для включённых дней
+    const clean = {};
+    const isTime = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+    if (schedule && typeof schedule === 'object') {
+      for (const [day, val] of Object.entries(schedule)) {
+        if (!val || typeof val !== 'object') continue;
+        clean[day] = {
+          enabled: Boolean(val.enabled),
+          from: isTime(val.from) ? val.from : '09:00',
+          to: isTime(val.to) ? val.to : '18:00',
+        };
+      }
+    }
+    profile.schedule = clean;
+    await profile.save();
+    res.json({ success: true, schedule: profile.schedule });
   } catch (err) {
     next(err);
   }

@@ -1,7 +1,22 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
 const sequelize = require('../config/database');
-const { Consultation, User, LawyerProfile, Document, Review, Specialization, Notification, AIConversation } = require('../models');
+const { Consultation, User, LawyerProfile, Document, Review, Specialization, Notification, AIConversation, Payment } = require('../models');
+
+// Последние N месяцев: [{ key:'YYYY-MM', year, month }] от старого к новому
+function lastMonths(n) {
+  const arr = [];
+  const now = new Date();
+  for (let i = n - 1; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    arr.push({ key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`, year: d.getFullYear(), month: d.getMonth() });
+  }
+  return arr;
+}
+const monthKey = (date) => {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
 const { authenticate, authorize } = require('../middleware/auth');
 
 // GET /api/dashboard/client/stats
@@ -109,6 +124,114 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       weeklyActivity,
       responseRate: responseRate || 0,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/lawyer/dashboard/analytics — доход по месяцам, воронка, рейтинг
+router.get('/lawyer/analytics', authenticate, authorize('lawyer'), async (req, res, next) => {
+  try {
+    const months = lastMonths(6);
+    const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
+
+    // Доход по месяцам — по фактической цене завершённых консультаций
+    const completedRows = await Consultation.findAll({
+      where: { lawyerId: req.userId, status: 'completed', updatedAt: { [Op.gte]: sixMonthsAgo } },
+      attributes: ['price', 'updatedAt'], raw: true,
+    });
+    const incomeByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    const countByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    for (const r of completedRows) {
+      const k = monthKey(r.updatedAt);
+      if (k in incomeByMonth) { incomeByMonth[k] += Number(r.price) || 0; countByMonth[k] += 1; }
+    }
+    const monthlyIncome = months.map((m) => ({ month: m.key, income: incomeByMonth[m.key], count: countByMonth[m.key] }));
+
+    // Воронка конверсии (за всё время)
+    const [requests, accepted, completedTotal, rejected] = await Promise.all([
+      Consultation.count({ where: { lawyerId: req.userId, status: { [Op.notIn]: ['payment_pending'] } } }),
+      Consultation.count({ where: { lawyerId: req.userId, status: { [Op.in]: ['accepted', 'in_progress', 'completed'] } } }),
+      Consultation.count({ where: { lawyerId: req.userId, status: 'completed' } }),
+      Consultation.count({ where: { lawyerId: req.userId, status: 'rejected' } }),
+    ]);
+    const acceptRate = (accepted + rejected) > 0 ? Math.round((accepted / (accepted + rejected)) * 100) : null;
+    const completeRate = accepted > 0 ? Math.round((completedTotal / accepted) * 100) : null;
+
+    // Разбивка по звёздам
+    const reviews = await Review.findAll({ where: { lawyerId: req.userId }, attributes: ['rating'], raw: true });
+    const ratingBreakdown = { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 };
+    let ratingSum = 0;
+    for (const rv of reviews) {
+      const s = Math.round(rv.rating);
+      if (ratingBreakdown[s] !== undefined) ratingBreakdown[s]++;
+      ratingSum += rv.rating;
+    }
+    const avgRating = reviews.length ? +(ratingSum / reviews.length).toFixed(1) : 0;
+
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+
+    res.json({
+      monthlyIncome,
+      totalIncome: monthlyIncome.reduce((s, m) => s + m.income, 0),
+      funnel: { requests, accepted, completed: completedTotal, rejected, acceptRate, completeRate },
+      ratingBreakdown, avgRating, totalReviews: reviews.length,
+      balance: profile ? Number(profile.balance) : 0,
+      pendingBalance: profile ? Number(profile.pendingBalance) : 0,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/admin/dashboard/reports — выручка, консультации по статусам, рост юзеров, топ юристов
+router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, next) => {
+  try {
+    const months = lastMonths(6);
+    const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
+
+    // Выручка платформы — по оплаченным платежам
+    const paidRows = await Payment.findAll({ where: { status: 'paid' }, attributes: ['amount', 'createdAt'], raw: true });
+    const revenueByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    let totalRevenue = 0;
+    for (const p of paidRows) {
+      totalRevenue += Number(p.amount) || 0;
+      const k = monthKey(p.createdAt);
+      if (k in revenueByMonth) revenueByMonth[k] += Number(p.amount) || 0;
+    }
+    const monthlyRevenue = months.map((m) => ({ month: m.key, revenue: revenueByMonth[m.key] }));
+
+    // Консультации по статусам
+    const statuses = ['payment_pending', 'pending', 'accepted', 'in_progress', 'completed', 'rejected', 'cancelled'];
+    const byStatusRaw = await Promise.all(statuses.map((s) => Consultation.count({ where: { status: s } })));
+    const consultationsByStatus = Object.fromEntries(statuses.map((s, i) => [s, byStatusRaw[i]]));
+
+    // Рост пользователей (новые клиенты/юристы по месяцам)
+    const userRows = await User.findAll({
+      where: { role: { [Op.in]: ['client', 'lawyer'] }, createdAt: { [Op.gte]: sixMonthsAgo } },
+      attributes: ['role', 'createdAt'], raw: true,
+    });
+    const clientsByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    const lawyersByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
+    for (const u of userRows) {
+      const k = monthKey(u.createdAt);
+      if (k in clientsByMonth) { if (u.role === 'lawyer') lawyersByMonth[k]++; else clientsByMonth[k]++; }
+    }
+    const usersGrowth = months.map((m) => ({ month: m.key, clients: clientsByMonth[m.key], lawyers: lawyersByMonth[m.key] }));
+
+    // Топ юристов по завершённым делам
+    const topProfiles = await LawyerProfile.findAll({
+      order: [['completedCases', 'DESC']], limit: 5,
+      include: [{ model: User, as: 'user', attributes: ['name'] }],
+    });
+    const topLawyers = topProfiles.map((p) => ({
+      name: p.user?.name || '—',
+      completedCases: p.completedCases || 0,
+      rating: Number(p.rating) || 0,
+      earnings: Number(p.balance) || 0,
+    }));
+
+    res.json({ totalRevenue, monthlyRevenue, consultationsByStatus, usersGrowth, topLawyers });
   } catch (err) {
     next(err);
   }
