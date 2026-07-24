@@ -24,47 +24,33 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { axelionColors } from '../../theme/axelionTheme';
-
-const FAQ_ITEMS = [
-  {
-    q: 'Как записаться на консультацию?',
-    a: 'Перейдите на страницу "Юристы", выберите специалиста и нажмите "Записаться". Выберите дату, время и опишите вашу ситуацию.',
-  },
-  {
-    q: 'Как пользоваться AI-консультантом?',
-    a: 'Перейдите в раздел "AI Консультант" и опишите вашу юридическую ситуацию. ИИ проанализирует вопрос на основе законодательства РУз и даст рекомендации.',
-  },
-  {
-    q: 'Как загрузить документ для AI анализа?',
-    a: 'Перейдите в "Документы", нажмите "Загрузить", выберите файл (PDF, DOC, JPG). После загрузки нажмите "AI Анализ" для проверки документа.',
-  },
-  {
-    q: 'Безопасны ли мои данные?',
-    a: 'Да. Все данные зашифрованы, видеозвонки проходят напрямую между участниками (P2P), документы хранятся на защищённых серверах.',
-  },
-  {
-    q: 'Как отменить консультацию?',
-    a: 'Перейдите в "Мои консультации", найдите нужную запись и нажмите "Отменить". Отмена бесплатна если сделана за 24 часа до консультации.',
-  },
-  {
-    q: 'Как связаться с поддержкой?',
-    a: 'Напишите нам на support@maslaxat.uz или через Telegram @maslaxat_support. Мы отвечаем в рабочие дни с 9:00 до 18:00.',
-  },
-];
+import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 const SupportFAB = () => {
+  const { t } = useTranslation();
+  const FAQ_ITEMS = t('support.faq');
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('faq'); // 'faq' | 'contact'
   const [message, setMessage] = useState('');
+  const [sending, setSending] = useState(false);
 
-  const handleSendMessage = () => {
+  const handleSendMessage = async () => {
     if (!message.trim()) {
-      toast.error('Введите сообщение');
+      toast.error(t('support.toastEmpty'));
       return;
     }
-    toast.success('Сообщение отправлено! Мы ответим в течение 24 часов.');
-    setMessage('');
-    setOpen(false);
+    setSending(true);
+    try {
+      await api.post('/support', { message });
+      toast.success(t('support.toastSent'));
+      setMessage('');
+      setOpen(false);
+    } catch (e) {
+      toast.error(t('support.toastError'));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -100,7 +86,7 @@ const SupportFAB = () => {
       >
         <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Typography variant="h6" sx={{ fontWeight: 400, color: axelionColors.textDark }}>
-            Помощь и поддержка
+            {t('support.title')}
           </Typography>
           <IconButton onClick={() => setOpen(false)} size="small">
             <Close />
@@ -111,23 +97,23 @@ const SupportFAB = () => {
           {/* Tab buttons */}
           <Box sx={{ display: 'flex', gap: 1, mb: 3 }}>
             {[
-              { key: 'faq', label: 'Частые вопросы' },
-              { key: 'contact', label: 'Написать нам' },
-            ].map((t) => (
+              { key: 'faq', label: t('support.tabFaq') },
+              { key: 'contact', label: t('support.tabContact') },
+            ].map((tb) => (
               <Button
-                key={t.key}
-                variant={tab === t.key ? 'contained' : 'outlined'}
-                onClick={() => setTab(t.key)}
+                key={tb.key}
+                variant={tab === tb.key ? 'contained' : 'outlined'}
+                onClick={() => setTab(tb.key)}
                 sx={{
                   flex: 1,
                   textTransform: 'none',
                   borderRadius: '8px',
-                  ...(tab === t.key
+                  ...(tab === tb.key
                     ? { background: axelionColors.gold, color: 'white', boxShadow: 'none', '&:hover': { background: axelionColors.bronze, boxShadow: 'none' } }
                     : { borderColor: axelionColors.borderLight, color: axelionColors.textMuted }),
                 }}
               >
-                {t.label}
+                {tb.label}
               </Button>
             ))}
           </Box>
@@ -163,7 +149,7 @@ const SupportFAB = () => {
                 fullWidth
                 multiline
                 rows={4}
-                placeholder="Опишите вашу проблему или вопрос..."
+                placeholder={t('support.messagePlaceholder')}
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 sx={{
@@ -180,6 +166,7 @@ const SupportFAB = () => {
                 fullWidth
                 variant="contained"
                 onClick={handleSendMessage}
+                disabled={sending}
                 sx={{
                   background: axelionColors.gold,
                   color: 'white',
@@ -190,12 +177,12 @@ const SupportFAB = () => {
                   '&:hover': { background: axelionColors.bronze, boxShadow: 'none' },
                 }}
               >
-                Отправить сообщение
+                {sending ? t('support.sending') : t('support.send')}
               </Button>
 
               <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
                 <Typography variant="subtitle2" sx={{ color: axelionColors.textDark, mb: 2 }}>
-                  Другие способы связи:
+                  {t('support.otherWays')}
                 </Typography>
                 {[
                   { icon: <Email />, text: 'support@maslaxat.uz' },

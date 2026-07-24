@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -14,16 +15,6 @@ import api from '../../services/api';
   ─────────────────────────────────────────────────────────────
 */
 
-const STEPS = ['Профиль', 'Специализация', 'Расписание', 'Прайс'];
-
-const STEP_META = [
-  { title: 'Расскажите о себе', sub: 'Фото, описание и опыт работы' },
-  { title: 'Специализация', sub: 'Выберите области права — минимум одна' },
-  { title: 'Расписание', sub: 'Рабочие дни и часы — минимум 3 дня' },
-  { title: 'Стоимость', sub: 'Цена за одну консультацию' },
-];
-
-const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const SPECIALIZATIONS = [
@@ -52,18 +43,11 @@ const chipStyle = (selected) => ({
 
 const fmtSum = (n) => Number(n || 0).toLocaleString('ru-RU');
 
-const yearsWord = (n) => {
-  const mod10 = n % 10; const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return 'год';
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 10 || mod100 >= 20)) return 'года';
-  return 'лет';
-};
-
 // ── Step 1: Photo + Description + Experience ──────────────────
-const StepProfile = ({ data, onChange }) => (
+const StepProfile = ({ data, onChange, t }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
     <div>
-      <div style={label}>Фото профиля</div>
+      <div style={label}>{t('onboarding.photoLabel')}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{
           width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
@@ -80,7 +64,7 @@ const StepProfile = ({ data, onChange }) => (
           color: 'var(--accent)', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
           cursor: 'pointer', fontFamily: 'inherit',
         }}>
-          Загрузить фото
+          {t('onboarding.uploadPhoto')}
           <input
             hidden type="file" accept="image/*"
             onChange={(e) => {
@@ -93,10 +77,10 @@ const StepProfile = ({ data, onChange }) => (
     </div>
 
     <div>
-      <div style={label}>О себе <span style={{ color: 'var(--accent)' }}>*</span></div>
+      <div style={label}>{t('onboarding.about')} <span style={{ color: 'var(--accent)' }}>*</span></div>
       <textarea
         rows={4}
-        placeholder="Расскажите о вашем опыте, образовании и специализации…"
+        placeholder={t('onboarding.aboutPlaceholder')}
         value={data.description}
         onChange={(e) => onChange('description', e.target.value)}
         maxLength={500}
@@ -107,13 +91,13 @@ const StepProfile = ({ data, onChange }) => (
         color: data.description.length > 0 && data.description.length < 50 ? 'var(--accent)' : 'rgba(255,255,255,0.4)',
       }}>
         {data.description.length > 0 && data.description.length < 50
-          ? `Минимум 50 символов (введено: ${data.description.length})`
+          ? t('onboarding.minChars', { n: data.description.length })
           : `${data.description.length}/500`}
       </div>
     </div>
 
     <div>
-      <div style={label}>Опыт работы: {data.experience === 0 ? 'без опыта' : `${data.experience} ${yearsWord(data.experience)}`}</div>
+      <div style={label}>{t('onboarding.experience')}: {data.experience === 0 ? t('onboarding.noExperience') : `${data.experience} ${t('onboarding.years')}`}</div>
       <input
         type="range" min={0} max={40} step={1}
         value={data.experience}
@@ -148,7 +132,8 @@ const StepSpecializations = ({ data, onChange }) => (
 );
 
 // ── Step 3: Schedule ──────────────────────────────────────────
-const StepSchedule = ({ data, onChange, times, setTimes }) => {
+const StepSchedule = ({ data, onChange, times, setTimes, t }) => {
+  const DAYS = t('onboarding.days');
   const toggleDay = (key) => {
     const current = data.schedule[key];
     onChange('schedule', {
@@ -170,7 +155,7 @@ const StepSchedule = ({ data, onChange, times, setTimes }) => {
 
   return (
     <div>
-      <div style={label}>Рабочие дни {activeCount > 0 && <span style={{ color: 'var(--accent)' }}>· выбрано {activeCount}</span>}</div>
+      <div style={label}>{t('onboarding.workDays')} {activeCount > 0 && <span style={{ color: 'var(--accent)' }}>· {t('onboarding.selected', { n: activeCount })}</span>}</div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {DAY_KEYS.map((key, idx) => (
           <button key={key} onClick={() => toggleDay(key)} style={{ ...chipStyle(!!data.schedule[key]), minWidth: 52, textAlign: 'center' }}>
@@ -181,11 +166,11 @@ const StepSchedule = ({ data, onChange, times, setTimes }) => {
 
       <div style={{ display: 'flex', gap: 16, marginTop: 26 }}>
         <div style={{ flex: 1 }}>
-          <div style={label}>Начало</div>
+          <div style={label}>{t('onboarding.start')}</div>
           <input type="time" value={times.start} onChange={(e) => applyTime('start', e.target.value)} style={inputStyle} />
         </div>
         <div style={{ flex: 1 }}>
-          <div style={label}>Конец</div>
+          <div style={label}>{t('onboarding.end')}</div>
           <input type="time" value={times.end} onChange={(e) => applyTime('end', e.target.value)} style={inputStyle} />
         </div>
       </div>
@@ -194,12 +179,12 @@ const StepSchedule = ({ data, onChange, times, setTimes }) => {
 };
 
 // ── Step 4: Price + Location ──────────────────────────────────
-const StepPrice = ({ data, onChange }) => (
+const StepPrice = ({ data, onChange, t }) => (
   <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
     <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 'var(--radius)', padding: 32 }}>
       <div style={{ textAlign: 'center', marginBottom: 26 }}>
-        <div style={{ fontSize: 40, fontWeight: 200, color: 'var(--accent)' }}>{fmtSum(data.price)} сум</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>за одну консультацию</div>
+        <div style={{ fontSize: 40, fontWeight: 200, color: 'var(--accent)' }}>{fmtSum(data.price)} {t('onboarding.sum')}</div>
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>{t('onboarding.perConsultation')}</div>
       </div>
       <input
         type="range" min={50000} max={500000} step={10000}
@@ -208,19 +193,22 @@ const StepPrice = ({ data, onChange }) => (
         style={{ width: '100%', accentColor: 'var(--accent)' }}
       />
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10 }}>
-        <span>50 000 сум</span><span>500 000 сум</span>
+        <span>50 000 {t('onboarding.sum')}</span><span>500 000 {t('onboarding.sum')}</span>
       </div>
     </div>
 
     <div>
-      <div style={label}>Город</div>
-      <input placeholder="Ташкент" value={data.location} onChange={(e) => onChange('location', e.target.value)} style={inputStyle} />
+      <div style={label}>{t('onboarding.city')}</div>
+      <input placeholder={t('onboarding.cityPlaceholder')} value={data.location} onChange={(e) => onChange('location', e.target.value)} style={inputStyle} />
     </div>
   </div>
 );
 
 // ── Main Wizard ───────────────────────────────────────────────
 const OnboardingWizard = ({ onComplete }) => {
+  const { t } = useTranslation();
+  const STEPS = t('onboarding.steps');
+  const STEP_META = t('onboarding.metaTitles').map((title, i) => ({ title, sub: t('onboarding.metaSubs')[i] }));
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [times, setTimes] = useState({ start: '09:00', end: '18:00' });
@@ -268,10 +256,10 @@ const OnboardingWizard = ({ onComplete }) => {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
-      toast.success('Профиль заполнен! Теперь вы видны клиентам.');
+      toast.success(t('onboarding.savedToast'));
       onComplete();
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Ошибка сохранения');
+      toast.error(err.response?.data?.error || t('onboarding.saveError'));
     } finally {
       setSaving(false);
     }
@@ -295,7 +283,7 @@ const OnboardingWizard = ({ onComplete }) => {
           }}>M</div>
           <div style={{ lineHeight: 1.1 }}>
             <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#FFFFFF' }}>eMaslaXat</div>
-            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--accent)', marginTop: 3 }}>Регистрация юриста</div>
+            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--accent)', marginTop: 3 }}>{t('onboarding.brandSub')}</div>
           </div>
         </div>
 
@@ -326,10 +314,10 @@ const OnboardingWizard = ({ onComplete }) => {
 
         {/* Step content */}
         <div style={{ minHeight: 220 }}>
-          {step === 0 && <StepProfile data={data} onChange={handleChange} />}
+          {step === 0 && <StepProfile data={data} onChange={handleChange} t={t} />}
           {step === 1 && <StepSpecializations data={data} onChange={handleChange} />}
-          {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} />}
-          {step === 3 && <StepPrice data={data} onChange={handleChange} />}
+          {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} t={t} />}
+          {step === 3 && <StepPrice data={data} onChange={handleChange} t={t} />}
         </div>
 
         {/* Actions */}
@@ -342,7 +330,7 @@ const OnboardingWizard = ({ onComplete }) => {
                 color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, letterSpacing: '0.05em',
                 textTransform: 'uppercase', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
               }}
-            >Назад</button>
+            >{t('onboarding.back')}</button>
           )}
           <button
             onClick={() => (step < STEPS.length - 1 ? setStep((s) => s + 1) : handleFinish())}
@@ -356,7 +344,7 @@ const OnboardingWizard = ({ onComplete }) => {
               opacity: (!canProceed() || saving) ? 0.5 : 1, transition: 'opacity 0.2s',
             }}
           >
-            {step < STEPS.length - 1 ? 'Далее' : (saving ? 'Сохраняем…' : 'Готово — опубликовать профиль')}
+            {step < STEPS.length - 1 ? t('onboarding.next') : (saving ? t('onboarding.saving') : t('onboarding.publish'))}
           </button>
         </div>
       </div>

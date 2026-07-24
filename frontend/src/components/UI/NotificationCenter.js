@@ -23,10 +23,15 @@ import {
   Star,
   Close,
   DoneAll,
+  AccessTime,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import io from 'socket.io-client';
+import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
+
+const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 const NOTIFICATION_ICONS = {
   consultation_request: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
@@ -35,6 +40,7 @@ const NOTIFICATION_ICONS = {
   consultation_cancelled: <Close sx={{ fontSize: 20, color: axelionColors.error }} />,
   consultation_started: <VideoCall sx={{ fontSize: 20, color: axelionColors.gold }} />,
   consultation_completed: <CheckCircle sx={{ fontSize: 20, color: axelionColors.success }} />,
+  consultation_reminder: <AccessTime sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_review: <Star sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_message: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
 };
@@ -49,8 +55,30 @@ const NotificationCenter = ({ sx = {} }) => {
 
   useEffect(() => {
     fetchNotifications();
-    const interval = setInterval(fetchNotifications, 30000);
+    // Опрос оставляем как fallback (реже — realtime приходит через socket)
+    const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
+  }, []);
+
+  // Realtime-пуш: мгновенно добавляем новое уведомление без ожидания опроса
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
+
+    socket.on('notification:new', (notif) => {
+      if (!notif || !notif.id) return;
+      setNotifications((prev) => {
+        if (prev.some((n) => n.id === notif.id)) return prev;
+        return [notif, ...prev].slice(0, 20);
+      });
+      setUnreadCount((c) => c + 1);
+      if (notif.title) {
+        toast.info(notif.title, { autoClose: 5000 });
+      }
+    });
+
+    return () => { socket.disconnect(); };
   }, []);
 
   const fetchNotifications = async () => {

@@ -10,6 +10,8 @@ import {
   DescriptionOutlined,
   WorkOutlineOutlined,
   FavoriteBorderOutlined,
+  ReceiptLongOutlined,
+  InsightsOutlined,
   SettingsOutlined,
   HelpOutlineOutlined,
   LogoutOutlined,
@@ -26,19 +28,21 @@ import AmbientBackground from './AmbientBackground';
 /** Nav config per role. key = route, matched against location for active state. */
 const NAV = {
   client: [
-    { key: '/dashboard', label: 'Дашборд', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/ai-chat', label: 'AI-помощник', icon: <AutoAwesomeOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/lawyers', label: 'Юристы', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/consultations', label: 'Консультации', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/documents', label: 'Документы', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/portfolio', label: 'Досье', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/favorites', label: 'Избранное', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/ai-chat', tKey: 'nav.aiChat', icon: <AutoAwesomeOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyers', tKey: 'nav.lawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/consultations', tKey: 'nav.consultations', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/documents', tKey: 'nav.documents', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/portfolio', tKey: 'nav.portfolio', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/favorites', tKey: 'nav.favorites', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/payments', tKey: 'nav.payments', icon: <ReceiptLongOutlined sx={{ fontSize: 20 }} /> },
   ],
   lawyer: [
-    { key: '/lawyer/dashboard', label: 'Дашборд', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/lawyer/schedule', label: 'Расписание', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/lawyer/reviews', label: 'Отзывы', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/lawyer/profile/edit', label: 'Профиль', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/schedule', tKey: 'nav.schedule', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/analytics', tKey: 'nav.analytics', icon: <InsightsOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/reviews', tKey: 'nav.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/profile/edit', tKey: 'nav.profile', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
   ],
 };
 
@@ -51,23 +55,32 @@ function useDarkMode() {
   return [dark, () => setDark((d) => !d)];
 }
 
-const navBtnStyle = (active) => ({
+// «Золотая аврора»: активный пункт — карточка, выступающая из золотого градиента.
+const navBtnStyle = (active, dark) => ({
   width: '100%',
   display: 'flex',
   alignItems: 'center',
   gap: 12,
   padding: '11px 14px',
-  background: active ? 'var(--accent)' : 'transparent',
+  background: active ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
   border: 'none',
   borderRadius: 'var(--radius)',
   fontFamily: 'inherit',
   fontSize: 14,
-  color: active ? '#FFFFFF' : 'var(--text2)',
+  color: active ? '#FFFFFF' : (dark ? '#C7BAA6' : '#5E4F3B'),
   cursor: 'pointer',
   letterSpacing: '0.01em',
-  fontWeight: active ? 500 : 400,
-  transition: 'background 0.2s, color 0.2s',
+  fontWeight: active ? 600 : 400,
+  boxShadow: active ? '0 6px 18px rgba(184,149,110,0.42)' : 'none',
+  transition: 'background 0.18s, color 0.18s, box-shadow 0.18s',
 });
+
+const navHoverIn = (e, active, dark) => {
+  if (!active) e.currentTarget.style.background = dark ? 'rgba(255,255,255,0.06)' : 'rgba(255,255,255,0.5)';
+};
+const navHoverOut = (e, active) => {
+  if (!active) e.currentTarget.style.background = 'transparent';
+};
 
 /**
  * GlassShell — persistent sidebar + topbar chrome from the ClaudeDesign mockups.
@@ -86,6 +99,12 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
   const navItems = NAV[role] || NAV.client;
   const activeKey = active || location.pathname;
 
+  // «Золотая аврора» — тёплый градиент фона сайдбара (свет/тьма)
+  const auroraBg = dark
+    ? 'linear-gradient(158deg, #2A241C 0%, #211A12 55%, #191309 100%)'
+    : 'linear-gradient(158deg, #F4EEE2 0%, #EAD9C0 55%, #E1C9A8 100%)';
+  const sideBorder = dark ? 'rgba(255,255,255,0.08)' : 'rgba(140,110,70,0.18)';
+
   const go = (key) => { navigate(key); setDrawerOpen(false); };
   const handleLogout = () => { dispatch(logout()); navigate('/login'); };
 
@@ -93,12 +112,12 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
     <aside
       style={{
         zIndex: 3, width: 248, flexShrink: 0,
-        background: 'var(--card-glass)', backdropFilter: 'blur(30px) saturate(180%)', WebkitBackdropFilter: 'blur(30px) saturate(180%)',
-        borderRight: '1px solid var(--border)', display: 'flex', flexDirection: 'column', height: '100vh',
+        background: auroraBg,
+        borderRight: `1px solid ${sideBorder}`, display: 'flex', flexDirection: 'column', height: '100vh',
         position: isDesktop ? 'sticky' : 'fixed', top: 0, left: 0,
       }}
     >
-      <div style={{ padding: '26px 24px 22px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div style={{ padding: '26px 24px 22px', borderBottom: `1px solid ${sideBorder}`, display: 'flex', alignItems: 'center', gap: 12 }}>
         <div style={{ width: 38, height: 38, border: '1.5px solid var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', fontWeight: 300, fontSize: 21 }}>M</div>
         <div style={{ lineHeight: 1 }}>
           <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.15em', textTransform: 'uppercase', color: 'var(--text)' }}>eMaslaXat</div>
@@ -109,22 +128,36 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
         {navItems.map((n) => {
           const isActive = activeKey === n.key;
           return (
-            <button key={n.key} onClick={() => go(n.key)} style={navBtnStyle(isActive)}>
+            <button
+              key={n.key}
+              onClick={() => go(n.key)}
+              style={navBtnStyle(isActive, dark)}
+              onMouseEnter={(e) => navHoverIn(e, isActive, dark)}
+              onMouseLeave={(e) => navHoverOut(e, isActive)}
+            >
               <span style={{ display: 'flex', width: 20, height: 20 }}>{n.icon}</span>
-              <span>{n.label}</span>
+              <span>{t(n.tKey)}</span>
             </button>
           );
         })}
       </nav>
-      <div style={{ padding: '16px 14px', borderTop: '1px solid var(--border)' }}>
-        <button onClick={() => go('/settings')} style={navBtnStyle(activeKey === '/settings')}>
-          <span style={{ display: 'flex', width: 20, height: 20 }}><SettingsOutlined sx={{ fontSize: 20 }} /></span><span>Настройки</span>
+      <div style={{ padding: '16px 14px', borderTop: `1px solid ${sideBorder}` }}>
+        <button onClick={() => go('/settings')} style={navBtnStyle(activeKey === '/settings', dark)}
+          onMouseEnter={(e) => navHoverIn(e, activeKey === '/settings', dark)} onMouseLeave={(e) => navHoverOut(e, activeKey === '/settings')}>
+          <span style={{ display: 'flex', width: 20, height: 20 }}><SettingsOutlined sx={{ fontSize: 20 }} /></span><span>{t('nav.settings')}</span>
         </button>
-        <button onClick={() => go('/help')} style={navBtnStyle(activeKey === '/help')}>
-          <span style={{ display: 'flex', width: 20, height: 20 }}><HelpOutlineOutlined sx={{ fontSize: 20 }} /></span><span>Поддержка</span>
+        <button onClick={() => go('/help')} style={navBtnStyle(activeKey === '/help', dark)}
+          onMouseEnter={(e) => navHoverIn(e, activeKey === '/help', dark)} onMouseLeave={(e) => navHoverOut(e, activeKey === '/help')}>
+          <span style={{ display: 'flex', width: 20, height: 20 }}><HelpOutlineOutlined sx={{ fontSize: 20 }} /></span><span>{t('nav.support')}</span>
         </button>
-        <button onClick={handleLogout} style={{ ...navBtnStyle(false), color: '#B07070' }}>
-          <span style={{ display: 'flex', width: 20, height: 20 }}><LogoutOutlined sx={{ fontSize: 20 }} /></span><span>{t('nav.logout') || 'Выйти'}</span>
+        {/* Выход — обычный минимальный пункт, как остальные */}
+        <button
+          onClick={handleLogout}
+          style={{ ...navBtnStyle(false, dark), marginTop: 2 }}
+          onMouseEnter={(e) => navHoverIn(e, false, dark)}
+          onMouseLeave={(e) => navHoverOut(e, false)}
+        >
+          <span style={{ display: 'flex', width: 20, height: 20 }}><LogoutOutlined sx={{ fontSize: 20 }} /></span><span>{t('nav.logout')}</span>
         </button>
       </div>
     </aside>
@@ -167,7 +200,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
             <button onClick={toggleDark} title="Тема" style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
               {dark ? <LightModeOutlined sx={{ fontSize: 19 }} /> : <DarkModeOutlined sx={{ fontSize: 19 }} />}
             </button>
-            {isDesktop && <LanguageSwitcher variant="buttons" />}
+            {isDesktop && <LanguageSwitcher variant="dropdown" />}
             <NotificationCenter />
             <button onClick={() => navigate('/profile')} style={{ display: 'flex', alignItems: 'center', gap: 11, paddingLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #B8956E, #8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 15, fontWeight: 500 }}>

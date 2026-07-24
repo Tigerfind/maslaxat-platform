@@ -5,11 +5,8 @@ import {
   Menu,
   MenuItem,
   Typography,
-  ListItemIcon,
-  ListItemText,
-  Divider,
 } from '@mui/material';
-import { Language, Check, KeyboardArrowDown } from '@mui/icons-material';
+import { KeyboardArrowDown, LanguageOutlined } from '@mui/icons-material';
 import { useTranslation } from '../i18n';
 import { axelionColors } from '../theme/axelionTheme';
 
@@ -97,7 +94,7 @@ const LanguageSwitcher = ({ variant = 'dropdown', sx = {} }) => {
     );
   }
 
-  // Default dropdown variant
+  // Default dropdown variant — trigger + список полных названий с кодом
   return (
     <>
       <Button
@@ -107,12 +104,11 @@ const LanguageSwitcher = ({ variant = 'dropdown', sx = {} }) => {
           color: axelionColors.textPrimary,
           backgroundColor: axelionColors.bgLight,
           border: `1px solid ${axelionColors.borderLight}`,
-          borderRadius: '8px',
-          px: 2,
-          py: 1,
+          borderRadius: '10px',
+          px: 1.75,
+          py: 0.9,
           textTransform: 'none',
           fontWeight: 500,
-          letterSpacing: '0.02em',
           '&:hover': {
             backgroundColor: axelionColors.bgWarm,
             borderColor: axelionColors.gold,
@@ -121,7 +117,7 @@ const LanguageSwitcher = ({ variant = 'dropdown', sx = {} }) => {
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <Typography sx={{ fontSize: '1.1rem' }}>{currentLang.flag}</Typography>
+          <LanguageOutlined sx={{ fontSize: 18, color: axelionColors.goldDark }} />
           <Typography sx={{ fontWeight: 500, fontSize: '0.875rem' }}>
             {currentLang.nativeName}
           </Typography>
@@ -135,73 +131,60 @@ const LanguageSwitcher = ({ variant = 'dropdown', sx = {} }) => {
         PaperProps={{
           sx: {
             mt: 1,
-            minWidth: 200,
-            borderRadius: '8px',
+            minWidth: 190,
+            borderRadius: '14px',
+            p: 0.75,
             border: `1px solid ${axelionColors.borderLight}`,
-            boxShadow: '0 8px 24px rgba(26, 26, 26, 0.08)',
+            boxShadow: '0 12px 34px rgba(26, 26, 26, 0.14)',
           },
         }}
         transformOrigin={{ horizontal: 'right', vertical: 'top' }}
         anchorOrigin={{ horizontal: 'right', vertical: 'bottom' }}
       >
-        <Box sx={{ px: 2, py: 1.5 }}>
-          <Typography
-            sx={{
-              color: axelionColors.textMuted,
-              fontWeight: 500,
-              fontSize: '0.7rem',
-              letterSpacing: '0.1em',
-              textTransform: 'uppercase',
-              display: 'flex',
-              alignItems: 'center',
-              gap: 0.5,
-            }}
-          >
-            <Language sx={{ fontSize: 14 }} />
-            Select language
-          </Typography>
-        </Box>
-        <Divider sx={{ borderColor: axelionColors.borderLight }} />
-        {languages.map((lang) => (
-          <MenuItem
-            key={lang.code}
-            onClick={() => handleLanguageSelect(lang.code)}
-            selected={language === lang.code}
-            sx={{
-              py: 1.5,
-              px: 2,
-              '&.Mui-selected': {
-                bgcolor: axelionColors.accentLight,
-                '&:hover': {
-                  bgcolor: axelionColors.accentMedium,
+        {languages.map((lang) => {
+          const active = language === lang.code;
+          return (
+            <MenuItem
+              key={lang.code}
+              onClick={() => handleLanguageSelect(lang.code)}
+              selected={active}
+              disableRipple
+              sx={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                gap: 3,
+                py: 1.1,
+                px: 1.5,
+                borderRadius: '9px',
+                '&.Mui-selected': {
+                  bgcolor: axelionColors.accentLight,
+                  '&:hover': { bgcolor: axelionColors.accentMedium },
                 },
-              },
-              '&:hover': {
-                bgcolor: axelionColors.bgWarm,
-              },
-            }}
-          >
-            <ListItemIcon sx={{ minWidth: 36 }}>
-              <Typography sx={{ fontSize: '1.2rem' }}>{lang.flag}</Typography>
-            </ListItemIcon>
-            <ListItemText
-              primary={lang.nativeName}
-              secondary={lang.name !== lang.nativeName ? lang.name : null}
-              primaryTypographyProps={{
-                fontWeight: language === lang.code ? 600 : 400,
-                color: axelionColors.textPrimary,
-                fontSize: '0.9rem',
+                '&:hover': { bgcolor: axelionColors.bgWarm },
               }}
-              secondaryTypographyProps={{
-                color: axelionColors.textMuted,
-                fontSize: '0.75rem',
-              }}
-            />
-            {language === lang.code && (
-              <Check sx={{ color: axelionColors.gold, ml: 1, fontSize: '1.1rem' }} />
-            )}
-          </MenuItem>
-        ))}
+            >
+              <Typography
+                sx={{
+                  fontWeight: active ? 600 : 400,
+                  color: active ? axelionColors.goldDark : axelionColors.textPrimary,
+                  fontSize: '0.9rem',
+                }}
+              >
+                {lang.nativeName}
+              </Typography>
+              <Typography
+                sx={{
+                  color: active ? axelionColors.gold : axelionColors.textMuted,
+                  fontSize: '0.72rem',
+                  fontWeight: 600,
+                  letterSpacing: '0.06em',
+                }}
+              >
+                {lang.code.toUpperCase()}
+              </Typography>
+            </MenuItem>
+          );
+        })}
       </Menu>
     </>
   );

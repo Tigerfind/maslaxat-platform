@@ -9,13 +9,14 @@ export const adminDashboardService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching admin stats:', error);
+      // Честный фолбэк: при ошибке показываем нули, а не выдуманные данные
       return {
-        totalUsers: 1250,
-        totalLawyers: 156,
-        totalClients: 1094,
-        activeConsultations: 48,
-        totalRevenue: 15750000,
-        monthlyRevenue: 2450000,
+        totalUsers: 0,
+        totalLawyers: 0,
+        totalClients: 0,
+        activeConsultations: 0,
+        totalRevenue: 0,
+        monthlyRevenue: 0,
       };
     }
   },
@@ -28,6 +29,17 @@ export const adminDashboardService = {
     } catch (error) {
       console.error('Error fetching activity:', error);
       return [];
+    }
+  },
+
+  // Реальные отчёты: выручка, консультации по статусам, рост юзеров, топ юристов
+  getReports: async () => {
+    try {
+      const response = await api.get('/admin/dashboard/reports');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching reports:', error);
+      return null;
     }
   },
 };

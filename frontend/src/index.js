@@ -19,3 +19,10 @@ root.render(
     <App />
   </React.StrictMode>
 );
+
+// PWA: регистрируем service worker, чтобы сайт можно было установить как приложение
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}

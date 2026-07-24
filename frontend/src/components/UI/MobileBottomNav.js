@@ -9,16 +9,18 @@ import {
   Person,
 } from '@mui/icons-material';
 import { axelionColors } from '../../theme/axelionTheme';
+import { useTranslation } from '../../i18n';
 
 const NAV_ITEMS = [
-  { path: '/dashboard', label: 'Главная', icon: Dashboard },
-  { path: '/lawyers', label: 'Юристы', icon: Gavel },
-  { path: '/consultations', label: 'Записи', icon: VideoCall },
-  { path: '/documents', label: 'Документы', icon: Description },
-  { path: '/profile', label: 'Профиль', icon: Person },
+  { path: '/dashboard', tKey: 'nav.dashboard', icon: Dashboard },
+  { path: '/lawyers', tKey: 'nav.lawyers', icon: Gavel },
+  { path: '/consultations', tKey: 'nav.consultations', icon: VideoCall },
+  { path: '/documents', tKey: 'nav.documents', icon: Description },
+  { path: '/profile', tKey: 'nav.profile', icon: Person },
 ];
 
 const MobileBottomNav = () => {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -79,7 +81,7 @@ const MobileBottomNav = () => {
                 lineHeight: 1,
               }}
             >
-              {item.label}
+              {t(item.tKey)}
             </Typography>
           </Box>
         );

@@ -9,11 +9,12 @@ export const clientDashboardService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching stats:', error);
+      // Честный фолбэк: при ошибке показываем нули, а не выдуманные данные
       return {
-        activeConsultations: 3,
-        documents: 12,
-        completedConsultations: 8,
-        rating: 4.8,
+        activeConsultations: 0,
+        documents: 0,
+        completedConsultations: 0,
+        rating: 0,
       };
     }
   },
@@ -83,6 +84,12 @@ export const clientLawyerService = {
     return response.data;
   },
 
+  // Test-mode payment: marks the consultation paid without a real Payme gateway
+  simulatePayment: async (consultationId) => {
+    const response = await api.post('/payments/simulate', { consultationId });
+    return response.data;
+  },
+
   // Get lawyer reviews
   getReviews: async (lawyerId) => {
     const response = await api.get(`/client/lawyers/${lawyerId}/reviews`);
@@ -133,6 +140,15 @@ export const clientConsultationService = {
       return response.data;
     } catch (error) {
       console.error('Error joining consultation:', error);
+      throw error;
+    }
+  },
+  completeConsultation: async (consultationId) => {
+    try {
+      const response = await api.post(`/client/consultations/${consultationId}/complete`);
+      return response.data;
+    } catch (error) {
+      console.error('Error completing consultation:', error);
       throw error;
     }
   },
@@ -298,6 +314,23 @@ export const clientSubscriptionService = {
       return null;
     }
   },
+  // Оформление платной подписки (в dev — тест-оплата, в проде — Payme, Фаза 6)
+  upgrade: async (plan) => {
+    const response = await api.post('/subscriptions/upgrade', { plan });
+    return response.data;
+  },
+};
+
+export const clientPaymentService = {
+  getMy: async () => {
+    try {
+      const response = await api.get('/payments/my');
+      return Array.isArray(response.data) ? response.data : (response.data.payments || []);
+    } catch (error) {
+      console.error('Error fetching payments:', error);
+      return [];
+    }
+  },
 };
 
 const clientService = {
@@ -308,6 +341,7 @@ const clientService = {
   aiChat: clientAIChatService,
   favorites: clientFavoritesService,
   subscription: clientSubscriptionService,
+  payments: clientPaymentService,
 };
 
 export default clientService;

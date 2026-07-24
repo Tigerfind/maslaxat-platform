@@ -17,8 +17,13 @@ export const lawyerScheduleService = {
     return response.data;
   },
 
-  setAvailability: async (dates, timeSlots) => {
-    const response = await api.post('/lawyer/availability', { dates, timeSlots });
+  // Недельные слоты доступности (schedule JSONB)
+  getAvailability: async () => {
+    const response = await api.get('/lawyer/availability');
+    return response.data;
+  },
+  saveAvailability: async (schedule) => {
+    const response = await api.put('/lawyer/availability', { schedule });
     return response.data;
   },
 };
@@ -45,6 +50,11 @@ export const lawyerReviewsService = {
 export const lawyerDashboardService = {
   getStats: async () => {
     const response = await api.get('/lawyer/dashboard/stats');
+    return response.data;
+  },
+
+  getAnalytics: async () => {
+    const response = await api.get('/lawyer/dashboard/analytics');
     return response.data;
   },
 

@@ -1,10 +1,12 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Dialog } from '@mui/material';
-import { CalendarTodayOutlined, MailOutline } from '@mui/icons-material';
+import { CalendarTodayOutlined, MailOutline, CardGiftcardOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import clientService from '../services/clientService';
+import api from '../services/api';
 import ConflictDetector from '../shared/validators/conflict-detector';
+import { useTranslation } from '../i18n';
 
 /**
  * MaslaXat Booking Modal — 4-step consultation booking flow.
@@ -13,14 +15,7 @@ import ConflictDetector from '../shared/validators/conflict-detector';
  * Data-wiring preserved: clientService.lawyers.bookConsultation + ConflictDetector.
  */
 
-const MONTHS = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн', 'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
-const DOWS = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
-
-const DURATIONS = [
-  { l: '30 мин', value: 30 },
-  { l: '60 мин', value: 60 },
-  { l: '90 мин', value: 90 },
-];
+const DURATIONS = [30, 60, 90];
 
 const TIME_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
 
@@ -36,6 +31,9 @@ const emptyForm = {
 
 const BookingModal = ({ open, onClose, lawyer }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const MONTHS = t('booking.months');
+  const DOWS = t('booking.dows');
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState(emptyForm);
@@ -46,6 +44,20 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [promoBad, setPromoBad] = useState(false);
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
+  const [loyalty, setLoyalty] = useState(null);
+  const [useFree, setUseFree] = useState(false);
+
+  // Загружаем статус акции «каждая 3-я бесплатно» при открытии окна
+  useEffect(() => {
+    if (!open) return;
+    setUseFree(false);
+    api.get('/client/consultations/loyalty')
+      .then((res) => {
+        setLoyalty(res.data);
+        if (res.data?.freeNow) setUseFree(true); // авто-применяем бесплатную
+      })
+      .catch(() => setLoyalty(null));
+  }, [open]);
 
   const dates = useMemo(() => {
     const arr = [];
@@ -60,7 +72,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       });
     }
     return arr;
-  }, []);
+  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!lawyer) return null;
 
@@ -68,7 +80,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
   const subtotal = Math.round((basePrice * duration) / 60);
   const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
-  const total = subtotal - discount;
+  const total = useFree ? 0 : subtotal - discount;
   const fmt = (n) => Number(n || 0).toLocaleString('ru-RU');
 
   const profName = lawyer.name || '';
@@ -79,7 +91,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     .join('')
     .toUpperCase();
   const profRating = lawyer.rating || lawyer.profile?.rating || '5.0';
-  const durLabel = DURATIONS.find((d) => d.value === duration)?.l || `${duration} мин`;
+  const durLabel = `${duration} ${t('booking.min')}`;
 
   const handleChange = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));
 
@@ -93,6 +105,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setPromoBad(false);
     setNotify(true);
     setPayMethod('payme');
+    setUseFree(false);
     setLoading(false);
   };
 
@@ -115,13 +128,13 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const goNext = () => {
     if (step === 1) {
       if (!formData.question.trim()) {
-        toast.error('Пожалуйста, опишите ваш вопрос');
+        toast.error(t('booking.toastQuestion'));
         return;
       }
       setStep(2);
     } else if (step === 2) {
       if (!formData.preferredDate || !formData.preferredTime) {
-        toast.error('Пожалуйста, выберите дату и время');
+        toast.error(t('booking.toastDateTime'));
         return;
       }
       setStep(3);
@@ -150,6 +163,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         amount: total,
         paymentMethod: payMethod,
         notify,
+        useFreePromo: useFree,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
         client: {
@@ -174,7 +188,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       if (!validation.isValid) {
         const message = ConflictDetector.formatConflictMessage(validation);
-        toast.error(message || 'Обнаружены конфликты при бронировании');
+        toast.error(message || t('booking.toastConflict'));
         setLoading(false);
         return;
       }
@@ -185,18 +199,25 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         });
       }
 
-      await clientService.lawyers.bookConsultation(lawyer.id, bookingData);
+      const booking = await clientService.lawyers.bookConsultation(lawyer.id, bookingData);
+
+      // Платная бронь создаётся как payment_pending — проводим тестовую оплату.
+      // Бесплатная (акция) уже в статусе pending, оплата не нужна.
+      const consultationId = booking?.consultation?.id;
+      if (!useFree && booking?.requiresPayment && consultationId) {
+        await clientService.lawyers.simulatePayment(consultationId);
+      }
 
       setStep(4);
     } catch (error) {
-      toast.error('Ошибка отправки запроса');
+      toast.error(error.response?.data?.error || t('booking.toastError'));
     } finally {
       setLoading(false);
     }
   };
 
   const addToCalendar = () => {
-    toast.info('Событие добавлено в календарь');
+    toast.info(t('booking.toastCalendar'));
   };
 
   const bookDone = () => {
@@ -316,9 +337,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   };
 
   const payMethods = [
-    { id: 'payme', n: 'Payme', d: 'Оплата картой UZCARD / HUMO' },
-    { id: 'click', n: 'Click', d: 'Быстрая оплата через Click' },
-    { id: 'uzcard', n: 'Банковская карта', d: 'Visa / Mastercard' },
+    { id: 'payme', n: 'Payme', d: t('booking.paymeD') },
+    { id: 'click', n: 'Click', d: t('booking.clickD') },
+    { id: 'uzcard', n: t('booking.cardN'), d: t('booking.cardD') },
   ];
 
   const notDone = step <= 3;
@@ -338,6 +359,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           width: 480,
           maxWidth: '100%',
           m: 2,
+          maxHeight: 'calc(100vh - 32px)',
+          display: 'flex',
+          flexDirection: 'column',
           overflow: 'hidden',
           background: 'var(--surface)',
           borderRadius: 'var(--radius)',
@@ -347,7 +371,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       }}
     >
       {/* ---------- Header + step indicator ---------- */}
-      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--border)' }}>
+      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div
           style={{
             display: 'flex',
@@ -365,7 +389,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               color: 'var(--text)',
             }}
           >
-            Запись на консультацию
+            {t('booking.title')}
           </div>
           <button
             onClick={handleClose}
@@ -422,7 +446,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       </div>
 
       {/* ---------- Body ---------- */}
-      <div style={{ padding: '24px 28px' }}>
+      <div style={{ padding: '24px 28px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
         {/* Lawyer summary */}
         <div
           style={{
@@ -454,7 +478,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           <div>
             <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{profName}</div>
             <div style={{ fontSize: 13, color: 'var(--accent)' }}>
-              ★ {profRating} · {fmt(basePrice)} сум
+              ★ {profRating} · {fmt(basePrice)} {t('booking.sum')}
             </div>
           </div>
         </div>
@@ -462,36 +486,36 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         {/* STEP 1: type + duration + question */}
         {step === 1 && (
           <>
-            <div style={label}>Тип консультации</div>
+            <div style={label}>{t('booking.typeLabel')}</div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
               <div
                 onClick={() => handleChange('consultationType', 'video')}
                 style={pill(formData.consultationType === 'video')}
               >
-                Видео
+                {t('booking.video')}
               </div>
               <div
                 onClick={() => handleChange('consultationType', 'chat')}
                 style={pill(formData.consultationType === 'chat')}
               >
-                Чат
+                {t('booking.chat')}
               </div>
             </div>
 
-            <div style={label}>Длительность</div>
+            <div style={label}>{t('booking.duration')}</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               {DURATIONS.map((d) => (
-                <div key={d.value} onClick={() => setDuration(d.value)} style={pill(duration === d.value)}>
-                  {d.l}
+                <div key={d} onClick={() => setDuration(d)} style={pill(duration === d)}>
+                  {d} {t('booking.min')}
                 </div>
               ))}
             </div>
 
-            <div style={label}>Ваш вопрос</div>
+            <div style={label}>{t('booking.question')}</div>
             <textarea
               value={formData.question}
               onChange={(e) => handleChange('question', e.target.value)}
-              placeholder="Коротко опишите ситуацию…"
+              placeholder={t('booking.questionPlaceholder')}
               style={{ ...inputBase, minHeight: 92, resize: 'none', marginBottom: 22 }}
             />
           </>
@@ -500,7 +524,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         {/* STEP 2: date + time */}
         {step === 2 && (
           <>
-            <div style={label}>Дата</div>
+            <div style={label}>{t('booking.date')}</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
               {dates.map((d) => {
                 const active = formData.preferredDate === d.iso;
@@ -529,7 +553,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               })}
             </div>
 
-            <div style={label}>Время</div>
+            <div style={label}>{t('booking.time')}</div>
             <div
               style={{
                 display: 'grid',
@@ -556,48 +580,87 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           <>
             <div style={insetPanel}>
               <div style={rowStyle}>
-                <span>Дата и время</span>
+                <span>{t('booking.dateTime')}</span>
                 <span style={rowVal}>
                   {dateLabel}, {formData.preferredTime}
                 </span>
               </div>
               <div style={rowStyle}>
-                <span>Длительность</span>
+                <span>{t('booking.duration')}</span>
                 <span style={rowVal}>{durLabel}</span>
               </div>
               <div style={rowStyle}>
-                <span>Стоимость</span>
-                <span style={rowVal}>{fmt(subtotal)} сум</span>
+                <span>{t('booking.cost')}</span>
+                <span style={rowVal}>
+                  {useFree ? (
+                    <>
+                      <span style={{ textDecoration: 'line-through', color: 'var(--text3)', marginRight: 8 }}>
+                        {fmt(subtotal)} {t('booking.sum')}
+                      </span>
+                      <span style={{ color: 'var(--accent-dark)', fontWeight: 600 }}>{t('booking.free')}</span>
+                    </>
+                  ) : (
+                    `${fmt(subtotal)} ${t('booking.sum')}`
+                  )}
+                </span>
               </div>
-              {promoApplied && (
-                <>
-                  <div style={{ ...rowStyle, color: '#1F8A5B' }}>
-                    <span>Промокод EMAS10</span>
-                    <span style={{ fontWeight: 500 }}>−{fmt(discount)} сум</span>
-                  </div>
-                  <div
-                    style={{
-                      display: 'flex',
-                      justifyContent: 'space-between',
-                      fontSize: 14,
-                      color: 'var(--text)',
-                      paddingTop: 8,
-                      borderTop: '1px solid var(--border)',
-                    }}
-                  >
-                    <span style={{ fontWeight: 500 }}>Итого</span>
-                    <span style={{ fontWeight: 600 }}>{fmt(total)} сум</span>
-                  </div>
-                </>
+              {promoApplied && !useFree && (
+                <div style={{ ...rowStyle, color: '#1F8A5B' }}>
+                  <span>{t('booking.promo')} EMAS10</span>
+                  <span style={{ fontWeight: 500 }}>−{fmt(discount)} {t('booking.sum')}</span>
+                </div>
+              )}
+              {(promoApplied || useFree) && (
+                <div
+                  style={{
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    fontSize: 14,
+                    color: 'var(--text)',
+                    paddingTop: 8,
+                    borderTop: '1px solid var(--border)',
+                  }}
+                >
+                  <span style={{ fontWeight: 500 }}>{t('booking.total')}</span>
+                  <span style={{ fontWeight: 600, color: useFree ? 'var(--accent-dark)' : undefined }}>
+                    {useFree ? t('booking.freeTotal') : `${fmt(total)} ${t('booking.sum')}`}
+                  </span>
+                </div>
               )}
             </div>
 
-            <div style={label}>Промокод</div>
+            {/* ---------- Акция «первая консультация бесплатно» ---------- */}
+            {loyalty && loyalty.freeNow && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: 'linear-gradient(135deg, rgba(184,149,110,0.12), rgba(184,149,110,0.04))',
+                border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+                padding: '12px 14px', marginBottom: 16,
+              }}>
+                <div style={{
+                  width: 34, height: 34, flexShrink: 0, borderRadius: '50%',
+                  background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <CardGiftcardOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-dark)' }}>
+                    {t('booking.firstFree')}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                    {t('booking.firstFreeSub')}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div style={label}>{t('booking.promo')}</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
               <input
                 value={promo}
                 onChange={(e) => setPromo(e.target.value)}
-                placeholder="Введите код"
+                placeholder={t('booking.promoPlaceholder')}
                 style={{ ...inputBase, flex: 1, padding: '12px 14px', textTransform: 'uppercase' }}
               />
               <button
@@ -616,17 +679,17 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   fontFamily: 'inherit',
                 }}
               >
-                Применить
+                {t('booking.apply')}
               </button>
             </div>
             {promoApplied && (
               <div style={{ fontSize: 12, color: '#1F8A5B', marginBottom: 18 }}>
-                ✓ Промокод применён — скидка 10%
+                {t('booking.promoOk')}
               </div>
             )}
             {promoBad && (
               <div style={{ fontSize: 12, color: '#C0492F', marginBottom: 18 }}>
-                Код недействителен
+                {t('booking.promoBad')}
               </div>
             )}
 
@@ -645,9 +708,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             >
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>
-                  Уведомить о подтверждении
+                  {t('booking.notifyTitle')}
                 </div>
-                <div style={{ fontSize: 12, color: 'var(--text3)' }}>Email и SMS о записи</div>
+                <div style={{ fontSize: 12, color: 'var(--text3)' }}>{t('booking.notifySub')}</div>
               </div>
               <div
                 style={{
@@ -676,7 +739,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               </div>
             </div>
 
-            <div style={label}>Способ оплаты</div>
+            {!useFree && (
+            <>
+            <div style={label}>{t('booking.payMethod')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
               {payMethods.map((m) => {
                 const active = payMethod === m.id;
@@ -714,6 +779,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 );
               })}
             </div>
+            </>
+            )}
           </>
         )}
 
@@ -738,29 +805,29 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               </svg>
             </div>
             <div style={{ fontSize: 20, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>
-              Консультация забронирована
+              {t('booking.booked')}
             </div>
             <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text2)', marginBottom: 22 }}>
-              Мы отправили подтверждение. Юрист {profName} свяжется с вами в назначенное время.
+              {t('booking.bookedText', { name: profName })}
             </p>
             <div style={{ ...insetPanel, textAlign: 'left', marginBottom: 24, gap: 10 }}>
               <div style={rowStyle}>
-                <span>Юрист</span>
+                <span>{t('booking.lawyer')}</span>
                 <span style={rowVal}>{profName}</span>
               </div>
               <div style={rowStyle}>
-                <span>Дата и время</span>
+                <span>{t('booking.dateTime')}</span>
                 <span style={rowVal}>
                   {dateLabel}, {formData.preferredTime}
                 </span>
               </div>
               <div style={rowStyle}>
-                <span>Длительность</span>
+                <span>{t('booking.duration')}</span>
                 <span style={rowVal}>{durLabel}</span>
               </div>
               <div style={rowStyle}>
-                <span>Оплачено</span>
-                <span style={rowVal}>{fmt(total)} сум</span>
+                <span>{t('booking.paid')}</span>
+                <span style={rowVal}>{fmt(total)} {t('booking.sum')}</span>
               </div>
             </div>
             {notify && (
@@ -776,7 +843,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 }}
               >
                 <MailOutline sx={{ fontSize: 15, color: '#1F8A5B' }} />
-                Подтверждение отправлено на email и SMS
+                {t('booking.confirmSent')}
               </div>
             )}
             <button
@@ -801,7 +868,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               }}
             >
               <CalendarTodayOutlined sx={{ fontSize: 16 }} />
-              Добавить в календарь
+              {t('booking.addCalendar')}
             </button>
             <button
               onClick={bookDone}
@@ -820,7 +887,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 fontFamily: 'inherit',
               }}
             >
-              Мои консультации
+              {t('booking.myConsultations')}
             </button>
           </div>
         )}
@@ -829,15 +896,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         {notDone && (
           <div style={{ display: 'flex', gap: 10 }}>
             <button onClick={goBack} style={secondaryBtn}>
-              Назад
+              {t('booking.back')}
             </button>
             {step === 3 ? (
               <button onClick={handlePayNow} disabled={loading} style={primaryBtn}>
-                {loading ? 'Оплата…' : `Оплатить · ${fmt(total)} сум`}
+                {loading ? t('booking.paying') : (useFree ? t('booking.bookFree') : `${t('booking.pay')} · ${fmt(total)} ${t('booking.sum')}`)}
               </button>
             ) : (
               <button onClick={goNext} style={primaryBtn}>
-                Далее
+                {t('booking.next')}
               </button>
             )}
           </div>
