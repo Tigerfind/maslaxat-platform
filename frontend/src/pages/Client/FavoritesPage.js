@@ -25,6 +25,7 @@ import { toast } from 'react-toastify';
 import { axelionColors } from '../../theme/axelionTheme';
 import clientService from '../../services/clientService';
 import EmptyState from '../../components/UI/EmptyState';
+import { useTranslation } from '../../i18n';
 
 const fadeInUp = keyframes`
   from {
@@ -39,6 +40,7 @@ const fadeInUp = keyframes`
 
 const FavoritesPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,7 +55,7 @@ const FavoritesPage = () => {
       setFavorites(data);
     } catch (error) {
       console.error('Error loading favorites:', error);
-      toast.error('Ошибка загрузки избранного');
+      toast.error(t('favorites.loadError'));
     } finally {
       setLoading(false);
     }
@@ -63,9 +65,9 @@ const FavoritesPage = () => {
     try {
       await clientService.favorites.removeFavorite(lawyerId);
       setFavorites((prev) => prev.filter((l) => l.id !== lawyerId));
-      toast.success('Удалено из избранного');
+      toast.success(t('favorites.removed'));
     } catch (error) {
-      toast.error('Ошибка при удалении');
+      toast.error(t('favorites.removeError'));
     }
   };
 
@@ -140,10 +142,10 @@ const FavoritesPage = () => {
                   mb: 0.5,
                 }}
               >
-                Избранные юристы
+                {t('favorites.title')}
               </Typography>
               <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.9rem' }}>
-                {favorites.length} {favorites.length === 1 ? 'юрист' : 'юристов'}
+                {favorites.length} {favorites.length === 1 ? t('favorites.lawyerOne') : t('favorites.lawyerMany')}
               </Typography>
             </Box>
           </Box>
@@ -154,9 +156,9 @@ const FavoritesPage = () => {
         {favorites.length === 0 ? (
           <EmptyState
             icon={<FavoriteBorder sx={{ fontSize: 64, color: axelionColors.borderLight }} />}
-            title="Нет избранных юристов"
-            subtitle="Добавьте юристов в избранное, чтобы быстро найти их позже"
-            actionLabel="Найти юриста"
+            title={t('favorites.emptyTitle')}
+            subtitle={t('favorites.emptySub')}
+            actionLabel={t('favorites.findLawyer')}
             onAction={() => navigate('/lawyers')}
           />
         ) : (
@@ -254,7 +256,7 @@ const FavoritesPage = () => {
                         {lawyer.rating || 0}
                       </Typography>
                       <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.85rem' }}>
-                        ({lawyer.completedConsultations || 0} отзывов)
+                        ({lawyer.completedConsultations || 0} {t('favorites.reviews')})
                       </Typography>
                     </Box>
 
@@ -282,7 +284,7 @@ const FavoritesPage = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <WorkOutline sx={{ fontSize: 18, color: axelionColors.gold }} />
                           <Typography sx={{ color: axelionColors.textSecondary, fontSize: '0.85rem' }}>
-                            {lawyer.experience} лет опыта
+                            {lawyer.experience} {t('favorites.yearsExp')}
                           </Typography>
                         </Box>
                       )}
@@ -290,7 +292,7 @@ const FavoritesPage = () => {
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <AttachMoney sx={{ fontSize: 18, color: axelionColors.gold }} />
                           <Typography sx={{ color: axelionColors.textSecondary, fontSize: '0.85rem' }}>
-                            от {lawyer.priceFrom.toLocaleString()} сум
+                            {t('favorites.from')} {lawyer.priceFrom.toLocaleString()} {t('favorites.sum')}
                           </Typography>
                         </Box>
                       )}
@@ -314,7 +316,7 @@ const FavoritesPage = () => {
                           mb: 2,
                         }}
                       >
-                        Добавлен {new Date(lawyer.addedAt).toLocaleDateString('ru-RU')}
+                        {t('favorites.addedOn')} {new Date(lawyer.addedAt).toLocaleDateString('ru-RU')}
                       </Typography>
                     )}
 
@@ -338,7 +340,7 @@ const FavoritesPage = () => {
                         },
                       }}
                     >
-                      Смотреть профиль
+                      {t('favorites.viewProfile')}
                     </Button>
                   </Box>
                 </Card>

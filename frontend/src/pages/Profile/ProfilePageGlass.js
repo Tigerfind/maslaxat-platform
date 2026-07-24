@@ -7,6 +7,7 @@ import { updateProfile } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -86,11 +87,12 @@ const tabBtnStyle = (active) => ({
 const initialsOf = (name = '') =>
   name.split(' ').map((w) => w[0]).filter(Boolean).slice(0, 2).join('').toUpperCase() || '—';
 
-const TABS = ['Личная информация', 'Безопасность', 'История активности'];
+const TABS = ['tabPersonal', 'tabSecurity', 'tabActivity'];
 
 const ProfilePageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { t } = useTranslation();
   const fileInputRef = useRef(null);
 
   const user = useSelector((state) => state.auth.user);
@@ -139,7 +141,7 @@ const ProfilePageGlass = () => {
     if (isEditMode) {
       resetForm();
       setIsEditMode(false);
-      toast.info('Изменения отменены');
+      toast.info(t('profile.changesCancelled'));
     } else {
       setIsEditMode(true);
     }
@@ -163,24 +165,24 @@ const ProfilePageGlass = () => {
     const file = e.target.files[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      toast.error('Размер файла не должен превышать 5MB');
+      toast.error(t('profile.fileTooBig'));
       return;
     }
     const reader = new FileReader();
     reader.onloadend = () => {
       setFormData((prev) => ({ ...prev, avatar: reader.result, avatarFile: file }));
-      toast.success('Фото выбрано. Нажмите «Сохранить» для обновления');
+      toast.success(t('profile.photoSelected'));
     };
     reader.readAsDataURL(file);
   };
 
   const handleSaveChanges = async () => {
     if (!formData.name.trim()) {
-      toast.error('Имя не может быть пустым');
+      toast.error(t('profile.nameEmpty'));
       return;
     }
     if (!formData.email.trim() || !formData.email.includes('@')) {
-      toast.error('Введите корректный email');
+      toast.error(t('profile.emailInvalid'));
       return;
     }
     try {
@@ -194,28 +196,28 @@ const ProfilePageGlass = () => {
       });
       dispatch(updateProfile(response.data.user));
       setIsEditMode(false);
-      toast.success('Профиль успешно обновлён!');
+      toast.success(t('profile.profileSaved'));
     } catch (error) {
       console.error('Error updating profile:', error);
-      toast.error(error.response?.data?.error || 'Ошибка обновления профиля');
+      toast.error(error.response?.data?.error || t('profile.profileError'));
     }
   };
 
   const handlePasswordSubmit = async () => {
     if (!passwordData.oldPassword) {
-      toast.error('Введите текущий пароль');
+      toast.error(t('profile.enterCurrentPassword'));
       return;
     }
     if (!passwordData.newPassword) {
-      toast.error('Введите новый пароль');
+      toast.error(t('profile.enterNewPassword'));
       return;
     }
     if (passwordData.newPassword.length < 6) {
-      toast.error('Пароль должен содержать минимум 6 символов');
+      toast.error(t('profile.passwordTooShort'));
       return;
     }
     if (passwordData.newPassword !== passwordData.confirmPassword) {
-      toast.error('Пароли не совпадают');
+      toast.error(t('profile.passwordsMismatch'));
       return;
     }
     try {
@@ -223,31 +225,31 @@ const ProfilePageGlass = () => {
         oldPassword: passwordData.oldPassword,
         newPassword: passwordData.newPassword,
       });
-      toast.success('Пароль успешно изменён!');
+      toast.success(t('profile.passwordChanged'));
       setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {
       console.error('Error changing password:', error);
-      toast.error(error.response?.data?.error || 'Ошибка изменения пароля');
+      toast.error(error.response?.data?.error || t('profile.passwordError'));
     }
   };
 
   const fields = [
-    { label: 'Полное имя', name: 'name', value: formData.name, type: 'text' },
-    { label: 'Email', name: 'email', value: formData.email, type: 'email' },
-    { label: 'Телефон', name: 'phone', value: formData.phone, type: 'tel' },
-    { label: 'Адрес', name: 'address', value: formData.address, type: 'text' },
+    { label: t('profile.fullName'), name: 'name', value: formData.name, type: 'text' },
+    { label: t('profile.email'), name: 'email', value: formData.email, type: 'email' },
+    { label: t('profile.phone'), name: 'phone', value: formData.phone, type: 'tel' },
+    { label: t('profile.address'), name: 'address', value: formData.address, type: 'text' },
   ];
 
   // Real stat fields returned by GET /api/dashboard/client/stats (no fabricated «rating»)
   const accountStats = [
-    { num: stats?.activeConsultations ?? '—', label: 'Активные' },
-    { num: stats?.completedConsultations ?? '—', label: 'Завершено' },
-    { num: stats?.documents ?? '—', label: 'Документы' },
-    { num: stats?.aiChats ?? '—', label: 'AI-чаты' },
+    { num: stats?.activeConsultations ?? '—', label: t('profile.statActive') },
+    { num: stats?.completedConsultations ?? '—', label: t('profile.statCompleted') },
+    { num: stats?.documents ?? '—', label: t('profile.statDocuments') },
+    { num: stats?.aiChats ?? '—', label: t('profile.statAiChats') },
   ];
 
   return (
-    <GlassShell active="/profile" title="Мой профиль" subtitle="Управление вашей учётной записью">
+    <GlassShell active="/profile" title={t('profile.myProfile')} subtitle={t('profile.subtitle')}>
       <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Header card */}
         <div style={{ ...glassCard, padding: 28, display: 'flex', alignItems: 'center', gap: 22 }}>
@@ -302,15 +304,15 @@ const ProfilePageGlass = () => {
 
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '0.02em', color: 'var(--text)' }}>
-              {formData.name || 'Пользователь'}
+              {formData.name || t('profile.userFallback')}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 4 }}>{formData.email}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: 20, background: 'rgba(122,154,107,0.16)', color: '#5E7A50' }}>
-                ● Активный
+                ● {t('profile.statusActive')}
               </span>
               <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: 20, background: 'rgba(184,149,110,0.14)', color: 'var(--accent-dark)' }}>
-                Клиент
+                {t('profile.roleClient')}
               </span>
             </div>
           </div>
@@ -320,7 +322,7 @@ const ProfilePageGlass = () => {
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
           {TABS.map((label, idx) => (
             <button key={label} onClick={() => handleTabChange(idx)} style={tabBtnStyle(activeTab === idx)}>
-              {label}
+              {t('profile.' + label)}
             </button>
           ))}
         </div>
@@ -330,7 +332,7 @@ const ProfilePageGlass = () => {
           <>
             <div style={{ ...glassCard, padding: 26 }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-                <div style={sectionTitle}>Личная информация</div>
+                <div style={sectionTitle}>{t('profile.personalInfo')}</div>
                 <button
                   onClick={handleEditToggle}
                   style={{
@@ -347,7 +349,7 @@ const ProfilePageGlass = () => {
                     fontFamily: 'inherit',
                   }}
                 >
-                  {isEditMode ? 'Отмена' : 'Редактировать'}
+                  {isEditMode ? t('profile.cancel') : t('profile.edit')}
                 </button>
               </div>
 
@@ -369,14 +371,14 @@ const ProfilePageGlass = () => {
 
               {isEditMode && (
                 <button onClick={handleSaveChanges} style={{ ...primaryBtn, marginTop: 22 }}>
-                  Сохранить
+                  {t('profile.save')}
                 </button>
               )}
             </div>
 
             {/* Account statistics */}
             <div style={{ ...glassCard, padding: 26 }}>
-              <div style={{ ...sectionTitle, marginBottom: 20 }}>Статистика аккаунта</div>
+              <div style={{ ...sectionTitle, marginBottom: 20 }}>{t('profile.accountStats')}</div>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }} className="prof-stats">
                 {accountStats.map((s) => (
                   <div key={s.label} style={{ textAlign: 'center' }}>
@@ -393,12 +395,12 @@ const ProfilePageGlass = () => {
         {activeTab === 1 && (
           <>
             <div style={{ ...glassCard, padding: 26 }}>
-              <div style={{ ...sectionTitle, marginBottom: 20 }}>Смена пароля</div>
+              <div style={{ ...sectionTitle, marginBottom: 20 }}>{t('profile.changePassword')}</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
                 <input
                   name="oldPassword"
                   type="password"
-                  placeholder="Текущий пароль"
+                  placeholder={t('profile.currentPassword')}
                   value={passwordData.oldPassword}
                   onChange={handlePasswordChange}
                   style={inputStyle}
@@ -406,7 +408,7 @@ const ProfilePageGlass = () => {
                 <input
                   name="newPassword"
                   type="password"
-                  placeholder="Новый пароль (минимум 6 символов)"
+                  placeholder={t('profile.newPasswordPh')}
                   value={passwordData.newPassword}
                   onChange={handlePasswordChange}
                   style={inputStyle}
@@ -414,24 +416,24 @@ const ProfilePageGlass = () => {
                 <input
                   name="confirmPassword"
                   type="password"
-                  placeholder="Повторите новый пароль"
+                  placeholder={t('profile.confirmPasswordPh')}
                   value={passwordData.confirmPassword}
                   onChange={handlePasswordChange}
                   style={inputStyle}
                 />
               </div>
               <button onClick={handlePasswordSubmit} style={{ ...primaryBtn, marginTop: 22 }}>
-                Обновить пароль
+                {t('profile.updatePassword')}
               </button>
             </div>
 
             {/* Security tips */}
             <div style={{ ...glassCard, padding: 26 }}>
-              <div style={{ ...sectionTitle, marginBottom: 14 }}>Советы по безопасности</div>
+              <div style={{ ...sectionTitle, marginBottom: 14 }}>{t('profile.securityTips')}</div>
               {[
-                'Используйте комбинацию букв, цифр и специальных символов',
-                'Не используйте один и тот же пароль на разных сайтах',
-                'Регулярно меняйте пароль для повышения безопасности',
+                t('profile.tip1'),
+                t('profile.tip2'),
+                t('profile.tip3'),
               ].map((tip) => (
                 <div key={tip} style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text2)', marginBottom: 6 }}>
                   • {tip}
@@ -459,9 +461,9 @@ const ProfilePageGlass = () => {
             >
               <HistoryOutlined sx={{ fontSize: 30 }} />
             </div>
-            <div style={{ fontSize: 16, fontWeight: 400, color: 'var(--text)', marginBottom: 6 }}>Пока нет активности</div>
+            <div style={{ fontSize: 16, fontWeight: 400, color: 'var(--text)', marginBottom: 6 }}>{t('profile.noActivityTitle')}</div>
             <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22, maxWidth: 360, margin: '0 auto 22px' }}>
-              Здесь появится история ваших действий на платформе — консультации, документы и запросы к AI.
+              {t('profile.noActivitySub')}
             </div>
             <button
               onClick={() => navigate('/lawyers')}

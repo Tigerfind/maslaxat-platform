@@ -22,6 +22,7 @@ import {
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -71,14 +72,21 @@ const ghostBtn = {
   fontFamily: 'inherit',
 };
 
-const DOC_CATEGORIES = ['Договор', 'Доверенность', 'Заявление', 'Иск', 'Другое'];
+// value — хранится на сервере, k — ключ перевода для отображения
+const DOC_CATEGORIES = [
+  { v: 'Договор', k: 'typeContract' },
+  { v: 'Доверенность', k: 'typePOA' },
+  { v: 'Заявление', k: 'typeStatement' },
+  { v: 'Иск', k: 'typeClaim' },
+  { v: 'Другое', k: 'typeOther' },
+];
 
 // status enum from backend: pending | verified | issues | rejected
 const STATUS_MAP = {
-  verified: { label: 'Проверен', color: 'var(--success)', bg: 'rgba(122,154,107,0.15)' },
-  issues: { label: 'Замечания', color: 'var(--warning)', bg: 'rgba(196,163,90,0.16)' },
-  rejected: { label: 'Ошибки', color: 'var(--error)', bg: 'rgba(176,112,112,0.16)' },
-  pending: { label: 'В обработке', color: 'var(--text2)', bg: 'rgba(154,154,154,0.15)' },
+  verified: { key: 'docStatusVerified', color: 'var(--success)', bg: 'rgba(122,154,107,0.15)' },
+  issues: { key: 'docStatusIssues', color: 'var(--warning)', bg: 'rgba(196,163,90,0.16)' },
+  rejected: { key: 'docStatusRejected', color: 'var(--error)', bg: 'rgba(176,112,112,0.16)' },
+  pending: { key: 'docStatusPending', color: 'var(--text2)', bg: 'rgba(154,154,154,0.15)' },
 };
 const statusMeta = (status) => STATUS_MAP[status] || STATUS_MAP.pending;
 
@@ -86,6 +94,7 @@ const scoreColor = (score) =>
   score >= 80 ? 'var(--success)' : score >= 50 ? 'var(--warning)' : 'var(--error)';
 
 const DocumentsPageGlass = () => {
+  const { t } = useTranslation();
   // State management
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -113,7 +122,7 @@ const DocumentsPageGlass = () => {
       setDocuments(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching documents:', error);
-      showSnackbar('Ошибка при загрузке документов', 'error');
+      showSnackbar(t('documents.loadError'), 'error');
       setDocuments([]);
     } finally {
       setIsLoading(false);
@@ -127,7 +136,7 @@ const DocumentsPageGlass = () => {
   const validateAndSetFile = (file) => {
     if (!file) return;
     if (file.size > 10 * 1024 * 1024) {
-      showSnackbar('Файл слишком большой. Максимальный размер: 10MB', 'error');
+      showSnackbar(t('documents.fileTooBig', { size: '10MB' }), 'error');
       return;
     }
     const allowedTypes = [
@@ -136,7 +145,7 @@ const DocumentsPageGlass = () => {
       'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
     ];
     if (!allowedTypes.includes(file.type)) {
-      showSnackbar('Неподдерживаемый формат файла. Используйте PDF, DOC или DOCX', 'error');
+      showSnackbar(t('documents.unsupportedFormat', { formats: 'PDF, DOC, DOCX' }), 'error');
       return;
     }
     setSelectedFile(file);
@@ -157,7 +166,7 @@ const DocumentsPageGlass = () => {
 
   const handleUploadSubmit = async () => {
     if (!selectedFile) {
-      showSnackbar('Пожалуйста, выберите файл', 'error');
+      showSnackbar(t('documents.selectFileFirst'), 'error');
       return;
     }
 
@@ -194,14 +203,14 @@ const DocumentsPageGlass = () => {
         setUploadProgress(0);
         setSelectedFile(null);
         setSelectedCategory(null);
-        showSnackbar('Документ успешно загружен!', 'success');
+        showSnackbar(t('documents.uploadSuccess'), 'success');
         fetchDocuments();
       }, 500);
     } catch (error) {
       console.error('Error uploading document:', error);
       setIsUploading(false);
       setUploadProgress(0);
-      showSnackbar(error.response?.data?.message || 'Ошибка при загрузке документа', 'error');
+      showSnackbar(error.response?.data?.message || t('documents.uploadError'), 'error');
     }
   };
 
@@ -211,11 +220,11 @@ const DocumentsPageGlass = () => {
       await clientService.documents.deleteDocument(selectedDocument.id);
       setDeleteDialogOpen(false);
       setSelectedDocument(null);
-      showSnackbar('Документ успешно удален!', 'success');
+      showSnackbar(t('documents.deleteSuccess'), 'success');
       fetchDocuments();
     } catch (error) {
       console.error('Error deleting document:', error);
-      showSnackbar(error.response?.data?.message || 'Ошибка при удалении документа', 'error');
+      showSnackbar(error.response?.data?.message || t('documents.deleteError'), 'error');
     }
   };
 
@@ -231,7 +240,7 @@ const DocumentsPageGlass = () => {
       fetchDocuments(); // status/score may update after analysis
     } catch (error) {
       console.error('Error checking document:', error);
-      showSnackbar(error.response?.data?.message || 'Ошибка при проверке документа', 'error');
+      showSnackbar(error.response?.data?.message || t('documents.analyzeError'), 'error');
       setAiDialogOpen(false);
     } finally {
       setAiCheckLoading(false);
@@ -241,7 +250,7 @@ const DocumentsPageGlass = () => {
   const handleDownload = (doc) => {
     // No download endpoint in the service layer yet — stubbed notification.
     console.log('Downloading document:', doc);
-    showSnackbar(`Загрузка "${doc.name}" начата`, 'info');
+    showSnackbar(`${t('documents.download')}: ${doc.name}`, 'info');
   };
 
   const docScore = (doc) =>
@@ -282,8 +291,8 @@ const DocumentsPageGlass = () => {
   return (
     <GlassShell
       active="/documents"
-      title="Документы"
-      subtitle="Управляйте документами и проверяйте их с помощью AI"
+      title={t('documents.title')}
+      subtitle={t('documents.subtitle')}
     >
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
         {/* Upload CTA */}
@@ -292,7 +301,7 @@ const DocumentsPageGlass = () => {
             onClick={() => setUploadDialogOpen(true)}
             style={{ ...goldGradientBtn, padding: '13px 24px', display: 'inline-flex', alignItems: 'center', gap: 8 }}
           >
-            <CloudUploadOutlined sx={{ fontSize: 18 }} /> Загрузить документ
+            <CloudUploadOutlined sx={{ fontSize: 18 }} /> {t('documents.uploadDocument')}
           </button>
         </div>
 
@@ -303,10 +312,10 @@ const DocumentsPageGlass = () => {
               <AutoAwesomeOutlined sx={{ color: 'var(--accent)', fontSize: 28 }} />
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>
-                  Загрузка документа…
+                  {t('documents.uploadModalTitle')}…
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>
-                  {uploadProgress}% · загрузка и анализ документа
+                  {uploadProgress}% · {t('documents.analyzingDoc')}
                 </div>
               </div>
             </div>
@@ -325,10 +334,10 @@ const DocumentsPageGlass = () => {
           <div style={{ ...glassCard, textAlign: 'center', padding: '64px 32px' }}>
             <DescriptionOutlined sx={{ fontSize: 72, color: 'var(--border-strong)', mb: 2 }} />
             <div style={{ fontSize: 20, fontWeight: 300, letterSpacing: '0.04em', color: 'var(--text)', marginBottom: 8 }}>
-              Нет документов
+              {t('documents.emptyTitle')}
             </div>
             <div style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 24 }}>
-              Загрузите первый документ для анализа AI
+              {t('documents.emptySub')}
             </div>
             <button
               onClick={() => setUploadDialogOpen(true)}
@@ -362,7 +371,7 @@ const DocumentsPageGlass = () => {
                           color: meta.color, background: meta.bg, padding: '5px 11px', borderRadius: 'var(--radius)',
                         }}
                       >
-                        {meta.label}
+                        {t('documents.' + meta.key)}
                       </span>
                     </div>
 
@@ -382,7 +391,7 @@ const DocumentsPageGlass = () => {
                     {score !== null && score !== undefined && (
                       <>
                         <div style={{ margin: '18px 0 6px', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text2)' }}>
-                          <span>AI-оценка</span>
+                          <span>AI-{t('documents.score')}</span>
                           <span style={{ color: scoreColor(score), fontWeight: 600 }}>{score}%</span>
                         </div>
                         <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
@@ -402,9 +411,9 @@ const DocumentsPageGlass = () => {
                           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
                         }}
                       >
-                        <AutoAwesomeOutlined sx={{ fontSize: 16 }} /> AI-проверка
+                        <AutoAwesomeOutlined sx={{ fontSize: 16 }} /> {t('documents.aiAnalysis')}
                       </button>
-                      <Tooltip title="Скачать">
+                      <Tooltip title={t('documents.download')}>
                         <button
                           onClick={() => handleDownload(doc)}
                           style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -412,7 +421,7 @@ const DocumentsPageGlass = () => {
                           <DownloadOutlined sx={{ fontSize: 18 }} />
                         </button>
                       </Tooltip>
-                      <Tooltip title="Удалить">
+                      <Tooltip title={t('documents.delete')}>
                         <button
                           onClick={() => {
                             setSelectedDocument(doc);
@@ -443,7 +452,7 @@ const DocumentsPageGlass = () => {
         <DialogContent sx={{ p: '28px' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
             <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)', letterSpacing: '0.02em' }}>
-              Загрузка документа
+              {t('documents.uploadModalTitle')}
             </div>
             <button onClick={closeUploadDialog} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
               <CloseOutlined sx={{ fontSize: 22 }} />
@@ -452,15 +461,15 @@ const DocumentsPageGlass = () => {
 
           {/* Category */}
           <div style={{ fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 12 }}>
-            Категория документа
+            {t('documents.docCategory')}
           </div>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
             {DOC_CATEGORIES.map((cat) => {
-              const active = selectedCategory === cat;
+              const active = selectedCategory === cat.v;
               return (
                 <button
-                  key={cat}
-                  onClick={() => setSelectedCategory(active ? null : cat)}
+                  key={cat.v}
+                  onClick={() => setSelectedCategory(active ? null : cat.v)}
                   style={{
                     fontSize: 13, fontWeight: 500, padding: '9px 16px', borderRadius: 'var(--radius)',
                     cursor: 'pointer', fontFamily: 'inherit',
@@ -469,7 +478,7 @@ const DocumentsPageGlass = () => {
                     border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                   }}
                 >
-                  {cat}
+                  {t('documents.' + cat.k)}
                 </button>
               );
             })}
@@ -489,13 +498,13 @@ const DocumentsPageGlass = () => {
                 <CloudUploadOutlined sx={{ fontSize: 30 }} />
               </div>
               <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 6 }}>
-                Перетащите файл сюда
+                {t('documents.dropHere')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-                PDF, DOC, DOCX · до 10 MB
+                PDF, DOC, DOCX · {t('documents.maxTo')} 10 MB
               </div>
               <span style={{ ...goldGradientBtn, padding: '11px 22px', display: 'inline-block' }}>
-                Выбрать файл
+                {t('documents.chooseFile')}
               </span>
             </div>
           </label>
@@ -511,7 +520,7 @@ const DocumentsPageGlass = () => {
           {selectedFile && (
             <>
               <div style={{ fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 12 }}>
-                Файл (1)
+                {t('documents.fileLabel')} (1)
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 14, ...glassCard, padding: '14px 16px', marginBottom: 24 }}>
                 <span style={{ width: 40, height: 40, borderRadius: 'var(--radius)', background: 'var(--accent-tint, rgba(184,149,110,0.16))', color: 'var(--accent)', fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -543,7 +552,7 @@ const DocumentsPageGlass = () => {
               opacity: selectedFile ? 1 : 0.5, cursor: selectedFile ? 'pointer' : 'not-allowed',
             }}
           >
-            Загрузить и запустить AI-анализ
+            {t('documents.uploadAndAnalyze')}
           </button>
         </DialogContent>
       </Dialog>
@@ -561,11 +570,11 @@ const DocumentsPageGlass = () => {
             <div style={{ width: 44, height: 44, borderRadius: '50%', background: 'rgba(176,112,112,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--error)', flexShrink: 0 }}>
               <DeleteOutlined sx={{ fontSize: 22 }} />
             </div>
-            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>Удалить документ?</div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>{t('documents.deleteModalTitle')}?</div>
           </div>
           {selectedDocument && (
             <div style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.6, marginBottom: 24 }}>
-              Вы уверены, что хотите удалить «{selectedDocument.name}»? Это действие нельзя отменить.
+              {t('documents.deleteConfirmQ')} «{selectedDocument.name}»? {t('documents.deleteIrreversible')}.
             </div>
           )}
           <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
@@ -576,13 +585,13 @@ const DocumentsPageGlass = () => {
               }}
               style={{ ...ghostBtn, padding: '11px 20px' }}
             >
-              Отмена
+              {t('documents.cancel')}
             </button>
             <button
               onClick={handleDeleteDocument}
               style={{ background: 'var(--error)', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, padding: '11px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}
             >
-              Удалить
+              {t('documents.delete')}
             </button>
           </div>
         </DialogContent>
@@ -601,7 +610,7 @@ const DocumentsPageGlass = () => {
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
               <AutoAwesomeOutlined sx={{ color: 'var(--accent)', fontSize: 26 }} />
               <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)', letterSpacing: '0.02em' }}>
-                AI-анализ документа
+                {t('documents.aiAnalysis')}
               </div>
             </div>
             {!aiCheckLoading && (
@@ -614,15 +623,15 @@ const DocumentsPageGlass = () => {
           {aiCheckLoading ? (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '48px 0' }}>
               <CircularProgress sx={{ color: 'var(--accent)', mb: 2 }} size={52} />
-              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>Анализируем документ…</div>
-              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 4 }}>Это может занять несколько секунд</div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{t('documents.analyzingDoc')}…</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 4 }}>{t('documents.analyzingSub')}</div>
             </div>
           ) : aiCheckResult ? (
             <div className="ai-reveal">
               {/* Summary card */}
               <div style={{ ...glassCard, background: 'var(--canvas)', boxShadow: 'none', padding: 20, marginBottom: 20 }}>
                 <div style={{ fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 8 }}>
-                  {aiCheckResult.documentType || 'Документ'}
+                  {aiCheckResult.documentType || t('documents.fileLabel')}
                 </div>
                 <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>
                   {selectedDocument?.name}
@@ -630,12 +639,12 @@ const DocumentsPageGlass = () => {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
                   {aiCheckResult.score !== undefined && aiCheckResult.score !== null && (
                     <span style={{ fontSize: 12, fontWeight: 600, color: '#FFFFFF', background: scoreColor(aiCheckResult.score), padding: '5px 12px', borderRadius: 'var(--radius)' }}>
-                      AI-оценка: {aiCheckResult.score}%
+                      AI-{t('documents.score')}: {aiCheckResult.score}%
                     </span>
                   )}
                   {aiCheckResult.risk && (
                     <span style={{ fontSize: 12, fontWeight: 500, color: 'var(--text2)', border: '1px solid var(--border)', padding: '5px 12px', borderRadius: 'var(--radius)' }}>
-                      Риск: {aiCheckResult.risk}
+                      {t('documents.risk')}: {aiCheckResult.risk}
                     </span>
                   )}
                 </div>
@@ -644,7 +653,7 @@ const DocumentsPageGlass = () => {
               {/* Summary */}
               {aiCheckResult.summary && (
                 <div style={{ marginBottom: 20 }}>
-                  <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>Резюме</div>
+                  <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 8 }}>{t('documents.summary')}</div>
                   <div style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.65 }}>{aiCheckResult.summary}</div>
                 </div>
               )}
@@ -653,7 +662,7 @@ const DocumentsPageGlass = () => {
               {aiRisks.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--error)', marginBottom: 10 }}>
-                    <WarningAmberOutlined sx={{ fontSize: 20 }} /> Обнаруженные риски
+                    <WarningAmberOutlined sx={{ fontSize: 20 }} /> {t('documents.risksTitle')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {aiRisks.map((risk, i) => (
@@ -669,7 +678,7 @@ const DocumentsPageGlass = () => {
               {aiRecs.length > 0 && (
                 <div style={{ marginBottom: 20 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--success)', marginBottom: 10 }}>
-                    <LightbulbOutlined sx={{ fontSize: 20 }} /> Рекомендации
+                    <LightbulbOutlined sx={{ fontSize: 20 }} /> {t('documents.recommendations')}
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {aiRecs.map((rec, i) => (
@@ -685,7 +694,7 @@ const DocumentsPageGlass = () => {
               {aiLaws.length > 0 && (
                 <div style={{ marginBottom: 4 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 15, fontWeight: 500, color: 'var(--accent)', marginBottom: 10 }}>
-                    <GavelOutlined sx={{ fontSize: 20 }} /> Применимые нормы
+                    <GavelOutlined sx={{ fontSize: 20 }} /> {t('documents.relevantLaws')}
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {aiLaws.map((law, i) => (
@@ -699,7 +708,7 @@ const DocumentsPageGlass = () => {
             </div>
           ) : (
             <Alert severity="error" sx={{ borderRadius: 'var(--radius)' }}>
-              Не удалось получить результаты анализа
+              {t('documents.analysisResultError')}
             </Alert>
           )}
         </DialogContent>

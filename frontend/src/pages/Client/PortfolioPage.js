@@ -13,6 +13,7 @@ import {
 import clientService from '../../services/clientService';
 import EmptyState from '../../components/UI/EmptyState';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -63,21 +64,22 @@ const fmtDate = (d) => {
 const matterMeta = (status) => {
   switch (status) {
     case 'completed':
-      return { label: 'Завершено', color: '#7A9A6B', bg: 'rgba(122,154,107,0.14)', prog: 100 };
+      return { key: 'matterCompleted', color: '#7A9A6B', bg: 'rgba(122,154,107,0.14)', prog: 100 };
     case 'active':
     case 'in_progress':
-      return { label: 'В работе', color: 'var(--accent-dark)', bg: 'rgba(184,149,110,0.14)', prog: 60 };
+      return { key: 'matterInProgress', color: 'var(--accent-dark)', bg: 'rgba(184,149,110,0.14)', prog: 60 };
     case 'confirmed':
-      return { label: 'Подтверждено', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)', prog: 40 };
+      return { key: 'matterConfirmed', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)', prog: 40 };
     case 'cancelled':
-      return { label: 'Отменено', color: '#B07070', bg: 'rgba(176,112,112,0.14)', prog: 0 };
+      return { key: 'matterCancelled', color: '#B07070', bg: 'rgba(176,112,112,0.14)', prog: 0 };
     default:
-      return { label: 'Ожидание', color: '#B8956E', bg: 'rgba(184,149,110,0.10)', prog: 20 };
+      return { key: 'matterPending', color: '#B8956E', bg: 'rgba(184,149,110,0.10)', prog: 20 };
   }
 };
 
 const PortfolioPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState(0);
   const [documents, setDocuments] = useState([]);
@@ -108,47 +110,47 @@ const PortfolioPage = () => {
       setStats(statsData);
     } catch (error) {
       console.error('Error loading portfolio:', error);
-      toast.error('Ошибка загрузки данных');
+      toast.error(t('portfolio.loadError'));
     } finally {
       setLoading(false);
     }
   };
 
   const statCards = [
-    { value: documents.length, label: 'Документы' },
-    { value: consultations.length, label: 'Консультации' },
-    { value: aiConversations.length, label: 'AI-чаты' },
-    { value: favorites.length, label: 'Избранные' },
+    { value: documents.length, label: t('portfolio.statDocuments') },
+    { value: consultations.length, label: t('portfolio.statConsultations') },
+    { value: aiConversations.length, label: t('portfolio.statAiChats') },
+    { value: favorites.length, label: t('portfolio.statFavorites') },
   ];
 
-  const tabs = ['Документы', 'Дела', 'AI-ответы', 'Хроника'];
+  const tabs = [t('portfolio.tabDocuments'), t('portfolio.tabMatters'), t('portfolio.tabAiAnswers'), t('portfolio.tabTimeline')];
 
   // Aggregated timeline (uses ALL datasets)
   const timeline = [
     ...documents.map((d) => ({
       icon: <DescriptionOutlined sx={{ fontSize: 19 }} />,
-      title: `Загружен документ: ${d.name || 'без названия'}`,
+      title: `${t('portfolio.tlDocUploaded')}: ${d.name || t('portfolio.untitled')}`,
       date: d.createdAt,
       tint: 'rgba(106,138,154,0.14)',
       color: '#6A8A9A',
     })),
     ...consultations.map((c) => ({
       icon: <GavelOutlined sx={{ fontSize: 19 }} />,
-      title: `Консультация: ${c.topic || c.lawyerName || 'юрист'}`,
+      title: `${t('portfolio.tlConsultation')}: ${c.topic || c.lawyerName || t('portfolio.lawyer')}`,
       date: c.createdAt,
       tint: 'rgba(184,149,110,0.14)',
       color: 'var(--accent-dark)',
     })),
     ...aiConversations.map((a) => ({
       icon: <ChatBubbleOutline sx={{ fontSize: 19 }} />,
-      title: `AI-диалог: ${a.title || 'AI-консультация'}`,
+      title: `${t('portfolio.tlAiDialog')}: ${a.title || t('portfolio.aiConsultation')}`,
       date: a.createdAt,
       tint: 'rgba(122,154,107,0.14)',
       color: '#7A9A6B',
     })),
     ...favorites.map((f) => ({
       icon: <FavoriteBorderOutlined sx={{ fontSize: 19 }} />,
-      title: `Юрист в избранном: ${f.name || 'юрист'}`,
+      title: `${t('portfolio.tlFavLawyer')}: ${f.name || t('portfolio.lawyer')}`,
       date: f.createdAt || f.updatedAt,
       tint: 'rgba(196,163,90,0.16)',
       color: '#C4A35A',
@@ -158,7 +160,7 @@ const PortfolioPage = () => {
     .sort((a, b) => new Date(b.date) - new Date(a.date));
 
   return (
-    <GlassShell active="/portfolio" title="Досье" subtitle="Вся ваша история на платформе">
+    <GlassShell active="/portfolio" title={t('portfolio.title')} subtitle={t('portfolio.subtitle')}>
       <div style={{ maxWidth: 1020, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Stat overview */}
         <div className="dossier-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
@@ -185,7 +187,7 @@ const PortfolioPage = () => {
 
         {loading && (
           <div style={{ ...glassCard, padding: '48px 28px', textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
-            Загрузка…
+            {t('common.loading')}
           </div>
         )}
 
@@ -194,9 +196,9 @@ const PortfolioPage = () => {
           documents.length === 0 ? (
             <EmptyState
               icon={<DescriptionOutlined sx={{ fontSize: 36 }} />}
-              title="Нет документов"
-              subtitle="Загрузите первый документ для AI-анализа"
-              actionLabel="Загрузить документ"
+              title={t('portfolio.emptyDocsTitle')}
+              subtitle={t('portfolio.emptyDocsSub')}
+              actionLabel={t('portfolio.uploadDoc')}
               onAction={() => navigate('/documents')}
             />
           ) : (
@@ -232,9 +234,9 @@ const PortfolioPage = () => {
           consultations.length === 0 ? (
             <EmptyState
               icon={<GavelOutlined sx={{ fontSize: 36 }} />}
-              title="Нет дел"
-              subtitle="Забронируйте первую консультацию с юристом"
-              actionLabel="Найти юриста"
+              title={t('portfolio.emptyMattersTitle')}
+              subtitle={t('portfolio.emptyMattersSub')}
+              actionLabel={t('portfolio.findLawyer')}
               onAction={() => navigate('/lawyers')}
             />
           ) : (
@@ -249,17 +251,17 @@ const PortfolioPage = () => {
                   >
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 12 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{m.topic || 'Консультация'}</div>
+                        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{m.topic || t('portfolio.consultationDefault')}</div>
                         <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>
-                          Юрист: {m.lawyerName || '—'} · {fmtDate(m.createdAt)}
+                          {t('portfolio.lawyerLabel')}: {m.lawyerName || '—'} · {fmtDate(m.createdAt)}
                         </div>
                       </div>
                       <span style={{ flexShrink: 0, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: meta.color, background: meta.bg, padding: '5px 12px', borderRadius: 'var(--radius)' }}>
-                        {meta.label}
+                        {t('portfolio.' + meta.key)}
                       </span>
                     </div>
                     <div style={{ margin: '14px 0 8px', display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text2)' }}>
-                      <span>{m.price > 0 ? `${Number(m.price).toLocaleString('ru-RU')} сум` : 'Бесплатно'}</span>
+                      <span>{m.price > 0 ? `${Number(m.price).toLocaleString('ru-RU')} ${t('portfolio.sum')}` : t('portfolio.free')}</span>
                       <span style={{ fontWeight: 600 }}>{meta.prog}%</span>
                     </div>
                     <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
@@ -277,9 +279,9 @@ const PortfolioPage = () => {
           aiConversations.length === 0 ? (
             <EmptyState
               icon={<AutoAwesomeOutlined sx={{ fontSize: 36 }} />}
-              title="Нет сохранённых ответов"
-              subtitle="Сохраняйте полезные ответы AI из чата"
-              actionLabel="Открыть AI-чат"
+              title={t('portfolio.emptyAiTitle')}
+              subtitle={t('portfolio.emptyAiSub')}
+              actionLabel={t('portfolio.openAiChat')}
               onAction={() => navigate('/ai-chat')}
             />
           ) : (
@@ -290,9 +292,9 @@ const PortfolioPage = () => {
                   <div key={a.id} style={{ ...glassCard, padding: 22 }}>
                     <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: preview ? 12 : 0 }}>
                       <div style={{ minWidth: 0 }}>
-                        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{a.title || 'AI-консультация'}</div>
+                        <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{a.title || t('portfolio.aiConsultation')}</div>
                         <div style={{ display: 'flex', gap: 12, fontSize: 12, color: 'var(--text3)', marginTop: 4 }}>
-                          <span style={{ color: 'var(--accent-dark)' }}>{a.category || 'AI-консультант'}</span>
+                          <span style={{ color: 'var(--accent-dark)' }}>{a.category || t('portfolio.aiConsultant')}</span>
                           <span>{fmtDate(a.createdAt)}</span>
                         </div>
                       </div>
@@ -307,7 +309,7 @@ const PortfolioPage = () => {
                         onClick={() => navigate('/ai-chat')}
                         style={{ background: 'transparent', border: 'none', fontFamily: 'inherit', fontSize: 12, letterSpacing: '0.04em', color: 'var(--accent-dark)', cursor: 'pointer' }}
                       >
-                        Продолжить в чате →
+                        {t('portfolio.continueInChat')} →
                       </button>
                     </div>
                   </div>
@@ -322,8 +324,8 @@ const PortfolioPage = () => {
           timeline.length === 0 ? (
             <EmptyState
               icon={<StarBorderOutlined sx={{ fontSize: 36 }} />}
-              title="Пока пусто"
-              subtitle="Здесь появится хроника ваших действий на платформе"
+              title={t('portfolio.emptyTlTitle')}
+              subtitle={t('portfolio.emptyTlSub')}
             />
           ) : (
             <div style={{ ...glassCard, padding: '26px 24px' }}>

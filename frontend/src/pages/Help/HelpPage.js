@@ -8,6 +8,7 @@ import {
   KeyboardArrowDownOutlined,
 } from '@mui/icons-material';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -54,58 +55,47 @@ const inputStyle = {
 };
 
 const SUP_FAQ = [
-  {
-    q: 'Как отменить или перенести консультацию?',
-    a: 'Откройте «Консультации» → нужная запись → «Отменить» или «Перенести». Бесплатно при отмене за 24 часа до начала.',
-  },
-  {
-    q: 'Возвращаются ли деньги при отмене?',
-    a: 'Да. При отмене за сутки — полный возврат на карту в течение 3–5 рабочих дней. При отмене позже удерживается 30%.',
-  },
-  {
-    q: 'Насколько надёжен AI-помощник?',
-    a: 'AI даёт справочную информацию по законодательству РУз и не заменяет юриста. Для юридически значимых решений подключайте специалиста через платформу.',
-  },
-  {
-    q: 'Как стать юристом на платформе?',
-    a: 'Пройдите анкету «Стать юристом» в профиле: укажите специализации, опыт и загрузите документы. Модерация занимает до 2 рабочих дней.',
-  },
+  { qk: 'faq1q', ak: 'faq1a' },
+  { qk: 'faq2q', ak: 'faq2a' },
+  { qk: 'faq3q', ak: 'faq3a' },
+  { qk: 'faq4q', ak: 'faq4a' },
 ];
 
-const SUP_CATS = ['Общий вопрос', 'Оплата', 'Технический сбой', 'Жалоба'];
+const SUP_CATS = [{ k: 'catGeneral' }, { k: 'catPayment' }, { k: 'catTech' }, { k: 'catComplaint' }];
 
 const HelpPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const [faqOpen, setFaqOpen] = useState(null);
-  const [supCat, setSupCat] = useState('Общий вопрос');
+  const [supCat, setSupCat] = useState('catGeneral');
   const [supSubject, setSupSubject] = useState('');
   const [supMsg, setSupMsg] = useState('');
 
   const supChannels = [
     {
       icon: <ChatBubbleOutline sx={{ fontSize: 22 }} />,
-      title: 'Онлайн-чат',
-      desc: 'Ответим в среднем за 2 минуты',
-      action: 'Открыть чат',
+      title: t('help.chatTitle'),
+      desc: t('help.chatDesc'),
+      action: t('help.chatAction'),
       tint: 'rgba(184,149,110,0.16)',
       color: 'var(--accent)',
       go: () => navigate('/ai-chat'),
     },
     {
       icon: <PhoneOutlined sx={{ fontSize: 22 }} />,
-      title: 'Телефон',
+      title: t('help.phoneTitle'),
       desc: '+998 71 200-70-70 · 9:00–21:00',
-      action: 'Позвонить',
+      action: t('help.phoneAction'),
       tint: 'rgba(90,120,150,0.14)',
       color: '#5A7896',
       go: () => { window.location.href = 'tel:+998712007070'; },
     },
     {
       icon: <EmailOutlined sx={{ fontSize: 22 }} />,
-      title: 'Email',
+      title: t('help.emailTitle'),
       desc: 'support@emaslaxat.uz',
-      action: 'Написать',
+      action: t('help.emailAction'),
       tint: '#F5EFE0',
       color: '#C4A35A',
       go: () => { window.location.href = 'mailto:support@emaslaxat.uz'; },
@@ -116,17 +106,17 @@ const HelpPage = () => {
 
   const handleSubmit = () => {
     if (disabled) {
-      toast.error('Заполните тему или сообщение');
+      toast.error(t('help.fillRequired'));
       return;
     }
     // No backend endpoint yet — acknowledge locally.
-    toast.success('Обращение отправлено — ответим на email в течение дня');
+    toast.success(t('help.sent'));
     setSupSubject('');
     setSupMsg('');
   };
 
   return (
-    <GlassShell active="/help" title="Поддержка" subtitle="Мы на связи — ответим и поможем">
+    <GlassShell active="/help" title={t('help.title')} subtitle={t('help.subtitle')}>
       <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* SUPPORT CHANNELS */}
@@ -153,7 +143,7 @@ const HelpPage = () => {
 
           {/* FAQ */}
           <div>
-            <div style={sectionLabel}>Частые вопросы</div>
+            <div style={sectionLabel}>{t('help.faqTitle')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {SUP_FAQ.map((f, i) => {
                 const isOpen = faqOpen === i;
@@ -163,12 +153,12 @@ const HelpPage = () => {
                       onClick={() => setFaqOpen(isOpen ? null : i)}
                       style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, textAlign: 'left', padding: '16px 18px', background: 'transparent', border: 'none', fontFamily: 'inherit', fontSize: 14, fontWeight: 500, color: 'var(--text)', cursor: 'pointer' }}
                     >
-                      <span>{f.q}</span>
+                      <span>{t('help.' + f.qk)}</span>
                       <KeyboardArrowDownOutlined sx={{ fontSize: 20, flexShrink: 0, color: 'var(--accent)', transition: 'transform 0.4s cubic-bezier(.22,1,.36,1)', transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }} />
                     </button>
                     <div style={{ display: 'grid', gridTemplateRows: isOpen ? '1fr' : '0fr', opacity: isOpen ? 1 : 0, transition: 'grid-template-rows 0.42s cubic-bezier(.22,1,.36,1), opacity 0.34s ease' }}>
                       <div style={{ overflow: 'hidden', minHeight: 0 }}>
-                        <div style={{ padding: '0 18px 16px', fontSize: 13, lineHeight: 1.7, color: 'var(--text2)' }}>{f.a}</div>
+                        <div style={{ padding: '0 18px 16px', fontSize: 13, lineHeight: 1.7, color: 'var(--text2)' }}>{t('help.' + f.ak)}</div>
                       </div>
                     </div>
                   </div>
@@ -179,20 +169,20 @@ const HelpPage = () => {
 
           {/* TICKET FORM */}
           <div style={{ ...glassCard, padding: 24 }}>
-            <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Не нашли ответ?</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>Опишите проблему — ответим на email в течение дня.</div>
+            <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('help.notFound')}</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{t('help.notFoundSub')}</div>
 
-            <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>Категория</div>
+            <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 }}>{t('help.category')}</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 18 }}>
               {SUP_CATS.map((c) => {
-                const active = supCat === c;
+                const active = supCat === c.k;
                 return (
                   <button
-                    key={c}
-                    onClick={() => setSupCat(c)}
+                    key={c.k}
+                    onClick={() => setSupCat(c.k)}
                     style={{ padding: '9px 16px', borderRadius: 20, fontFamily: 'inherit', fontSize: 13, cursor: 'pointer', border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`, background: active ? 'var(--accent)' : 'transparent', color: active ? '#FFFFFF' : 'var(--text2)' }}
                   >
-                    {c}
+                    {t('help.' + c.k)}
                   </button>
                 );
               })}
@@ -201,13 +191,13 @@ const HelpPage = () => {
             <input
               value={supSubject}
               onChange={(e) => setSupSubject(e.target.value)}
-              placeholder="Тема обращения"
+              placeholder={t('help.subjectPh')}
               style={{ ...inputStyle, marginBottom: 12 }}
             />
             <textarea
               value={supMsg}
               onChange={(e) => setSupMsg(e.target.value)}
-              placeholder="Опишите вопрос подробнее…"
+              placeholder={t('help.messagePh')}
               rows={5}
               style={{ ...inputStyle, resize: 'none', marginBottom: 18 }}
             />
@@ -217,7 +207,7 @@ const HelpPage = () => {
               disabled={disabled}
               style={{ width: '100%', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 14, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1 }}
             >
-              Отправить обращение
+              {t('help.submit')}
             </button>
           </div>
         </div>

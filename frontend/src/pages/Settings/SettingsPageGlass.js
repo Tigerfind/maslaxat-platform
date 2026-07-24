@@ -15,8 +15,10 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { logout } from '../../store/slices/authSlice';
-import { useTranslation, LANGUAGES } from '../../i18n';
+import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
+import api from '../../services/api';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -142,7 +144,7 @@ const Row = ({ label, description, control, last }) => (
 const SettingsPageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { language, setLanguage } = useTranslation();
+  const { t } = useTranslation();
 
   // ── appSettings: local-only preferences (NOT theme/language) ──
   const defaultSettings = {
@@ -187,30 +189,53 @@ const SettingsPageGlass = () => {
     setHasChanges(JSON.stringify(saved) !== JSON.stringify(settings));
   }, [settings]);
 
+  // Загружаем настройки с сервера при открытии страницы (сервер — источник истины)
+  useEffect(() => {
+    let ignore = false;
+    api.get('/users/settings')
+      .then((res) => {
+        const serverSettings = res.data?.settings;
+        if (!ignore && serverSettings && Object.keys(serverSettings).length) {
+          const merged = { ...defaultSettings, ...serverSettings };
+          setSettings(merged);
+          localStorage.setItem('appSettings', JSON.stringify(merged));
+        }
+      })
+      .catch(() => { /* офлайн/ошибка — остаёмся на локальных настройках */ });
+    return () => { ignore = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const handleToggle = (key) =>
     setSettings((prev) => ({ ...prev, [key]: !prev[key] }));
 
-  const handleSaveSettings = () => {
+  const handleSaveSettings = async () => {
+    // Локальный кэш — чтобы настройки применялись мгновенно и работали офлайн
     localStorage.setItem('appSettings', JSON.stringify(settings));
-    setHasChanges(false);
-    toast.success('Настройки сохранены успешно', { position: 'bottom-center', autoClose: 2000 });
+    try {
+      await api.put('/users/settings', { settings });
+      setHasChanges(false);
+      toast.success(t('settings.saved'), { position: 'bottom-center', autoClose: 2000 });
+    } catch (e) {
+      toast.error(t('settings.saveErrorLocal'), { position: 'bottom-center', autoClose: 3000 });
+    }
   };
 
   const handleResetToDefaults = () => {
     setSettings(defaultSettings);
-    toast.success('Настройки сброшены к значениям по умолчанию', { position: 'bottom-center', autoClose: 2000 });
+    toast.success(t('settings.resetDefaults'), { position: 'bottom-center', autoClose: 2000 });
   };
 
   const handleLogout = () => {
     dispatch(logout());
-    toast.success('Вы вышли из аккаунта');
+    toast.success(t('settings.loggedOut'));
     navigate('/login');
   };
 
   const visOptions = [
-    { value: 'public', label: 'Публичный', desc: 'Ваш профиль виден всем пользователям' },
-    { value: 'contacts', label: 'Только контакты', desc: 'Только ваши контакты могут видеть профиль' },
-    { value: 'private', label: 'Приватный', desc: 'Ваш профиль скрыт от всех' },
+    { value: 'public', label: t('settings.visPublic'), desc: t('settings.visPublicDesc') },
+    { value: 'contacts', label: t('settings.visContacts'), desc: t('settings.visContactsDesc') },
+    { value: 'private', label: t('settings.visPrivate'), desc: t('settings.visPrivateDesc') },
   ];
 
   const accentSlider = {
@@ -223,22 +248,22 @@ const SettingsPageGlass = () => {
   };
 
   return (
-    <GlassShell active="/settings" title="Настройки" subtitle="Управление параметрами приложения">
+    <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Уведомления ── */}
         <Section
           icon={<NotificationsNoneOutlined sx={{ fontSize: 20 }} />}
-          title="Уведомления"
-          subtitle="Управление параметрами уведомлений"
+          title={t('settings.notifications')}
+          subtitle={t('settings.notificationsSub')}
         >
           <Row
-            label="Email уведомления"
-            description="Получать уведомления на электронную почту"
+            label={t('settings.emailNotif')}
+            description={t('settings.emailNotifDesc')}
             control={<Toggle on={settings.emailNotifications} onClick={() => handleToggle('emailNotifications')} />}
           />
           <Row
-            label="Push-уведомления"
-            description="Получать push-уведомления в браузере"
+            label={t('settings.pushNotif')}
+            description={t('settings.pushNotifDesc')}
             control={<Toggle on={settings.pushNotifications} onClick={() => handleToggle('pushNotifications')} />}
             last
           />
@@ -247,11 +272,11 @@ const SettingsPageGlass = () => {
         {/* ── Приватность ── */}
         <Section
           icon={<LockOutlined sx={{ fontSize: 20 }} />}
-          title="Приватность"
-          subtitle="Управление видимостью вашего профиля"
+          title={t('settings.privacy')}
+          subtitle={t('settings.privacySub')}
         >
           <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text2)', marginBottom: 12 }}>
-            Видимость профиля
+            {t('settings.profileVisibility')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {visOptions.map((o) => {
@@ -304,18 +329,18 @@ const SettingsPageGlass = () => {
           <div style={{ height: 18 }} />
 
           <Row
-            label="Показывать email"
-            description="Ваш email будет виден другим пользователям"
+            label={t('settings.showEmail')}
+            description={t('settings.showEmailDesc')}
             control={<Toggle on={settings.showEmail} onClick={() => handleToggle('showEmail')} />}
           />
           <Row
-            label="Показывать телефон"
-            description="Ваш номер телефона будет виден другим пользователям"
+            label={t('settings.showPhone')}
+            description={t('settings.showPhoneDesc')}
             control={<Toggle on={settings.showPhone} onClick={() => handleToggle('showPhone')} />}
           />
           <Row
-            label="Общий доступ данных"
-            description="Разрешить анализ данных для улучшения сервиса"
+            label={t('settings.dataSharing')}
+            description={t('settings.dataSharingDesc')}
             control={<Toggle on={settings.dataSharing} onClick={() => handleToggle('dataSharing')} />}
             last
           />
@@ -324,48 +349,21 @@ const SettingsPageGlass = () => {
         {/* ── Язык интерфейса ── */}
         <Section
           icon={<LanguageOutlined sx={{ fontSize: 20 }} />}
-          title="Язык интерфейса"
-          subtitle="Применяется мгновенно ко всему приложению"
+          title={t('settings.language')}
+          subtitle={t('settings.languageSub')}
         >
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            {Object.values(LANGUAGES).map((l) => {
-              const active = language === l.code;
-              return (
-                <button
-                  key={l.code}
-                  type="button"
-                  onClick={() => setLanguage(l.code)}
-                  style={{
-                    flex: '1 1 0',
-                    minWidth: 120,
-                    padding: '13px 14px',
-                    borderRadius: 'var(--radius)',
-                    cursor: 'pointer',
-                    fontFamily: 'inherit',
-                    fontSize: 14,
-                    fontWeight: 500,
-                    background: active ? 'var(--accent)' : 'transparent',
-                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
-                    color: active ? '#FFFFFF' : 'var(--text2)',
-                    transition: 'all 0.2s',
-                  }}
-                >
-                  {l.flag}&nbsp; {l.nativeName}
-                </button>
-              );
-            })}
-          </div>
+          <LanguageSwitcher variant="dropdown" />
         </Section>
 
         {/* ── Тема ── */}
         <Section
           icon={<DarkModeOutlined sx={{ fontSize: 20 }} />}
-          title="Тема"
-          subtitle="Параметры отображения интерфейса"
+          title={t('settings.theme')}
+          subtitle={t('settings.themeSub')}
         >
           <Row
-            label="Темная тема"
-            description="Включить темный режим интерфейса (применяется сразу)"
+            label={t('settings.darkTheme')}
+            description={t('settings.darkThemeDesc')}
             control={<Toggle on={dark} onClick={toggleDark} />}
             last
           />
@@ -378,7 +376,7 @@ const SettingsPageGlass = () => {
               border: '1px solid var(--border)',
             }}
           >
-            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>Предпросмотр темы</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 12 }}>{t('settings.themePreview')}</div>
             <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
               <div
                 style={{
@@ -392,7 +390,7 @@ const SettingsPageGlass = () => {
               <div style={{ minWidth: 0 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>eMaslaXat</div>
                 <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 2 }}>
-                  Пример карточки в текущей теме
+                  {t('settings.themePreviewCard')}
                 </div>
               </div>
             </div>
@@ -402,11 +400,11 @@ const SettingsPageGlass = () => {
         {/* ── Отображение ── */}
         <Section
           icon={<TextFieldsOutlined sx={{ fontSize: 20 }} />}
-          title="Отображение"
-          subtitle="Настройки размера и расположения элементов"
+          title={t('settings.display')}
+          subtitle={t('settings.displaySub')}
         >
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 4 }}>
-            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>Размер шрифта</div>
+            <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{t('settings.fontSize')}</div>
             <div
               style={{
                 background: 'var(--canvas)',
@@ -453,8 +451,8 @@ const SettingsPageGlass = () => {
           </div>
 
           <Row
-            label="Компактный режим"
-            description="Уменьшить отступы для более плотного интерфейса"
+            label={t('settings.compactMode')}
+            description={t('settings.compactModeDesc')}
             control={<Toggle on={settings.compactMode} onClick={() => handleToggle('compactMode')} />}
             last
           />
@@ -524,7 +522,7 @@ const SettingsPageGlass = () => {
           <div style={{ minWidth: 0 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
               <LogoutOutlined sx={{ fontSize: 20, color: 'var(--error)' }} />
-              <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>Выйти из аккаунта</span>
+              <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{t('settings.logout')}</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>
               Завершить текущий сеанс и вернуться на страницу входа
@@ -555,7 +553,7 @@ const SettingsPageGlass = () => {
 
         {/* ── Info footer ── */}
         <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', padding: '4px 0 8px' }}>
-          Настройки сохраняются в браузере. Синхронизация с сервером — в разработке.
+          Настройки сохраняются на сервере и синхронизируются между устройствами.
         </div>
       </div>
 
