@@ -157,6 +157,7 @@ const LawyersPageGlass = () => {
     priceRange: [0, 500000],
     experience: '',
     sortBy: 'rating',
+    onlineOnly: false,
   });
 
   useEffect(() => {
@@ -207,6 +208,7 @@ const LawyersPageGlass = () => {
       priceRange: [0, 500000],
       experience: '',
       sortBy: 'rating',
+      onlineOnly: false,
     });
     setSearchQuery('');
     setCurrentPage(1);
@@ -392,6 +394,32 @@ const LawyersPageGlass = () => {
         })}
       </div>
 
+      {/* Только онлайн */}
+      <button
+        onClick={() => handleFilterChange('onlineOnly', !filters.onlineOnly)}
+        style={{
+          width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '11px 14px', marginBottom: 24, borderRadius: 'var(--radius)', cursor: 'pointer',
+          fontFamily: 'inherit', fontSize: 13.5, color: 'var(--text)',
+          border: `1px solid ${filters.onlineOnly ? 'var(--accent)' : 'var(--border)'}`,
+          background: filters.onlineOnly ? 'rgba(90,160,106,0.08)' : 'transparent',
+        }}
+      >
+        <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#5AA06A' }} />
+          {t('lawyers.onlineOnly')}
+        </span>
+        <span style={{
+          width: 38, height: 21, borderRadius: 12, position: 'relative', flexShrink: 0,
+          background: filters.onlineOnly ? 'var(--accent)' : 'var(--border)', transition: 'background .2s',
+        }}>
+          <span style={{
+            position: 'absolute', top: 2, left: filters.onlineOnly ? 19 : 2, width: 17, height: 17,
+            borderRadius: '50%', background: '#FFF', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          }} />
+        </span>
+      </button>
+
       <button
         onClick={() => { handleClearFilters(); if (isMobile) setFilterDrawerOpen(false); }}
         style={{
@@ -473,6 +501,14 @@ const LawyersPageGlass = () => {
           {lawyer.name}
         </div>
 
+        {/* online now */}
+        {lawyer.isAvailable && (
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 12, color: '#5AA06A', fontWeight: 500 }}>
+            <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
+            {t('lawyers.onlineNow')}
+          </div>
+        )}
+
         {/* stars + rating */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14, fontSize: 13, color: 'var(--text3)' }}>
           <span style={{ display: 'flex', gap: 1 }}>
@@ -526,6 +562,9 @@ const LawyersPageGlass = () => {
       </div>
     );
   };
+
+  // Фильтр «только онлайн» применяем на текущей странице (доступность приходит в списке)
+  const visibleLawyers = filters.onlineOnly ? lawyers.filter((l) => l.isAvailable) : lawyers;
 
   return (
     <GlassShell active="/lawyers" title={t('lawyers.title')} subtitle={t('lawyers.subtitle')}>
@@ -704,10 +743,10 @@ const LawyersPageGlass = () => {
             <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
               {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
             </div>
-          ) : lawyers.length > 0 ? (
+          ) : visibleLawyers.length > 0 ? (
             <>
               <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
-                {lawyers.map((lawyer, index) => renderCard(lawyer, index))}
+                {visibleLawyers.map((lawyer, index) => renderCard(lawyer, index))}
               </div>
 
               {totalPages > 1 && (
@@ -755,7 +794,12 @@ const LawyersPageGlass = () => {
 
       <BookingModal open={bookingModalOpen} onClose={handleCloseBookingModal} lawyer={selectedLawyer} />
 
-      <style>{`@media (max-width: 640px){ .lawyers-grid { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`
+        @media (max-width: 640px){ .lawyers-grid { grid-template-columns: 1fr !important; } }
+        .online-dot { animation: onlinePulse 2s ease-in-out infinite; }
+        @keyframes onlinePulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(90,160,106,0.5) } 50%{ box-shadow: 0 0 0 4px rgba(90,160,106,0) } }
+        @media (prefers-reduced-motion: reduce){ .online-dot { animation: none } }
+      `}</style>
     </GlassShell>
   );
 };
