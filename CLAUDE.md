@@ -448,11 +448,16 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - Нужна реальная SMTP конфигурация для email (сброс пароля использует Ethereal в dev)
 - Payme ключи нужно получить на merchant.payme.uz и прописать в .env
 
+### МИГРАЦИИ БД (sequelize-cli, настроено):
+- `.sequelizerc` + `src/config/db-cli.js` (читает .env, окружения dev/test/production).
+- `npm run db:migrate` / `db:migrate:undo` / `db:migrate:status`.
+- server.js: dev — sync({alter}); prod — sync() без alter (изменения схемы только миграциями).
+- ✅ Миграция `20260724000000-remove-dead-consultation-columns` — удалила мёртвые
+  `consultations.rating/review` (идемпотентно). Поля убраны из модели. Прогнана на dev-БД,
+  тесты 11/11 зелёные, сервер 200.
+
 ### BACKLOG (техдолг, отдельными решениями):
-- **Удалить мёртвые столбцы `Consultation.rating` и `Consultation.review`** (миграция). Оценка
-  консультации живёт ТОЛЬКО в таблице `Review` (`consultationReview`). Эти столбцы всегда NULL,
-  сейчас помечены DEPRECATED в models/index.js. Убрать после отдельного решения по миграции,
-  чтобы никто случайно не начал писать в них (два источника правды).
+- (Опц.) baseline-миграция для полностью чистого прод-деплоя без sync().
 - **Сделать `POST /lawyers/:id/review` идемпотентным** (один отзыв на консультацию): сейчас
   `Review.create` без проверки → повторная оценка создаёт дубликат Review (найдено: 1 дубль в
   dev-данных, консультация 2c660517 x2). Из-за этого `hasOne`-include может задвоить строку

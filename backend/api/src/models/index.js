@@ -199,16 +199,9 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
-  // ⚠️ DEPRECATED — НЕ ПИСАТЬ СЮДА. Оценка консультации живёт в таблице Review
-  // (Consultation.hasOne(Review, as: 'consultationReview')). Эти два столбца —
-  // мёртвые (всегда NULL), оставлены только чтобы не ломать схему до отдельной
-  // миграции. Единственный источник правды по оценке — Review. См. BACKLOG в CLAUDE.md.
-  rating: {
-    type: DataTypes.INTEGER,
-  },
-  review: {
-    type: DataTypes.TEXT,
-  },
+  // Оценка консультации живёт ТОЛЬКО в таблице Review
+  // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
+  // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
 });
 
 // ─── AI CONVERSATION MODEL ──────────────────────────────────

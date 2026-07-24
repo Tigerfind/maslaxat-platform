@@ -170,11 +170,17 @@ async function start() {
     await sequelize.authenticate();
     logger.info('PostgreSQL connected');
 
-    // Sync models (use { alter: true } in dev, nothing in prod)
-    if (process.env.NODE_ENV !== 'production') {
+    // Схема БД:
+    //  • dev — sync({ alter: true }): удобно, подгоняет схему под модели на лету
+    //  • prod — sync() без alter: создаёт недостающие таблицы, но НЕ меняет существующие
+    //    (безопасно). Осознанные изменения схемы в проде — только через миграции:
+    //    `npm run db:migrate` (см. migrations/ и DEPLOY.md).
+    if (process.env.NODE_ENV === 'production') {
+      await sequelize.sync();
+    } else {
       await sequelize.sync({ alter: true });
-      logger.info('Models synced');
     }
+    logger.info('Models synced');
 
     await connectRedis();
 
