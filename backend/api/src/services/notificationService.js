@@ -1,4 +1,5 @@
 const { Notification } = require('../models');
+const { emitToUser } = require('../socket/io');
 
 const TYPES = {
   BOOKING_NEW: 'booking_new',
@@ -7,13 +8,17 @@ const TYPES = {
   CONSULTATION_STARTED: 'consultation_started',
   CONSULTATION_COMPLETED: 'consultation_completed',
   CONSULTATION_CANCELLED: 'consultation_cancelled',
+  CONSULTATION_REMINDER: 'consultation_reminder',
   NEW_REVIEW: 'new_review',
   DOCUMENT_ANALYZED: 'document_analyzed',
 };
 
 async function createNotification(userId, type, title, message, metadata = {}) {
   try {
-    return await Notification.create({ userId, type, title, message, metadata });
+    const notification = await Notification.create({ userId, type, title, message, metadata });
+    // Мгновенный пуш через socket (если пользователь онлайн) — без ожидания опроса
+    emitToUser(userId, 'notification:new', notification.toJSON());
+    return notification;
   } catch (err) {
     console.error('[NotificationService] Error creating notification:', err.message);
     return null;
@@ -86,6 +91,17 @@ async function notifyConsultationCancelled(userId, cancellerName, consultation) 
   );
 }
 
+// Reminder ~1 hour before a consultation → notify the participant
+async function notifyConsultationReminder(userId, partnerName, consultation) {
+  return createNotification(
+    userId,
+    TYPES.CONSULTATION_REMINDER,
+    'Скоро консультация',
+    `${consultation.type === 'video' ? 'Видео' : 'Чат'}-консультация с ${partnerName} начнётся примерно через час — в ${consultation.preferredTime}`,
+    { consultationId: consultation.id }
+  );
+}
+
 // When a client leaves a review → notify the lawyer
 async function notifyNewReview(lawyerId, clientName, rating) {
   const stars = '★'.repeat(rating) + '☆'.repeat(5 - rating);
@@ -119,6 +135,7 @@ module.exports = {
   notifyConsultationStarted,
   notifyConsultationCompleted,
   notifyConsultationCancelled,
+  notifyConsultationReminder,
   notifyNewReview,
   notifyDocumentAnalyzed,
 };

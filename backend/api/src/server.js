@@ -28,6 +28,7 @@ const io = new SocketIO(server, {
   },
 });
 initSignaling(io);
+require('./socket/io').setIO(io); // реестр для realtime-уведомлений
 
 // Security
 app.use(helmet());
@@ -37,10 +38,22 @@ app.use(cors({
 }));
 
 // Rate limiting
+const isDev = process.env.NODE_ENV === 'development';
+
+// Общий лимит: щедрый для SPA (много запросов на загрузку страницы), в dev — отключён
 app.use('/api/', rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: parseInt(process.env.RATE_LIMIT_MAX) || 200,
+  max: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
   message: { error: 'Слишком много запросов, попробуйте позже' },
+  skip: () => isDev,
+}));
+
+// Строгий лимит на аутентификацию — защита от подбора пароля (действует и в проде, и в dev)
+app.use('/api/auth', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.AUTH_RATE_LIMIT_MAX) || (isDev ? 100 : 20),
+  message: { error: 'Слишком много попыток входа, попробуйте через 15 минут' },
+  skipSuccessfulRequests: true,
 }));
 
 // Body parsing
@@ -60,8 +73,15 @@ app.use((req, res, next) => {
   next();
 });
 
-// Serve uploaded files (avatars, documents)
-app.use('/uploads', express.static(process.env.UPLOAD_DIR || './uploads'));
+// Serve uploaded files — ТОЛЬКО аватары (публичные). Приватные документы НЕ отдаём
+// напрямую (они доступны лишь через авторизованный GET /api/documents/:id/download).
+// БЕЗОПАСНОСТЬ: без этого фильтра юр-документы утекали по угадываемым именам файлов.
+app.use('/uploads', (req, res, next) => {
+  if (!/^\/avatar-[\w.-]+$/.test(req.path)) {
+    return res.status(403).json({ error: 'Доступ запрещён' });
+  }
+  next();
+}, express.static(process.env.UPLOAD_DIR || './uploads'));
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -92,6 +112,7 @@ app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/client/favorites', require('./routes/favorites'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
+app.use('/api/support', require('./routes/support'));
 
 // Client-facing routes (frontend compatibility)
 // Dashboard: frontend calls /api/client/dashboard/stats → rewrite to /client/stats
@@ -157,11 +178,16 @@ async function start() {
 
     await connectRedis();
 
+    // Redis-адаптер для Socket.io (масштаб на >1 инстанс) — по флагу SOCKET_REDIS=1
+    await require('./socket/redisAdapter').attachRedisAdapter(io);
+
     server.listen(PORT, '0.0.0.0', () => {
       logger.info(`eMaslaxat API running on port ${PORT}`, {
         port: PORT,
         env: process.env.NODE_ENV || 'development',
       });
+      // Фоновая задача: напоминания за 1 час до консультации
+      require('./services/reminderService').startReminderJob();
     });
   } catch (error) {
     logger.error('Failed to start server', { stack: error.stack });

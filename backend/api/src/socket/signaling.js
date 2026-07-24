@@ -38,6 +38,9 @@ function initSignaling(io) {
   io.on('connection', (socket) => {
     logger.debug(`[Socket] Connected: ${socket.userName} (${socket.userRole})`);
 
+    // Персональная комната для realtime-уведомлений этого пользователя
+    if (socket.userId) socket.join(`user:${socket.userId}`);
+
     // Join a consultation video room
     socket.on('join-room', async ({ consultationId }) => {
       try {
