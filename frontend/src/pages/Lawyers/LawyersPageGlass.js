@@ -22,11 +22,30 @@ import {
   FavoriteRounded,
   TuneOutlined,
   CheckRounded,
+  CardGiftcardOutlined,
+  GridViewOutlined,
+  BalanceOutlined,
+  PeopleAltOutlined,
+  BusinessOutlined,
+  ShieldOutlined,
+  HomeOutlined,
+  WorkOutline,
+  PercentOutlined,
+  LightbulbOutlined,
+  AccountBalanceOutlined,
+  DescriptionOutlined,
+  PublicOutlined,
+  ArrowUpwardRounded,
+  ArrowDownwardRounded,
+  AccessTimeRounded,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
+import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 import BookingModal from '../../components/BookingModal';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { SkeletonCard } from '../../components/UI/Skeleton';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -59,6 +78,34 @@ const AV_BG = [
 const initialsOf = (name = '') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '—';
 
+// Иконка категории по названию специализации
+const specIcon = (name = '', id) => {
+  const s = { fontSize: 18 };
+  if (!id) return <GridViewOutlined sx={s} />;
+  const n = name.toLowerCase();
+  if (n.includes('граждан')) return <BalanceOutlined sx={s} />;
+  if (n.includes('семей')) return <PeopleAltOutlined sx={s} />;
+  if (n.includes('корпоратив')) return <BusinessOutlined sx={s} />;
+  if (n.includes('уголов')) return <ShieldOutlined sx={s} />;
+  if (n.includes('недвиж') || n.includes('земел') || n.includes('жилищ')) return <HomeOutlined sx={s} />;
+  if (n.includes('труд')) return <WorkOutline sx={s} />;
+  if (n.includes('налог')) return <PercentOutlined sx={s} />;
+  if (n.includes('интеллект')) return <LightbulbOutlined sx={s} />;
+  if (n.includes('админ')) return <AccountBalanceOutlined sx={s} />;
+  if (n.includes('договор')) return <DescriptionOutlined sx={s} />;
+  if (n.includes('миграц')) return <PublicOutlined sx={s} />;
+  if (n.includes('страхов')) return <ShieldOutlined sx={s} />;
+  return <BalanceOutlined sx={s} />;
+};
+
+// Опции сортировки с иконками
+const SORT_OPTS = [
+  { v: 'rating', k: 'sortRating', icon: <StarRounded sx={{ fontSize: 18 }} /> },
+  { v: 'price-asc', k: 'sortPriceAsc', icon: <ArrowUpwardRounded sx={{ fontSize: 18 }} /> },
+  { v: 'price-desc', k: 'sortPriceDesc', icon: <ArrowDownwardRounded sx={{ fontSize: 18 }} /> },
+  { v: 'experience', k: 'sortExperience', icon: <AccessTimeRounded sx={{ fontSize: 18 }} /> },
+];
+
 const labelStyle = {
   fontSize: 12,
   letterSpacing: '0.05em',
@@ -82,6 +129,7 @@ const glassSelectSx = {
 
 const LawyersPageGlass = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { specializations } = useSelector((state) => state.specializations);
   const isMobile = useMediaQuery('(max-width:900px)');
 
@@ -94,6 +142,14 @@ const LawyersPageGlass = () => {
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [selectedLawyer, setSelectedLawyer] = useState(null);
   const [favoriteLawyers, setFavoriteLawyers] = useState(new Set());
+  const [firstFree, setFirstFree] = useState(false);
+
+  // Акция «первая консультация бесплатно» — показываем объявление, если доступна
+  useEffect(() => {
+    api.get('/client/consultations/loyalty')
+      .then((res) => setFirstFree(!!res.data?.freeNow))
+      .catch(() => setFirstFree(false));
+  }, []);
 
   const [filters, setFilters] = useState({
     specialization: '',
@@ -180,14 +236,14 @@ const LawyersPageGlass = () => {
           next.delete(lawyerId);
           return next;
         });
-        toast.success('Удалено из избранного');
+        toast.success(t('lawyers.favRemoved'));
       } else {
         await clientService.favorites.addFavorite(lawyerId);
         setFavoriteLawyers((prev) => new Set(prev).add(lawyerId));
-        toast.success('Добавлено в избранное');
+        toast.success(t('lawyers.favAdded'));
       }
     } catch (error) {
-      toast.error('Ошибка при изменении избранного');
+      toast.error(t('lawyers.favError'));
     }
   };
 
@@ -198,7 +254,7 @@ const LawyersPageGlass = () => {
     <>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text)' }}>
-          Фильтры
+          {t('lawyers.filters')}
         </div>
         {isMobile && (
           <IconButton size="small" onClick={() => setFilterDrawerOpen(false)}>
@@ -207,94 +263,134 @@ const LawyersPageGlass = () => {
         )}
       </div>
 
-      {/* Specialization (single-select rows) */}
-      <div style={labelStyle}>Специализация</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 24 }}>
-        {[{ id: '', name: 'Все' }, ...activeSpecs].map((sp) => {
+      {/* Specialization — icons + highlight */}
+      <div style={labelStyle}>{t('lawyers.specialization')}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 24 }}>
+        {[{ id: '', name: t('lawyers.all') }, ...activeSpecs].map((sp) => {
           const checked = filters.specialization === sp.id;
           return (
-            <label
+            <div
               key={sp.id || 'all'}
               onClick={() => handleFilterChange('specialization', sp.id)}
-              style={{ display: 'flex', alignItems: 'center', gap: 10, fontSize: 14, color: 'var(--text2)', cursor: 'pointer' }}
+              onMouseEnter={(e) => { if (!checked) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 7%, transparent)'; }}
+              onMouseLeave={(e) => { if (!checked) e.currentTarget.style.background = 'transparent'; }}
+              style={{
+                display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', borderRadius: 12, cursor: 'pointer',
+                fontSize: 14, color: checked ? 'var(--text)' : 'var(--text2)', fontWeight: checked ? 500 : 400,
+                background: checked ? 'color-mix(in srgb, var(--accent) 13%, transparent)' : 'transparent',
+                border: `1px solid ${checked ? 'color-mix(in srgb, var(--accent) 35%, transparent)' : 'transparent'}`,
+                transition: 'background 0.15s ease, color 0.15s ease',
+              }}
             >
-              <span
-                style={{
-                  width: 18, height: 18, flexShrink: 0, borderRadius: 4,
-                  border: `1.5px solid ${checked ? 'var(--accent)' : 'var(--border-strong)'}`,
-                  background: checked ? 'var(--accent)' : 'transparent',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  transition: 'all 0.2s',
-                }}
-              >
-                {checked && <CheckRounded sx={{ fontSize: 13, color: '#FFFFFF' }} />}
+              <span style={{
+                width: 34, height: 34, flexShrink: 0, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                background: checked ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'color-mix(in srgb, var(--accent) 12%, transparent)',
+                color: checked ? '#FFFFFF' : 'var(--accent-dark)',
+                transition: 'all 0.15s ease',
+              }}>
+                {specIcon(sp.name, sp.id)}
               </span>
               {sp.name}
-            </label>
+            </div>
           );
         })}
       </div>
 
       {/* Min rating */}
-      <div style={labelStyle}>Минимальный рейтинг</div>
+      <div style={labelStyle}>{t('lawyers.minRating')}</div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
         <Rating
           value={filters.minRating}
           onChange={(e, value) => handleFilterChange('minRating', value || 0)}
-          precision={0.5}
+          precision={1}
           sx={{
             '& .MuiRating-iconFilled': { color: 'var(--accent)' },
             '& .MuiRating-iconEmpty': { color: 'var(--border-strong)' },
           }}
         />
         <span style={{ fontSize: 13, color: 'var(--text3)' }}>
-          {filters.minRating ? `${filters.minRating}+` : 'Любой'}
+          {filters.minRating ? `${filters.minRating} ★` : t('lawyers.any')}
         </span>
       </div>
 
-      {/* Price range */}
-      <div style={labelStyle}>Цена, сум</div>
-      <div style={{ padding: '0 4px' }}>
+      {/* Price range — денежный стиль с пузырями значений */}
+      <div style={labelStyle}>{t('lawyers.priceSum')}</div>
+      <div style={{ padding: '42px 8px 0' }}>
         <Slider
           value={filters.priceRange}
           onChange={(e, value) => handleFilterChange('priceRange', value)}
-          valueLabelDisplay="auto"
-          valueLabelFormat={(v) => v.toLocaleString()}
+          valueLabelDisplay="on"
+          valueLabelFormat={(v) => `${v.toLocaleString()} ${t('lawyers.sum')}`}
           min={0}
           max={500000}
-          step={10000}
+          step={1000}
           sx={{
+            height: 6,
             color: 'var(--accent)',
-            '& .MuiSlider-thumb': {
-              bgcolor: 'var(--accent)',
-              '&:hover, &.Mui-focusVisible': { boxShadow: '0 0 0 8px rgba(184,149,110,0.16)' },
+            '& .MuiSlider-rail': { background: 'var(--border-strong)', opacity: 0.6, height: 6, borderRadius: 6 },
+            '& .MuiSlider-track': {
+              border: 'none', height: 6, borderRadius: 6,
+              background: 'linear-gradient(90deg, var(--accent), var(--accent))',
+              transition: 'all 0.25s cubic-bezier(.4,0,.2,1)',
             },
-            '& .MuiSlider-track': { bgcolor: 'var(--accent)', border: 'none' },
-            '& .MuiSlider-rail': { bgcolor: 'var(--border-strong)', opacity: 1 },
+            '& .MuiSlider-thumb': {
+              width: 20, height: 20,
+              background: 'radial-gradient(circle at 35% 30%, #F3E2CA, var(--accent))',
+              border: '3px solid var(--surface)',
+              boxShadow: '0 2px 8px rgba(139,115,85,0.28)',
+              transition: 'box-shadow 0.25s ease',
+              '&:hover, &.Mui-focusVisible': { boxShadow: '0 0 0 9px rgba(184,149,110,0.12), 0 2px 8px rgba(139,115,85,0.28)' },
+              '&:active': { boxShadow: '0 0 0 13px rgba(184,149,110,0.14), 0 2px 8px rgba(139,115,85,0.28)' },
+              '&:before': { boxShadow: 'none' },
+            },
+            '& .MuiSlider-valueLabel': {
+              background: 'var(--accent)',
+              color: '#FFFFFF', fontSize: 12, fontWeight: 600,
+              borderRadius: '10px', padding: '3px 10px', top: -2,
+              boxShadow: '0 4px 12px rgba(184,149,110,0.24)', whiteSpace: 'nowrap',
+              transition: 'transform 0.2s cubic-bezier(.4,0,.2,1)',
+              '&:before': { backgroundColor: 'var(--accent)' },
+            },
           }}
         />
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'var(--text3)', marginBottom: 24 }}>
-        <span>{filters.priceRange[0].toLocaleString()}</span>
-        <span>{filters.priceRange[1].toLocaleString()}</span>
+      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4, marginBottom: 24 }}>
+        <span>0</span>
+        <span>{(500000).toLocaleString()}</span>
       </div>
 
-      {/* Experience */}
-      <div style={labelStyle}>Опыт работы</div>
-      <FormControl fullWidth size="small" sx={{ marginBottom: 3 }}>
-        <Select
-          value={filters.experience}
-          displayEmpty
-          onChange={(e) => handleFilterChange('experience', e.target.value)}
-          sx={glassSelectSx}
-        >
-          <MenuItem value="">Любой</MenuItem>
-          <MenuItem value="0-5">0–5 лет</MenuItem>
-          <MenuItem value="5-10">5–10 лет</MenuItem>
-          <MenuItem value="10-15">10–15 лет</MenuItem>
-          <MenuItem value="15+">15+ лет</MenuItem>
-        </Select>
-      </FormControl>
+      {/* Experience — пилюли */}
+      <div style={labelStyle}>{t('lawyers.experience')}</div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 24 }}>
+        {[
+          { v: '', label: t('lawyers.any') },
+          { v: '0-5', label: `0–5 ${t('lawyers.years')}` },
+          { v: '5-10', label: `5–10 ${t('lawyers.years')}` },
+          { v: '10-15', label: `10–15 ${t('lawyers.years')}` },
+          { v: '15+', label: `15+ ${t('lawyers.years')}` },
+        ].map((o) => {
+          const active = filters.experience === o.v;
+          return (
+            <button
+              key={o.v || 'any'}
+              onClick={() => handleFilterChange('experience', o.v)}
+              onMouseEnter={(e) => { if (!active) { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--text)'; } }}
+              onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text2)'; } }}
+              style={{
+                fontSize: 13, padding: '9px 14px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit',
+                border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
+                background: active ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
+                color: active ? '#FFFFFF' : 'var(--text2)',
+                boxShadow: active ? '0 4px 12px rgba(184,149,110,0.3)' : 'none',
+                whiteSpace: 'nowrap',
+                transition: 'all 0.15s ease',
+              }}
+            >
+              {o.label}
+            </button>
+          );
+        })}
+      </div>
 
       <button
         onClick={() => { handleClearFilters(); if (isMobile) setFilterDrawerOpen(false); }}
@@ -305,7 +401,7 @@ const LawyersPageGlass = () => {
           textTransform: 'uppercase', color: 'var(--text2)',
         }}
       >
-        Сбросить фильтры
+        {t('lawyers.resetFilters')}
       </button>
     </>
   );
@@ -315,117 +411,124 @@ const LawyersPageGlass = () => {
     const isFav = favoriteLawyers.has(lawyer.id);
     const reviews = lawyer.reviewsCount ?? 0;
     const tags = lawyer.specializations || [];
+    const grad = AV_BG[index % AV_BG.length];
+    const roundedRating = Math.round(lawyer.rating || 0);
     return (
       <div
         key={lawyer.id}
         style={{
           ...glassCard,
-          padding: 22,
+          padding: '24px 20px 20px',
+          textAlign: 'center',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
           transition: 'all .25s cubic-bezier(.4,0,.2,1)',
           animation: `cardRise 0.4s ease ${index * 0.05}s both`,
         }}
         onMouseEnter={(e) => {
-          e.currentTarget.style.transform = 'translateY(-3px)';
-          e.currentTarget.style.boxShadow = '0 14px 30px rgba(26,26,26,0.10)';
-          e.currentTarget.style.borderColor = 'var(--accent)';
+          e.currentTarget.style.transform = 'translateY(-4px)';
+          e.currentTarget.style.boxShadow = '0 16px 34px rgba(26,26,26,0.13)';
         }}
         onMouseLeave={(e) => {
           e.currentTarget.style.transform = 'translateY(0)';
           e.currentTarget.style.boxShadow = 'var(--card-shadow)';
-          e.currentTarget.style.borderColor = 'var(--card-brd)';
         }}
       >
-        {/* header row */}
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 15 }}>
-          <div
-            onClick={() => handleViewProfile(lawyer.id)}
-            style={{
-              width: 60, height: 60, borderRadius: '50%', flexShrink: 0, cursor: 'pointer', position: 'relative',
-              background: lawyer.avatar ? `center/cover url(${lawyer.avatar})` : AV_BG[index % AV_BG.length],
-              display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 20,
-            }}
-          >
-            {!lawyer.avatar && initialsOf(lawyer.name)}
-            {lawyer.isVerified && (
-              <span style={{
-                position: 'absolute', bottom: -2, right: -2, width: 20, height: 20, borderRadius: '50%',
-                background: '#7A9A6B', border: '2px solid var(--surface)', display: 'flex',
-                alignItems: 'center', justifyContent: 'center', color: '#FFFFFF',
-              }}>
-                <CheckRounded sx={{ fontSize: 12 }} />
-              </span>
-            )}
-          </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div
-              onClick={() => handleViewProfile(lawyer.id)}
-              style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-            >
-              {lawyer.name}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--accent)', marginTop: 2, display: 'flex', alignItems: 'center', gap: 4 }}>
-              <StarRounded sx={{ fontSize: 15 }} /> {lawyer.rating || 0}
-              <span style={{ color: 'var(--text3)' }}>({reviews} отзывов)</span>
-            </div>
-          </div>
-          <button
-            onClick={(e) => handleToggleFavorite(e, lawyer.id)}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 2, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
-          >
-            {isFav ? <FavoriteRounded sx={{ fontSize: 22 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 22 }} />}
-          </button>
-        </div>
+        {/* favorite */}
+        <button
+          onClick={(e) => handleToggleFavorite(e, lawyer.id)}
+          style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 2, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
+        >
+          {isFav ? <FavoriteRounded sx={{ fontSize: 22 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 22 }} />}
+        </button>
 
-        {/* tags */}
-        {tags.length > 0 && (
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', margin: '16px 0' }}>
-            {tags.slice(0, 3).map((tg, i) => (
-              <span key={i} style={{
-                background: 'rgba(184,149,110,0.14)', color: 'var(--accent-dark)', fontSize: 12,
-                padding: '5px 11px', borderRadius: 'var(--radius)',
-              }}>
-                {tg}
-              </span>
-            ))}
-          </div>
-        )}
-
-        {/* stats row */}
-        <div style={{
-          display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--text2)',
-          padding: '14px 0', borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)',
-          margin: `${tags.length > 0 ? 0 : 16}px 0 16px`,
-        }}>
-          <span>Опыт: <strong style={{ color: 'var(--text)', fontWeight: 500 }}>{lawyer.experience || 0} лет</strong></span>
-          {typeof lawyer.successRate === 'number' && (
-            <span>Успех: <strong style={{ color: '#7A9A6B', fontWeight: 500 }}>{lawyer.successRate}%</strong></span>
+        {/* avatar */}
+        <div
+          onClick={() => handleViewProfile(lawyer.id)}
+          style={{
+            width: 66, height: 66, borderRadius: '50%', margin: '0 auto 12px', cursor: 'pointer', position: 'relative',
+            background: lawyer.avatar ? `center/cover url(${lawyer.avatar})` : grad,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 21, fontWeight: 600,
+            boxShadow: '0 6px 16px rgba(26,26,26,0.14)',
+          }}
+        >
+          {!lawyer.avatar && initialsOf(lawyer.name)}
+          {lawyer.isVerified && (
+            <span style={{
+              position: 'absolute', bottom: 0, right: 2, width: 20, height: 20, borderRadius: '50%',
+              background: '#5AA06A', border: '3px solid var(--surface)', display: 'flex',
+              alignItems: 'center', justifyContent: 'center', color: '#FFFFFF',
+            }}>
+              <CheckRounded sx={{ fontSize: 11 }} />
+            </span>
           )}
         </div>
 
-        {/* price + book */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <div>
-            <span style={{ fontSize: 11, color: 'var(--text3)' }}>от</span>{' '}
-            <span style={{ fontSize: 17, fontWeight: 500, color: 'var(--text)' }}>{(lawyer.priceFrom || 0).toLocaleString()}</span>{' '}
-            <span style={{ fontSize: 12, color: 'var(--text3)' }}>сум</span>
-          </div>
-          <button
-            onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
-            style={{
-              background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500,
-              letterSpacing: '0.06em', textTransform: 'uppercase', padding: '12px 20px',
-              borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            Записаться
-          </button>
+        {/* name */}
+        <div
+          onClick={() => handleViewProfile(lawyer.id)}
+          style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+        >
+          {lawyer.name}
         </div>
+
+        {/* stars + rating */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14, fontSize: 13, color: 'var(--text3)' }}>
+          <span style={{ display: 'flex', gap: 1 }}>
+            {[1, 2, 3, 4, 5].map((n) => (
+              <StarRounded key={n} sx={{ fontSize: 16, color: n <= roundedRating ? '#C9A36E' : 'var(--border)' }} />
+            ))}
+          </span>
+          <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{lawyer.rating || 0}</strong>
+          <span>· {reviews} {t('lawyers.reviews')}</span>
+        </div>
+
+        {/* specialization */}
+        {tags.length > 0 && (
+          <div style={{ marginBottom: 16 }}>
+            <span style={{ background: 'rgba(184,149,110,0.14)', color: 'var(--accent-dark)', fontSize: 12, padding: '5px 12px', borderRadius: 20 }}>
+              {tags[0]}
+            </span>
+          </div>
+        )}
+
+        {/* meta line: опыт | цена */}
+        <div style={{ display: 'flex', justifyContent: 'center', gap: 30, padding: '14px 0', marginBottom: 18, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.expPrefix')}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>{lawyer.experience || 0} {t('lawyers.years')}</div>
+          </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.from')}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>
+              {(lawyer.priceFrom || 0).toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)' }}>{t('lawyers.sum')}</span>
+            </div>
+          </div>
+        </div>
+
+        {/* CTA (прижат к низу) */}
+        <button
+          onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
+          style={{
+            marginTop: 'auto', width: '100%',
+            background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+            color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 600,
+            letterSpacing: '0.06em', textTransform: 'uppercase', padding: '13px 20px',
+            borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
+            boxShadow: '0 4px 14px rgba(184,149,110,0.35)', transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(184,149,110,0.45)'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(184,149,110,0.35)'; }}
+        >
+          {t('lawyers.bookConsultation')} →
+        </button>
       </div>
     );
   };
 
   return (
-    <GlassShell active="/lawyers" title="Юристы" subtitle="Лучшие юристы для вашего дела">
+    <GlassShell active="/lawyers" title={t('lawyers.title')} subtitle={t('lawyers.subtitle')}>
       {/* Mobile filter drawer */}
       <Drawer
         anchor="bottom"
@@ -442,6 +545,41 @@ const LawyersPageGlass = () => {
       >
         {filtersPanel}
       </Drawer>
+
+      {/* ─── Объявление: первая консультация бесплатно ─── */}
+      {firstFree && (
+        <div
+          style={{
+            maxWidth: 1280,
+            margin: '0 auto 20px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 14,
+            padding: '16px 20px',
+            borderRadius: 'var(--radius)',
+            background: 'linear-gradient(135deg, rgba(184,149,110,0.16), rgba(184,149,110,0.05))',
+            border: '1px solid var(--accent)',
+          }}
+        >
+          <div
+            style={{
+              width: 44, height: 44, flexShrink: 0, borderRadius: '50%',
+              background: 'color-mix(in srgb, var(--accent) 16%, transparent)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}
+          >
+            <CardGiftcardOutlined sx={{ fontSize: 24, color: 'var(--accent-dark)' }} />
+          </div>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--accent-dark)', marginBottom: 2 }}>
+              {t('lawyers.promoTitle')}
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text2)' }}>
+              {t('lawyers.promoSub')}
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         style={{
@@ -466,7 +604,7 @@ const LawyersPageGlass = () => {
             <TextField
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Поиск по имени или специализации…"
+              placeholder={t('lawyers.searchPlaceholder')}
               size="small"
               sx={{
                 flex: 1,
@@ -508,33 +646,63 @@ const LawyersPageGlass = () => {
                   cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: 'var(--text2)',
                 }}
               >
-                <TuneOutlined sx={{ fontSize: 18 }} /> Фильтры
+                <TuneOutlined sx={{ fontSize: 18 }} /> {t('lawyers.filters')}
               </button>
             )}
 
-            <FormControl size="small" sx={{ minWidth: 190 }}>
+            <FormControl size="small" sx={{ minWidth: 200 }}>
               <Select
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
                 sx={glassSelectSx}
+                renderValue={(val) => {
+                  const o = SORT_OPTS.find((x) => x.v === val) || SORT_OPTS[0];
+                  return (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ color: 'var(--accent)', display: 'flex' }}>{o.icon}</span>
+                      {t('lawyers.' + o.k)}
+                    </span>
+                  );
+                }}
+                MenuProps={{
+                  PaperProps: {
+                    sx: {
+                      mt: 1, borderRadius: '14px', border: '1px solid var(--card-brd)', background: 'var(--surface)',
+                      boxShadow: '0 12px 34px rgba(60,45,30,0.16)', p: 0.75,
+                      '& .MuiList-root': { p: 0 },
+                    },
+                  },
+                }}
               >
-                <MenuItem value="rating">По рейтингу</MenuItem>
-                <MenuItem value="price-asc">По цене (возр.)</MenuItem>
-                <MenuItem value="price-desc">По цене (убыв.)</MenuItem>
-                <MenuItem value="experience">По опыту</MenuItem>
+                {SORT_OPTS.map((o) => {
+                  const active = filters.sortBy === o.v;
+                  return (
+                    <MenuItem
+                      key={o.v}
+                      value={o.v}
+                      disableRipple
+                      sx={{
+                        borderRadius: '10px', px: 1.25, py: 1.1, gap: 1.25, fontSize: 14,
+                        color: active ? 'var(--text)' : 'var(--text2)', fontWeight: active ? 500 : 400,
+                        '&:hover': { background: 'color-mix(in srgb, var(--accent) 8%, transparent)' },
+                        '&.Mui-selected': { background: 'color-mix(in srgb, var(--accent) 12%, transparent)' },
+                        '&.Mui-selected:hover': { background: 'color-mix(in srgb, var(--accent) 16%, transparent)' },
+                      }}
+                    >
+                      <span style={{ display: 'flex', color: active ? 'var(--accent-dark)' : 'var(--text3)' }}>{o.icon}</span>
+                      <span style={{ flex: 1 }}>{t('lawyers.' + o.k)}</span>
+                      {active && <CheckRounded sx={{ fontSize: 18, color: 'var(--accent)' }} />}
+                    </MenuItem>
+                  );
+                })}
               </Select>
             </FormControl>
           </div>
 
           {/* results */}
           {loading ? (
-            <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
-              <div style={{
-                width: 44, height: 44, borderRadius: '50%',
-                border: '2px solid var(--border)', borderTopColor: 'var(--accent)',
-                animation: 'spin 1s linear infinite',
-              }} />
-              <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
+            <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
+              {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
             </div>
           ) : lawyers.length > 0 ? (
             <>
@@ -565,10 +733,10 @@ const LawyersPageGlass = () => {
           ) : (
             <div style={{ ...glassCard, padding: '64px 24px', textAlign: 'center' }}>
               <div style={{ fontSize: 18, fontWeight: 300, letterSpacing: '0.05em', color: 'var(--text)', marginBottom: 10 }}>
-                Юристы не найдены
+                {t('lawyers.emptyTitle')}
               </div>
               <div style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 22 }}>
-                Попробуйте изменить параметры фильтров
+                {t('lawyers.emptySub')}
               </div>
               <button
                 onClick={handleClearFilters}
@@ -578,7 +746,7 @@ const LawyersPageGlass = () => {
                   borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
-                Сбросить фильтры
+                {t('lawyers.resetFilters')}
               </button>
             </div>
           )}

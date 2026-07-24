@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 import { lawyerReviewsService } from '../../services/lawyerService';
 
 /*
@@ -50,9 +51,9 @@ const fmtDate = (d) => {
 };
 
 const TABS = [
-  { key: 'all', label: 'Все' },
-  { key: 'positive', label: 'Положительные' },
-  { key: 'commented', label: 'С комментариями' },
+  { key: 'all', lk: 'tabAll' },
+  { key: 'positive', lk: 'tabPositive' },
+  { key: 'commented', lk: 'tabCommented' },
 ];
 
 const tabBtnStyle = (active) => ({
@@ -71,6 +72,7 @@ const tabBtnStyle = (active) => ({
 });
 
 const LawyerReviewsPage = () => {
+  const { t } = useTranslation();
   const [reviews, setReviews] = useState([]);
   const [stats, setStats] = useState({ average: 0, total: 0, distribution: { 5: 0, 4: 0, 3: 0, 2: 0, 1: 0 } });
   const [loading, setLoading] = useState(true);
@@ -87,7 +89,7 @@ const LawyerReviewsPage = () => {
       setReviews(Array.isArray(data?.reviews) ? data.reviews : []);
       if (data?.stats) setStats(data.stats);
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Не удалось загрузить отзывы');
+      toast.error(err.response?.data?.error || t('lawyerPanel.loadReviewsError'));
     } finally {
       setLoading(false);
     }
@@ -102,7 +104,7 @@ const LawyerReviewsPage = () => {
         ? { ...r, helpful: res?.helpfulCount ?? (r.helpful || 0) + 1, liked: true }
         : r)));
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Ошибка');
+      toast.error(err.response?.data?.error || t('lawyerPanel.genericError'));
     }
   };
 
@@ -119,9 +121,9 @@ const LawyerReviewsPage = () => {
       setReviews((prev) => prev.map((r) => (r.id === id ? { ...r, reply: replyText.trim() } : r)));
       setReplyingId(null);
       setReplyText('');
-      toast.success('Ответ добавлен');
+      toast.success(t('lawyerPanel.replyAdded'));
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Ошибка');
+      toast.error(err.response?.data?.error || t('lawyerPanel.genericError'));
     } finally {
       setSavingReply(false);
     }
@@ -135,7 +137,7 @@ const LawyerReviewsPage = () => {
   });
 
   return (
-    <GlassShell active="/lawyer/reviews" title="Отзывы" role="lawyer">
+    <GlassShell active="/lawyer/reviews" title={t('lawyerPanel.reviewsTitle')} role="lawyer">
       <div style={{ maxWidth: 1060, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(260px, 300px) 1fr', gap: 24, alignItems: 'start' }}>
 
         {/* ── Left: summary + distribution ── */}
@@ -147,7 +149,7 @@ const LawyerReviewsPage = () => {
             {stars(stats.average)}
           </div>
           <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 24 }}>
-            {stats.total || 0} отзывов
+            {stats.total || 0} {t('lawyerPanel.reviewsCount')}
           </div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             {[5, 4, 3, 2, 1].map((star) => {
@@ -183,7 +185,7 @@ const LawyerReviewsPage = () => {
                 borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
               }}
             >
-              Сбросить фильтр
+              {t('lawyerPanel.resetFilter')}
             </button>
           )}
         </div>
@@ -193,20 +195,20 @@ const LawyerReviewsPage = () => {
           <div style={{ display: 'flex', gap: 4, ...glassCard, padding: 5, marginBottom: 20, width: 'fit-content' }}>
             {TABS.map((tb) => (
               <button key={tb.key} onClick={() => setTab(tb.key)} style={tabBtnStyle(tab === tb.key)}>
-                {tb.label}
+                {t('lawyerPanel.' + tb.lk)}
               </button>
             ))}
           </div>
 
           {loading ? (
             <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
-              Загрузка отзывов…
+              {t('lawyerPanel.loadingReviews')}
             </div>
           ) : filtered.length === 0 ? (
             <div style={{ ...glassCard, padding: 48, textAlign: 'center' }}>
-              <div style={{ fontSize: 15, color: 'var(--text2)', marginBottom: 6 }}>Пока нет отзывов</div>
+              <div style={{ fontSize: 15, color: 'var(--text2)', marginBottom: 6 }}>{t('lawyerPanel.noReviews')}</div>
               <div style={{ fontSize: 13, color: 'var(--text3)' }}>
-                Отзывы появятся после завершённых консультаций
+                {t('lawyerPanel.reviewsAppear')}
               </div>
             </div>
           ) : (
@@ -224,7 +226,7 @@ const LawyerReviewsPage = () => {
                           {initialsOf(rv.clientName)}
                         </div>
                         <div>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{rv.clientName || 'Клиент'}</div>
+                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{rv.clientName || t('lawyerPanel.clientFallback')}</div>
                           <div style={{ fontSize: 12, color: 'var(--text3)' }}>{fmtDate(rv.date)}</div>
                         </div>
                       </div>
@@ -240,7 +242,7 @@ const LawyerReviewsPage = () => {
                     {reply && (
                       <div style={{ background: 'var(--canvas)', borderRadius: 'var(--radius)', padding: 14, borderLeft: '3px solid var(--accent)', marginBottom: 14 }}>
                         <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>
-                          Ваш ответ
+                          {t('lawyerPanel.yourReply')}
                         </div>
                         <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.55 }}>{reply}</div>
                       </div>
@@ -253,7 +255,7 @@ const LawyerReviewsPage = () => {
                           rows={3}
                           value={replyText}
                           onChange={(e) => setReplyText(e.target.value)}
-                          placeholder="Ваш ответ клиенту…"
+                          placeholder={t('lawyerPanel.replyPlaceholder')}
                           style={{
                             width: '100%', padding: '12px 14px', borderRadius: 'var(--radius)',
                             border: '1px solid var(--border)', background: 'var(--canvas)',
@@ -271,7 +273,7 @@ const LawyerReviewsPage = () => {
                               cursor: savingReply ? 'default' : 'pointer', fontFamily: 'inherit', opacity: savingReply ? 0.7 : 1,
                             }}
                           >
-                            {savingReply ? 'Отправка…' : 'Отправить'}
+                            {savingReply ? t('lawyerPanel.sending') : t('lawyerPanel.send')}
                           </button>
                           <button
                             onClick={() => { setReplyingId(null); setReplyText(''); }}
@@ -281,7 +283,7 @@ const LawyerReviewsPage = () => {
                               textTransform: 'uppercase', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                             }}
                           >
-                            Отмена
+                            {t('lawyerPanel.cancel')}
                           </button>
                         </div>
                       </div>
@@ -296,7 +298,7 @@ const LawyerReviewsPage = () => {
                               padding: '9px 18px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                             }}
                           >
-                            Ответить
+                            {t('lawyerPanel.reply')}
                           </button>
                         )}
                         <button

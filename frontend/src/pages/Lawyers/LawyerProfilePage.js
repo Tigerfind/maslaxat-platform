@@ -9,6 +9,7 @@ import {
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import BookingModal from '../../components/BookingModal';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -37,8 +38,6 @@ const AV_BG = [
   'linear-gradient(135deg,#7A9A6B,#5A7A4B)',
   'linear-gradient(135deg,#9A6A8A,#7A4A6A)',
 ];
-
-const LANG_NAMES = { uz: 'Узбекский', ru: 'Русский', en: 'Английский' };
 
 const initialsOf = (name = '') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '—';
@@ -80,6 +79,8 @@ const outlineBtn = {
 const LawyerProfilePage = () => {
   const { lawyerId } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const LANG_NAMES = t('lawyerProfile.langNames');
 
   const [lawyer, setLawyer] = useState(null);
   const [reviews, setReviews] = useState([]);
@@ -100,7 +101,7 @@ const LawyerProfilePage = () => {
         const p = l.profile || {};
         const normalized = {
           id: l.id,
-          name: l.name || 'Юрист',
+          name: l.name || t('lawyerProfile.lawyerFallback'),
           avatar: l.avatar,
           verified: l.isVerified,
           rating: p.rating || 0,
@@ -118,7 +119,7 @@ const LawyerProfilePage = () => {
         setLawyer(normalized);
         const rv = (l.receivedReviews || []).map((r) => ({
           id: r.id,
-          name: r.client?.name || 'Клиент',
+          name: r.client?.name || t('lawyerProfile.clientFallback'),
           rating: r.rating || 0,
           text: r.text || r.comment || '',
         }));
@@ -138,9 +139,9 @@ const LawyerProfilePage = () => {
   // ── loading / error states (inside the shell so chrome persists) ──
   if (loading) {
     return (
-      <GlassShell active="/lawyers" title="Профиль юриста" subtitle="Загрузка…">
+      <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={t('lawyerProfile.loading')}>
         <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
-          Загрузка профиля…
+          {t('lawyerProfile.loadingProfile')}
         </div>
       </GlassShell>
     );
@@ -148,12 +149,12 @@ const LawyerProfilePage = () => {
 
   if (error || !lawyer) {
     return (
-      <GlassShell active="/lawyers" title="Профиль юриста" subtitle="Не найдено">
+      <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={t('lawyerProfile.notFoundSub')}>
         <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 17, fontWeight: 300, color: 'var(--text)', marginBottom: 8 }}>Юрист не найден</div>
-          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22 }}>Возможно, профиль был удалён или недоступен</div>
+          <div style={{ fontSize: 17, fontWeight: 300, color: 'var(--text)', marginBottom: 8 }}>{t('lawyerProfile.notFound')}</div>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22 }}>{t('lawyerProfile.notFoundDesc')}</div>
           <button onClick={() => navigate('/lawyers')} style={{ background: 'var(--accent)', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>
-            ← Назад к каталогу
+            {t('lawyerProfile.backToCatalog')}
           </button>
         </div>
       </GlassShell>
@@ -164,29 +165,29 @@ const LawyerProfilePage = () => {
   const langText = lawyer.languages.map((c) => LANG_NAMES[c] || c).join(', ');
 
   const profileMetrics = [
-    { value: `${lawyer.experience} лет`, label: 'Опыт работы' },
-    { value: lawyer.completedConsultations, label: 'Консультаций' },
-    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: 'Рейтинг' },
-    { value: lawyer.region || '—', label: 'Регион' },
+    { value: `${lawyer.experience} ${t('lawyerProfile.years')}`, label: t('lawyerProfile.mExperience') },
+    { value: lawyer.completedConsultations, label: t('lawyerProfile.mConsultations') },
+    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: t('lawyerProfile.mRating') },
+    { value: lawyer.region || '—', label: t('lawyerProfile.mRegion') },
   ];
 
   const portfolioMetrics = [
-    { value: lawyer.completedConsultations, label: 'Завершённых консультаций' },
-    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: 'Средний рейтинг' },
-    { value: lawyer.experience, label: 'Лет опыта' },
-    { value: lawyer.reviewsCount, label: 'Отзывов' },
+    { value: lawyer.completedConsultations, label: t('lawyerProfile.pCompleted') },
+    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: t('lawyerProfile.pAvgRating') },
+    { value: lawyer.experience, label: t('lawyerProfile.pYears') },
+    { value: lawyer.reviewsCount, label: t('lawyerProfile.pReviews') },
   ];
 
-  const subtitle = specText || 'Юрист';
+  const subtitle = specText || t('lawyerProfile.lawyerFallback');
 
   return (
-    <GlassShell active="/lawyers" title="Профиль юриста" subtitle={subtitle}>
+    <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={subtitle}>
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
         <button
           onClick={() => navigate('/lawyers')}
           style={{ display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', color: 'var(--accent-dark)', fontSize: 13, letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 22 }}
         >
-          ← Назад к каталогу
+          {t('lawyerProfile.backToCatalog')}
         </button>
 
         <div className="lp-grid" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
@@ -204,7 +205,7 @@ const LawyerProfilePage = () => {
             )}
             <div style={{ color: 'var(--accent)', fontSize: 17, margin: '14px 0' }}>
               ★ {lawyer.rating ? lawyer.rating.toFixed(1) : '—'}{' '}
-              <span style={{ fontSize: 13, color: 'var(--text3)' }}>({lawyer.reviewsCount} отзывов)</span>
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>({lawyer.reviewsCount} {t('lawyerProfile.reviewsCount')})</span>
             </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '22px 0', textAlign: 'left' }}>
@@ -217,9 +218,9 @@ const LawyerProfilePage = () => {
             </div>
 
             <div style={{ textAlign: 'left', padding: '16px 0', borderTop: '1px solid var(--canvas)', marginBottom: 18 }}>
-              <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>Стоимость консультации</div>
+              <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{t('lawyerProfile.priceLabel')}</div>
               <div style={{ fontSize: 26, fontWeight: 300, color: 'var(--text)', marginTop: 4 }}>
-                {lawyer.priceFrom.toLocaleString()} <span style={{ fontSize: 14, color: 'var(--text3)' }}>сум</span>
+                {lawyer.priceFrom.toLocaleString()} <span style={{ fontSize: 14, color: 'var(--text3)' }}>{t('lawyerProfile.sum')}</span>
               </div>
             </div>
 
@@ -227,11 +228,11 @@ const LawyerProfilePage = () => {
               onClick={() => setBookingOpen(true)}
               style={{ width: '100%', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 10 }}
             >
-              Записаться на консультацию
+              {t('lawyerProfile.book')}
             </button>
             <div style={{ display: 'flex', gap: 10 }}>
-              <button onClick={goAiChat} style={outlineBtn}>Написать</button>
-              <button onClick={startVideo} style={outlineBtn}>Видео</button>
+              <button onClick={goAiChat} style={outlineBtn}>{t('lawyerProfile.write')}</button>
+              <button onClick={startVideo} style={outlineBtn}>{t('lawyerProfile.video')}</button>
             </div>
           </div>
 
@@ -239,9 +240,9 @@ const LawyerProfilePage = () => {
           <div>
             <div style={{ ...glassCard, display: 'flex', gap: 4, padding: 5, marginBottom: 20 }}>
               {[
-                { key: 'about', label: 'О юристе' },
-                { key: 'reviews', label: 'Отзывы' },
-                { key: 'portfolio', label: 'Портфолио' },
+                { key: 'about', label: t('lawyerProfile.tabAbout') },
+                { key: 'reviews', label: t('lawyerProfile.tabReviews') },
+                { key: 'portfolio', label: t('lawyerProfile.tabPortfolio') },
               ].map((pt) => (
                 <button key={pt.key} onClick={() => setTab(pt.key)} style={tabBtnStyle(tab === pt.key)}>
                   {pt.label}
@@ -252,9 +253,9 @@ const LawyerProfilePage = () => {
             {/* About */}
             {tab === 'about' && (
               <div style={{ ...glassCard, padding: 28 }}>
-                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>О юристе</div>
+                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>{t('lawyerProfile.aboutHeading')}</div>
                 <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text2)', marginBottom: 24 }}>
-                  {lawyer.bio || 'Юрист пока не добавил описание.'}
+                  {lawyer.bio || t('lawyerProfile.noBio')}
                 </p>
 
                 {(lawyer.education.length > 0 || langText) && (
@@ -262,7 +263,7 @@ const LawyerProfilePage = () => {
                     {lawyer.education.length > 0 && (
                       <div>
                         <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <SchoolOutlined sx={{ fontSize: 15 }} /> Образование
+                          <SchoolOutlined sx={{ fontSize: 15 }} /> {t('lawyerProfile.education')}
                         </div>
                         <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>
                           {lawyer.education.map((edu, i) => (
@@ -274,7 +275,7 @@ const LawyerProfilePage = () => {
                     {langText && (
                       <div>
                         <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <TranslateOutlined sx={{ fontSize: 15 }} /> Языки
+                          <TranslateOutlined sx={{ fontSize: 15 }} /> {t('lawyerProfile.languages')}
                         </div>
                         <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>{langText}</div>
                       </div>
@@ -286,7 +287,7 @@ const LawyerProfilePage = () => {
                   <>
                     <div style={{ height: 1, background: 'var(--card-brd)', margin: '24px 0' }} />
                     <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 16 }}>
-                      Достижения и квалификация
+                      {t('lawyerProfile.achievements')}
                     </div>
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} className="lp-ach">
                       {lawyer.certifications.map((ach, i) => {
@@ -315,8 +316,8 @@ const LawyerProfilePage = () => {
             {tab === 'reviews' && (
               reviews.length === 0 ? (
                 <div style={{ ...glassCard, padding: 48, textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>Пока нет отзывов</div>
-                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>Станьте первым, кто оставит отзыв после консультации</div>
+                  <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>{t('lawyerProfile.noReviews')}</div>
+                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerProfile.noReviewsSub')}</div>
                 </div>
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>

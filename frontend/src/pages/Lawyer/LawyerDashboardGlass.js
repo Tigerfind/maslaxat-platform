@@ -15,6 +15,7 @@ import {
 import lawyerService from '../../services/lawyerService';
 import OnboardingWizard from '../../components/Lawyer/OnboardingWizard';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -54,10 +55,10 @@ const AV_BG = [
 const initialsOf = (name = '') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || 'К';
 
-const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
 const LawyerDashboardGlass = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const DAYS = t('lawyerPanel.days');
 
   const [stats, setStats] = useState(null);
   const [consultations, setConsultations] = useState([]);
@@ -87,7 +88,7 @@ const LawyerDashboardGlass = () => {
       setReviews(Array.isArray(reviewsData) ? reviewsData : []);
     } catch (error) {
       console.error('Error loading dashboard:', error);
-      toast.error('Ошибка загрузки данных');
+      toast.error(t('lawyerPanel.loadError'));
     } finally {
       setLoading(false);
     }
@@ -96,20 +97,20 @@ const LawyerDashboardGlass = () => {
   const handleAcceptRequest = async (requestId) => {
     try {
       await lawyerService.consultation.acceptConsultationRequest(requestId);
-      toast.success('Запрос принят!');
+      toast.success(t('lawyerPanel.requestAccepted'));
       loadDashboardData();
     } catch (error) {
-      toast.error('Ошибка при принятии запроса');
+      toast.error(t('lawyerPanel.acceptError'));
     }
   };
 
   const handleRejectRequest = async (requestId) => {
     try {
       await lawyerService.consultation.rejectConsultationRequest(requestId);
-      toast.success('Запрос отклонен');
+      toast.success(t('lawyerPanel.requestRejected'));
       loadDashboardData();
     } catch (error) {
-      toast.error('Ошибка при отклонении запроса');
+      toast.error(t('lawyerPanel.rejectError'));
     }
   };
 
@@ -118,9 +119,9 @@ const LawyerDashboardGlass = () => {
       const newStatus = statusOnline ? 'offline' : 'online';
       await lawyerService.dashboard.updateStatus(newStatus);
       setStatusOnline(!statusOnline);
-      toast.success(`Статус изменен на ${newStatus === 'online' ? 'В сети' : 'Не в сети'}`);
+      toast.success(`${t('lawyerPanel.statusChanged')} ${newStatus === 'online' ? t('lawyerPanel.online') : t('lawyerPanel.offline')}`);
     } catch (error) {
-      toast.error('Ошибка изменения статуса');
+      toast.error(t('lawyerPanel.statusError'));
     }
   };
 
@@ -149,10 +150,10 @@ const LawyerDashboardGlass = () => {
   }
 
   const statCards = [
-    { icon: <PaymentsOutlined />, value: `${formatCurrency(stats?.monthlyEarnings)} сум`, label: 'Заработано за месяц', bg: 'rgba(122,154,107,0.14)', color: '#7A9A6B' },
-    { icon: <PeopleAltOutlined />, value: stats?.activeClients ?? 0, label: 'Активные клиенты', bg: 'rgba(184,149,110,0.14)', color: '#B8956E' },
-    { icon: <CheckCircleOutline />, value: stats?.completedConsultations ?? 0, label: 'Завершено', bg: 'rgba(106,138,154,0.14)', color: '#6A8A9A' },
-    { icon: <SavingsOutlined />, value: `${formatCurrency(stats?.totalEarnings)} сум`, label: 'Общий доход', bg: 'rgba(196,163,90,0.14)', color: '#C4A35A' },
+    { icon: <PaymentsOutlined />, value: `${formatCurrency(stats?.monthlyEarnings)} ${t('lawyerPanel.sum')}`, label: t('lawyerPanel.statMonthEarned'), bg: 'rgba(122,154,107,0.14)', color: '#7A9A6B' },
+    { icon: <PeopleAltOutlined />, value: stats?.activeClients ?? 0, label: t('lawyerPanel.statActiveClients'), bg: 'rgba(184,149,110,0.14)', color: '#B8956E' },
+    { icon: <CheckCircleOutline />, value: stats?.completedConsultations ?? 0, label: t('lawyerPanel.statCompleted'), bg: 'rgba(106,138,154,0.14)', color: '#6A8A9A' },
+    { icon: <SavingsOutlined />, value: `${formatCurrency(stats?.totalEarnings)} ${t('lawyerPanel.sum')}`, label: t('lawyerPanel.statTotalIncome'), bg: 'rgba(196,163,90,0.14)', color: '#C4A35A' },
   ];
 
   const weeklyData = Array.isArray(stats?.weeklyActivity) && stats.weeklyActivity.length
@@ -163,13 +164,13 @@ const LawyerDashboardGlass = () => {
   const typeChip = (isVideo) => ({
     color: isVideo ? 'var(--accent)' : 'var(--info)',
     bg: isVideo ? 'rgba(184,149,110,0.14)' : 'rgba(106,138,154,0.14)',
-    label: isVideo ? 'Видео' : 'Чат',
+    label: isVideo ? t('lawyerPanel.typeVideo') : t('lawyerPanel.typeChat'),
   });
 
-  const subtitle = statusOnline ? 'Вы в сети · клиенты видят вас в каталоге' : 'Вы не в сети';
+  const subtitle = statusOnline ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline');
 
   return (
-    <GlassShell active="/lawyer/dashboard" title="Дашборд" subtitle={subtitle} role="lawyer">
+    <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
         {/* Status toggle pill (no home in mockup — kept functional) */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
@@ -184,7 +185,7 @@ const LawyerDashboardGlass = () => {
             }}
           >
             <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusOnline ? '#7A9A6B' : 'var(--text3)' }} />
-            {statusOnline ? 'В сети' : 'Не в сети'}
+            {statusOnline ? t('lawyerPanel.online') : t('lawyerPanel.offline')}
             <PowerSettingsNewOutlined sx={{ fontSize: 17, color: 'var(--text3)' }} />
           </button>
         </div>
@@ -205,14 +206,14 @@ const LawyerDashboardGlass = () => {
           {/* Incoming requests */}
           <div style={{ ...glassCard, overflow: 'hidden' }}>
             <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.02em', color: 'var(--text)' }}>Входящие заявки</div>
-              <span style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', background: 'rgba(184,149,110,0.12)', padding: '5px 11px', borderRadius: 'var(--radius)' }}>{consultationRequests.length} новых</span>
+              <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.02em', color: 'var(--text)' }}>{t('lawyerPanel.incomingRequests')}</div>
+              <span style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', background: 'rgba(184,149,110,0.12)', padding: '5px 11px', borderRadius: 'var(--radius)' }}>{consultationRequests.length} {t('lawyerPanel.newCount')}</span>
             </div>
 
             {consultationRequests.length > 0 ? (
               <div style={{ padding: 8 }}>
                 {consultationRequests.map((r, i) => {
-                  const name = r.client?.name || 'Клиент';
+                  const name = r.client?.name || t('lawyerPanel.clientFallback');
                   const chip = typeChip(r.consultationType === 'video');
                   return (
                     <div key={r.id} style={{ padding: 18, borderRadius: 'var(--radius)' }}>
@@ -224,12 +225,12 @@ const LawyerDashboardGlass = () => {
                             <span style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: chip.color, background: chip.bg, padding: '3px 9px', borderRadius: 'var(--radius)' }}>{chip.label}</span>
                           </div>
                           <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>«{r.question}»</p>
-                          <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} сум</span></div>
+                          <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} {t('lawyerPanel.sum')}</span></div>
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 10, marginTop: 14, paddingLeft: 58 }}>
-                        <button onClick={() => handleAcceptRequest(r.id)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>Принять</button>
-                        <button onClick={() => handleRejectRequest(r.id)} style={{ background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>Отклонить</button>
+                        <button onClick={() => handleAcceptRequest(r.id)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.accept')}</button>
+                        <button onClick={() => handleRejectRequest(r.id)} style={{ background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.reject')}</button>
                       </div>
                     </div>
                   );
@@ -240,16 +241,16 @@ const LawyerDashboardGlass = () => {
                 <div style={{ width: 52, height: 52, margin: '0 auto 14px', borderRadius: '50%', background: 'rgba(122,154,107,0.16)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A9A6B' }}>
                   <CheckCircleOutline sx={{ fontSize: 26 }} />
                 </div>
-                <div style={{ fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>{loading ? 'Загрузка…' : 'Все заявки обработаны'}</div>
-                <div style={{ fontSize: 13, color: 'var(--text3)' }}>Новые появятся здесь автоматически</div>
+                <div style={{ fontSize: 15, color: 'var(--text)', marginBottom: 4 }}>{loading ? t('common.loading') : t('lawyerPanel.allProcessed')}</div>
+                <div style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerPanel.newAutoAppear')}</div>
               </div>
             )}
           </div>
 
           {/* Weekly activity */}
           <div style={{ ...glassCard, padding: 24, display: 'flex', flexDirection: 'column' }}>
-            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>Активность за неделю</div>
-            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 24 }}>Консультаций проведено</div>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('lawyerPanel.weeklyActivity')}</div>
+            <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 24 }}>{t('lawyerPanel.consultationsDone')}</div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, minHeight: 150 }}>
               {DAYS.map((day, i) => {
                 const val = weeklyData[i] || 0;
@@ -274,11 +275,11 @@ const LawyerDashboardGlass = () => {
             <div style={{ display: 'flex', gap: 16, marginTop: 22, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 20, fontWeight: 300, color: 'var(--text)' }}>{stats?.responseRate ? `${stats.responseRate}%` : '—'}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em' }}>Скорость ответа</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em' }}>{t('lawyerPanel.responseRate')}</div>
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 20, fontWeight: 300, color: 'var(--accent)' }}>{stats?.rating ? `★ ${stats.rating}` : '—'}</div>
-                <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em' }}>Рейтинг</div>
+                <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em' }}>{t('lawyerPanel.rating')}</div>
               </div>
             </div>
           </div>
@@ -287,16 +288,16 @@ const LawyerDashboardGlass = () => {
         {/* Upcoming consultations */}
         <div style={{ ...glassCard, marginTop: 20, overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>Предстоящие консультации</div>
-            <button onClick={() => navigate('/lawyer/schedule')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Календарь →</button>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{t('lawyerPanel.upcoming')}</div>
+            <button onClick={() => navigate('/lawyer/schedule')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.calendar')} →</button>
           </div>
 
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Загрузка…</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>{t('common.loading')}</div>
           ) : consultations.length === 0 ? (
             <div style={{ padding: '48px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>Нет предстоящих консультаций</div>
-              <div style={{ fontSize: 13, color: 'var(--text3)' }}>Когда клиенты запишутся, они появятся здесь</div>
+              <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>{t('lawyerPanel.noUpcoming')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerPanel.whenBooked')}</div>
             </div>
           ) : (
             consultations.map((c, i) => {
@@ -313,7 +314,7 @@ const LawyerDashboardGlass = () => {
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: chip.color, background: chip.bg, padding: '6px 12px', borderRadius: 'var(--radius)' }}>
                     {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}{chip.label}
                   </span>
-                  <button onClick={() => handleStartConsultation(c)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>Начать</button>
+                  <button onClick={() => handleStartConsultation(c)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.start')}</button>
                 </div>
               );
             })
@@ -323,15 +324,15 @@ const LawyerDashboardGlass = () => {
         {/* Recent reviews (kept — not in mockup, see report) */}
         <div style={{ ...glassCard, marginTop: 20, overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>Последние отзывы</div>
-            <button onClick={() => navigate('/lawyer/reviews')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>Все отзывы →</button>
+            <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{t('lawyerPanel.recentReviews')}</div>
+            <button onClick={() => navigate('/lawyer/reviews')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.allReviews')} →</button>
           </div>
 
           {loading ? (
-            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>Загрузка…</div>
+            <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>{t('common.loading')}</div>
           ) : reviews.length === 0 ? (
             <div style={{ padding: '40px 24px', textAlign: 'center' }}>
-              <div style={{ fontSize: 14, color: 'var(--text3)' }}>Пока нет отзывов</div>
+              <div style={{ fontSize: 14, color: 'var(--text3)' }}>{t('lawyerPanel.noReviews')}</div>
             </div>
           ) : (
             reviews.map((rv, i) => (

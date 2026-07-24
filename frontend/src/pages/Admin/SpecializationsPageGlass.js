@@ -39,9 +39,11 @@ import {
 } from '@mui/icons-material';
 import { adminSpecializationService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
+import { useTranslation } from '../../i18n';
 
 const SpecializationsPageGlass = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
 
   const [specializations, setSpecializations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +69,7 @@ const SpecializationsPageGlass = () => {
       setSpecializations(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error loading specializations:', error);
-      toast.error('Ошибка загрузки специализаций');
+      toast.error(t('specPage.loadError'));
       setSpecializations([]);
     } finally {
       setLoading(false);
@@ -103,7 +105,7 @@ const SpecializationsPageGlass = () => {
 
   const handleSave = async () => {
     if (!currentSpec.name || !currentSpec.description) {
-      toast.error('Пожалуйста, заполните все поля');
+      toast.error(t('specPage.fillAllFields'));
       return;
     }
 
@@ -113,16 +115,16 @@ const SpecializationsPageGlass = () => {
           currentSpec.id,
           currentSpec
         );
-        toast.success('Специализация обновлена');
+        toast.success(t('specPage.specUpdated'));
       } else {
         await adminSpecializationService.createSpecialization(currentSpec);
-        toast.success('Специализация создана');
+        toast.success(t('specPage.specCreated'));
       }
       handleCloseDialog();
       loadSpecializations();
     } catch (error) {
       console.error('Error saving specialization:', error);
-      toast.error('Ошибка при сохранении');
+      toast.error(t('specPage.saveError'));
     }
   };
 
@@ -134,13 +136,13 @@ const SpecializationsPageGlass = () => {
   const handleConfirmDelete = async () => {
     try {
       await adminSpecializationService.deleteSpecialization(selectedSpecId);
-      toast.success('Специализация удалена');
+      toast.success(t('specPage.specDeleted'));
       setDeleteConfirm(false);
       setSelectedSpecId(null);
       loadSpecializations();
     } catch (error) {
       console.error('Error deleting specialization:', error);
-      toast.error('Ошибка при удалении');
+      toast.error(t('specPage.deleteError'));
     }
   };
 
@@ -153,13 +155,13 @@ const SpecializationsPageGlass = () => {
           active: !currentStatus,
         });
         toast.success(
-          !currentStatus ? 'Специализация активирована' : 'Специализация деактивирована'
+          !currentStatus ? t('specPage.specActivated') : t('specPage.specDeactivated')
         );
         loadSpecializations();
       }
     } catch (error) {
       console.error('Error toggling specialization:', error);
-      toast.error('Ошибка при изменении статуса');
+      toast.error(t('specPage.statusError'));
     }
   };
 
@@ -205,7 +207,7 @@ const SpecializationsPageGlass = () => {
         <Container maxWidth="xl">
           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Tooltip title="Назад">
+              <Tooltip title={t('specPage.back')}>
                 <IconButton
                   onClick={() => navigate('/admin/dashboard')}
                   sx={{
@@ -231,10 +233,10 @@ const SpecializationsPageGlass = () => {
                     textTransform: 'uppercase',
                   }}
                 >
-                  Управление специализациями
+                  {t('specPage.title')}
                 </Typography>
                 <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
-                  Добавляйте, редактируйте и управляйте специализациями юристов
+                  {t('specPage.subtitle')}
                 </Typography>
               </Box>
             </Box>
@@ -259,7 +261,7 @@ const SpecializationsPageGlass = () => {
                 },
               }}
             >
-              Добавить специализацию
+              {t('specPage.addSpec')}
             </Button>
           </Box>
         </Container>
@@ -271,21 +273,21 @@ const SpecializationsPageGlass = () => {
           {[
             {
               icon: <CheckCircle sx={{ fontSize: 40, color: axelionColors.gold }} />,
-              label: 'Всего специализаций',
+              label: t('specPage.totalSpec'),
               value: specializations.length.toString(),
               color: axelionColors.gold,
               bgColor: axelionColors.accentLight,
             },
             {
               icon: <Visibility sx={{ fontSize: 40, color: axelionColors.success }} />,
-              label: 'Активных',
+              label: t('specPage.active'),
               value: activeCount.toString(),
               color: axelionColors.success,
               bgColor: axelionColors.successLight,
             },
             {
               icon: <Person sx={{ fontSize: 40, color: axelionColors.bronze }} />,
-              label: 'Юристов',
+              label: t('specPage.lawyers'),
               value: lawyerCount.toString(),
               color: axelionColors.bronze,
               bgColor: axelionColors.bgBeige,
@@ -353,7 +355,7 @@ const SpecializationsPageGlass = () => {
                 letterSpacing: '0.05em',
               }}
             >
-              Специализации
+              {t('specPage.specializations')}
             </Typography>
           </Box>
 
@@ -363,19 +365,19 @@ const SpecializationsPageGlass = () => {
                 <TableHead>
                   <TableRow sx={{ background: axelionColors.bgCream, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      Название
+                      {t('specPage.colName')}
                     </TableCell>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      Описание
+                      {t('specPage.colDesc')}
                     </TableCell>
                     <TableCell align="center" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      Юристов
+                      {t('specPage.colLawyers')}
                     </TableCell>
                     <TableCell align="center" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      Статус
+                      {t('specPage.colStatus')}
                     </TableCell>
                     <TableCell align="right" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      Действия
+                      {t('specPage.colActions')}
                     </TableCell>
                   </TableRow>
                 </TableHead>
@@ -427,7 +429,7 @@ const SpecializationsPageGlass = () => {
                       <TableCell align="center">
                         {spec.active ? (
                           <Chip
-                            label="Активна"
+                            label={t('specPage.statusActive')}
                             size="small"
                             icon={<Visibility sx={{ fontSize: 16 }} />}
                             sx={{
@@ -443,7 +445,7 @@ const SpecializationsPageGlass = () => {
                           />
                         ) : (
                           <Chip
-                            label="Неактивна"
+                            label={t('specPage.statusInactive')}
                             size="small"
                             icon={<VisibilityOff sx={{ fontSize: 16 }} />}
                             sx={{
@@ -461,7 +463,7 @@ const SpecializationsPageGlass = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
-                          <Tooltip title={spec.active ? 'Деактивировать' : 'Активировать'}>
+                          <Tooltip title={spec.active ? t('specPage.deactivate') : t('specPage.activate')}>
                             <Switch
                               checked={spec.active}
                               onChange={() =>
@@ -478,7 +480,7 @@ const SpecializationsPageGlass = () => {
                               }}
                             />
                           </Tooltip>
-                          <Tooltip title="Редактировать">
+                          <Tooltip title={t('specPage.edit')}>
                             <IconButton
                               onClick={() => handleOpenDialog(spec)}
                               sx={{
@@ -494,7 +496,7 @@ const SpecializationsPageGlass = () => {
                               <Edit fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          <Tooltip title="Удалить">
+                          <Tooltip title={t('specPage.del')}>
                             <IconButton
                               onClick={() => handleDeleteClick(spec.id)}
                               sx={{
@@ -520,7 +522,7 @@ const SpecializationsPageGlass = () => {
           ) : (
             <Box sx={{ textAlign: 'center', py: 6 }}>
               <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
-                Нет специализаций. Добавьте первую!
+                {t('specPage.noSpec')}
               </Typography>
             </Box>
           )}
@@ -542,18 +544,18 @@ const SpecializationsPageGlass = () => {
         }}
       >
         <DialogTitle sx={{ fontWeight: 300, color: axelionColors.textDark, borderBottom: `1px solid ${axelionColors.borderLight}`, letterSpacing: '0.05em' }}>
-          {editMode ? 'Редактировать специализацию' : 'Добавить новую специализацию'}
+          {editMode ? t('specPage.editSpec') : t('specPage.addNewSpec')}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <Stack spacing={3}>
             <TextField
-              label="Название специализации"
+              label={t('specPage.specNameLabel')}
               fullWidth
               value={currentSpec.name}
               onChange={(e) =>
                 setCurrentSpec({ ...currentSpec, name: e.target.value })
               }
-              placeholder="Например: Гражданское право"
+              placeholder={t('specPage.specNamePlaceholder')}
               variant="outlined"
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -574,7 +576,7 @@ const SpecializationsPageGlass = () => {
               }}
             />
             <TextField
-              label="Описание"
+              label={t('specPage.descLabel')}
               fullWidth
               multiline
               rows={4}
@@ -582,7 +584,7 @@ const SpecializationsPageGlass = () => {
               onChange={(e) =>
                 setCurrentSpec({ ...currentSpec, description: e.target.value })
               }
-              placeholder="Опишите эту специализацию..."
+              placeholder={t('specPage.descPlaceholder')}
               variant="outlined"
               sx={{
                 '& .MuiOutlinedInput-root': {
@@ -603,7 +605,7 @@ const SpecializationsPageGlass = () => {
               }}
             />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Typography sx={{ color: axelionColors.textDark, fontWeight: 500 }}>Активна:</Typography>
+              <Typography sx={{ color: axelionColors.textDark, fontWeight: 500 }}>{t('specPage.activeLabel')}</Typography>
               <Switch
                 checked={currentSpec.active}
                 onChange={(e) =>
@@ -639,7 +641,7 @@ const SpecializationsPageGlass = () => {
               },
             }}
           >
-            Отмена
+            {t('specPage.cancel')}
           </Button>
           <Button
             variant="contained"
@@ -662,7 +664,7 @@ const SpecializationsPageGlass = () => {
               },
             }}
           >
-            {editMode ? 'Сохранить' : 'Добавить'}
+            {editMode ? t('specPage.save') : t('specPage.add')}
           </Button>
         </DialogActions>
       </Dialog>
@@ -682,11 +684,11 @@ const SpecializationsPageGlass = () => {
         }}
       >
         <DialogTitle sx={{ fontWeight: 300, color: axelionColors.textDark, borderBottom: `1px solid ${axelionColors.borderLight}`, letterSpacing: '0.05em' }}>
-          Подтверждение удаления
+          {t('specPage.deleteConfirmTitle')}
         </DialogTitle>
         <DialogContent sx={{ pt: 3 }}>
           <Typography sx={{ color: axelionColors.textMuted }}>
-            Вы уверены, что хотите удалить эту специализацию? Это действие нельзя отменить.
+            {t('specPage.deleteConfirmText')}
           </Typography>
         </DialogContent>
         <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
@@ -707,7 +709,7 @@ const SpecializationsPageGlass = () => {
               },
             }}
           >
-            Отмена
+            {t('specPage.cancel')}
           </Button>
           <Button
             variant="contained"
@@ -725,7 +727,7 @@ const SpecializationsPageGlass = () => {
               },
             }}
           >
-            Удалить
+            {t('specPage.del')}
           </Button>
         </DialogActions>
       </Dialog>

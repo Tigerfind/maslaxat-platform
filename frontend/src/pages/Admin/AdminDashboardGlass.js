@@ -31,7 +31,6 @@ import {
   Settings,
   Logout,
   Notifications,
-  Assessment,
   Shield,
   TrendingUp,
   CheckCircle,
@@ -63,6 +62,7 @@ const AdminDashboardGlass = () => {
 
   const [stats, setStats] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
+  const [reports, setReports] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -72,16 +72,18 @@ const AdminDashboardGlass = () => {
   const loadDashboardData = async () => {
     try {
       setLoading(true);
-      const [statsData, activityData] = await Promise.all([
+      const [statsData, activityData, reportsData] = await Promise.all([
         adminService.dashboard.getStats(),
         adminService.dashboard.getRecentActivity(10),
+        adminService.dashboard.getReports(),
       ]);
 
       setStats(statsData);
       setRecentActivity(activityData);
+      setReports(reportsData);
     } catch (error) {
       console.error('Error loading dashboard:', error);
-      toast.error('Ошибка загрузки данных');
+      toast.error(t('admin.loadError'));
     } finally {
       setLoading(false);
     }
@@ -96,7 +98,7 @@ const AdminDashboardGlass = () => {
     return new Intl.NumberFormat('uz-UZ', {
       style: 'decimal',
       minimumFractionDigits: 0,
-    }).format(amount) + ' сум';
+    }).format(amount) + ' ' + t('admin.sum');
   };
 
   const getActivityIcon = (type) => {
@@ -179,7 +181,7 @@ const AdminDashboardGlass = () => {
               <Box>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                   <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
-                    Панель администратора
+                    {t('admin.title')}
                   </Typography>
                   <Chip
                     label="ADMIN"
@@ -193,7 +195,7 @@ const AdminDashboardGlass = () => {
                   />
                 </Box>
                 <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
-                  {user?.name || 'Администратор'} | Полный доступ
+                  {user?.name || t('admin.adminFallback')} {t('admin.fullAccess')}
                 </Typography>
               </Box>
             </Box>
@@ -265,25 +267,25 @@ const AdminDashboardGlass = () => {
           {[
             {
               icon: <People sx={{ fontSize: 40 }} />,
-              label: 'Всего пользователей',
+              label: t('admin.totalUsers'),
               value: stats?.totalUsers?.toLocaleString() || '0',
               color: axelionColors.gold,
             },
             {
               icon: <Gavel sx={{ fontSize: 40 }} />,
-              label: 'Юристов',
+              label: t('admin.lawyers'),
               value: stats?.totalLawyers?.toLocaleString() || '0',
               color: axelionColors.warning,
             },
             {
               icon: <People sx={{ fontSize: 40 }} />,
-              label: 'Клиентов',
+              label: t('admin.clients'),
               value: stats?.totalClients?.toLocaleString() || '0',
               color: axelionColors.bronze,
             },
             {
               icon: <CheckCircle sx={{ fontSize: 40 }} />,
-              label: 'Активные консультации',
+              label: t('admin.activeConsultations'),
               value: stats?.activeConsultations?.toLocaleString() || '0',
               color: axelionColors.success,
             },
@@ -377,7 +379,7 @@ const AdminDashboardGlass = () => {
                 </Box>
                 <Box>
                   <Typography variant="body2" sx={{ color: axelionColors.textMuted }} gutterBottom>
-                    Доход за месяц
+                    {t('admin.monthRevenue')}
                   </Typography>
                   <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                     {formatCurrency(stats?.monthlyRevenue || 0)}
@@ -419,7 +421,7 @@ const AdminDashboardGlass = () => {
                 </Box>
                 <Box>
                   <Typography variant="body2" sx={{ color: axelionColors.textMuted }} gutterBottom>
-                    Общий доход
+                    {t('admin.totalRevenue')}
                   </Typography>
                   <Typography variant="h5" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                     {formatCurrency(stats?.totalRevenue || 0)}
@@ -429,6 +431,67 @@ const AdminDashboardGlass = () => {
             </Card>
           </Grid>
         </Grid>
+
+        {/* Real reports / analytics */}
+        {reports && (
+          <Card
+            sx={{
+              background: axelionColors.bgLight,
+              border: `1px solid ${axelionColors.borderLight}`,
+              borderRadius: '8px',
+              boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
+              p: 3,
+              mb: 4,
+            }}
+          >
+            <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
+              {t('admin.repTitle')}
+            </Typography>
+            <Grid container spacing={3} sx={{ mt: 0.5 }}>
+              {/* Revenue by month */}
+              <Grid item xs={12} md={7}>
+                <Typography variant="subtitle2" sx={{ color: axelionColors.textMuted, mb: 2 }}>{t('admin.repRevenueByMonth')}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 150 }}>
+                  {(() => {
+                    const max = Math.max(1, ...reports.monthlyRevenue.map((m) => m.revenue));
+                    const ML = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+                    return reports.monthlyRevenue.map((m) => {
+                      const h = Math.round((m.revenue / max) * 120);
+                      return (
+                        <Box key={m.month} sx={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 0.5, justifyContent: 'flex-end', height: '100%' }}>
+                          <Box title={formatCurrency(m.revenue)} sx={{ width: '100%', maxWidth: 44, height: Math.max(h, 4), borderRadius: '6px 6px 3px 3px', background: m.revenue > 0 ? `linear-gradient(180deg, ${axelionColors.gold}, ${axelionColors.bronze})` : axelionColors.borderLight }} />
+                          <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>{ML[parseInt(m.month.split('-')[1], 10) - 1]}</Typography>
+                        </Box>
+                      );
+                    });
+                  })()}
+                </Box>
+              </Grid>
+              {/* Top lawyers */}
+              <Grid item xs={12} md={5}>
+                <Typography variant="subtitle2" sx={{ color: axelionColors.textMuted, mb: 2 }}>{t('admin.repTopLawyers')}</Typography>
+                {reports.topLawyers && reports.topLawyers.length ? reports.topLawyers.map((l, i) => (
+                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 1, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, minWidth: 0 }}>
+                      <Typography sx={{ color: axelionColors.gold, fontWeight: 'bold', width: 18, flexShrink: 0 }}>{i + 1}</Typography>
+                      <Typography variant="body2" noWrap sx={{ color: axelionColors.textDark }}>{l.name}</Typography>
+                    </Box>
+                    <Typography variant="caption" sx={{ color: axelionColors.textMuted, whiteSpace: 'nowrap', pl: 1 }}>{l.completedCases} {t('admin.repCases')} · ★{l.rating}</Typography>
+                  </Box>
+                )) : <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>—</Typography>}
+              </Grid>
+              {/* Consultations by status */}
+              <Grid item xs={12}>
+                <Typography variant="subtitle2" sx={{ color: axelionColors.textMuted, mb: 1.5 }}>{t('admin.repByStatus')}</Typography>
+                <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1 }}>
+                  {Object.entries(reports.consultationsByStatus).map(([st, cnt]) => (
+                    <Chip key={st} label={`${t('admin.st_' + st)}: ${cnt}`} size="small" sx={{ background: axelionColors.bgCream, color: axelionColors.textDark, border: `1px solid ${axelionColors.borderLight}` }} />
+                  ))}
+                </Box>
+              </Grid>
+            </Grid>
+          </Card>
+        )}
 
         {/* Quick Actions */}
         <Card
@@ -442,36 +505,30 @@ const AdminDashboardGlass = () => {
           }}
         >
           <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
-            Быстрые действия
+            {t('admin.quickActions')}
           </Typography>
           <Grid container spacing={2} sx={{ mt: 1 }}>
             {[
               {
                 icon: <People />,
-                label: 'Управление пользователями',
+                label: t('admin.manageUsers'),
                 path: '/admin/users',
                 color: axelionColors.gold,
               },
               {
                 icon: <Gavel />,
-                label: 'Управление юристами',
+                label: t('admin.manageLawyers'),
                 path: '/admin/lawyers',
                 color: axelionColors.warning,
               },
               {
-                icon: <Assessment />,
-                label: 'Просмотр отчетов',
-                path: '/admin/reports',
-                color: axelionColors.success,
-              },
-              {
                 icon: <Category />,
-                label: 'Специализации',
+                label: t('admin.specializations'),
                 path: '/admin/specializations',
                 color: axelionColors.bronze,
               },
             ].map((action, index) => (
-              <Grid item xs={12} sm={6} md={3} key={index}>
+              <Grid item xs={12} sm={6} md={4} key={index}>
                 <Button
                   fullWidth
                   variant="outlined"
@@ -515,10 +572,10 @@ const AdminDashboardGlass = () => {
             >
               <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
                 <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
-                  Последняя активность
+                  {t('admin.recentActivity')}
                 </Typography>
                 <Chip
-                  label={`${recentActivity.length} записей`}
+                  label={`${recentActivity.length} ${t('admin.records')}`}
                   sx={{
                     background: axelionColors.bgCream,
                     color: axelionColors.textDark,
@@ -534,16 +591,16 @@ const AdminDashboardGlass = () => {
                     <TableHead>
                       <TableRow>
                         <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
-                          Тип
+                          {t('admin.colType')}
                         </TableCell>
                         <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
-                          Описание
+                          {t('admin.colDesc')}
                         </TableCell>
                         <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
-                          Пользователь
+                          {t('admin.colUser')}
                         </TableCell>
                         <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
-                          Дата
+                          {t('admin.colDate')}
                         </TableCell>
                       </TableRow>
                     </TableHead>
@@ -585,13 +642,13 @@ const AdminDashboardGlass = () => {
                                 {activity.userName?.charAt(0) || 'U'}
                               </Avatar>
                               <Typography variant="body2" sx={{ color: axelionColors.textDark }}>
-                                {activity.userName || 'Неизвестно'}
+                                {activity.userName || t('admin.userUnknown')}
                               </Typography>
                             </Box>
                           </TableCell>
                           <TableCell sx={{ borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                             <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
-                              {activity.date || 'Недавно'}
+                              {activity.date || t('admin.dateRecently')}
                             </Typography>
                           </TableCell>
                         </TableRow>
@@ -602,7 +659,7 @@ const AdminDashboardGlass = () => {
               ) : (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
-                    Нет данных о последней активности
+                    {t('admin.noActivity')}
                   </Typography>
                 </Box>
               )}
@@ -622,14 +679,14 @@ const AdminDashboardGlass = () => {
               }}
             >
               <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
-                Обзор системы
+                {t('admin.systemOverview')}
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
-                      Всего пользователей
+                      {t('admin.totalUsers')}
                     </Typography>
                     <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.totalUsers?.toLocaleString() || '0'}
@@ -656,7 +713,7 @@ const AdminDashboardGlass = () => {
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
-                      Активные юристы
+                      {t('admin.activeLawyers')}
                     </Typography>
                     <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.totalLawyers?.toLocaleString() || '0'}
@@ -683,7 +740,7 @@ const AdminDashboardGlass = () => {
                 <Box>
                   <Box sx={{ display: 'flex', justifyContent: 'space-between', mb: 1 }}>
                     <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
-                      Консультации
+                      {t('admin.consultations')}
                     </Typography>
                     <Typography variant="body2" fontWeight="bold" sx={{ color: axelionColors.textDark }}>
                       {stats?.activeConsultations?.toLocaleString() || '0'}
@@ -707,29 +764,6 @@ const AdminDashboardGlass = () => {
                   </Box>
                 </Box>
               </Box>
-
-              <Button
-                fullWidth
-                variant="contained"
-                startIcon={<Assessment />}
-                sx={{
-                  mt: 3,
-                  background: axelionColors.gold,
-                  color: '#FFFFFF',
-                  textTransform: 'none',
-                  fontWeight: 600,
-                  py: 1.5,
-                  borderRadius: '8px',
-                  boxShadow: 'none',
-                  '&:hover': {
-                    background: axelionColors.goldDark,
-                    boxShadow: 'none',
-                  },
-                }}
-                onClick={() => navigate('/admin/analytics')}
-              >
-                Подробная аналитика
-              </Button>
             </Card>
 
             {/* System Health */}
@@ -743,15 +777,15 @@ const AdminDashboardGlass = () => {
               }}
             >
               <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>
-                Состояние системы
+                {t('admin.systemHealth')}
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
                 {[
-                  { label: 'API сервер', status: 'online', uptime: '99.9%' },
-                  { label: 'База данных', status: 'online', uptime: '99.8%' },
-                  { label: 'Видео сервер', status: 'online', uptime: '98.5%' },
-                  { label: 'AI сервис', status: 'online', uptime: '99.2%' },
+                  { label: t('admin.apiServer'), status: 'online', uptime: '99.9%' },
+                  { label: t('admin.database'), status: 'online', uptime: '99.8%' },
+                  { label: t('admin.videoServer'), status: 'online', uptime: '98.5%' },
+                  { label: t('admin.aiService'), status: 'online', uptime: '99.2%' },
                 ].map((system, index) => (
                   <Box
                     key={index}
@@ -776,7 +810,7 @@ const AdminDashboardGlass = () => {
                       </Typography>
                     </Box>
                     <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>
-                      Uptime: {system.uptime}
+                      {t('admin.uptime')}: {system.uptime}
                     </Typography>
                   </Box>
                 ))}

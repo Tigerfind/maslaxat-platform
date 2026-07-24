@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { updateProfile } from '../../store/slices/authSlice';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -49,7 +50,6 @@ const fieldLabel = {
   marginBottom: 8,
 };
 
-const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 const SPECIALIZATIONS = [
@@ -83,6 +83,8 @@ const initialsOf = (name = '') =>
 
 const LawyerProfileEditPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
+  const DAYS = t('lawyerPanel.days');
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
 
@@ -118,7 +120,7 @@ const LawyerProfileEditPage = () => {
           avatarPreview: res.data.user?.avatar || null,
         });
       } catch {
-        setError('Не удалось загрузить профиль');
+        setError(t('lawyerPanel.loadProfileError'));
       } finally {
         setLoading(false);
       }
@@ -155,15 +157,15 @@ const LawyerProfileEditPage = () => {
 
   const handleSave = async () => {
     if (!form.description || form.description.length < 50) {
-      toast.error('Описание должно быть не менее 50 символов');
+      toast.error(t('lawyerPanel.descMin'));
       return;
     }
     if (!form.specialization) {
-      toast.error('Выберите специализацию');
+      toast.error(t('lawyerPanel.specRequired'));
       return;
     }
     if (form.price < 50000) {
-      toast.error('Минимальная цена: 50 000 сум');
+      toast.error(t('lawyerPanel.priceMin'));
       return;
     }
 
@@ -187,10 +189,10 @@ const LawyerProfileEditPage = () => {
         dispatch(updateProfile({ avatar: res.data.user.avatar }));
       }
 
-      toast.success('Профиль сохранён!');
+      toast.success(t('lawyerPanel.profileSaved'));
       navigate('/lawyer/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Ошибка сохранения');
+      toast.error(err.response?.data?.error || t('lawyerPanel.saveError'));
     } finally {
       setSaving(false);
     }
@@ -198,7 +200,7 @@ const LawyerProfileEditPage = () => {
 
   if (loading) {
     return (
-      <GlassShell active="/lawyer/profile/edit" title="Профиль" subtitle="Как вас видят клиенты" role="lawyer">
+      <GlassShell active="/lawyer/profile/edit" title={t('lawyerPanel.profileTitle')} subtitle={t('lawyerPanel.profileSub')} role="lawyer">
         <div style={{ display: 'flex', justifyContent: 'center', padding: '80px 0' }}>
           <CircularProgress sx={{ color: 'var(--accent)' }} />
         </div>
@@ -206,10 +208,10 @@ const LawyerProfileEditPage = () => {
     );
   }
 
-  const expLabel = form.experience === 0 ? 'Без опыта' : `${form.experience} лет`;
+  const expLabel = form.experience === 0 ? t('lawyerPanel.noExperience') : `${form.experience} ${t('lawyerPanel.expYears')}`;
 
   return (
-    <GlassShell active="/lawyer/profile/edit" title="Профиль" subtitle="Как вас видят клиенты" role="lawyer">
+    <GlassShell active="/lawyer/profile/edit" title={t('lawyerPanel.profileTitle')} subtitle={t('lawyerPanel.profileSub')} role="lawyer">
       <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {error && (
           <div style={{ ...glassCard, padding: '14px 18px', color: 'var(--error)', border: '1px solid var(--error)', fontSize: 14 }}>
@@ -237,9 +239,9 @@ const LawyerProfileEditPage = () => {
             {!form.avatarPreview && initialsOf(user?.name)}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>{user?.name || 'Юрист'}</div>
+            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>{user?.name || t('lawyerPanel.lawyerFallback')}</div>
             <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>
-              {[form.specialization, form.location].filter(Boolean).join(' · ') || 'Заполните профиль'}
+              {[form.specialization, form.location].filter(Boolean).join(' · ') || t('lawyerPanel.fillProfile')}
             </div>
           </div>
           <label
@@ -260,31 +262,31 @@ const LawyerProfileEditPage = () => {
               fontFamily: 'inherit',
             }}
           >
-            <PhotoCameraOutlined sx={{ fontSize: 17 }} /> Сменить фото
+            <PhotoCameraOutlined sx={{ fontSize: 17 }} /> {t('lawyerPanel.changePhoto')}
             <input hidden type="file" accept="image/*" onChange={handleAvatarChange} />
           </label>
         </div>
 
         {/* Main info */}
         <div style={{ ...glassCard, padding: 26 }}>
-          <div style={cardHeading}>Основная информация</div>
+          <div style={cardHeading}>{t('lawyerPanel.mainInfo')}</div>
 
-          <div style={fieldLabel}>О себе</div>
+          <div style={fieldLabel}>{t('lawyerPanel.about')}</div>
           <TextField
             fullWidth
             multiline
             minRows={3}
             value={form.description}
             onChange={(e) => handleChange('description', e.target.value)}
-            placeholder="Расскажите о вашем опыте, образовании, специализации…"
-            helperText={`${form.description.length}/500 символов (минимум 50)`}
+            placeholder={t('lawyerPanel.aboutPlaceholder')}
+            helperText={t('lawyerPanel.charsHelper', { n: form.description.length })}
             inputProps={{ maxLength: 500 }}
             sx={{ mb: 2.5, ...inputSx }}
           />
 
           <div style={{ display: 'flex', gap: 18, marginBottom: 20 }}>
             <div style={{ flex: 1 }}>
-              <div style={fieldLabel}>Город</div>
+              <div style={fieldLabel}>{t('lawyerPanel.city')}</div>
               <TextField
                 fullWidth
                 size="small"
@@ -294,7 +296,7 @@ const LawyerProfileEditPage = () => {
               />
             </div>
             <div style={{ flex: 1 }}>
-              <div style={fieldLabel}>Цена, сум</div>
+              <div style={fieldLabel}>{t('lawyerPanel.priceSum')}</div>
               <TextField
                 fullWidth
                 size="small"
@@ -307,7 +309,7 @@ const LawyerProfileEditPage = () => {
             </div>
           </div>
 
-          <div style={{ ...fieldLabel, marginBottom: 4 }}>Опыт: {expLabel}</div>
+          <div style={{ ...fieldLabel, marginBottom: 4 }}>{t('lawyerPanel.experienceLabel')}: {expLabel}</div>
           <div style={{ padding: '0 4px', marginBottom: 20 }}>
             <Slider
               value={form.experience}
@@ -324,7 +326,7 @@ const LawyerProfileEditPage = () => {
             />
           </div>
 
-          <div style={{ ...fieldLabel, marginBottom: 10 }}>Специализация</div>
+          <div style={{ ...fieldLabel, marginBottom: 10 }}>{t('lawyerPanel.specialization')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {SPECIALIZATIONS.map((spec) => {
               const selected = form.specialization === spec;
@@ -350,7 +352,7 @@ const LawyerProfileEditPage = () => {
 
         {/* Schedule */}
         <div style={{ ...glassCard, padding: 26 }}>
-          <div style={cardHeading}>Расписание</div>
+          <div style={cardHeading}>{t('lawyerPanel.schedule')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {DAY_KEYS.map((key, idx) => {
               const active = !!form.schedule[key];
@@ -420,7 +422,7 @@ const LawyerProfileEditPage = () => {
           }}
         >
           {saving ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : <SaveOutlined sx={{ fontSize: 18 }} />}
-          {saving ? 'Сохраняем…' : 'Сохранить изменения'}
+          {saving ? t('lawyerPanel.savingProfile') : t('lawyerPanel.saveChanges')}
         </button>
       </div>
     </GlassShell>

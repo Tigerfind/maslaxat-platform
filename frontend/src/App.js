@@ -4,7 +4,6 @@ import { Provider, useDispatch, useSelector } from 'react-redux';
 import { ThemeProvider } from '@mui/material/styles';
 import { CssBaseline, Box } from '@mui/material';
 import { QueryClient, QueryClientProvider } from 'react-query';
-import { ReactQueryDevtools } from 'react-query/devtools';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 
@@ -16,28 +15,24 @@ import { LanguageProvider } from './i18n';
 import Layout from './components/Layout/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
+import ErrorBoundary from './components/ErrorBoundary';
 
 // Pages
-import HomePage from './pages/HomePage';
 import LoginPage from './pages/Auth/LoginPage';
 import RegisterPage from './pages/Auth/RegisterPage';
 import DashboardPageGlass from './pages/Dashboard/DashboardPageGlass';
 import LawyerDashboard from './pages/Lawyer/LawyerDashboardGlass';
 import LawyerSchedulePage from './pages/Lawyer/LawyerSchedulePage';
+import LawyerAnalyticsPage from './pages/Lawyer/LawyerAnalyticsPage';
 import LawyerReviewsPage from './pages/Lawyer/LawyerReviewsPage';
 import LawyerProfileEditPage from './pages/Lawyer/LawyerProfileEditPage';
 import AdminDashboard from './pages/Admin/AdminDashboardGlass';
-import AIChatPage from './pages/AI/AIChatPage';
 import AIChatPageGlass from './pages/AI/AIChatPageGlass';
-import ConsultationsPage from './pages/Consultations/ConsultationsPage';
 import ConsultationsPageGlass from './pages/Consultations/ConsultationsPageGlass';
 import VideoCallPage from './pages/Consultations/VideoCallPage';
 import ChatPage from './pages/Consultations/ChatPage';
-import LawyersPage from './pages/Lawyers/LawyersPage';
 import LawyersPageGlass from './pages/Lawyers/LawyersPageGlass';
 import LawyerProfilePage from './pages/Lawyers/LawyerProfilePage';
-import LawyerProfilePageGlass from './pages/Lawyers/LawyerProfilePageGlass';
-import DocumentsPage from './pages/Documents/DocumentsPage';
 import DocumentsPageGlass from './pages/Documents/DocumentsPageGlass';
 import ProfilePageGlass from './pages/Profile/ProfilePageGlass';
 import SettingsPageGlass from './pages/Settings/SettingsPageGlass';
@@ -45,9 +40,13 @@ import HelpPage from './pages/Help/HelpPage';
 import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 import SpecializationsPageGlass from './pages/Admin/SpecializationsPageGlass';
+import AdminLawyersPage from './pages/Admin/AdminLawyersPage';
+import AdminUsersPage from './pages/Admin/AdminUsersPage';
 import FavoritesPage from './pages/Client/FavoritesPage';
 import PortfolioPage from './pages/Client/PortfolioPage';
+import PaymentsPageGlass from './pages/Payments/PaymentsPageGlass';
 import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
+import LandingPage from './pages/Landing/LandingPage';
 
 // MaslaXat Premium Theme
 import { axelionTheme } from './theme/axelionTheme';
@@ -92,7 +91,7 @@ const AppContent = () => {
     <Router>
       <Routes>
         <Route path="/" element={
-          isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
+          isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage />
         } />
 
         <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />} />
@@ -114,6 +113,7 @@ const AppContent = () => {
           <Route path="documents" element={<DocumentsPageGlass />} />
           <Route path="favorites" element={<FavoritesPage />} />
           <Route path="portfolio" element={<PortfolioPage />} />
+          <Route path="payments" element={<PaymentsPageGlass />} />
           <Route path="profile" element={<ProfilePageGlass />} />
           <Route path="settings" element={<SettingsPageGlass />} />
           <Route path="help" element={<HelpPage />} />
@@ -143,6 +143,11 @@ const AppContent = () => {
             <LawyerSchedulePage />
           </ProtectedRoute>
         } />
+        <Route path="/lawyer/analytics" element={
+          <ProtectedRoute allowedRoles={['lawyer']}>
+            <LawyerAnalyticsPage />
+          </ProtectedRoute>
+        } />
         <Route path="/lawyer/profile/edit" element={
           <ProtectedRoute allowedRoles={['lawyer']}>
             <LawyerProfileEditPage />
@@ -164,6 +169,16 @@ const AppContent = () => {
             <SpecializationsPageGlass />
           </ProtectedRoute>
         } />
+        <Route path="/admin/lawyers" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminLawyersPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/users" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminUsersPage />
+          </ProtectedRoute>
+        } />
 
         <Route path="*" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
@@ -181,7 +196,9 @@ function App() {
         <LanguageProvider>
           <ThemeProvider theme={theme}>
             <CssBaseline />
-            <AppContent />
+            <ErrorBoundary>
+              <AppContent />
+            </ErrorBoundary>
             <ToastContainer
               position="top-right"
               autoClose={4000}
@@ -204,7 +221,6 @@ function App() {
             />
           </ThemeProvider>
         </LanguageProvider>
-        <ReactQueryDevtools initialIsOpen={false} />
       </QueryClientProvider>
     </Provider>
   );

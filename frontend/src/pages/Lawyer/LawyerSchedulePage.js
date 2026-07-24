@@ -8,6 +8,7 @@ import {
 import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { useTranslation } from '../../i18n';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -31,16 +32,6 @@ const glassCard = {
   borderRadius: 'var(--radius)',
 };
 
-const DAYS = ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-const MONTHS = [
-  'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
-  'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь',
-];
-const MONTHS_GEN = [
-  'января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
-  'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря',
-];
-
 const navArrowBtn = {
   width: 34,
   height: 34,
@@ -57,6 +48,10 @@ const navArrowBtn = {
 };
 
 const LawyerSchedulePage = () => {
+  const { t } = useTranslation();
+  const DAYS = t('lawyerPanel.days');
+  const MONTHS = t('lawyerPanel.months');
+  const MONTHS_GEN = t('lawyerPanel.monthsGen');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState(() => {
     const today = new Date();
@@ -64,6 +59,48 @@ const LawyerSchedulePage = () => {
   });
   const [events, setEvents] = useState({});
   const [loading, setLoading] = useState(true);
+
+  // ── Недельные слоты доступности ──
+  const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+  const [availability, setAvailability] = useState({});
+  const [availSaving, setAvailSaving] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await lawyerService.schedule.getAvailability();
+        const s = res.schedule || {};
+        const filled = {};
+        DAY_KEYS.forEach((d) => {
+          filled[d] = {
+            enabled: s[d]?.enabled ?? (d !== 'sat' && d !== 'sun'),
+            from: s[d]?.from || '09:00',
+            to: s[d]?.to || '18:00',
+          };
+        });
+        setAvailability(filled);
+      } catch {
+        const filled = {};
+        DAY_KEYS.forEach((d) => { filled[d] = { enabled: d !== 'sat' && d !== 'sun', from: '09:00', to: '18:00' }; });
+        setAvailability(filled);
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const setDay = (day, patch) => setAvailability((prev) => ({ ...prev, [day]: { ...prev[day], ...patch } }));
+
+  const handleSaveAvailability = async () => {
+    setAvailSaving(true);
+    try {
+      await lawyerService.schedule.saveAvailability(availability);
+      toast.success(t('lawyerPanel.hoursSaved'));
+    } catch {
+      toast.error(t('lawyerPanel.hoursError'));
+    } finally {
+      setAvailSaving(false);
+    }
+  };
 
   const loadSchedule = useCallback(async () => {
     try {
@@ -114,35 +151,35 @@ const LawyerSchedulePage = () => {
   const handleConfirm = async (eventId) => {
     try {
       await lawyerService.schedule.confirmConsultation(eventId);
-      toast.success('Консультация подтверждена');
+      toast.success(t('lawyerPanel.confirmSuccess'));
       loadSchedule();
     } catch {
-      toast.error('Ошибка подтверждения');
+      toast.error(t('lawyerPanel.confirmError'));
     }
   };
 
   const handleReject = async (eventId) => {
     try {
       await lawyerService.schedule.rejectConsultation(eventId);
-      toast.info('Консультация отклонена');
+      toast.info(t('lawyerPanel.rejectInfo'));
       loadSchedule();
     } catch {
-      toast.error('Ошибка отклонения');
+      toast.error(t('lawyerPanel.schedRejectError'));
     }
   };
 
   const dayEvents = (selectedDate && events[selectedDate]) || [];
   const selectedLabel = selectedDate
     ? `${Number(selectedDate.split('-')[2])} ${MONTHS_GEN[Number(selectedDate.split('-')[1]) - 1]}`
-    : 'Выберите дату';
+    : t('lawyerPanel.selectDate');
   const selectedSub = !selectedDate
-    ? 'Нажмите на дату в календаре'
+    ? t('lawyerPanel.clickDate')
     : dayEvents.length
-      ? `${dayEvents.length} ${dayEvents.length === 1 ? 'консультация' : 'консультаций'}`
-      : 'Свободный день';
+      ? `${dayEvents.length} ${dayEvents.length === 1 ? t('lawyerPanel.consultationOne') : t('lawyerPanel.consultationMany')}`
+      : t('lawyerPanel.freeDay');
 
   return (
-    <GlassShell active="/lawyer/schedule" title="Расписание" subtitle="Календарь консультаций" role="lawyer">
+    <GlassShell active="/lawyer/schedule" title={t('lawyerPanel.scheduleTitle')} subtitle={t('lawyerPanel.scheduleSub')} role="lawyer">
       <div
         className="sched-grid"
         style={{
@@ -161,8 +198,8 @@ const LawyerSchedulePage = () => {
               {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              <button onClick={handlePrevMonth} style={navArrowBtn} aria-label="Предыдущий месяц">‹</button>
-              <button onClick={handleNextMonth} style={navArrowBtn} aria-label="Следующий месяц">›</button>
+              <button onClick={handlePrevMonth} style={navArrowBtn} aria-label={t('lawyerPanel.prevMonth')}>‹</button>
+              <button onClick={handleNextMonth} style={navArrowBtn} aria-label={t('lawyerPanel.nextMonth')}>›</button>
             </div>
           </div>
 
@@ -229,10 +266,10 @@ const LawyerSchedulePage = () => {
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {loading ? (
-              <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>Загрузка…</div>
+              <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>{t('common.loading')}</div>
             ) : dayEvents.length === 0 ? (
               <div style={{ padding: '30px 0', textAlign: 'center', fontSize: 14, color: 'var(--text3)' }}>
-                Нет консультаций в этот день
+                {t('lawyerPanel.noConsultationsDay')}
               </div>
             ) : (
               dayEvents.map((e) => {
@@ -253,7 +290,7 @@ const LawyerSchedulePage = () => {
                       <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{e.time}</div>
                       <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: accent }}>
                         {isVideo ? <VideocamOutlined sx={{ fontSize: 14 }} /> : <ChatBubbleOutline sx={{ fontSize: 14 }} />}
-                        {isVideo ? 'Видео' : 'Чат'}
+                        {isVideo ? t('lawyerPanel.typeVideo') : t('lawyerPanel.typeChat')}
                       </span>
                     </div>
                     <div style={{ fontSize: 14, color: 'var(--text)' }}>{e.client}</div>
@@ -282,7 +319,7 @@ const LawyerSchedulePage = () => {
                             fontFamily: 'inherit',
                           }}
                         >
-                          <CheckOutlined sx={{ fontSize: 16 }} /> Принять
+                          <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.accept')}
                         </button>
                         <button
                           onClick={() => handleReject(e.id)}
@@ -305,14 +342,14 @@ const LawyerSchedulePage = () => {
                             fontFamily: 'inherit',
                           }}
                         >
-                          <CloseOutlined sx={{ fontSize: 16 }} /> Отклонить
+                          <CloseOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.reject')}
                         </button>
                       </div>
                     )}
 
                     {(e.status === 'accepted' || e.status === 'confirmed') && (
                       <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 14, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--success)', background: 'rgba(122,154,107,0.12)', padding: '7px 12px', borderRadius: 'var(--radius)' }}>
-                        <CheckOutlined sx={{ fontSize: 15 }} /> Подтверждено
+                        <CheckOutlined sx={{ fontSize: 15 }} /> {t('lawyerPanel.confirmed')}
                       </div>
                     )}
                   </div>
@@ -323,7 +360,78 @@ const LawyerSchedulePage = () => {
         </div>
       </div>
 
-      <style>{`@media (max-width: 900px){ .sched-grid { grid-template-columns: 1fr !important; } }`}</style>
+      {/* WEEKLY AVAILABILITY EDITOR */}
+      <div style={{ maxWidth: 1120, margin: '24px auto 0' }}>
+        <div style={{ ...glassCard, padding: 24 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
+            <div>
+              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{t('lawyerPanel.availabilityTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 3 }}>{t('lawyerPanel.availabilitySub')}</div>
+            </div>
+            <button
+              onClick={handleSaveAvailability}
+              disabled={availSaving}
+              style={{
+                display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: '#FFFFFF',
+                border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.03em', padding: '10px 20px',
+                borderRadius: 'var(--radius)', cursor: availSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: availSaving ? 0.6 : 1,
+              }}
+            >
+              <CheckOutlined sx={{ fontSize: 17 }} /> {availSaving ? t('lawyerPanel.savingProfile') : t('lawyerPanel.saveHours')}
+            </button>
+          </div>
+
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {DAY_KEYS.map((d, i) => {
+              const day = availability[d] || { enabled: false, from: '09:00', to: '18:00' };
+              return (
+                <div key={d} className="avail-row" style={{
+                  display: 'grid', gridTemplateColumns: '150px 1fr', alignItems: 'center', gap: 14,
+                  padding: '10px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)',
+                  background: day.enabled ? 'rgba(184,149,110,0.05)' : 'transparent',
+                }}>
+                  <button
+                    onClick={() => setDay(d, { enabled: !day.enabled })}
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                  >
+                    <span style={{
+                      width: 40, height: 22, borderRadius: 12, flexShrink: 0, position: 'relative', transition: 'background .2s',
+                      background: day.enabled ? 'var(--accent)' : 'var(--border)',
+                    }}>
+                      <span style={{
+                        position: 'absolute', top: 2, left: day.enabled ? 20 : 2, width: 18, height: 18, borderRadius: '50%',
+                        background: '#FFFFFF', transition: 'left .2s', boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+                      }} />
+                    </span>
+                    <span style={{ fontSize: 14, fontWeight: 500, color: day.enabled ? 'var(--text)' : 'var(--text3)' }}>
+                      {(t('lawyerPanel.daysFull') || [])[i] || (t('lawyerPanel.days') || [])[i]}
+                    </span>
+                  </button>
+
+                  {day.enabled ? (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input type="time" value={day.from} onChange={(e) => setDay(d, { from: e.target.value })} className="avail-time" />
+                      <span style={{ color: 'var(--text3)', fontSize: 13 }}>—</span>
+                      <input type="time" value={day.to} onChange={(e) => setDay(d, { to: e.target.value })} className="avail-time" />
+                    </div>
+                  ) : (
+                    <span style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerPanel.dayOff')}</span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <style>{`
+        @media (max-width: 900px){ .sched-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 560px){ .avail-row { grid-template-columns: 1fr !important; gap: 10px !important; } }
+        .avail-time {
+          font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+          border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; cursor: pointer;
+        }
+      `}</style>
     </GlassShell>
   );
 };

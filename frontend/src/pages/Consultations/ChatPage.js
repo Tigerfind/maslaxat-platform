@@ -16,12 +16,14 @@ import {
 import { toast } from 'react-toastify';
 import io from 'socket.io-client';
 import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
 const ChatPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const { user } = useSelector((state) => state.auth);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
@@ -52,7 +54,7 @@ const ChatPage = () => {
         }
       } catch (err) {
         console.error('Error loading chat:', err);
-        toast.error('Ошибка загрузки чата');
+        toast.error(t('chat.loadError'));
       } finally {
         setLoading(false);
       }
@@ -124,7 +126,7 @@ const ChatPage = () => {
       }
     } catch (err) {
       console.error('Error sending message:', err);
-      toast.error('Ошибка отправки');
+      toast.error(t('chat.sendError'));
       setNewMessage(text);
     } finally {
       setSending(false);
@@ -149,11 +151,11 @@ const ChatPage = () => {
   };
 
   const getPartnerName = () => {
-    if (!consultation) return 'Собеседник';
+    if (!consultation) return t('chat.partnerFallback');
     if (user?.role === 'client') {
-      return consultation.lawyer?.name || 'Юрист';
+      return consultation.lawyer?.name || t('chat.lawyerFallback');
     }
-    return consultation.client?.name || 'Клиент';
+    return consultation.client?.name || t('chat.clientFallback');
   };
 
   // Two-letter initials from the partner's name (design: "АК")
@@ -242,7 +244,7 @@ const ChatPage = () => {
             {partnerName}
           </Typography>
           {typingUser && (
-            <Typography sx={{ fontSize: 12, color: '#7A9A6B' }}>печатает…</Typography>
+            <Typography sx={{ fontSize: 12, color: '#7A9A6B' }}>{t('chat.typing')}</Typography>
           )}
         </Box>
       </Box>
@@ -264,10 +266,10 @@ const ChatPage = () => {
           {messages.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'var(--text2)', mb: 1 }}>
-                Начните диалог
+                {t('chat.startTitle')}
               </Typography>
               <Typography sx={{ fontSize: 14, color: 'var(--text3)' }}>
-                Напишите первое сообщение, чтобы начать консультацию
+                {t('chat.startSub')}
               </Typography>
             </Box>
           ) : (
@@ -344,7 +346,7 @@ const ChatPage = () => {
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
-            placeholder="Сообщение…"
+            placeholder={t('chat.messagePlaceholder')}
             variant="standard"
             InputProps={{ disableUnderline: true }}
             sx={{

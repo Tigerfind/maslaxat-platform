@@ -23,6 +23,7 @@ import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
 import { axelionColors } from '../../theme/axelionTheme';
 import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: scale(0.95); }
@@ -41,6 +42,7 @@ const VideoCallPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
   const { user } = useSelector((state) => state.auth);
+  const { t } = useTranslation();
 
   // State
   const [consultation, setConsultation] = useState(null);
@@ -80,7 +82,7 @@ const VideoCallPage = () => {
         const response = await api.get(`/video/consultation/${consultationId}`);
         setConsultation(response.data);
       } catch (err) {
-        setError('Failed to load consultation details');
+        setError(t('videoCall.loadError'));
         console.error('Load consultation error:', err);
       } finally {
         setLoading(false);
@@ -178,7 +180,7 @@ const VideoCallPage = () => {
       console.error('Peer error:', err);
       // Don't show error for non-critical peer issues during negotiation
       if (err.code === 'ERR_DATA_CHANNEL' || err.code === 'ERR_CONNECTION_FAILURE') {
-        setError('Не удалось установить соединение. Проверьте интернет и попробуйте снова.');
+        setError(t('videoCall.peerError'));
       }
     });
 
@@ -201,11 +203,11 @@ const VideoCallPage = () => {
   const handleEndCall = useCallback(async (emitEvent = true) => {
     // Stop all media
     if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((t) => t.stop());
+      localStreamRef.current.getTracks().forEach((tr) => tr.stop());
       localStreamRef.current = null;
     }
     if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((t) => t.stop());
+      screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
       screenStreamRef.current = null;
     }
 
@@ -259,7 +261,7 @@ const VideoCallPage = () => {
         });
 
         if (cancelled) {
-          stream.getTracks().forEach((t) => t.stop());
+          stream.getTracks().forEach((tr) => tr.stop());
           return;
         }
 
@@ -294,7 +296,7 @@ const VideoCallPage = () => {
         socket.on('connect_error', (err) => {
           console.error('Socket connection error:', err.message);
           if (!cancelled) {
-            setError('Failed to connect to signaling server');
+            setError(t('videoCall.connectError'));
           }
         });
 
@@ -357,9 +359,9 @@ const VideoCallPage = () => {
       } catch (err) {
         if (cancelled) return;
         if (err.name === 'NotAllowedError') {
-          setError('Camera/microphone access denied. Please allow access and try again.');
+          setError(t('videoCall.mediaError'));
         } else {
-          setError('Failed to start video call: ' + err.message);
+          setError(t('videoCall.startError') + err.message);
         }
         console.error('Start call error:', err);
       }
@@ -373,7 +375,7 @@ const VideoCallPage = () => {
       callStartedRef.current = false;
 
       if (stream) {
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((tr) => tr.stop());
       }
       if (peerRef.current) {
         peerRef.current.destroy();
@@ -419,7 +421,7 @@ const VideoCallPage = () => {
     if (screenSharing) {
       // Stop screen sharing, restore camera
       if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((t) => t.stop());
+        screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
         screenStreamRef.current = null;
       }
       const videoTrack = localStreamRef.current?.getVideoTracks()[0];
@@ -517,7 +519,7 @@ const VideoCallPage = () => {
         }}
       >
         <Typography variant="h5" sx={{ color: axelionColors.error }}>
-          Connection Error
+          {t('videoCall.connectionError')}
         </Typography>
         <Typography variant="body1" sx={{ color: axelionColors.textMuted, maxWidth: 400 }}>
           {error}
@@ -539,7 +541,7 @@ const VideoCallPage = () => {
             '&:hover': { bgcolor: axelionColors.goldDark },
           }}
         >
-          Go Back
+          {t('videoCall.goBack')}
         </Box>
       </Box>
     );
@@ -547,10 +549,10 @@ const VideoCallPage = () => {
 
   // Status label shown in the top bar (design: dot + "Соединено · timer")
   const statusText = peerConnected
-    ? `Соединено · ${formatDuration(callDuration)}`
+    ? `${t('videoCall.connected')} · ${formatDuration(callDuration)}`
     : connected
-    ? 'Ожидание собеседника…'
-    : 'Соединение…';
+    ? t('videoCall.waiting')
+    : t('videoCall.connecting');
   const statusDotColor = peerConnected ? '#7A9A6B' : '#C4A35A';
 
   // Shared control-button recipe
@@ -695,7 +697,7 @@ const VideoCallPage = () => {
               {(otherPartyName || remoteName)?.charAt(0) || '?'}
             </Box>
             <Typography sx={{ color: '#FFFFFF', fontSize: 20, fontWeight: 400 }}>
-              {otherPartyName || remoteName || 'Участник'}
+              {otherPartyName || remoteName || t('videoCall.participant')}
             </Typography>
             <Typography
               sx={{
@@ -706,7 +708,7 @@ const VideoCallPage = () => {
                 mt: 0.75,
               }}
             >
-              {remoteRole === 'client' ? 'Клиент' : 'Юрист'}
+              {remoteRole === 'client' ? t('videoCall.roleClient') : t('videoCall.roleLawyer')}
             </Typography>
             <CircularProgress
               size={28}
@@ -757,7 +759,7 @@ const VideoCallPage = () => {
                 fontSize: 12,
               }}
             >
-              Камера выкл.
+              {t('videoCall.cameraOff')}
             </Box>
           )}
           <Typography
@@ -770,7 +772,7 @@ const VideoCallPage = () => {
               textShadow: '0 1px 4px rgba(0,0,0,0.8)',
             }}
           >
-            Вы
+            {t('videoCall.you')}
           </Typography>
         </Box>
       </Box>
