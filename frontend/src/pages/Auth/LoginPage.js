@@ -53,6 +53,7 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(Boolean(localStorage.getItem('rememberedEmail')));
   const [touched, setTouched] = useState({ email: false, password: false });
+  const [twoFA, setTwoFA] = useState({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
 
   const userTypes = [
     { label: t('login.client'), icon: <Person sx={{ fontSize: 20 }} />, role: 'client', dashboard: '/dashboard', demoEmail: 'client@maslaxat.uz', demoPassword: 'client123' },
@@ -74,25 +75,50 @@ const LoginPage = () => {
   };
   const handleBlur = (e) => setTouched((prev) => ({ ...prev, [e.target.name]: true }));
 
+  const dashboardMap = { client: '/dashboard', lawyer: '/lawyer/dashboard', admin: '/admin/dashboard' };
+
+  const finishLogin = (data, email) => {
+    const { user, token, role } = data;
+    if (rememberMe) localStorage.setItem('rememberedEmail', email);
+    else localStorage.removeItem('rememberedEmail');
+    dispatch(loginSuccess({ user, token, role }));
+    navigate(dashboardMap[role] || '/dashboard');
+  };
+
   const performLogin = async (email, password) => {
     dispatch(loginStart());
     try {
       const response = await api.post('/auth/login', { email, password });
-      const { user, token, role } = response.data;
 
-      // «Запомнить меня» — сохраняем e-mail для подстановки при следующем входе
-      if (rememberMe) localStorage.setItem('rememberedEmail', email);
-      else localStorage.removeItem('rememberedEmail');
+      // Аккаунт с 2FA — переходим ко второму шагу (ввод кода), токен пока не выдан
+      if (response.data.twoFactorRequired) {
+        dispatch(loginFailure(null)); // сбрасываем loading без ошибки
+        setTwoFA({ required: true, tempToken: response.data.tempToken, code: '', error: '', loading: false, email });
+        return;
+      }
 
-      dispatch(loginSuccess({ user, token, role }));
-
-      const dashboardMap = { client: '/dashboard', lawyer: '/lawyer/dashboard', admin: '/admin/dashboard' };
-      navigate(dashboardMap[role] || '/dashboard');
+      finishLogin(response.data, email);
     } catch (err) {
       const message = err.response?.data?.error || err.message || t('login.loginError');
       dispatch(loginFailure(message));
     }
   };
+
+  const submit2FA = async (e) => {
+    e.preventDefault();
+    const code = twoFA.code.trim();
+    if (!code) return;
+    setTwoFA((p) => ({ ...p, loading: true, error: '' }));
+    try {
+      const response = await api.post('/auth/login/2fa', { tempToken: twoFA.tempToken, code });
+      finishLogin(response.data, twoFA.email);
+    } catch (err) {
+      const message = err.response?.data?.error || t('login.twoFA.error');
+      setTwoFA((p) => ({ ...p, loading: false, error: message }));
+    }
+  };
+
+  const cancel2FA = () => setTwoFA({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
 
   const handleDemoLogin = () => {
     performLogin(currentUserType.demoEmail, currentUserType.demoPassword);
@@ -278,7 +304,49 @@ const LoginPage = () => {
             </Alert>
           )}
 
+          {/* ── Шаг 2FA: ввод кода ── */}
+          {twoFA.required && (
+            <form onSubmit={submit2FA}>
+              <Typography sx={{ fontSize: 15, fontWeight: 600, color: axelionColors.textDark, mb: 0.5 }}>
+                {t('login.twoFA.title')}
+              </Typography>
+              <Typography sx={{ fontSize: 13, color: axelionColors.textMuted, mb: 2.5 }}>
+                {t('login.twoFA.subtitle')}
+              </Typography>
+              {twoFA.error && (
+                <Alert severity="error" sx={{ mb: 2, borderRadius: '8px' }}>{twoFA.error}</Alert>
+              )}
+              <TextField
+                fullWidth
+                autoFocus
+                label={t('login.twoFA.codeLabel')}
+                value={twoFA.code}
+                onChange={(e) => setTwoFA((p) => ({ ...p, code: e.target.value }))}
+                placeholder="123456"
+                inputProps={{ inputMode: 'text', autoComplete: 'one-time-code', maxLength: 9 }}
+                sx={{ mb: 2.5, ...inputStyles }}
+              />
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                disabled={twoFA.loading || !twoFA.code.trim()}
+                sx={{ py: 1.5, borderRadius: '8px', textTransform: 'none', fontSize: 16, fontWeight: 600, backgroundColor: axelionColors.gold, '&:hover': { backgroundColor: axelionColors.bronze } }}
+              >
+                {twoFA.loading ? t('login.twoFA.checking') : t('login.twoFA.submit')}
+              </Button>
+              <Button
+                fullWidth
+                onClick={cancel2FA}
+                sx={{ mt: 1.5, textTransform: 'none', color: axelionColors.textMuted }}
+              >
+                {t('login.twoFA.back')}
+              </Button>
+            </form>
+          )}
+
           {/* Login Form */}
+          {!twoFA.required && (
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
@@ -383,9 +451,10 @@ const LoginPage = () => {
               {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} /> : t('login.login')}
             </Button>
           </form>
+          )}
 
           {/* Demo Section — только в dev, не попадает в прод-сборку */}
-          {isDev && (
+          {isDev && !twoFA.required && (
             <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
               <Typography
                 sx={{

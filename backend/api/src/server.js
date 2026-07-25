@@ -106,6 +106,7 @@ app.use('/api/client/documents', require('./routes/documents'));
 app.use('/api/notifications', require('./routes/notifications'));
 app.use('/api/client/notifications', require('./routes/notifications'));
 app.use('/api/push', require('./routes/push'));
+app.use('/api/2fa', require('./routes/twofa'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/client/chat', require('./routes/chat'));
 app.use('/api/video', require('./routes/video'));

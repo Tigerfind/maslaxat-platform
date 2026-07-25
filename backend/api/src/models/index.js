@@ -57,6 +57,19 @@ const User = sequelize.define('User', {
   verificationToken: {
     type: DataTypes.STRING,
   },
+  // Двухфакторная аутентификация (TOTP). secret — base32; включается только
+  // после подтверждения кодом. Резервные коды хранятся хешами (sha256).
+  twoFactorSecret: {
+    type: DataTypes.STRING,
+  },
+  twoFactorEnabled: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
+  twoFactorBackupCodes: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+  },
 }, {
   hooks: {
     beforeCreate: async (user) => {
@@ -82,6 +95,9 @@ User.prototype.toJSON = function () {
   delete values.resetToken;
   delete values.resetTokenExpiry;
   delete values.verificationToken;
+  // Секрет и резервные коды 2FA не отдаём наружу никогда; флаг enabled — можно
+  delete values.twoFactorSecret;
+  delete values.twoFactorBackupCodes;
   return values;
 };
 

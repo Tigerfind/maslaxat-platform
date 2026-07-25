@@ -413,6 +413,22 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
       публичный список юриста исключает скрытые; админ GET/PATCH /admin/reviews;
       AdminReviewsPage (звёзды + тумблер) + карточка в дашборде + i18n. Тест: скрытие 1★
       поднимает рейтинг и убирает из публики (30/30 зелёные). ПРОВЕРЕНО E2E.
+- [x] Сравнение юристов: CompareModal (2–3 в ряд, подсветка лучшего) + тоггл на карточке
+      каталога + плавающая панель. i18n compare.*.
+- [x] Предпросмотр документа: кнопка «глаз» → модалка (blob→objectURL), image в img,
+      PDF в iframe, прочее → скачивание. Backend не менялся (переиспользован /:id/download).
+- [x] Папки/категории документов: Document.category + миграция; upload сохраняет категорию;
+      фильтр-чипы со счётчиками + бейдж на карточке; некатегоризованные → «Другое».
+- [x] Web-push (keyless VAPID): модель PushSubscription + миграция; routes/push
+      (vapid-key/subscribe/unsubscribe); pushService (рассылка + чистка мёртвых, fail-safe);
+      createNotification шлёт web-push; sw.js push+notificationclick; тумблер в настройках.
+      .env: VAPID_* (приватный — только через секреты платформы).
+- [x] 2FA (TOTP, otplib@12 + qrcode) для юристов/админа: User.twoFactor* + миграция;
+      routes/2fa (status/setup/enable/disable) + login-challenge (twoFactorRequired→tempToken)
+      + POST /auth/login/2fa (TOTP или одноразовый резервный код); секрет/коды скрыты в toJSON;
+      фронт: шаг кода на входе (LoginPage) + мастер в настройках (QR + резервные коды,
+      TwoFactorSection). Тесты twofa.test.js 4/4 (итого 34/34). ПРОВЕРЕНО E2E весь флоу.
+      Соц-вход (Google/Telegram) — отдельно, требует ключей (Фаза 6).
 
 ### ФАЗА 5 — Премиум-UX (готово, проверено):
 - [x] 5.1 Авторизация: анимация входа (framer-motion), «запомнить меня» (rememberedEmail),

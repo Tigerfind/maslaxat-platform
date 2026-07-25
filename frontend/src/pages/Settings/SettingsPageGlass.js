@@ -16,6 +16,7 @@ import {
 import { toast } from 'react-toastify';
 import { logout } from '../../store/slices/authSlice';
 import pushService from '../../services/pushService';
+import TwoFactorSection from '../../components/Settings/TwoFactorSection';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
@@ -309,6 +310,9 @@ const SettingsPageGlass = () => {
             />
           )}
         </Section>
+
+        {/* ── Двухфакторная аутентификация (юристы/админ) ── */}
+        <TwoFactorSection />
 
         {/* ── Приватность ── */}
         <Section

@@ -135,6 +135,7 @@ const translations = {
       // Сообщения
       loginSuccess: 'Вход выполнен успешно',
       loginError: 'Ошибка входа',
+      twoFA: { title: 'Двухфакторная аутентификация', subtitle: 'Введите 6-значный код из приложения-аутентификатора или резервный код', codeLabel: 'Код подтверждения', submit: 'Подтвердить', checking: 'Проверка…', back: 'Назад ко входу', error: 'Неверный код' },
       invalidCredentials: 'Неверный email или пароль',
 
       // Footer
@@ -185,6 +186,7 @@ const translations = {
       // Сообщения
       loginSuccess: 'Кириш муваффақиятли бажарилди',
       loginError: 'Кириш хатоси',
+      twoFA: { title: 'Икки босқичли аутентификация', subtitle: 'Аутентификатор иловасидан 6 рақамли код ёки заҳира кодини киритинг', codeLabel: 'Тасдиқлаш коди', submit: 'Тасдиқлаш', checking: 'Текширилмоқда…', back: 'Кириш саҳифасига', error: 'Нотўғри код' },
       invalidCredentials: 'Нотўғри email ёки парол',
 
       // Footer
@@ -235,6 +237,7 @@ const translations = {
       // Сообщения
       loginSuccess: 'Login successful',
       loginError: 'Login error',
+      twoFA: { title: 'Two-factor authentication', subtitle: 'Enter the 6-digit code from your authenticator app or a backup code', codeLabel: 'Verification code', submit: 'Verify', checking: 'Checking…', back: 'Back to login', error: 'Invalid code' },
       invalidCredentials: 'Invalid email or password',
 
       // Footer
@@ -1098,6 +1101,36 @@ const translations = {
       loadError: 'Error loading favorites',
       removed: 'Removed from favorites',
       removeError: 'Error removing',
+    },
+  },
+
+  twofa: {
+    ru: {
+      title: 'Двухфакторная аутентификация', subtitle: 'Дополнительная защита входа кодом из приложения',
+      on: 'Включена', off: 'Не настроена', enable: 'Включить', disable: 'Отключить',
+      setupTitle: 'Настройка 2FA', setupStep1: 'Отсканируйте QR-код в приложении Google Authenticator (или совместимом).',
+      setupStep2: 'Введите 6-значный код из приложения:', manualKey: 'Ключ вручную', confirmEnable: 'Подтвердить и включить',
+      checking: 'Проверка…', enabledTitle: '2FA включена', backupIntro: 'Сохраните резервные коды в надёжном месте. Каждый работает один раз, если нет доступа к приложению.',
+      copyCodes: 'Скопировать коды', done: 'Готово', disableTitle: 'Отключить 2FA', disableIntro: 'Введите код из приложения или резервный код для подтверждения.',
+      cancel: 'Отмена', copied: 'Коды скопированы', disabled: '2FA отключена', errGeneric: 'Не удалось выполнить операцию', errCode: 'Неверный код',
+    },
+    uz: {
+      title: 'Икки босқичли аутентификация', subtitle: 'Кириш учун иловадан код орқали қўшимча ҳимоя',
+      on: 'Ёқилган', off: 'Созланмаган', enable: 'Ёқиш', disable: 'Ўчириш',
+      setupTitle: '2FA созлаш', setupStep1: 'QR-кодни Google Authenticator (ёки мос) иловада сканерланг.',
+      setupStep2: 'Иловадаги 6 рақамли кодни киритинг:', manualKey: 'Қўлда калит', confirmEnable: 'Тасдиқлаш ва ёқиш',
+      checking: 'Текширилмоқда…', enabledTitle: '2FA ёқилди', backupIntro: 'Заҳира кодларни хавфсиз жойда сақланг. Ҳар бири бир марта ишлайди.',
+      copyCodes: 'Кодларни нусхалаш', done: 'Тайёр', disableTitle: '2FA ни ўчириш', disableIntro: 'Тасдиқлаш учун иловадаги ёки заҳира кодини киритинг.',
+      cancel: 'Бекор қилиш', copied: 'Кодлар нусхаланди', disabled: '2FA ўчирилди', errGeneric: 'Амални бажариб бўлмади', errCode: 'Нотўғри код',
+    },
+    en: {
+      title: 'Two-factor authentication', subtitle: 'Extra login protection with a code from your app',
+      on: 'Enabled', off: 'Not set up', enable: 'Enable', disable: 'Disable',
+      setupTitle: 'Set up 2FA', setupStep1: 'Scan the QR code in Google Authenticator (or a compatible app).',
+      setupStep2: 'Enter the 6-digit code from the app:', manualKey: 'Manual key', confirmEnable: 'Confirm and enable',
+      checking: 'Checking…', enabledTitle: '2FA enabled', backupIntro: 'Store backup codes somewhere safe. Each works once if you lose access to the app.',
+      copyCodes: 'Copy codes', done: 'Done', disableTitle: 'Disable 2FA', disableIntro: 'Enter a code from the app or a backup code to confirm.',
+      cancel: 'Cancel', copied: 'Codes copied', disabled: '2FA disabled', errGeneric: 'Operation failed', errCode: 'Invalid code',
     },
   },
 
