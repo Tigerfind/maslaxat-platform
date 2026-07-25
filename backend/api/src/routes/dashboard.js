@@ -85,8 +85,10 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
     // Response rate: accepted / (accepted + rejected) from last 30 days
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+    // Принятой считается заявка, дошедшая до accepted/in_progress/completed (а не только
+    // ровно 'accepted' — иначе принятые, но уже идущие/завершённые не попадали в расчёт).
     const [acceptedCount, rejectedCount] = await Promise.all([
-      Consultation.count({ where: { lawyerId: req.userId, status: 'accepted', updatedAt: { [Op.gte]: thirtyDaysAgo } } }),
+      Consultation.count({ where: { lawyerId: req.userId, status: { [Op.in]: ['accepted', 'in_progress', 'completed'] }, updatedAt: { [Op.gte]: thirtyDaysAgo } } }),
       Consultation.count({ where: { lawyerId: req.userId, status: 'rejected', updatedAt: { [Op.gte]: thirtyDaysAgo } } }),
     ]);
     const totalResponded = acceptedCount + rejectedCount;
@@ -99,16 +101,17 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       col: 'clientId',
     });
 
-    // Calculate monthly earnings (completed this month)
+    // Заработок — по ФАКТИЧЕСКИМ ценам завершённых консультаций (с учётом промо/бесплатных),
+    // а не число × текущая цена профиля (которая могла меняться).
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
-    const monthlyCompleted = await Consultation.count({
-      where: { lawyerId: req.userId, status: 'completed', updatedAt: { [Op.gte]: startOfMonth } },
-    });
-    const pricePerConsultation = profile?.price || 0;
-    const monthlyEarnings = monthlyCompleted * pricePerConsultation;
-    const totalEarnings = completed * pricePerConsultation;
+    const [monthlyEarningsRaw, totalEarningsRaw] = await Promise.all([
+      Consultation.sum('price', { where: { lawyerId: req.userId, status: 'completed', updatedAt: { [Op.gte]: startOfMonth } } }),
+      Consultation.sum('price', { where: { lawyerId: req.userId, status: 'completed' } }),
+    ]);
+    const monthlyEarnings = monthlyEarningsRaw || 0;
+    const totalEarnings = totalEarningsRaw || 0;
 
     res.json({
       pendingRequests: pending,

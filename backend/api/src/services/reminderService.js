@@ -42,14 +42,19 @@ async function checkUpcomingReminders() {
   try {
     const now = new Date();
     const horizon = new Date(now.getTime() + WINDOW_MIN * 60 * 1000);
-    const today = now.toISOString().split('T')[0];
+    // ЛОКАЛЬНАЯ дата (preferredDate + preferredTime трактуются как локальное время сервера).
+    // Раньше здесь была UTC-дата → рассинхрон у сервера не в UTC и промахи около полуночи.
+    const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+    const today = localDate(now);
+    const tomorrow = localDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
 
-    // Кандидаты: подтверждённые/ожидающие, ещё не напомненные, на сегодня
+    // Кандидаты: подтверждённые/ожидающие, ещё не напомненные, на сегодня/завтра
+    // (завтра — чтобы поймать окно, пересекающее полночь). Точное окно — по времени ниже.
     const candidates = await Consultation.findAll({
       where: {
         status: { [Op.in]: ['accepted', 'pending'] },
         reminderSent: false,
-        preferredDate: today,
+        preferredDate: { [Op.in]: [today, tomorrow] },
       },
       include: [
         { model: User, as: 'client', attributes: ['id', 'name', 'email'] },

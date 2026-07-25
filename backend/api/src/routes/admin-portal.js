@@ -47,6 +47,7 @@ router.get('/activity/recent', async (req, res, next) => {
         type,
         description,
         userName: c.client?.name || 'Пользователь',
+        ts: new Date(c.createdAt).getTime(), // сырой timestamp для сортировки
         date: new Date(c.createdAt).toLocaleDateString('ru-RU', {
           day: 'numeric',
           month: 'short',
@@ -68,6 +69,7 @@ router.get('/activity/recent', async (req, res, next) => {
         type: 'user_registration',
         description: `Новый ${u.role === 'lawyer' ? 'юрист' : 'клиент'}: ${u.name}`,
         userName: u.name,
+        ts: new Date(u.createdAt).getTime(),
         date: new Date(u.createdAt).toLocaleDateString('ru-RU', {
           day: 'numeric',
           month: 'short',
@@ -77,10 +79,11 @@ router.get('/activity/recent', async (req, res, next) => {
       });
     });
 
-    // Sort by date (newest first) and limit
-    activity.sort((a, b) => new Date(b.date) - new Date(a.date));
+    // Sort by raw timestamp (newest first) — раньше сортировали по локализованной строке (NaN)
+    activity.sort((a, b) => b.ts - a.ts);
 
-    res.json(activity.slice(0, parseInt(limit)));
+    // ts — служебное поле для сортировки, наружу не отдаём
+    res.json(activity.slice(0, parseInt(limit)).map(({ ts, ...rest }) => rest));
   } catch (err) {
     next(err);
   }

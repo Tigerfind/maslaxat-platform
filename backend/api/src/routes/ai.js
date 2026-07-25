@@ -89,7 +89,29 @@ const generateAIResponse = async (message, attachments = []) => {
             type: 'image',
             source: { type: 'base64', media_type: mediaType, data: base64 },
           });
-        } else if (att.mimetype === 'application/pdf' || att.mimetype === 'text/plain') {
+        } else if (att.mimetype === 'application/pdf') {
+          try {
+            const pdfParse = require('pdf-parse');
+            const data = await pdfParse(fs.readFileSync(att.path));
+            content.push({
+              type: 'text',
+              text: `[Прикреплённый файл: ${att.originalname}]\n${(data.text || '').substring(0, 5000)}`,
+            });
+          } catch (e) {
+            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать PDF]` });
+          }
+        } else if ((att.mimetype && att.mimetype.includes('word')) || /\.docx?$/i.test(att.originalname || '')) {
+          try {
+            const mammoth = require('mammoth');
+            const { value } = await mammoth.extractRawText({ path: att.path });
+            content.push({
+              type: 'text',
+              text: `[Прикреплённый файл: ${att.originalname}]\n${(value || '').substring(0, 5000)}`,
+            });
+          } catch (e) {
+            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать документ]` });
+          }
+        } else if (att.mimetype === 'text/plain') {
           try {
             const text = fs.readFileSync(att.path, 'utf-8');
             content.push({
@@ -97,10 +119,7 @@ const generateAIResponse = async (message, attachments = []) => {
               text: `[Прикреплённый файл: ${att.originalname}]\n${text.substring(0, 5000)}`,
             });
           } catch (e) {
-            content.push({
-              type: 'text',
-              text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать]`,
-            });
+            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать]` });
           }
         } else {
           content.push({
@@ -370,9 +389,13 @@ const checkAIRateLimit = async (req, res, next) => {
       // Подписка истекла → откатываемся на free
     }
 
-    // FREE: 3 запроса в день через Redis
+    // FREE: 3 запроса в день через Redis.
+    // FAIL-CLOSED: без Redis лимит не посчитать → не пускаем free-запрос к платному Claude,
+    // а не открываем доступ настежь (иначе лимит обходится при падении Redis).
     const redis = getRedis();
-    if (!redis) return next(); // нет Redis — пропускаем
+    if (!redis) {
+      return res.status(503).json({ error: 'Лимит временно недоступен, попробуйте позже' });
+    }
 
     const today = new Date().toISOString().split('T')[0];
     const key = `ai_limit:${req.userId}:${today}`;
@@ -400,7 +423,8 @@ const checkAIRateLimit = async (req, res, next) => {
     next();
   } catch (err) {
     console.error('AI rate limit check failed:', err.message);
-    next(); // fail open
+    // FAIL-CLOSED: при сбое лимитера не открываем платный Claude без учёта
+    return res.status(503).json({ error: 'Лимит временно недоступен, попробуйте позже' });
   }
 };
 

@@ -2,9 +2,21 @@ const router = require('express').Router();
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
+const rateLimit = require('express-rate-limit');
 const { Document } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+
+// Лимит на AI-анализ документов (защита от неограниченных платных вызовов Claude).
+// Ключ — пользователь (не IP), поэтому ставится ПОСЛЕ authenticate.
+const aiCheckLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 час
+  max: 15,
+  keyGenerator: (req) => req.userId || req.ip,
+  message: { error: 'Слишком много запросов на анализ, попробуйте позже' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // Claude AI for document analysis
 let anthropic = null;
@@ -128,7 +140,7 @@ router.get('/:id/download', authenticate, async (req, res, next) => {
 });
 
 // POST /api/documents/:id/ai-check — AI analysis of document via Claude
-router.post('/:id/ai-check', authenticate, async (req, res, next) => {
+router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next) => {
   try {
     const document = await Document.findOne({
       where: { id: req.params.id, userId: req.userId },

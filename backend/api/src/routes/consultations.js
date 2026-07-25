@@ -19,11 +19,12 @@ router.get('/', authenticate, async (req, res, next) => {
     const { count, rows } = await Consultation.findAndCountAll({
       where,
       include: [
-        { model: User, as: 'client', attributes: ['id', 'name', 'avatar', 'email'] },
+        // Контакты (email) НЕ отдаём — защита от обхода платформы (как в каталоге/чате)
+        { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
         {
           model: User,
           as: 'lawyer',
-          attributes: ['id', 'name', 'avatar', 'email'],
+          attributes: ['id', 'name', 'avatar'],
           include: [{ model: LawyerProfile, as: 'profile' }],
         },
         // Единственный источник правды по оценке консультации — таблица Review.
