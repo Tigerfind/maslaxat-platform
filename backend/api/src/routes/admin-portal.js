@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { User, LawyerProfile, Consultation, Review, Specialization } = require('../models');
+const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 
 // All routes require admin authentication
@@ -334,6 +334,112 @@ router.get('/consultations', async (req, res, next) => {
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── SUPPORT TICKETS (управление) ───────────────────────────
+// GET /admin/support — список обращений
+router.get('/support', async (req, res, next) => {
+  try {
+    const tickets = await SupportTicket.findAll({
+      include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+      order: [['createdAt', 'DESC']],
+      limit: 100,
+    });
+    res.json(tickets);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /admin/support/:id — сменить статус обращения
+router.patch('/support/:id', async (req, res, next) => {
+  try {
+    const { status } = req.body;
+    if (!['open', 'in_progress', 'closed'].includes(status)) {
+      return res.status(400).json({ error: 'Недопустимый статус' });
+    }
+    const ticket = await SupportTicket.findByPk(req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Обращение не найдено' });
+    ticket.status = status;
+    await ticket.save();
+    res.json({ success: true, ticket });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── PROMO CODES (CRUD) ─────────────────────────────────────
+// GET /admin/promos — список промокодов
+router.get('/promos', async (req, res, next) => {
+  try {
+    const promos = await Promo.findAll({ order: [['createdAt', 'DESC']] });
+    res.json(promos);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /admin/promos — создать промокод
+router.post('/promos', async (req, res, next) => {
+  try {
+    const { code, discountPercent, minAmount, usageLimit, expiresAt, isActive } = req.body;
+    if (!code || !String(code).trim()) return res.status(400).json({ error: 'Укажите код' });
+    const pct = Number(discountPercent);
+    if (!Number.isInteger(pct) || pct < 1 || pct > 100) {
+      return res.status(400).json({ error: 'Скидка должна быть от 1 до 100%' });
+    }
+    const [promo, created] = await Promo.findOrCreate({
+      where: { code: String(code).trim().toUpperCase() },
+      defaults: {
+        code: String(code).trim().toUpperCase(),
+        discountPercent: pct,
+        minAmount: Number(minAmount) || 0,
+        usageLimit: usageLimit != null && usageLimit !== '' ? Number(usageLimit) : null,
+        expiresAt: expiresAt || null,
+        isActive: isActive !== false,
+      },
+    });
+    if (!created) return res.status(409).json({ error: 'Такой промокод уже существует' });
+    res.status(201).json(promo);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /admin/promos/:id — изменить (в т.ч. включить/выключить)
+router.patch('/promos/:id', async (req, res, next) => {
+  try {
+    const promo = await Promo.findByPk(req.params.id);
+    if (!promo) return res.status(404).json({ error: 'Промокод не найден' });
+    const { discountPercent, minAmount, usageLimit, expiresAt, isActive } = req.body;
+    if (discountPercent != null) {
+      const pct = Number(discountPercent);
+      if (!Number.isInteger(pct) || pct < 1 || pct > 100) {
+        return res.status(400).json({ error: 'Скидка должна быть от 1 до 100%' });
+      }
+      promo.discountPercent = pct;
+    }
+    if (minAmount != null) promo.minAmount = Number(minAmount) || 0;
+    if (usageLimit !== undefined) promo.usageLimit = usageLimit === '' || usageLimit === null ? null : Number(usageLimit);
+    if (expiresAt !== undefined) promo.expiresAt = expiresAt || null;
+    if (isActive != null) promo.isActive = Boolean(isActive);
+    await promo.save();
+    res.json(promo);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /admin/promos/:id — удалить
+router.delete('/promos/:id', async (req, res, next) => {
+  try {
+    const promo = await Promo.findByPk(req.params.id);
+    if (!promo) return res.status(404).json({ error: 'Промокод не найден' });
+    await promo.destroy();
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }

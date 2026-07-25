@@ -263,6 +263,48 @@ export const adminReportService = {
   },
 };
 
+// Admin Support Tickets
+export const adminSupportService = {
+  getTickets: async () => {
+    try {
+      const response = await api.get('/admin/support');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching tickets:', error);
+      return [];
+    }
+  },
+  updateStatus: async (id, status) => {
+    const response = await api.patch(`/admin/support/${id}`, { status });
+    return response.data;
+  },
+};
+
+// Admin Promo Codes
+export const adminPromoService = {
+  getPromos: async () => {
+    try {
+      const response = await api.get('/admin/promos');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching promos:', error);
+      return [];
+    }
+  },
+  create: async (data) => {
+    const response = await api.post('/admin/promos', data);
+    return response.data;
+  },
+  update: async (id, data) => {
+    const response = await api.patch(`/admin/promos/${id}`, data);
+    return response.data;
+  },
+  remove: async (id) => {
+    const response = await api.delete(`/admin/promos/${id}`);
+    return response.data;
+  },
+};
+
 export default {
   dashboard: adminDashboardService,
   users: adminUserService,
@@ -270,4 +312,6 @@ export default {
   specializations: adminSpecializationService,
   consultations: adminConsultationService,
   reports: adminReportService,
+  support: adminSupportService,
+  promos: adminPromoService,
 };

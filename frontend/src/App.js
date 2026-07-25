@@ -42,6 +42,8 @@ import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
 import SpecializationsPageGlass from './pages/Admin/SpecializationsPageGlass';
 import AdminLawyersPage from './pages/Admin/AdminLawyersPage';
 import AdminUsersPage from './pages/Admin/AdminUsersPage';
+import AdminPromosPage from './pages/Admin/AdminPromosPage';
+import AdminSupportPage from './pages/Admin/AdminSupportPage';
 import FavoritesPage from './pages/Client/FavoritesPage';
 import PortfolioPage from './pages/Client/PortfolioPage';
 import PaymentsPageGlass from './pages/Payments/PaymentsPageGlass';
@@ -187,6 +189,16 @@ const AppContent = () => {
         <Route path="/admin/users" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminUsersPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/promos" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminPromosPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/support" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminSupportPage />
           </ProtectedRoute>
         } />
 

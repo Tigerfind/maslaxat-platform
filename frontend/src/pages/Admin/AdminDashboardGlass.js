@@ -36,6 +36,8 @@ import {
   CheckCircle,
   PersonAdd,
   Category,
+  LocalOffer,
+  SupportAgent,
 } from '@mui/icons-material';
 import { logout } from '../../store/slices/authSlice';
 import adminService from '../../services/adminService';
@@ -526,6 +528,18 @@ const AdminDashboardGlass = () => {
                 label: t('admin.specializations'),
                 path: '/admin/specializations',
                 color: axelionColors.bronze,
+              },
+              {
+                icon: <LocalOffer />,
+                label: t('admin.promos'),
+                path: '/admin/promos',
+                color: axelionColors.success,
+              },
+              {
+                icon: <SupportAgent />,
+                label: t('admin.support'),
+                path: '/admin/support',
+                color: axelionColors.info || axelionColors.gold,
               },
             ].map((action, index) => (
               <Grid item xs={12} sm={6} md={4} key={index}>
