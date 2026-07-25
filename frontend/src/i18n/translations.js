@@ -1101,6 +1101,12 @@ const translations = {
     },
   },
 
+  compare: {
+    ru: { title: 'Сравнение юристов', toggle: 'Сравнить', selected: 'Выбрано: {n}', open: 'Сравнить', clear: 'Очистить', max: 'Можно сравнить максимум {n} юристов', rating: 'Рейтинг', reviews: 'Отзывы', experience: 'Опыт', completed: 'Завершено дел', price: 'Цена от', specialization: 'Специализация', region: 'Регион', languages: 'Языки', online: 'Онлайн сейчас', yes: 'Да', no: 'Нет', book: 'Записаться' },
+    uz: { title: 'Юристларни солиштириш', toggle: 'Солиштириш', selected: 'Танланди: {n}', open: 'Солиштириш', clear: 'Тозалаш', max: 'Кўпи билан {n} та юристни солиштириш мумкин', rating: 'Рейтинг', reviews: 'Отзивлар', experience: 'Тажриба', completed: 'Якунланган ишлар', price: 'Нархи', specialization: 'Ихтисослик', region: 'Ҳудуд', languages: 'Тиллар', online: 'Ҳозир онлайн', yes: 'Ҳа', no: 'Йўқ', book: 'Ёзилиш' },
+    en: { title: 'Compare lawyers', toggle: 'Compare', selected: 'Selected: {n}', open: 'Compare', clear: 'Clear', max: 'You can compare up to {n} lawyers', rating: 'Rating', reviews: 'Reviews', experience: 'Experience', completed: 'Completed cases', price: 'Price from', specialization: 'Specialization', region: 'Region', languages: 'Languages', online: 'Online now', yes: 'Yes', no: 'No', book: 'Book' },
+  },
+
   lawyers: {
     ru: {
       title: 'Юристы',
