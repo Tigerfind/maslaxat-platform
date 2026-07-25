@@ -188,9 +188,6 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
-  videoRoomUrl: {
-    type: DataTypes.STRING,
-  },
   notes: {
     type: DataTypes.TEXT,
   },

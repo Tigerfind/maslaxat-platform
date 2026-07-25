@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const logger = require('../config/logger');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -26,7 +27,7 @@ try {
     anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   }
 } catch (e) {
-  console.warn('Anthropic SDK not available for document analysis');
+  logger.warn('Anthropic SDK not available for document analysis');
 }
 
 // Ensure uploads directory exists

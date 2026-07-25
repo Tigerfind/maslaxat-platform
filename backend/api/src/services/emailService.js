@@ -1,4 +1,5 @@
 const nodemailer = require('nodemailer');
+const logger = require('../config/logger');
 
 // Create transporter — uses SMTP settings from env or falls back to Ethereal (dev)
 let transporter;
@@ -28,7 +29,7 @@ const getTransporter = async () => {
         pass: testAccount.pass,
       },
     });
-    console.log('Email: using Ethereal test account', testAccount.user);
+    logger.info('Email: using Ethereal test account', testAccount.user);
   }
 
   return transporter;
@@ -42,7 +43,7 @@ const sendMail = async ({ to, subject, html }) => {
 
   // In dev, log the preview URL from Ethereal
   if (!process.env.SMTP_HOST) {
-    console.log('Email preview:', nodemailer.getTestMessageUrl(info));
+    logger.info('Email preview:', nodemailer.getTestMessageUrl(info));
   }
 
   return info;

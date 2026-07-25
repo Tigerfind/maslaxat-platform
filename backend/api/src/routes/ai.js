@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const logger = require('../config/logger');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -145,7 +146,7 @@ const generateAIResponse = async (message, attachments = []) => {
 
       return { reply: cleanText, category: detectedCategory, fallback: false };
     } catch (err) {
-      console.error('Claude API error:', err.message);
+      logger.error('Claude API error:', err.message);
     }
   }
 
@@ -423,7 +424,7 @@ const checkAIRateLimit = async (req, res, next) => {
     req.subscriptionPlan = 'free';
     next();
   } catch (err) {
-    console.error('AI rate limit check failed:', err.message);
+    logger.error('AI rate limit check failed:', err.message);
     // FAIL-CLOSED: при сбое лимитера не открываем платный Claude без учёта
     return res.status(503).json({ error: 'Лимит временно недоступен, попробуйте позже' });
   }

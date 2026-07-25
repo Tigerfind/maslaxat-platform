@@ -268,7 +268,17 @@ router.get('/specializations', async (req, res, next) => {
       where: { isActive: true },
       order: [['name', 'ASC']],
     });
-    res.json(specializations);
+    // Реальное число юристов по каждой специализации (раньше lawyerCount всегда был 1 из сида)
+    const counts = await LawyerProfile.findAll({
+      attributes: ['specialization', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
+      group: ['specialization'],
+      raw: true,
+    });
+    const countMap = {};
+    counts.forEach((c) => { countMap[c.specialization] = parseInt(c.cnt, 10) || 0; });
+
+    const result = specializations.map((s) => ({ ...s.toJSON(), lawyerCount: countMap[s.name] || 0 }));
+    res.json(result);
   } catch (err) {
     next(err);
   }

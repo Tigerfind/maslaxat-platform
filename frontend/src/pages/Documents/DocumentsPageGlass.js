@@ -33,7 +33,7 @@ import { useTranslation } from '../../i18n';
        (icon, status pill, name, type·size·date, AI-score bar, actions)
    • Upload dialog (dropzone, category, ≤10MB PDF/DOC/DOCX, progress)
                                     → clientService.documents.uploadDocument()
-   • Per-doc: download (stub) · delete dialog → deleteDocument()
+   • Per-doc: download (GET /documents/:id/download) · delete dialog → deleteDocument()
               "AI-проверка" dialog (loader → analysis) → checkDocument()
   Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
   ─────────────────────────────────────────────────────────────

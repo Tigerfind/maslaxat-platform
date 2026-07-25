@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const logger = require('../config/logger');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
@@ -53,7 +54,7 @@ router.post('/register', async (req, res, next) => {
     try {
       await sendVerificationEmail(user.email, verificationToken);
     } catch (emailErr) {
-      console.error('Failed to send verification email:', emailErr.message);
+      logger.error('Failed to send verification email:', emailErr.message);
     }
 
     const token = signToken(user);
@@ -137,7 +138,7 @@ router.post('/forgot-password', async (req, res, next) => {
     try {
       await sendPasswordResetEmail(email, resetToken);
     } catch (emailErr) {
-      console.error('Failed to send reset email:', emailErr.message);
+      logger.error('Failed to send reset email:', emailErr.message);
     }
 
     res.json({ message: 'Если аккаунт существует, вы получите письмо для сброса пароля' });

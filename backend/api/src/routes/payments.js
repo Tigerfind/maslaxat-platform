@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const logger = require('../config/logger');
 const { Op } = require('sequelize');
 const { Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
@@ -318,7 +319,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         return replyError(ERRORS.METHOD_NOT_FOUND);
     }
   } catch (err) {
-    console.error('Payme webhook error:', err);
+    logger.error('Payme webhook error:', err);
     return replyError(ERRORS.CANT_PERFORM);
   }
 });

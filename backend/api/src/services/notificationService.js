@@ -1,4 +1,5 @@
 const { Notification } = require('../models');
+const logger = require('../config/logger');
 const { emitToUser } = require('../socket/io');
 
 const TYPES = {
@@ -20,7 +21,7 @@ async function createNotification(userId, type, title, message, metadata = {}) {
     emitToUser(userId, 'notification:new', notification.toJSON());
     return notification;
   } catch (err) {
-    console.error('[NotificationService] Error creating notification:', err.message);
+    logger.error('[NotificationService] Error creating notification:', err.message);
     return null;
   }
 }

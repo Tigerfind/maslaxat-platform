@@ -6,7 +6,7 @@ const { authenticate } = require('../middleware/auth');
 // @route   POST /api/favorites/:lawyerId
 // @desc    Add lawyer to favorites
 // @access  Private (Client)
-router.post('/:lawyerId', authenticate, async (req, res) => {
+router.post('/:lawyerId', authenticate, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -31,15 +31,14 @@ router.post('/:lawyerId', authenticate, async (req, res) => {
 
     res.status(201).json({ message: 'Added to favorites' });
   } catch (error) {
-    console.error('Error adding to favorites:', error);
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 
 // @route   DELETE /api/favorites/:lawyerId
 // @desc    Remove lawyer from favorites
 // @access  Private (Client)
-router.delete('/:lawyerId', authenticate, async (req, res) => {
+router.delete('/:lawyerId', authenticate, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -56,15 +55,14 @@ router.delete('/:lawyerId', authenticate, async (req, res) => {
 
     res.json({ message: 'Removed from favorites' });
   } catch (error) {
-    console.error('Error removing from favorites:', error);
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 
 // @route   GET /api/favorites
 // @desc    Get all favorite lawyers for current client
 // @access  Private (Client)
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, async (req, res, next) => {
   try {
     const clientId = req.userId;
 
@@ -103,15 +101,14 @@ router.get('/', authenticate, async (req, res) => {
 
     res.json(lawyers);
   } catch (error) {
-    console.error('Error fetching favorites:', error);
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 
 // @route   GET /api/favorites/check/:lawyerId
 // @desc    Check if lawyer is favorited
 // @access  Private (Client)
-router.get('/check/:lawyerId', authenticate, async (req, res) => {
+router.get('/check/:lawyerId', authenticate, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -122,8 +119,7 @@ router.get('/check/:lawyerId', authenticate, async (req, res) => {
 
     res.json({ isFavorite: !!favorite });
   } catch (error) {
-    console.error('Error checking favorite:', error);
-    res.status(500).json({ message: 'Server error' });
+    next(error);
   }
 });
 

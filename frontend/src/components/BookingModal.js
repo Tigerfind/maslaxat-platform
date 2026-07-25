@@ -79,7 +79,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
   if (!lawyer) return null;
 
-  // ---- Derived pricing (UI stub — no real payment yet) ----
+  // ---- Расчёт цены (акция/промо; total уходит в оплату) ----
   const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
   const subtotal = Math.round((basePrice * duration) / 60);
   const discount = promoApplied && promoPercent ? Math.round((subtotal * promoPercent) / 100) : 0;
@@ -166,7 +166,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
-  // ---- Real booking logic runs on the "Оплатить" button (payment is a UI stub) ----
+  // ---- Бронирование по кнопке «Оплатить»: dev — имитация, прод — Payme-редирект ----
   const handlePayNow = async () => {
     try {
       setLoading(true);
@@ -614,7 +614,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           </>
         )}
 
-        {/* STEP 3: payment (UI stub — no real gateway wired) */}
+        {/* STEP 3: оплата — dev: имитация; прод (ключи Payme): редирект на checkout */}
         {step === 3 && (
           <>
             <div style={insetPanel}>
