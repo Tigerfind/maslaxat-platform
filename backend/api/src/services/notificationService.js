@@ -1,6 +1,7 @@
 const { Notification } = require('../models');
 const logger = require('../config/logger');
 const { emitToUser } = require('../socket/io');
+const pushService = require('./pushService');
 
 const TYPES = {
   BOOKING_NEW: 'booking_new',
@@ -20,6 +21,11 @@ async function createNotification(userId, type, title, message, metadata = {}) {
     const notification = await Notification.create({ userId, type, title, message, metadata });
     // Мгновенный пуш через socket (если пользователь онлайн) — без ожидания опроса
     emitToUser(userId, 'notification:new', notification.toJSON());
+    // Web-push на устройства (работает и когда вкладка закрыта). Fire-and-forget,
+    // no-op если VAPID не настроен. Ошибки не должны ломать создание уведомления.
+    pushService
+      .sendToUser(userId, { title, body: message, type, metadata })
+      .catch((err) => logger.error('[NotificationService] push failed:', err.message));
     return notification;
   } catch (err) {
     logger.error('[NotificationService] Error creating notification:', err.message);

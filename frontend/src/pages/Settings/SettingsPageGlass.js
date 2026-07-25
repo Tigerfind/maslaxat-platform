@@ -15,6 +15,7 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { logout } from '../../store/slices/authSlice';
+import pushService from '../../services/pushService';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
@@ -175,6 +176,38 @@ const SettingsPageGlass = () => {
   const [hasChanges, setHasChanges] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
 
+  // ── Web-push на это устройство (реальная подписка через Push API) ──
+  const [devicePush, setDevicePush] = useState({ supported: false, subscribed: false, enabledOnServer: false, busy: false });
+  useEffect(() => {
+    let alive = true;
+    pushService.getStatus().then((s) => {
+      if (alive) setDevicePush((prev) => ({ ...prev, supported: s.supported, subscribed: s.subscribed, enabledOnServer: s.enabledOnServer }));
+    });
+    return () => { alive = false; };
+  }, []);
+
+  const handleTogglePush = async () => {
+    if (devicePush.busy) return;
+    setDevicePush((p) => ({ ...p, busy: true }));
+    try {
+      if (devicePush.subscribed) {
+        await pushService.disable();
+        setDevicePush((p) => ({ ...p, subscribed: false, busy: false }));
+        toast.success(t('settings.pushDeviceOff'));
+      } else {
+        await pushService.enable();
+        setDevicePush((p) => ({ ...p, subscribed: true, busy: false }));
+        toast.success(t('settings.pushDeviceOn'));
+      }
+    } catch (e) {
+      setDevicePush((p) => ({ ...p, busy: false }));
+      const msg = e.message === 'denied' ? t('settings.pushDenied')
+        : e.message === 'server-disabled' ? t('settings.pushServerOff')
+        : t('settings.pushError');
+      toast.error(msg);
+    }
+  };
+
   // ── Тема: wired to the SAME mechanism as GlassShell's toggle ──
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
   const toggleDark = () =>
@@ -266,8 +299,15 @@ const SettingsPageGlass = () => {
             label={t('settings.pushNotif')}
             description={t('settings.pushNotifDesc')}
             control={<Toggle on={settings.pushNotifications} onClick={() => handleToggle('pushNotifications')} />}
-            last
           />
+          {devicePush.supported && devicePush.enabledOnServer && (
+            <Row
+              label={t('settings.pushDevice')}
+              description={t('settings.pushDeviceDesc')}
+              control={<Toggle on={devicePush.subscribed} onClick={handleTogglePush} />}
+              last
+            />
+          )}
         </Section>
 
         {/* ── Приватность ── */}

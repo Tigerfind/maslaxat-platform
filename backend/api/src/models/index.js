@@ -532,6 +532,25 @@ const Withdrawal = sequelize.define('Withdrawal', {
   },
 });
 
+// Web-push подписка устройства (один пользователь → много устройств)
+const PushSubscription = sequelize.define('PushSubscription', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  endpoint: {
+    type: DataTypes.TEXT,
+    allowNull: false,
+    unique: true,
+  },
+  // { p256dh, auth } — ключи шифрования из PushSubscription.toJSON().keys
+  keys: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+  },
+});
+
 // ─── ASSOCIATIONS ───────────────────────────────────────────
 
 // User <-> LawyerProfile (1:1 for lawyers)
@@ -573,6 +592,10 @@ Review.belongsTo(Consultation, { foreignKey: 'consultationId' });
 // User <-> Notification
 User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications' });
 Notification.belongsTo(User, { foreignKey: 'userId' });
+
+// User <-> PushSubscription (web-push устройства)
+User.hasMany(PushSubscription, { foreignKey: 'userId', as: 'pushSubscriptions' });
+PushSubscription.belongsTo(User, { foreignKey: 'userId' });
 
 // Consultation <-> Message (chat)
 Consultation.hasMany(Message, { foreignKey: 'consultationId', as: 'messages' });
@@ -627,4 +650,5 @@ module.exports = {
   SupportTicket,
   Promo,
   Withdrawal,
+  PushSubscription,
 };
