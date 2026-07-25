@@ -163,6 +163,74 @@ router.post('/login/2fa', async (req, res, next) => {
   }
 });
 
+// ─── СОЦ-ВХОД (fail-safe: без ключей провайдеры отключены) ───
+const socialAuth = require('../services/socialAuthService');
+
+// GET /api/auth/social/config — какие провайдеры включены (для показа кнопок)
+router.get('/social/config', (req, res) => {
+  res.json(socialAuth.config());
+});
+
+// Общий помощник: выдать токен для найденного/созданного пользователя
+function issueFor(user, res) {
+  const token = signToken(user);
+  res.json({ user: user.toJSON(), token, role: user.role });
+}
+
+// POST /api/auth/google — вход по Google ID-token
+router.post('/google', async (req, res, next) => {
+  try {
+    if (!socialAuth.googleEnabled()) return res.status(503).json({ error: 'Вход через Google недоступен' });
+    const data = await socialAuth.verifyGoogleToken(req.body.credential);
+    if (!data) return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Google' });
+
+    let user = await User.findOne({ where: { googleId: data.googleId } });
+    if (!user) user = await User.findOne({ where: { email: data.email } });
+    if (!user) {
+      user = await User.create({
+        email: data.email,
+        name: data.name,
+        avatar: data.avatar,
+        role: 'client',
+        isVerified: true,
+        googleId: data.googleId,
+        password: crypto.randomBytes(24).toString('hex'),
+      });
+    } else if (!user.googleId) {
+      user.googleId = data.googleId;
+      await user.save();
+    }
+    issueFor(user, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/telegram — вход по данным Telegram Login Widget
+router.post('/telegram', async (req, res, next) => {
+  try {
+    if (!socialAuth.telegramEnabled()) return res.status(503).json({ error: 'Вход через Telegram недоступен' });
+    const data = socialAuth.verifyTelegramAuth(req.body);
+    if (!data) return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Telegram' });
+
+    let user = await User.findOne({ where: { telegramId: data.telegramId } });
+    if (!user) {
+      user = await User.create({
+        email: `tg${data.telegramId}@telegram.local`,
+        name: data.name,
+        avatar: data.avatar,
+        role: 'client',
+        isVerified: true,
+        telegramId: data.telegramId,
+        password: crypto.randomBytes(24).toString('hex'),
+      });
+    }
+    issueFor(user, res);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/auth/me
 const { authenticate } = require('../middleware/auth');
 router.get('/me', authenticate, async (req, res) => {

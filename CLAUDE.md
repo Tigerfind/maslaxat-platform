@@ -428,7 +428,17 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
       + POST /auth/login/2fa (TOTP или одноразовый резервный код); секрет/коды скрыты в toJSON;
       фронт: шаг кода на входе (LoginPage) + мастер в настройках (QR + резервные коды,
       TwoFactorSection). Тесты twofa.test.js 4/4 (итого 34/34). ПРОВЕРЕНО E2E весь флоу.
-      Соц-вход (Google/Telegram) — отдельно, требует ключей (Фаза 6).
+- [x] Автоприветствие юриста: LawyerProfile.greeting + миграция; при открытии чата клиентом
+      (если сообщений нет) авто-публикуется первым сообщением; поле в редакторе профиля. E2E ок.
+- [x] Поиск по истории AI-чатов: клиентский фильтр по названию/категории (поле при >3 беседах).
+- [x] Соц-вход (ЗАГОТОВКА, fail-safe): User.googleId/telegramId + миграция; google-auth-library;
+      GET /auth/social/config, POST /auth/google (verify ID-token), POST /auth/telegram
+      (проверка HMAC-подписи виджета + защита от replay 24ч); фронт SocialLogin (GIS + Telegram
+      widget, кнопки видны только если провайдер включён ключами). Без ключей: config disabled,
+      эндпоинты 503, кнопки скрыты. Крипто Telegram проверена юнит-тестом. ВКЛЮЧАЕТСЯ при добавлении
+      GOOGLE_CLIENT_ID / TELEGRAM_BOT_TOKEN+USERNAME в .env (см. .env.example). Полный E2E — с ключами.
+      ПРИМЕЧАНИЕ прод: для внешних скриптов GIS/Telegram в CSP фронта разрешить accounts.google.com
+      и telegram.org.
 
 ### ФАЗА 5 — Премиум-UX (готово, проверено):
 - [x] 5.1 Авторизация: анимация входа (framer-motion), «запомнить меня» (rememberedEmail),

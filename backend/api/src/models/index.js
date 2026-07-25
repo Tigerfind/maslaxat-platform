@@ -57,6 +57,13 @@ const User = sequelize.define('User', {
   verificationToken: {
     type: DataTypes.STRING,
   },
+  // Соц-вход: идентификаторы провайдеров (заполняются при первом входе)
+  googleId: {
+    type: DataTypes.STRING,
+  },
+  telegramId: {
+    type: DataTypes.STRING,
+  },
   // Двухфакторная аутентификация (TOTP). secret — base32; включается только
   // после подтверждения кодом. Резервные коды хранятся хешами (sha256).
   twoFactorSecret: {

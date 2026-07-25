@@ -32,6 +32,7 @@ import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
+import SocialLogin from '../../components/Auth/SocialLogin';
 
 /**
  * MaslaXat Unified Login Page
@@ -451,6 +452,14 @@ const LoginPage = () => {
               {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} /> : t('login.login')}
             </Button>
           </form>
+          )}
+
+          {/* Соц-вход (кнопки видны только если провайдер включён на сервере) */}
+          {!twoFA.required && (
+            <SocialLogin
+              onSuccess={(data) => finishLogin(data, data.user?.email)}
+              onError={(err) => dispatch(loginFailure(err.response?.data?.error || t('login.loginError')))}
+            />
           )}
 
           {/* Demo Section — только в dev, не попадает в прод-сборку */}

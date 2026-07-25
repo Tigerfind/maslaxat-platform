@@ -136,6 +136,7 @@ const translations = {
       loginSuccess: 'Вход выполнен успешно',
       loginError: 'Ошибка входа',
       twoFA: { title: 'Двухфакторная аутентификация', subtitle: 'Введите 6-значный код из приложения-аутентификатора или резервный код', codeLabel: 'Код подтверждения', submit: 'Подтвердить', checking: 'Проверка…', back: 'Назад ко входу', error: 'Неверный код' },
+      social: { or: 'или войти через' },
       invalidCredentials: 'Неверный email или пароль',
 
       // Footer
@@ -187,6 +188,7 @@ const translations = {
       loginSuccess: 'Кириш муваффақиятли бажарилди',
       loginError: 'Кириш хатоси',
       twoFA: { title: 'Икки босқичли аутентификация', subtitle: 'Аутентификатор иловасидан 6 рақамли код ёки заҳира кодини киритинг', codeLabel: 'Тасдиқлаш коди', submit: 'Тасдиқлаш', checking: 'Текширилмоқда…', back: 'Кириш саҳифасига', error: 'Нотўғри код' },
+      social: { or: 'ёки орқали киринг' },
       invalidCredentials: 'Нотўғри email ёки парол',
 
       // Footer
@@ -238,6 +240,7 @@ const translations = {
       loginSuccess: 'Login successful',
       loginError: 'Login error',
       twoFA: { title: 'Two-factor authentication', subtitle: 'Enter the 6-digit code from your authenticator app or a backup code', codeLabel: 'Verification code', submit: 'Verify', checking: 'Checking…', back: 'Back to login', error: 'Invalid code' },
+      social: { or: 'or continue with' },
       invalidCredentials: 'Invalid email or password',
 
       // Footer
