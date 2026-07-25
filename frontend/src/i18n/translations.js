@@ -126,7 +126,7 @@ const translations = {
       password: 'Пароль',
       rememberMe: 'Запомнить меня',
       forgotPassword: 'Забыли пароль?',
-      rememberMe: 'Запомнить меня', errEmailRequired: 'Введите email', errEmailInvalid: 'Некорректный email', errPasswordRequired: 'Введите пароль',
+      errEmailRequired: 'Введите email', errEmailInvalid: 'Некорректный email', errPasswordRequired: 'Введите пароль',
       login: 'Войти',
       register: 'Регистрация',
       noAccount: 'Нет аккаунта?',
@@ -176,7 +176,7 @@ const translations = {
       password: 'Парол',
       rememberMe: 'Мени эслаб қол',
       forgotPassword: 'Паролни унутдингизми?',
-      rememberMe: 'Мени эслаб қол', errEmailRequired: 'Email киритинг', errEmailInvalid: 'Email нотўғри', errPasswordRequired: 'Паролни киритинг',
+      errEmailRequired: 'Email киритинг', errEmailInvalid: 'Email нотўғри', errPasswordRequired: 'Паролни киритинг',
       login: 'Кириш',
       register: 'Рўйхатдан ўтиш',
       noAccount: 'Ҳисобингиз йўқми?',
@@ -226,7 +226,7 @@ const translations = {
       password: 'Password',
       rememberMe: 'Remember me',
       forgotPassword: 'Forgot password?',
-      rememberMe: 'Remember me', errEmailRequired: 'Enter your email', errEmailInvalid: 'Invalid email', errPasswordRequired: 'Enter your password',
+      errEmailRequired: 'Enter your email', errEmailInvalid: 'Invalid email', errPasswordRequired: 'Enter your password',
       login: 'Login',
       register: 'Register',
       noAccount: "Don't have an account?",
@@ -913,6 +913,24 @@ const translations = {
       success: 'Subscription activated', error: 'Could not activate subscription',
       paymeSoon: 'Payme payment will be available soon',
     },
+  },
+
+  emailBanner: {
+    ru: { prompt: 'Пожалуйста, подтвердите ваш email. Проверьте входящие письма.', resend: 'Отправить снова', sending: 'Отправка…', sent: 'Письмо отправлено — проверьте почту' },
+    uz: { prompt: 'Илтимос, email манзилингизни тасдиқланг. Кирувчи хатларни текширинг.', resend: 'Қайта юбориш', sending: 'Юборилмоқда…', sent: 'Хат юборилди — почтани текширинг' },
+    en: { prompt: 'Please verify your email. Check your inbox.', resend: 'Resend', sending: 'Sending…', sent: 'Email sent — check your inbox' },
+  },
+
+  notif: {
+    ru: { title: 'Уведомления', markAll: 'Прочитать все', empty: 'Нет уведомлений', justNow: 'только что', minAgo: 'мин назад', hourAgo: 'ч назад', dayAgo: 'дн назад' },
+    uz: { title: 'Билдиришномалар', markAll: 'Барчасини ўқилган деб белгилаш', empty: 'Билдиришномалар йўқ', justNow: 'ҳозиргина', minAgo: 'дақ. олдин', hourAgo: 'соат олдин', dayAgo: 'кун олдин' },
+    en: { title: 'Notifications', markAll: 'Mark all read', empty: 'No notifications', justNow: 'just now', minAgo: 'min ago', hourAgo: 'h ago', dayAgo: 'd ago' },
+  },
+
+  authFlow: {
+    ru: { forgotTitle: 'Сброс пароля', sentTitle: 'Письмо отправлено', sentText: 'Если аккаунт с этим email существует, вы получите ссылку для сброса пароля.', backToLogin: 'Вернуться к входу', forgotIntro: 'Введите email, указанный при регистрации. Мы отправим ссылку для сброса пароля.', sending: 'Отправка…', sendLink: 'Отправить ссылку', error: 'Произошла ошибка', resetInvalid: 'Недействительная ссылка для сброса пароля', requestNew: 'Запросить новую ссылку', resetTitle: 'Новый пароль', resetDoneTitle: 'Пароль изменён', resetDoneText: 'Вы можете войти с новым паролем.', login: 'Войти', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите пароль', pwMin: 'Пароль должен быть минимум 6 символов', pwMismatch: 'Пароли не совпадают', saving: 'Сохранение…', savePassword: 'Сохранить пароль', verifyNoToken: 'Токен верификации не найден', verifyChecking: 'Проверяем токен…', verifyOkTitle: 'Email подтверждён', verifyOk: 'Email успешно подтверждён!', verifyBad: 'Недействительная или просроченная ссылка', verifyErrTitle: 'Ошибка верификации', goDashboard: 'Перейти в личный кабинет', goHome: 'На главную' },
+    uz: { forgotTitle: 'Паролни тиклаш', sentTitle: 'Хат юборилди', sentText: 'Агар ушбу email билан ҳисоб мавжуд бўлса, паролни тиклаш ҳаволасини оласиз.', backToLogin: 'Киришга қайтиш', forgotIntro: 'Рўйхатдан ўтишда кўрсатилган email-ни киритинг. Паролни тиклаш ҳаволасини юборамиз.', sending: 'Юборилмоқда…', sendLink: 'Ҳавола юбориш', error: 'Хатолик юз берди', resetInvalid: 'Паролни тиклаш ҳаволаси нотўғри', requestNew: 'Янги ҳавола сўраш', resetTitle: 'Янги парол', resetDoneTitle: 'Парол ўзгартирилди', resetDoneText: 'Янги парол билан кириши мумкин.', login: 'Кириш', newPassword: 'Янги парол', confirmPassword: 'Паролни тасдиқланг', pwMin: 'Парол камида 6 белги бўлиши керак', pwMismatch: 'Пароллар мос келмайди', saving: 'Сақланмоқда…', savePassword: 'Паролни сақлаш', verifyNoToken: 'Тасдиқлаш токени топилмади', verifyChecking: 'Токен текширилмоқда…', verifyOkTitle: 'Email тасдиқланди', verifyOk: 'Email муваффақиятли тасдиқланди!', verifyBad: 'Нотўғри ёки муддати ўтган ҳавола', verifyErrTitle: 'Тасдиқлашда хатолик', goDashboard: 'Шахсий кабинетга ўтиш', goHome: 'Бош саҳифага' },
+    en: { forgotTitle: 'Reset password', sentTitle: 'Email sent', sentText: 'If an account with this email exists, you will receive a password reset link.', backToLogin: 'Back to login', forgotIntro: 'Enter the email you registered with. We will send a password reset link.', sending: 'Sending…', sendLink: 'Send link', error: 'An error occurred', resetInvalid: 'Invalid password reset link', requestNew: 'Request a new link', resetTitle: 'New password', resetDoneTitle: 'Password changed', resetDoneText: 'You can now log in with your new password.', login: 'Log in', newPassword: 'New password', confirmPassword: 'Confirm password', pwMin: 'Password must be at least 6 characters', pwMismatch: 'Passwords do not match', saving: 'Saving…', savePassword: 'Save password', verifyNoToken: 'Verification token not found', verifyChecking: 'Verifying token…', verifyOkTitle: 'Email verified', verifyOk: 'Email verified successfully!', verifyBad: 'Invalid or expired link', verifyErrTitle: 'Verification error', goDashboard: 'Go to dashboard', goHome: 'Home' },
   },
 
   analytics: {
@@ -1925,6 +1943,7 @@ const translations = {
       showEmail: 'Показывать email', showEmailDesc: 'Ваш email будет виден другим пользователям', showPhone: 'Показывать телефон', showPhoneDesc: 'Ваш номер телефона будет виден другим пользователям', dataSharing: 'Общий доступ данных', dataSharingDesc: 'Разрешить анализ данных для улучшения сервиса',
       darkTheme: 'Тёмная тема', darkThemeDesc: 'Включить тёмный режим интерфейса (применяется сразу)', themePreview: 'Предпросмотр темы', themePreviewCard: 'Пример карточки в текущей теме', fontSize: 'Размер шрифта', logout: 'Выйти из аккаунта', compactMode: 'Компактный режим', compactModeDesc: 'Уменьшить отступы для более плотного интерфейса',
       saved: 'Настройки сохранены', saveErrorLocal: 'Не удалось сохранить на сервере (сохранено локально)', resetDefaults: 'Настройки сброшены к значениям по умолчанию', loggedOut: 'Вы вышли из аккаунта',
+      fontSizePreview: 'Пример текста с выбранным размером шрифта', saveChanges: 'Сохранить изменения', reset: 'Сбросить', unsaved: 'У вас есть несохранённые изменения', logoutDesc: 'Завершить текущий сеанс и вернуться на страницу входа', logoutBtn: 'Выйти', syncNote: 'Настройки сохраняются на сервере и синхронизируются между устройствами.', logoutConfirmTitle: 'Подтверждение выхода', logoutConfirmText: 'Вы уверены, что хотите выйти из аккаунта?', cancel: 'Отмена',
     },
     uz: {
       title: 'Созламалар',
@@ -1946,6 +1965,7 @@ const translations = {
       showEmail: 'Email кўрсатиш', showEmailDesc: 'Email бошқа фойдаланувчиларга кўринади', showPhone: 'Телефонни кўрсатиш', showPhoneDesc: 'Телефон рақамингиз бошқаларга кўринади', dataSharing: 'Маълумотларни улашиш', dataSharingDesc: 'Хизматни яхшилаш учун маълумотлар таҳлилига рухсат бериш',
       darkTheme: 'Қоронғи мавзу', darkThemeDesc: 'Интерфейснинг қоронғи режимини ёқиш (дарҳол қўлланилади)', themePreview: 'Мавзу кўриниши', themePreviewCard: 'Жорий мавзудаги карточка намунаси', fontSize: 'Шрифт ўлчами', logout: 'Ҳисобдан чиқиш', compactMode: 'Ихчам режим', compactModeDesc: 'Зичроқ интерфейс учун оралиқларни камайтириш',
       saved: 'Созламалар сақланди', saveErrorLocal: 'Серверга сақлаб бўлмади (локал сақланди)', resetDefaults: 'Созламалар дастлабки ҳолатга қайтарилди', loggedOut: 'Ҳисобдан чиқдингиз',
+      fontSizePreview: 'Танланган шрифт ўлчами намунаси', saveChanges: 'Ўзгаришларни сақлаш', reset: 'Тиклаш', unsaved: 'Сақланмаган ўзгаришлар бор', logoutDesc: 'Жорий сеансни якунлаб, кириш саҳифасига қайтиш', logoutBtn: 'Чиқиш', syncNote: 'Созламалар серверда сақланади ва қурилмалар ўртасида синхронланади.', logoutConfirmTitle: 'Чиқишни тасдиқлаш', logoutConfirmText: 'Ҳисобдан чиқмоқчимисиз?', cancel: 'Бекор қилиш',
     },
     en: {
       title: 'Settings',
@@ -1967,6 +1987,7 @@ const translations = {
       showEmail: 'Show email', showEmailDesc: 'Your email will be visible to other users', showPhone: 'Show phone', showPhoneDesc: 'Your phone number will be visible to other users', dataSharing: 'Data sharing', dataSharingDesc: 'Allow data analysis to improve the service',
       darkTheme: 'Dark theme', darkThemeDesc: 'Enable dark interface mode (applied immediately)', themePreview: 'Theme preview', themePreviewCard: 'Sample card in the current theme', fontSize: 'Font size', logout: 'Log out of account', compactMode: 'Compact mode', compactModeDesc: 'Reduce spacing for a denser interface',
       saved: 'Settings saved', saveErrorLocal: 'Could not save to server (saved locally)', resetDefaults: 'Settings reset to defaults', loggedOut: 'You have logged out',
+      fontSizePreview: 'Sample text at the selected font size', saveChanges: 'Save changes', reset: 'Reset', unsaved: 'You have unsaved changes', logoutDesc: 'End the current session and return to the login page', logoutBtn: 'Log out', syncNote: 'Settings are saved on the server and synced across devices.', logoutConfirmTitle: 'Confirm logout', logoutConfirmText: 'Are you sure you want to log out?', cancel: 'Cancel',
     },
   },
 

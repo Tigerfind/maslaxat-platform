@@ -6,11 +6,13 @@ import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
 import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import api from '../../services/api';
 import { updateProfile } from '../../store/slices/authSlice';
+import { useTranslation } from '../../i18n';
 
 const VerifyEmailPage = () => {
   const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { t } = useTranslation();
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [status, setStatus] = useState('loading'); // loading | success | error
   const [message, setMessage] = useState('');
@@ -19,20 +21,20 @@ const VerifyEmailPage = () => {
     const token = searchParams.get('token');
     if (!token) {
       setStatus('error');
-      setMessage('Токен верификации не найден');
+      setMessage(t('authFlow.verifyNoToken'));
       return;
     }
 
     api.get(`/auth/verify-email/${token}`)
       .then(() => {
         setStatus('success');
-        setMessage('Email успешно подтверждён!');
+        setMessage(t('authFlow.verifyOk'));
         // Обновляем redux/localStorage, чтобы баннер «подтвердите email» исчез сразу
         if (isAuthenticated) dispatch(updateProfile({ isVerified: true }));
       })
       .catch((err) => {
         setStatus('error');
-        setMessage(err.response?.data?.error || 'Недействительная или просроченная ссылка');
+        setMessage(err.response?.data?.error || t('authFlow.verifyBad'));
       });
   }, [searchParams, isAuthenticated, dispatch]);
 
@@ -72,7 +74,7 @@ const VerifyEmailPage = () => {
         {status === 'loading' && (
           <>
             <CircularProgress sx={{ color: '#B8956E', mb: 2 }} />
-            <Typography color="text.secondary">Проверяем токен...</Typography>
+            <Typography color="text.secondary">{t('authFlow.verifyChecking')}</Typography>
           </>
         )}
 
@@ -80,7 +82,7 @@ const VerifyEmailPage = () => {
           <>
             <CheckCircleOutlineIcon sx={{ fontSize: 64, color: '#4CAF50', mb: 2 }} />
             <Typography variant="h6" sx={{ fontWeight: 400, mb: 1 }}>
-              Email подтверждён
+              {t('authFlow.verifyOkTitle')}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
               {message}
@@ -90,7 +92,7 @@ const VerifyEmailPage = () => {
               onClick={goHome}
               sx={{ backgroundColor: '#B8956E', '&:hover': { backgroundColor: '#A07A5A' } }}
             >
-              {isAuthenticated ? 'Перейти в личный кабинет' : 'Войти'}
+              {isAuthenticated ? t('authFlow.goDashboard') : t('authFlow.login')}
             </Button>
           </>
         )}
@@ -99,7 +101,7 @@ const VerifyEmailPage = () => {
           <>
             <ErrorOutlineIcon sx={{ fontSize: 64, color: '#f44336', mb: 2 }} />
             <Typography variant="h6" sx={{ fontWeight: 400, mb: 1 }}>
-              Ошибка верификации
+              {t('authFlow.verifyErrTitle')}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
               {message}
@@ -109,7 +111,7 @@ const VerifyEmailPage = () => {
               onClick={goHome}
               sx={{ borderColor: '#B8956E', color: '#B8956E' }}
             >
-              {isAuthenticated ? 'На главную' : 'Войти'}
+              {isAuthenticated ? t('authFlow.goHome') : t('authFlow.login')}
             </Button>
           </>
         )}

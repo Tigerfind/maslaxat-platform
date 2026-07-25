@@ -353,7 +353,7 @@ const DocumentsPageGlass = () => {
               onClick={() => setUploadDialogOpen(true)}
               style={{ ...goldGradientBtn, padding: '13px 24px', display: 'inline-flex', alignItems: 'center', gap: 8 }}
             >
-              <CloudUploadOutlined sx={{ fontSize: 18 }} /> Загрузить документ
+              <CloudUploadOutlined sx={{ fontSize: 18 }} /> {t('documents.uploadDoc')}
             </button>
           </div>
         ) : (

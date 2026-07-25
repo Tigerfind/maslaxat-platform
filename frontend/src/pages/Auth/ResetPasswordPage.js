@@ -4,9 +4,11 @@ import { Box, Typography, TextField, Button, Container, Alert } from '@mui/mater
 import { CheckCircle } from '@mui/icons-material';
 import { axelionColors } from '../../theme/axelionTheme';
 import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 const ResetPasswordPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const token = searchParams.get('token');
 
@@ -19,11 +21,11 @@ const ResetPasswordPage = () => {
   const handleSubmit = async (e) => {
     e.preventDefault();
     if (password.length < 6) {
-      setError('Пароль должен быть минимум 6 символов');
+      setError(t('authFlow.pwMin'));
       return;
     }
     if (password !== confirmPassword) {
-      setError('Пароли не совпадают');
+      setError(t('authFlow.pwMismatch'));
       return;
     }
 
@@ -33,7 +35,7 @@ const ResetPasswordPage = () => {
       await api.post('/auth/reset-password', { token, password });
       setSuccess(true);
     } catch (err) {
-      setError(err.response?.data?.error || 'Произошла ошибка');
+      setError(err.response?.data?.error || t('authFlow.error'));
     } finally {
       setLoading(false);
     }
@@ -45,10 +47,10 @@ const ResetPasswordPage = () => {
         <Container maxWidth="sm">
           <Box sx={{ bgcolor: axelionColors.bgLight, borderRadius: '8px', border: `1px solid ${axelionColors.borderLight}`, p: 5, textAlign: 'center' }}>
             <Typography sx={{ color: axelionColors.error, mb: 2 }}>
-              Недействительная ссылка для сброса пароля
+              {t('authFlow.resetInvalid')}
             </Typography>
             <Button onClick={() => navigate('/forgot-password')} sx={{ color: axelionColors.gold, textTransform: 'none' }}>
-              Запросить новую ссылку
+              {t('authFlow.requestNew')}
             </Button>
           </Box>
         </Container>
@@ -65,7 +67,7 @@ const ResetPasswordPage = () => {
               MaslaXat
             </Typography>
             <Typography sx={{ fontWeight: 300, fontSize: '1.1rem', letterSpacing: '0.1em', color: axelionColors.textDark, textTransform: 'uppercase' }}>
-              Новый пароль
+              {t('authFlow.resetTitle')}
             </Typography>
           </Box>
 
@@ -73,10 +75,10 @@ const ResetPasswordPage = () => {
             <Box sx={{ textAlign: 'center' }}>
               <CheckCircle sx={{ fontSize: 64, color: axelionColors.success, mb: 2 }} />
               <Typography sx={{ color: axelionColors.textDark, mb: 1, fontWeight: 500 }}>
-                Пароль изменён
+                {t('authFlow.resetDoneTitle')}
               </Typography>
               <Typography sx={{ color: axelionColors.textMuted, mb: 3, fontSize: '0.9rem' }}>
-                Вы можете войти с новым паролем.
+                {t('authFlow.resetDoneText')}
               </Typography>
               <Button
                 variant="contained"
@@ -92,7 +94,7 @@ const ResetPasswordPage = () => {
                   '&:hover': { bgcolor: axelionColors.goldDark, boxShadow: 'none' },
                 }}
               >
-                Войти
+                {t('authFlow.login')}
               </Button>
             </Box>
           ) : (
@@ -101,7 +103,7 @@ const ResetPasswordPage = () => {
 
               <TextField
                 fullWidth
-                label="Новый пароль"
+                label={t('authFlow.newPassword')}
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -111,7 +113,7 @@ const ResetPasswordPage = () => {
 
               <TextField
                 fullWidth
-                label="Подтвердите пароль"
+                label={t('authFlow.confirmPassword')}
                 type="password"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
@@ -136,7 +138,7 @@ const ResetPasswordPage = () => {
                   '&:hover': { bgcolor: axelionColors.goldDark, boxShadow: 'none' },
                 }}
               >
-                {loading ? 'Сохранение...' : 'Сохранить пароль'}
+                {loading ? t('authFlow.saving') : t('authFlow.savePassword')}
               </Button>
             </form>
           )}

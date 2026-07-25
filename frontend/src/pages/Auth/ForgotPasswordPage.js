@@ -4,9 +4,11 @@ import { Box, Typography, TextField, Button, Container, Alert } from '@mui/mater
 import { ArrowBack, Email } from '@mui/icons-material';
 import { axelionColors } from '../../theme/axelionTheme';
 import api from '../../services/api';
+import { useTranslation } from '../../i18n';
 
 const ForgotPasswordPage = () => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
@@ -22,7 +24,7 @@ const ForgotPasswordPage = () => {
       await api.post('/auth/forgot-password', { email });
       setSent(true);
     } catch (err) {
-      setError(err.response?.data?.error || 'Произошла ошибка');
+      setError(err.response?.data?.error || t('authFlow.error'));
     } finally {
       setLoading(false);
     }
@@ -37,7 +39,7 @@ const ForgotPasswordPage = () => {
               MaslaXat
             </Typography>
             <Typography sx={{ fontWeight: 300, fontSize: '1.1rem', letterSpacing: '0.1em', color: axelionColors.textDark, textTransform: 'uppercase' }}>
-              Сброс пароля
+              {t('authFlow.forgotTitle')}
             </Typography>
           </Box>
 
@@ -45,22 +47,22 @@ const ForgotPasswordPage = () => {
             <Box sx={{ textAlign: 'center' }}>
               <Email sx={{ fontSize: 64, color: axelionColors.gold, mb: 2, opacity: 0.6 }} />
               <Typography sx={{ color: axelionColors.textDark, mb: 1, fontWeight: 500 }}>
-                Письмо отправлено
+                {t('authFlow.sentTitle')}
               </Typography>
               <Typography sx={{ color: axelionColors.textMuted, mb: 3, fontSize: '0.9rem' }}>
-                Если аккаунт с email <strong>{email}</strong> существует, вы получите ссылку для сброса пароля.
+                {t('authFlow.sentText')}
               </Typography>
               <Button
                 onClick={() => navigate('/login')}
                 sx={{ color: axelionColors.gold, textTransform: 'none' }}
               >
-                Вернуться к входу
+                {t('authFlow.backToLogin')}
               </Button>
             </Box>
           ) : (
             <form onSubmit={handleSubmit}>
               <Typography sx={{ color: axelionColors.textMuted, mb: 3, fontSize: '0.9rem' }}>
-                Введите email, указанный при регистрации. Мы отправим ссылку для сброса пароля.
+                {t('authFlow.forgotIntro')}
               </Typography>
 
               {error && <Alert severity="error" sx={{ mb: 2, borderRadius: '8px' }}>{error}</Alert>}
@@ -93,7 +95,7 @@ const ForgotPasswordPage = () => {
                   '&:hover': { bgcolor: axelionColors.goldDark, boxShadow: 'none' },
                 }}
               >
-                {loading ? 'Отправка...' : 'Отправить ссылку'}
+                {loading ? t('authFlow.sending') : t('authFlow.sendLink')}
               </Button>
 
               <Button
@@ -102,7 +104,7 @@ const ForgotPasswordPage = () => {
                 fullWidth
                 sx={{ color: axelionColors.textMuted, textTransform: 'none' }}
               >
-                Вернуться к входу
+                {t('authFlow.backToLogin')}
               </Button>
             </form>
           )}

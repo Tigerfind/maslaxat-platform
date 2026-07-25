@@ -7,8 +7,10 @@ import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import SupportFAB from '../UI/SupportFAB';
 import MobileBottomNav from '../UI/MobileBottomNav';
+import { useTranslation } from '../../i18n';
 
 const EmailVerificationBanner = () => {
+  const { t } = useTranslation();
   const { user } = useSelector((state) => state.auth);
   const [dismissed, setDismissed] = useState(false);
   const [sending, setSending] = useState(false);
@@ -41,15 +43,13 @@ const EmailVerificationBanner = () => {
               onClick={handleResend}
               sx={{ color: '#B8956E', fontWeight: 500 }}
             >
-              {sending ? 'Отправка...' : 'Отправить снова'}
+              {sending ? t('emailBanner.sending') : t('emailBanner.resend')}
             </Button>
           ) : null
         }
         sx={{ borderRadius: 0 }}
       >
-        {sent
-          ? 'Письмо отправлено — проверьте почту'
-          : 'Пожалуйста, подтвердите ваш email. Проверьте входящие письма.'}
+        {sent ? t('emailBanner.sent') : t('emailBanner.prompt')}
       </Alert>
     </Collapse>
   );

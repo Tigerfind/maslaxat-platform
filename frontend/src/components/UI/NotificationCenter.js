@@ -30,6 +30,7 @@ import io from 'socket.io-client';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
+import { useTranslation } from '../../i18n';
 
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 
@@ -47,6 +48,7 @@ const NOTIFICATION_ICONS = {
 
 const NotificationCenter = ({ sx = {} }) => {
   const navigate = useNavigate();
+  const { t } = useTranslation();
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -125,10 +127,10 @@ const NotificationCenter = ({ sx = {} }) => {
     const date = new Date(dateStr);
     const now = new Date();
     const diff = Math.floor((now - date) / 1000);
-    if (diff < 60) return 'только что';
-    if (diff < 3600) return `${Math.floor(diff / 60)} мин назад`;
-    if (diff < 86400) return `${Math.floor(diff / 3600)} ч назад`;
-    if (diff < 604800) return `${Math.floor(diff / 86400)} дн назад`;
+    if (diff < 60) return t('notif.justNow');
+    if (diff < 3600) return `${Math.floor(diff / 60)} ${t('notif.minAgo')}`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)} ${t('notif.hourAgo')}`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)} ${t('notif.dayAgo')}`;
     return date.toLocaleDateString('ru-RU');
   };
 
@@ -137,7 +139,7 @@ const NotificationCenter = ({ sx = {} }) => {
       <IconButton
         ref={anchorRef}
         onClick={handleToggle}
-        aria-label="Уведомления"
+        aria-label={t('notif.title')}
         sx={{
           backgroundColor: axelionColors.bgLight,
           border: `1px solid ${axelionColors.borderLight}`,
@@ -193,7 +195,7 @@ const NotificationCenter = ({ sx = {} }) => {
                     p: 2, borderBottom: `1px solid ${axelionColors.borderLight}`,
                   }}>
                     <Typography sx={{ fontWeight: 600, fontSize: '0.95rem', color: axelionColors.textDark }}>
-                      Уведомления
+                      {t('notif.title')}
                     </Typography>
                     {unreadCount > 0 && (
                       <Button
@@ -207,7 +209,7 @@ const NotificationCenter = ({ sx = {} }) => {
                           '&:hover': { bgcolor: axelionColors.accentLight },
                         }}
                       >
-                        Прочитать все
+                        {t('notif.markAll')}
                       </Button>
                     )}
                   </Box>
@@ -218,7 +220,7 @@ const NotificationCenter = ({ sx = {} }) => {
                       <Box sx={{ textAlign: 'center', py: 6, px: 3 }}>
                         <NotificationsNone sx={{ fontSize: 48, color: axelionColors.borderLight, mb: 1 }} />
                         <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.9rem' }}>
-                          Нет уведомлений
+                          {t('notif.empty')}
                         </Typography>
                       </Box>
                     ) : (

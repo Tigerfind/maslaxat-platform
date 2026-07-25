@@ -447,7 +447,7 @@ const SettingsPageGlass = () => {
             }}
           >
             <div style={{ fontSize: `${settings.fontSize}px`, color: 'var(--text)', fontWeight: 500 }}>
-              Пример текста с выбранным размером шрифта
+              {t('settings.fontSizePreview')}
             </div>
           </div>
 
@@ -485,7 +485,7 @@ const SettingsPageGlass = () => {
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <CheckOutlined sx={{ fontSize: 18 }} /> Сохранить изменения
+              <CheckOutlined sx={{ fontSize: 18 }} /> {t('settings.saveChanges')}
             </span>
           </button>
           <button
@@ -508,13 +508,13 @@ const SettingsPageGlass = () => {
             }}
           >
             <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-              <RestartAltOutlined sx={{ fontSize: 18 }} /> Сбросить
+              <RestartAltOutlined sx={{ fontSize: 18 }} /> {t('settings.reset')}
             </span>
           </button>
         </div>
         {hasChanges && (
           <div style={{ fontSize: 12, color: 'var(--accent)', textAlign: 'center', fontWeight: 500 }}>
-            У вас есть несохраненные изменения
+            {t('settings.unsaved')}
           </div>
         )}
 
@@ -526,7 +526,7 @@ const SettingsPageGlass = () => {
               <span style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{t('settings.logout')}</span>
             </div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 6 }}>
-              Завершить текущий сеанс и вернуться на страницу входа
+              {t('settings.logoutDesc')}
             </div>
           </div>
           <button
@@ -548,13 +548,13 @@ const SettingsPageGlass = () => {
               transition: 'all 0.2s',
             }}
           >
-            Выйти
+            {t('settings.logoutBtn')}
           </button>
         </div>
 
         {/* ── Info footer ── */}
         <div style={{ fontSize: 12, color: 'var(--text3)', textAlign: 'center', padding: '4px 0 8px' }}>
-          Настройки сохраняются на сервере и синхронизируются между устройствами.
+          {t('settings.syncNote')}
         </div>
       </div>
 
@@ -573,11 +573,11 @@ const SettingsPageGlass = () => {
         }}
       >
         <DialogTitle sx={{ color: 'var(--text)', fontWeight: 500, letterSpacing: '0.02em' }}>
-          Подтверждение выхода
+          {t('settings.logoutConfirmTitle')}
         </DialogTitle>
         <DialogContent>
           <div style={{ color: 'var(--text2)', marginTop: 6, fontSize: 14 }}>
-            Вы уверены, что хотите выйти из аккаунта?
+            {t('settings.logoutConfirmText')}
           </div>
         </DialogContent>
         <DialogActions sx={{ p: 2, gap: 1 }}>
@@ -601,7 +601,7 @@ const SettingsPageGlass = () => {
               letterSpacing: '0.05em',
             }}
           >
-            <CloseOutlined sx={{ fontSize: 17 }} /> Отмена
+            <CloseOutlined sx={{ fontSize: 17 }} /> {t('settings.cancel')}
           </button>
           <button
             type="button"
@@ -623,7 +623,7 @@ const SettingsPageGlass = () => {
               letterSpacing: '0.05em',
             }}
           >
-            <CheckOutlined sx={{ fontSize: 17 }} /> Выйти
+            <CheckOutlined sx={{ fontSize: 17 }} /> {t('settings.logoutBtn')}
           </button>
         </DialogActions>
       </Dialog>
