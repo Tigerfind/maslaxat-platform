@@ -7,11 +7,14 @@ const notifications = require('../services/notificationService');
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, sortBy, location, language, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
     if (specialization) profileWhere.specialization = specialization;
+    if (location) profileWhere.location = location;
+    // languages — JSONB-массив; фильтруем по вхождению языка (Postgres @>)
+    if (language) profileWhere.languages = { [Op.contains]: [language] };
     // Фильтр по звёздам: показываем юристов, чей рейтинг округляется до выбранной звезды
     // (напр. «5 звёзд» → рейтинг 4.5–5.0; «2 звезды» → 1.5–2.49). Совпадает с тем,
     // сколько звёзд показано на карточке.
@@ -52,6 +55,20 @@ router.get('/', async (req, res, next) => {
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/lawyers/filter-options — списки городов и языков для фильтров.
+// ВАЖНО: объявлено ВЫШЕ '/:id', иначе 'filter-options' попадёт в параметр :id.
+router.get('/filter-options', async (req, res, next) => {
+  try {
+    const profiles = await LawyerProfile.findAll({ attributes: ['location', 'languages'], raw: true });
+    const locations = [...new Set(profiles.map((p) => p.location).filter(Boolean))].sort();
+    const langSet = new Set();
+    profiles.forEach((p) => (Array.isArray(p.languages) ? p.languages : []).forEach((l) => l && langSet.add(l)));
+    res.json({ locations, languages: [...langSet].sort() });
   } catch (err) {
     next(err);
   }

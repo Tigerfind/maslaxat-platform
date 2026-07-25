@@ -72,6 +72,8 @@ async function seed() {
         reviewsCount: l.reviews,
         completedCases: l.cases,
         location: l.location,
+        // Языки: все владеют русским и узбекским, часть — ещё и английским
+        languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
         description: `Опытный юрист. Специализация: ${l.spec}`,
         isAvailable: true,
       });

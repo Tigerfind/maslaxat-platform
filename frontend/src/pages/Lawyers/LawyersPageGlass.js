@@ -114,6 +114,20 @@ const labelStyle = {
   marginBottom: 10,
 };
 
+// Нативный select для фильтров город/язык (в стиле панели)
+const selectFilterStyle = {
+  width: '100%',
+  padding: '11px 12px',
+  marginBottom: 24,
+  borderRadius: 'var(--radius)',
+  border: '1px solid var(--border)',
+  background: 'var(--canvas)',
+  color: 'var(--text)',
+  fontFamily: 'inherit',
+  fontSize: 13.5,
+  cursor: 'pointer',
+};
+
 // glass Select sx (used for experience + sort)
 const glassSelectSx = {
   fontFamily: 'inherit',
@@ -158,13 +172,20 @@ const LawyersPageGlass = () => {
     experience: '',
     sortBy: 'rating',
     onlineOnly: false,
+    location: '',
+    language: '',
   });
+  const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
 
   useEffect(() => {
     fetchLawyers();
     loadFavorites();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentPage, searchQuery]);
+
+  useEffect(() => {
+    clientService.lawyers.getFilterOptions().then(setFilterOptions).catch(() => {});
+  }, []);
 
   const loadFavorites = async () => {
     try {
@@ -209,6 +230,8 @@ const LawyersPageGlass = () => {
       experience: '',
       sortBy: 'rating',
       onlineOnly: false,
+      location: '',
+      language: '',
     });
     setSearchQuery('');
     setCurrentPage(1);
@@ -393,6 +416,36 @@ const LawyersPageGlass = () => {
           );
         })}
       </div>
+
+      {/* Город */}
+      {filterOptions.locations.length > 0 && (
+        <>
+          <div style={labelStyle}>{t('lawyers.city')}</div>
+          <select
+            value={filters.location}
+            onChange={(e) => handleFilterChange('location', e.target.value)}
+            style={selectFilterStyle}
+          >
+            <option value="">{t('lawyers.allCities')}</option>
+            {filterOptions.locations.map((loc) => <option key={loc} value={loc}>{loc}</option>)}
+          </select>
+        </>
+      )}
+
+      {/* Язык */}
+      {filterOptions.languages.length > 0 && (
+        <>
+          <div style={labelStyle}>{t('lawyers.language')}</div>
+          <select
+            value={filters.language}
+            onChange={(e) => handleFilterChange('language', e.target.value)}
+            style={selectFilterStyle}
+          >
+            <option value="">{t('lawyers.allLanguages')}</option>
+            {filterOptions.languages.map((l) => <option key={l} value={l}>{l}</option>)}
+          </select>
+        </>
+      )}
 
       {/* Только онлайн */}
       <button

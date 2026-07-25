@@ -67,6 +67,16 @@ export const clientLawyerService = {
     }
   },
 
+  // Списки городов и языков для фильтров
+  getFilterOptions: async () => {
+    try {
+      const response = await api.get('/client/lawyers/filter-options');
+      return response.data;
+    } catch (error) {
+      return { locations: [], languages: [] };
+    }
+  },
+
   // Get lawyer details
   getLawyerDetails: async (lawyerId) => {
     try {
