@@ -27,9 +27,9 @@ import api from '../../services/api';
   Sections: Уведомления · Приватность · Язык · Тема · Отображение.
   Data wiring (kept from previous implementation):
    • appSettings (email/push, privacy, showEmail/Phone, dataSharing,
-     fontSize, compactMode) ← persisted to localStorage 'appSettings'.
-     Backend persistence (PUT /api/users/profile settings) is a
-     SEPARATE task — not wired here yet.
+     fontSize, compactMode) ← сохраняются на СЕРВЕР (PUT /api/users/settings,
+     GET при открытии — сервер источник истины), localStorage — лишь кэш для
+     мгновенного применения и офлайна.
    • Тема toggle → same mechanism as GlassShell: localStorage 'theme'
      + document.documentElement[data-theme] so glass.css dark vars
      apply globally and stay in sync with the topbar toggle.
