@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { User, LawyerProfile, Review, Consultation } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
+const { recomputeLawyerRating } = require('../services/ratingService');
 
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
@@ -107,7 +108,7 @@ router.get('/:id', async (req, res, next) => {
 router.get('/:id/reviews', async (req, res, next) => {
   try {
     const reviews = await Review.findAll({
-      where: { lawyerId: req.params.id },
+      where: { lawyerId: req.params.id, isHidden: false },
       include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
       order: [['createdAt', 'DESC']],
       limit: 50,
@@ -233,13 +234,8 @@ router.post('/:id/review', authenticate, authorize('client'), async (req, res, n
       return res.status(409).json({ error: 'Вы уже оценили эту консультацию' });
     }
 
-    // Пересчёт агрегата рейтинга юриста
-    const allReviews = await Review.findAll({ where: { lawyerId } });
-    const avgRating = allReviews.reduce((sum, rv) => sum + rv.rating, 0) / allReviews.length;
-    await LawyerProfile.update(
-      { rating: Math.round(avgRating * 10) / 10, reviewsCount: allReviews.length },
-      { where: { userId: lawyerId } }
-    );
+    // Пересчёт агрегата рейтинга юриста (по нескрытым отзывам)
+    await recomputeLawyerRating(lawyerId);
 
     // Уведомляем юриста о новом отзыве
     const reviewer = await User.findByPk(req.userId, { attributes: ['name'] });

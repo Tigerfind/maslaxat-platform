@@ -281,6 +281,11 @@ const Review = sequelize.define('Review', {
   text: {
     type: DataTypes.TEXT,
   },
+  // Скрыт админом (модерация) — не показывается публично и не влияет на рейтинг
+  isHidden: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
   replyText: {
     type: DataTypes.TEXT,
   },

@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { Op } = require('sequelize');
 const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
+const { recomputeLawyerRating } = require('../services/ratingService');
 
 // All routes require admin authentication
 router.use(authenticate, authorize('admin'));
@@ -366,6 +367,39 @@ router.patch('/support/:id', async (req, res, next) => {
     ticket.status = status;
     await ticket.save();
     res.json({ success: true, ticket });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── REVIEWS (модерация) ────────────────────────────────────
+// GET /admin/reviews — все отзывы (с автором и юристом)
+router.get('/reviews', async (req, res, next) => {
+  try {
+    const reviews = await Review.findAll({
+      include: [
+        { model: User, as: 'client', attributes: ['id', 'name'] },
+        { model: User, as: 'lawyer', attributes: ['id', 'name'] },
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: 100,
+    });
+    res.json(reviews);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /admin/reviews/:id — скрыть/показать отзыв (+ пересчёт рейтинга юриста)
+router.patch('/reviews/:id', async (req, res, next) => {
+  try {
+    const review = await Review.findByPk(req.params.id);
+    if (!review) return res.status(404).json({ error: 'Отзыв не найден' });
+    review.isHidden = Boolean(req.body.isHidden);
+    await review.save();
+    // Скрытые отзывы не влияют на рейтинг — пересчитываем
+    await recomputeLawyerRating(review.lawyerId);
+    res.json({ success: true, review });
   } catch (err) {
     next(err);
   }

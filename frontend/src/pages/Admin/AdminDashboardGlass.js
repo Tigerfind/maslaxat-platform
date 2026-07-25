@@ -38,6 +38,7 @@ import {
   Category,
   LocalOffer,
   SupportAgent,
+  RateReview,
 } from '@mui/icons-material';
 import { logout } from '../../store/slices/authSlice';
 import adminService from '../../services/adminService';
@@ -540,6 +541,12 @@ const AdminDashboardGlass = () => {
                 label: t('admin.support'),
                 path: '/admin/support',
                 color: axelionColors.info || axelionColors.gold,
+              },
+              {
+                icon: <RateReview />,
+                label: t('admin.reviews'),
+                path: '/admin/reviews',
+                color: axelionColors.bronze,
               },
             ].map((action, index) => (
               <Grid item xs={12} sm={6} md={4} key={index}>

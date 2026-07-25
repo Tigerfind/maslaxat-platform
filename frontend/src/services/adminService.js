@@ -305,6 +305,23 @@ export const adminPromoService = {
   },
 };
 
+// Модерация отзывов
+export const adminReviewService = {
+  getReviews: async () => {
+    try {
+      const response = await api.get('/admin/reviews');
+      return response.data;
+    } catch (error) {
+      console.error('Error fetching reviews:', error);
+      return [];
+    }
+  },
+  setHidden: async (id, isHidden) => {
+    const response = await api.patch(`/admin/reviews/${id}`, { isHidden });
+    return response.data;
+  },
+};
+
 export default {
   dashboard: adminDashboardService,
   users: adminUserService,
@@ -314,4 +331,5 @@ export default {
   reports: adminReportService,
   support: adminSupportService,
   promos: adminPromoService,
+  reviews: adminReviewService,
 };

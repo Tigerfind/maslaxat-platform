@@ -509,7 +509,7 @@ const translations = {
       title: 'Панель администратора', adminFallback: 'Администратор', fullAccess: '| Полный доступ', loadError: 'Ошибка загрузки данных', sum: 'сум',
       totalUsers: 'Всего пользователей', lawyers: 'Юристов', clients: 'Клиентов', activeConsultations: 'Активные консультации',
       monthRevenue: 'Доход за месяц', totalRevenue: 'Общий доход',
-      quickActions: 'Быстрые действия', manageUsers: 'Управление пользователями', manageLawyers: 'Управление юристами', viewReports: 'Просмотр отчётов', specializations: 'Специализации', promos: 'Промокоды', support: 'Поддержка', repTitle: 'Отчёты и аналитика', repRevenueByMonth: 'Выручка по месяцам', repTopLawyers: 'Топ юристов', repCases: 'дел', repByStatus: 'Консультации по статусам', st_payment_pending: 'Ожидают оплаты', st_pending: 'Новые', st_accepted: 'Приняты', st_in_progress: 'Идут', st_completed: 'Завершены', st_rejected: 'Отклонены', st_cancelled: 'Отменены',
+      quickActions: 'Быстрые действия', manageUsers: 'Управление пользователями', manageLawyers: 'Управление юристами', viewReports: 'Просмотр отчётов', specializations: 'Специализации', promos: 'Промокоды', support: 'Поддержка', reviews: 'Модерация отзывов', repTitle: 'Отчёты и аналитика', repRevenueByMonth: 'Выручка по месяцам', repTopLawyers: 'Топ юристов', repCases: 'дел', repByStatus: 'Консультации по статусам', st_payment_pending: 'Ожидают оплаты', st_pending: 'Новые', st_accepted: 'Приняты', st_in_progress: 'Идут', st_completed: 'Завершены', st_rejected: 'Отклонены', st_cancelled: 'Отменены',
       recentActivity: 'Последняя активность', records: 'записей', colType: 'Тип', colDesc: 'Описание', colUser: 'Пользователь', colDate: 'Дата',
       userUnknown: 'Неизвестно', dateRecently: 'Недавно', noActivity: 'Нет данных о последней активности',
       systemOverview: 'Обзор системы', activeLawyers: 'Активные юристы', consultations: 'Консультации', detailedAnalytics: 'Подробная аналитика',
@@ -519,7 +519,7 @@ const translations = {
       title: 'Администратор панели', adminFallback: 'Администратор', fullAccess: '| Тўлиқ рухсат', loadError: 'Маълумотларни юклашда хатолик', sum: 'сўм',
       totalUsers: 'Жами фойдаланувчилар', lawyers: 'Юристлар', clients: 'Мижозлар', activeConsultations: 'Фаол консультациялар',
       monthRevenue: 'Ойлик даромад', totalRevenue: 'Умумий даромад',
-      quickActions: 'Тезкор амаллар', manageUsers: 'Фойдаланувчиларни бошқариш', manageLawyers: 'Юристларни бошқариш', viewReports: 'Ҳисоботларни кўриш', specializations: 'Ихтисосликлар', promos: 'Промокодлар', support: 'Ёрдам', repTitle: 'Ҳисоботлар ва аналитика', repRevenueByMonth: 'Ойлар бўйича тушум', repTopLawyers: 'Топ юристлар', repCases: 'иш', repByStatus: 'Статуслар бўйича консультациялар', st_payment_pending: 'Тўлов кутилмоқда', st_pending: 'Янги', st_accepted: 'Қабул қилинган', st_in_progress: 'Давом этмоқда', st_completed: 'Якунланган', st_rejected: 'Рад этилган', st_cancelled: 'Бекор қилинган',
+      quickActions: 'Тезкор амаллар', manageUsers: 'Фойдаланувчиларни бошқариш', manageLawyers: 'Юристларни бошқариш', viewReports: 'Ҳисоботларни кўриш', specializations: 'Ихтисосликлар', promos: 'Промокодлар', support: 'Ёрдам', reviews: 'Отзивларни модерация қилиш', repTitle: 'Ҳисоботлар ва аналитика', repRevenueByMonth: 'Ойлар бўйича тушум', repTopLawyers: 'Топ юристлар', repCases: 'иш', repByStatus: 'Статуслар бўйича консультациялар', st_payment_pending: 'Тўлов кутилмоқда', st_pending: 'Янги', st_accepted: 'Қабул қилинган', st_in_progress: 'Давом этмоқда', st_completed: 'Якунланган', st_rejected: 'Рад этилган', st_cancelled: 'Бекор қилинган',
       recentActivity: 'Сўнгги фаоллик', records: 'ёзув', colType: 'Тури', colDesc: 'Тавсиф', colUser: 'Фойдаланувчи', colDate: 'Сана',
       userUnknown: 'Номаълум', dateRecently: 'Яқинда', noActivity: 'Сўнгги фаоллик ҳақида маълумот йўқ',
       systemOverview: 'Тизим кўриниши', activeLawyers: 'Фаол юристлар', consultations: 'Консультациялар', detailedAnalytics: 'Батафсил таҳлил',
@@ -529,7 +529,7 @@ const translations = {
       title: 'Admin panel', adminFallback: 'Administrator', fullAccess: '| Full access', loadError: 'Error loading data', sum: 'UZS',
       totalUsers: 'Total users', lawyers: 'Lawyers', clients: 'Clients', activeConsultations: 'Active consultations',
       monthRevenue: 'Monthly revenue', totalRevenue: 'Total revenue',
-      quickActions: 'Quick actions', manageUsers: 'Manage users', manageLawyers: 'Manage lawyers', viewReports: 'View reports', specializations: 'Specializations', promos: 'Promo codes', support: 'Support', repTitle: 'Reports & analytics', repRevenueByMonth: 'Revenue by month', repTopLawyers: 'Top lawyers', repCases: 'cases', repByStatus: 'Consultations by status', st_payment_pending: 'Awaiting payment', st_pending: 'New', st_accepted: 'Accepted', st_in_progress: 'In progress', st_completed: 'Completed', st_rejected: 'Rejected', st_cancelled: 'Cancelled',
+      quickActions: 'Quick actions', manageUsers: 'Manage users', manageLawyers: 'Manage lawyers', viewReports: 'View reports', specializations: 'Specializations', promos: 'Promo codes', support: 'Support', reviews: 'Review moderation', repTitle: 'Reports & analytics', repRevenueByMonth: 'Revenue by month', repTopLawyers: 'Top lawyers', repCases: 'cases', repByStatus: 'Consultations by status', st_payment_pending: 'Awaiting payment', st_pending: 'New', st_accepted: 'Accepted', st_in_progress: 'In progress', st_completed: 'Completed', st_rejected: 'Rejected', st_cancelled: 'Cancelled',
       recentActivity: 'Recent activity', records: 'records', colType: 'Type', colDesc: 'Description', colUser: 'User', colDate: 'Date',
       userUnknown: 'Unknown', dateRecently: 'Recently', noActivity: 'No recent activity data',
       systemOverview: 'System overview', activeLawyers: 'Active lawyers', consultations: 'Consultations', detailedAnalytics: 'Detailed analytics',
@@ -937,6 +937,12 @@ const translations = {
     ru: { title: 'Обращения в поддержку', user: 'Пользователь', subject: 'Тема', message: 'Сообщение', date: 'Дата', status: 'Статус', empty: 'Обращений пока нет', statusChanged: 'Статус обновлён', stOpen: 'Открыто', stProgress: 'В работе', stClosed: 'Закрыто' },
     uz: { title: 'Ёрдам мурожаатлари', user: 'Фойдаланувчи', subject: 'Мавзу', message: 'Хабар', date: 'Сана', status: 'Ҳолат', empty: 'Ҳали мурожаатлар йўқ', statusChanged: 'Ҳолат янгиланди', stOpen: 'Очиқ', stProgress: 'Жараёнда', stClosed: 'Ёпилган' },
     en: { title: 'Support tickets', user: 'User', subject: 'Subject', message: 'Message', date: 'Date', status: 'Status', empty: 'No tickets yet', statusChanged: 'Status updated', stOpen: 'Open', stProgress: 'In progress', stClosed: 'Closed' },
+  },
+
+  adminReviews: {
+    ru: { title: 'Модерация отзывов', subtitle: 'Скрытые отзывы не видны клиентам и не влияют на рейтинг юриста', lawyer: 'Юрист', client: 'Клиент', rating: 'Оценка', text: 'Отзыв', date: 'Дата', visible: 'Виден', noText: 'без текста', empty: 'Отзывов пока нет', hidden: 'Отзыв скрыт', shown: 'Отзыв опубликован', hiddenTag: 'скрыт' },
+    uz: { title: 'Отзивларни модерация қилиш', subtitle: 'Яширилган отзивлар мижозларга кўринмайди ва юрист рейтингига таъсир қилмайди', lawyer: 'Юрист', client: 'Мижоз', rating: 'Баҳо', text: 'Отзив', date: 'Сана', visible: 'Кўринади', noText: 'матнсиз', empty: 'Ҳали отзивлар йўқ', hidden: 'Отзив яширилди', shown: 'Отзив эълон қилинди', hiddenTag: 'яширилган' },
+    en: { title: 'Review moderation', subtitle: 'Hidden reviews are invisible to clients and do not affect the lawyer rating', lawyer: 'Lawyer', client: 'Client', rating: 'Rating', text: 'Review', date: 'Date', visible: 'Visible', noText: 'no text', empty: 'No reviews yet', hidden: 'Review hidden', shown: 'Review published', hiddenTag: 'hidden' },
   },
 
   aiPrompts: {

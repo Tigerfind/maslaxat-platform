@@ -44,6 +44,7 @@ import AdminLawyersPage from './pages/Admin/AdminLawyersPage';
 import AdminUsersPage from './pages/Admin/AdminUsersPage';
 import AdminPromosPage from './pages/Admin/AdminPromosPage';
 import AdminSupportPage from './pages/Admin/AdminSupportPage';
+import AdminReviewsPage from './pages/Admin/AdminReviewsPage';
 import FavoritesPage from './pages/Client/FavoritesPage';
 import PortfolioPage from './pages/Client/PortfolioPage';
 import PaymentsPageGlass from './pages/Payments/PaymentsPageGlass';
@@ -199,6 +200,11 @@ const AppContent = () => {
         <Route path="/admin/support" element={
           <ProtectedRoute allowedRoles={['admin']}>
             <AdminSupportPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/admin/reviews" element={
+          <ProtectedRoute allowedRoles={['admin']}>
+            <AdminReviewsPage />
           </ProtectedRoute>
         } />
 
