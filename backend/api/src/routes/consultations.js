@@ -110,6 +110,11 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
 
     // Завершение — через единый идемпотентный хелпер (высвобождает эскроу один раз).
     if (req.body.status === 'completed') {
+      // ДЕНЬГИ: юрист может завершить (и высвободить эскроу) только начатую консультацию.
+      // Админ — может форсировать (модерация/разбор спора).
+      if (req.userRole === 'lawyer' && consultation.status !== 'in_progress') {
+        return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
+      }
       const { consultation: updated } = await completeConsultation(consultation.id, req.body.notes);
       return res.json({ consultation: updated });
     }

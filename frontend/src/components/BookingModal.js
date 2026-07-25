@@ -231,7 +231,20 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       // Бесплатная (акция) уже в статусе pending, оплата не нужна.
       const consultationId = booking?.consultation?.id;
       if (!useFree && booking?.requiresPayment && consultationId) {
-        await clientService.lawyers.simulatePayment(consultationId);
+        try {
+          // dev/test-режим: имитация оплаты
+          await clientService.lawyers.simulatePayment(consultationId);
+        } catch (payErr) {
+          // прод (заданы ключи Payme): тест-оплата отключена (403) → реальный Payme-редирект
+          if (payErr.response?.status === 403) {
+            const { checkoutUrl } = await clientService.lawyers.createPayment(consultationId);
+            if (checkoutUrl) {
+              window.location.href = checkoutUrl;
+              return;
+            }
+          }
+          throw payErr;
+        }
       }
 
       setStep(4);

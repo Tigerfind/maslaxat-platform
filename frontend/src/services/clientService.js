@@ -100,6 +100,12 @@ export const clientLawyerService = {
     return response.data;
   },
 
+  // Реальная оплата: создаёт платёж и возвращает Payme checkout URL (для редиректа в проде)
+  createPayment: async (consultationId) => {
+    const response = await api.post('/payments/create', { consultationId });
+    return response.data;
+  },
+
   // Get lawyer reviews
   getReviews: async (lawyerId) => {
     const response = await api.get(`/client/lawyers/${lawyerId}/reviews`);

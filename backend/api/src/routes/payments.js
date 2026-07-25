@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Payment, Consultation, User, LawyerProfile } = require('../models');
+const { Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 
@@ -382,13 +382,36 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
 
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'] });
 
-    // В реальной интеграции здесь был бы вызов API выплат (Payme Transfer / Click).
-    // Пока подтверждаем заявку; реальный перевод — Фаза 6.
+    // ЛЕДЖЕР: фиксируем заявку на вывод (аудит-трейл). Раньше баланс списывался
+    // без единой записи о выплате. Статус 'pending' — реальный перевод (Payme
+    // Transfer / Click) выполняется в Фазе 6, тогда статус станет 'paid'.
+    const withdrawal = await Withdrawal.create({
+      lawyerId: req.userId,
+      amount: amt,
+      status: 'pending',
+      provider: 'manual',
+    });
+
     res.json({
       success: true,
       message: `Заявка на вывод ${amt.toLocaleString()} сум принята. Средства поступят в течение 1-3 рабочих дней.`,
       newBalance: profile ? parseFloat(profile.balance) : null,
+      withdrawalId: withdrawal.id,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── GET /api/payments/withdrawals — история выводов юриста ───
+router.get('/withdrawals', authenticate, authorize('lawyer'), async (req, res, next) => {
+  try {
+    const withdrawals = await Withdrawal.findAll({
+      where: { lawyerId: req.userId },
+      order: [['createdAt', 'DESC']],
+      limit: 50,
+    });
+    res.json(withdrawals);
   } catch (err) {
     next(err);
   }

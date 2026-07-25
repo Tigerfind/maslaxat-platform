@@ -499,6 +499,32 @@ const Promo = sequelize.define('Promo', {
   },
 });
 
+// ─── WITHDRAWAL MODEL (леджер выводов юриста) ───────────────
+const Withdrawal = sequelize.define('Withdrawal', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  amount: {
+    type: DataTypes.DECIMAL(12, 2),
+    allowNull: false,
+  },
+  status: {
+    // pending — заявка принята; paid — реально переведено (Payme Transfer, Фаза 6);
+    // failed/cancelled — служебные
+    type: DataTypes.ENUM('pending', 'paid', 'failed', 'cancelled'),
+    defaultValue: 'pending',
+  },
+  provider: {
+    type: DataTypes.STRING,
+    defaultValue: 'manual',
+  },
+  note: {
+    type: DataTypes.TEXT,
+  },
+});
+
 // ─── ASSOCIATIONS ───────────────────────────────────────────
 
 // User <-> LawyerProfile (1:1 for lawyers)
@@ -565,6 +591,9 @@ Payment.belongsTo(Consultation, { foreignKey: 'consultationId' });
 User.hasMany(Payment, { foreignKey: 'userId', as: 'payments' });
 Payment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
+User.hasMany(Withdrawal, { foreignKey: 'lawyerId', as: 'withdrawals' });
+Withdrawal.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
+
 // User <-> Subscription (1:1 — у каждого пользователя одна активная подписка)
 User.hasOne(Subscription, { foreignKey: 'userId', as: 'subscription' });
 Subscription.belongsTo(User, { foreignKey: 'userId' });
@@ -590,4 +619,5 @@ module.exports = {
   Subscription,
   SupportTicket,
   Promo,
+  Withdrawal,
 };

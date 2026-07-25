@@ -247,6 +247,12 @@ router.post('/consultations/:id/end', async (req, res, next) => {
     if (consultation.lawyerId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
+    // ДЕНЬГИ: юрист высвобождает эскроу только по РЕАЛЬНО начатой консультации
+    // (нельзя принять оплату и сразу «завершить», не проведя сессию). Клиент
+    // подтверждает завершение своим путём (/complete).
+    if (consultation.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
+    }
 
     // Единый идемпотентный путь: завершение + высвобождение эскроу
     const { consultation: updated } = await completeConsultation(consultation.id, req.body.notes);
