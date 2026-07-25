@@ -185,6 +185,55 @@ router.post('/:id/join', authenticate, async (req, res, next) => {
   }
 });
 
+// PATCH /api/consultations/:id/reschedule — перенос времени (клиент или юрист)
+router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
+  try {
+    const { preferredDate, preferredTime } = req.body;
+    if (!preferredDate || !/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
+      return res.status(400).json({ error: 'Некорректная дата' });
+    }
+    if (!preferredTime || !/^([01]\d|2[0-3]):[0-5]\d$/.test(preferredTime)) {
+      return res.status(400).json({ error: 'Некорректное время' });
+    }
+
+    const consultation = await Consultation.findByPk(req.params.id, {
+      include: [
+        { model: User, as: 'client', attributes: ['id', 'name'] },
+        { model: User, as: 'lawyer', attributes: ['id', 'name'] },
+      ],
+    });
+    if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+
+    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+    // Переносить можно только ещё не начатую/не завершённую консультацию
+    if (!['payment_pending', 'pending', 'accepted'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Эту консультацию нельзя перенести' });
+    }
+    // Не в прошлое
+    const start = new Date(`${preferredDate}T${preferredTime}:00`);
+    if (isNaN(start.getTime()) || start < new Date()) {
+      return res.status(400).json({ error: 'Выберите время в будущем' });
+    }
+
+    consultation.preferredDate = preferredDate;
+    consultation.preferredTime = preferredTime;
+    consultation.reminderSent = false; // напоминание сработает на новое время
+    await consultation.save();
+
+    // Уведомляем другую сторону
+    const isClient = consultation.clientId === req.userId;
+    const otherId = isClient ? consultation.lawyerId : consultation.clientId;
+    const byName = (isClient ? consultation.client?.name : consultation.lawyer?.name) || 'Участник';
+    notificationService.notifyConsultationRescheduled(otherId, byName, consultation);
+
+    res.json({ consultation });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/consultations/:id/cancel — отменить
 router.post('/:id/cancel', authenticate, async (req, res, next) => {
   try {

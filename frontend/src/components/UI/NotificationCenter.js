@@ -42,6 +42,7 @@ const NOTIFICATION_ICONS = {
   consultation_started: <VideoCall sx={{ fontSize: 20, color: axelionColors.gold }} />,
   consultation_completed: <CheckCircle sx={{ fontSize: 20, color: axelionColors.success }} />,
   consultation_reminder: <AccessTime sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  consultation_rescheduled: <AccessTime sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_review: <Star sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_message: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
 };

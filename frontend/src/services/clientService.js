@@ -140,6 +140,12 @@ export const clientConsultationService = {
     }
   },
 
+  // Перенос времени консультации
+  reschedule: async (consultationId, preferredDate, preferredTime) => {
+    const response = await api.patch(`/client/consultations/${consultationId}/reschedule`, { preferredDate, preferredTime });
+    return response.data;
+  },
+
   // Cancel consultation
   cancelConsultation: async (consultationId, reason) => {
     try {

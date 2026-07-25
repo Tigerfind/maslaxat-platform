@@ -15,6 +15,7 @@ import {
   ChatBubbleOutline,
   AddOutlined,
   ReplayOutlined,
+  EventRepeatOutlined,
   CheckOutlined,
   CloseOutlined,
   AccessTimeRounded,
@@ -88,6 +89,10 @@ const ConsultationsPageGlass = () => {
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   const [ratingConsultation, setRatingConsultation] = useState(null);
   const [rebookLawyer, setRebookLawyer] = useState(null);
+  const [rescheduleC, setRescheduleC] = useState(null);
+  const [rsDate, setRsDate] = useState('');
+  const [rsTime, setRsTime] = useState('');
+  const [rsLoading, setRsLoading] = useState(false);
 
   useEffect(() => {
     fetchConsultations();
@@ -202,6 +207,27 @@ const ConsultationsPageGlass = () => {
     setRatingDialogOpen(true);
   };
 
+  const openReschedule = (c) => {
+    setRescheduleC(c);
+    setRsDate(c.preferredDate || '');
+    setRsTime((c.preferredTime || '').slice(0, 5));
+  };
+
+  const submitReschedule = async () => {
+    if (!rescheduleC || !rsDate || !rsTime) return;
+    setRsLoading(true);
+    try {
+      await clientService.consultations.reschedule(rescheduleC.id, rsDate, rsTime);
+      toast.success(t('consultations.rescheduleOk'));
+      setRescheduleC(null);
+      fetchConsultations();
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('consultations.rescheduleErr'));
+    } finally {
+      setRsLoading(false);
+    }
+  };
+
   const handleSubmitRating = async ({ rating, text }) => {
     if (!ratingConsultation) return;
     await clientLawyerService.leaveReview(ratingConsultation.lawyerId || ratingConsultation.lawyer?.id, {
@@ -269,8 +295,10 @@ const ConsultationsPageGlass = () => {
     const canRebook = c.status === 'completed' && Boolean(c.lawyer);
     // История переписки доступна после завершения/отмены (read-only)
     const canChatHistory = ['completed', 'cancelled', 'rejected'].includes(c.status);
+    // Перенос — пока консультация не началась/не завершена
+    const canReschedule = ['payment_pending', 'pending', 'accepted'].includes(c.status);
 
-    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory;
+    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule;
     const StatusIcon = st.icon;
 
     return (
@@ -353,6 +381,12 @@ const ConsultationsPageGlass = () => {
               <button className="cons-foot-btn" onClick={() => handleCompleteConsultation(c)} disabled={actionLoading} style={{ color: '#C0492F' }}>
                 <CheckOutlined sx={{ fontSize: 17 }} />
                 {t('consultations.complete')}
+              </button>
+            )}
+            {canReschedule && (
+              <button className="cons-foot-btn" onClick={() => openReschedule(c)} style={{ color: 'var(--text2)' }}>
+                <EventRepeatOutlined sx={{ fontSize: 16 }} />
+                {t('consultations.reschedule')}
               </button>
             )}
             {canRate && (
@@ -569,6 +603,38 @@ const ConsultationsPageGlass = () => {
         onClose={() => setRebookLawyer(null)}
         lawyer={rebookLawyer || {}}
       />
+
+      {/* Перенос времени консультации */}
+      <Dialog open={Boolean(rescheduleC)} onClose={() => setRescheduleC(null)} maxWidth="xs" fullWidth>
+        <DialogTitle sx={{ fontWeight: 500 }}>{t('consultations.reschedule')}</DialogTitle>
+        <DialogContent>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>{t('consultations.rescheduleSub')}</div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newDate')}</div>
+              <input type="date" value={rsDate} onChange={(e) => setRsDate(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }} />
+            </div>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newTime')}</div>
+              <input type="time" value={rsTime} onChange={(e) => setRsTime(e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }} />
+            </div>
+          </div>
+        </DialogContent>
+        <DialogActions sx={{ p: 3, pt: 1 }}>
+          <button className="cons-foot-btn" style={{ flex: 'none', border: 'none', padding: '10px 18px', color: 'var(--text3)' }} onClick={() => setRescheduleC(null)}>
+            {t('consultations.cancel')}
+          </button>
+          <button
+            onClick={submitReschedule}
+            disabled={rsLoading || !rsDate || !rsTime}
+            style={{ border: 'none', padding: '10px 22px', borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: (rsLoading || !rsDate || !rsTime) ? 'default' : 'pointer', opacity: (rsLoading || !rsDate || !rsTime) ? 0.6 : 1 }}
+          >
+            {rsLoading ? t('consultations.rescheduleSaving') : t('consultations.rescheduleSave')}
+          </button>
+        </DialogActions>
+      </Dialog>
     </GlassShell>
   );
 };

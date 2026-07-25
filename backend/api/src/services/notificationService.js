@@ -9,6 +9,7 @@ const TYPES = {
   CONSULTATION_STARTED: 'consultation_started',
   CONSULTATION_COMPLETED: 'consultation_completed',
   CONSULTATION_CANCELLED: 'consultation_cancelled',
+  CONSULTATION_RESCHEDULED: 'consultation_rescheduled',
   CONSULTATION_REMINDER: 'consultation_reminder',
   NEW_REVIEW: 'new_review',
   DOCUMENT_ANALYZED: 'document_analyzed',
@@ -92,6 +93,17 @@ async function notifyConsultationCancelled(userId, cancellerName, consultation) 
   );
 }
 
+// When a consultation is rescheduled → notify the other party
+async function notifyConsultationRescheduled(userId, byName, consultation) {
+  return createNotification(
+    userId,
+    TYPES.CONSULTATION_RESCHEDULED,
+    'Консультация перенесена',
+    `${byName} перенёс консультацию на ${consultation.preferredDate} в ${consultation.preferredTime}`,
+    { consultationId: consultation.id }
+  );
+}
+
 // Reminder ~1 hour before a consultation → notify the participant
 async function notifyConsultationReminder(userId, partnerName, consultation) {
   return createNotification(
@@ -136,6 +148,7 @@ module.exports = {
   notifyConsultationStarted,
   notifyConsultationCompleted,
   notifyConsultationCancelled,
+  notifyConsultationRescheduled,
   notifyConsultationReminder,
   notifyNewReview,
   notifyDocumentAnalyzed,
