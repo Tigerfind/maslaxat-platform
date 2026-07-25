@@ -71,7 +71,7 @@ const initialsOf = (name = '') =>
 
 const AIChatPageGlass = () => {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
@@ -91,6 +91,7 @@ const AIChatPageGlass = () => {
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
   const [voiceOn, setVoiceOn] = useState(false);
+  const [voiceText, setVoiceText] = useState('');
 
   const handleCopyMessage = (text, index) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -306,9 +307,12 @@ const AIChatPageGlass = () => {
   };
 
   // --- Voice input (Web Speech API when available; graceful fallback) ---
+  const VOICE_LOCALE = { ru: 'ru-RU', uz: 'uz-UZ', en: 'en-US' };
+
   const stopVoice = () => {
     try { recognitionRef.current?.stop(); } catch (e) { /* noop */ }
     setVoiceOn(false);
+    setVoiceText('');
   };
 
   const toggleVoice = () => {
@@ -319,17 +323,26 @@ const AIChatPageGlass = () => {
       return;
     }
     const rec = new SR();
-    rec.lang = 'ru-RU';
+    rec.lang = VOICE_LOCALE[language] || 'ru-RU';
     rec.interimResults = true;
     rec.continuous = false;
+    // Распознанный текст ДОБАВЛЯЕМ к уже введённому, а не затираем
+    const base = inputMessage.trim() ? inputMessage.trim() + ' ' : '';
     rec.onresult = (event) => {
       const transcript = Array.from(event.results).map((r) => r[0].transcript).join('');
-      setInputMessage(transcript);
+      setVoiceText(transcript);
+      setInputMessage(base + transcript);
     };
-    rec.onend = () => setVoiceOn(false);
-    rec.onerror = () => setVoiceOn(false);
+    rec.onend = () => { setVoiceOn(false); setVoiceText(''); };
+    rec.onerror = (e) => {
+      setVoiceOn(false);
+      setVoiceText('');
+      if (e?.error === 'not-allowed' || e?.error === 'service-not-allowed') {
+        toast.info(t('ai.voiceDenied'));
+      }
+    };
     recognitionRef.current = rec;
-    try { rec.start(); setVoiceOn(true); } catch (e) { setVoiceOn(false); }
+    try { rec.start(); setVoiceOn(true); setVoiceText(''); } catch (e) { setVoiceOn(false); }
   };
 
   const formatSize = (bytes = 0) => {
@@ -684,7 +697,9 @@ const AIChatPageGlass = () => {
                 <span key={b} className="vbar" style={{ height: 34, animationDelay: `${b * 0.09}s` }} />
               ))}
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text2)', textAlign: 'center', minHeight: 20 }}>{t('ai.listening')}…</div>
+            <div style={{ fontSize: 14, color: voiceText ? 'var(--text)' : 'var(--text2)', textAlign: 'center', minHeight: 20, maxWidth: 420, lineHeight: 1.4 }}>
+              {voiceText || `${t('ai.listening')}…`}
+            </div>
             <button
               onClick={stopVoice}
               style={{ background: 'var(--accent)', border: 'none', color: '#FFFFFF', fontSize: 13, fontWeight: 500, letterSpacing: '0.05em', padding: '11px 26px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit' }}
