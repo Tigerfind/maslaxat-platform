@@ -95,6 +95,7 @@ const LawyerProfileEditPage = () => {
 
   const [form, setForm] = useState({
     description: '',
+    greeting: '',
     experience: 0,
     price: 200000,
     location: 'Ташкент',
@@ -112,6 +113,7 @@ const LawyerProfileEditPage = () => {
         const p = res.data.profile || {};
         setForm({
           description: p.description || '',
+          greeting: p.greeting || '',
           experience: p.experience || 0,
           price: p.price || 200000,
           location: p.location || 'Ташкент',
@@ -174,6 +176,7 @@ const LawyerProfileEditPage = () => {
     try {
       const formData = new FormData();
       formData.append('description', form.description);
+      formData.append('greeting', form.greeting || '');
       formData.append('experience', String(form.experience));
       formData.append('specialization', form.specialization);
       formData.append('price', String(form.price));
@@ -282,6 +285,20 @@ const LawyerProfileEditPage = () => {
             placeholder={t('lawyerPanel.aboutPlaceholder')}
             helperText={t('lawyerPanel.charsHelper', { n: form.description.length })}
             inputProps={{ maxLength: 500 }}
+            sx={{ mb: 2.5, ...inputSx }}
+          />
+
+          {/* Автоприветствие в чате */}
+          <div style={fieldLabel}>{t('lawyerPanel.greeting')}</div>
+          <TextField
+            fullWidth
+            multiline
+            minRows={2}
+            value={form.greeting}
+            onChange={(e) => handleChange('greeting', e.target.value)}
+            placeholder={t('lawyerPanel.greetingPlaceholder')}
+            helperText={t('lawyerPanel.greetingHelper')}
+            inputProps={{ maxLength: 1000 }}
             sx={{ mb: 2.5, ...inputSx }}
           />
 

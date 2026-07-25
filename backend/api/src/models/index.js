@@ -115,6 +115,10 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   description: {
     type: DataTypes.TEXT,
   },
+  // Автоприветствие: авто-сообщение юриста при открытии чата (если сообщений ещё нет)
+  greeting: {
+    type: DataTypes.TEXT,
+  },
   experience: {
     type: DataTypes.INTEGER,
     defaultValue: 0,

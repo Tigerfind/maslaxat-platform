@@ -543,6 +543,7 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
     const {
       specialization,
       description,
+      greeting,
       experience,
       price,
       location,
@@ -555,6 +556,11 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
     // Update LawyerProfile fields
     if (specialization !== undefined) profile.specialization = specialization;
     if (description !== undefined) profile.description = description;
+    // Автоприветствие: обрезаем до 1000 символов, пустую строку → null
+    if (greeting !== undefined) {
+      const g = typeof greeting === 'string' ? greeting.trim() : '';
+      profile.greeting = g ? g.slice(0, 1000) : null;
+    }
     if (experience !== undefined) profile.experience = parseInt(experience, 10) || 0;
     if (price !== undefined) profile.price = parseInt(price, 10) || 0;
     if (location !== undefined) profile.location = location;

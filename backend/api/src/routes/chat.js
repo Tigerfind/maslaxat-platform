@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { Message, Consultation, User } = require('../models');
+const { Message, Consultation, User, LawyerProfile } = require('../models');
 const { authenticate } = require('../middleware/auth');
 
 // GET /api/chat/:consultationId/messages — get chat history
@@ -15,11 +15,33 @@ router.get('/:consultationId/messages', authenticate, async (req, res, next) => 
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    const messages = await Message.findAll({
+    let messages = await Message.findAll({
       where: { consultationId: req.params.consultationId },
       include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
       order: [['createdAt', 'ASC']],
     });
+
+    // Автоприветствие: когда клиент открывает чат, а сообщений ещё нет и у юриста
+    // задан greeting — публикуем его первым сообщением от юриста (один раз).
+    if (messages.length === 0 && req.userId === consultation.clientId) {
+      const lawyerProfile = await LawyerProfile.findOne({
+        where: { userId: consultation.lawyerId },
+        attributes: ['greeting'],
+      });
+      const greeting = lawyerProfile && lawyerProfile.greeting && lawyerProfile.greeting.trim();
+      if (greeting) {
+        await Message.create({
+          consultationId: req.params.consultationId,
+          senderId: consultation.lawyerId,
+          text: greeting,
+        });
+        messages = await Message.findAll({
+          where: { consultationId: req.params.consultationId },
+          include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
+          order: [['createdAt', 'ASC']],
+        });
+      }
+    }
 
     // Mark messages from the other person as read
     await Message.update(
