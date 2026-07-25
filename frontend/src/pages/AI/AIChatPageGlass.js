@@ -80,6 +80,7 @@ const AIChatPageGlass = () => {
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
   const [conversations, setConversations] = useState([]);
+  const [convSearch, setConvSearch] = useState('');
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -377,6 +378,18 @@ const AIChatPageGlass = () => {
         >
           + {t('ai.newChat')}
         </button>
+        {conversations.length > 3 && (
+          <input
+            value={convSearch}
+            onChange={(e) => setConvSearch(e.target.value)}
+            placeholder={t('ai.searchConversations')}
+            style={{
+              width: '100%', marginTop: 12, padding: '9px 12px', fontSize: 13, boxSizing: 'border-box',
+              borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--canvas)',
+              color: 'var(--text)', fontFamily: 'inherit',
+            }}
+          />
+        )}
       </div>
       <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
         {conversations.length === 0 ? (
@@ -384,7 +397,15 @@ const AIChatPageGlass = () => {
             {t('ai.noConversations')}
           </div>
         ) : (
-          conversations.map((c) => {
+          (() => {
+            const q = convSearch.trim().toLowerCase();
+            const filtered = q
+              ? conversations.filter((c) => `${c.title || ''} ${c.category || ''}`.toLowerCase().includes(q))
+              : conversations;
+            if (filtered.length === 0) {
+              return <div style={{ textAlign: 'center', padding: '16px 8px', color: 'var(--text3)', fontSize: 12.5 }}>{t('ai.nothingFound')}</div>;
+            }
+            return filtered.map((c) => {
             const active = currentConversationId === c.id;
             return (
               <div
@@ -405,7 +426,8 @@ const AIChatPageGlass = () => {
                 </div>
               </div>
             );
-          })
+            });
+          })()
         )}
       </div>
     </div>

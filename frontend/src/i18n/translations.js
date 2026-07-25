@@ -1763,7 +1763,7 @@ const translations = {
       // Сообщения
       welcome: 'Здравствуйте! Я AI-помощник MaslaXat. Задайте мне любой юридический вопрос, и я постараюсь помочь.',
       disclaimer: 'Обратите внимание: AI-консультация носит информационный характер и не заменяет консультацию с профессиональным юристом.',
-      noConversations: 'Нет сохранённых разговоров',
+      noConversations: 'Нет сохранённых разговоров', searchConversations: 'Поиск по чатам…', nothingFound: 'Ничего не найдено',
       matchedLawyers: 'Подходящие юристы',
       topicPrefix: 'По теме',
       askToMatch: 'Задайте вопрос — подберём специалистов',
@@ -1815,7 +1815,7 @@ const translations = {
       // Сообщения
       welcome: 'Ассалому алайкум! Мен МаслаХатнинг AI-ёрдамчисиман. Менга ҳар қандай юридик савол беринг, мен ёрдам беришга ҳаракат қиламан.',
       disclaimer: 'Эътибор беринг: AI-консультация ахборот характерига эга ва профессионал юрист билан маслаҳатлашишни алмаштирмайди.',
-      noConversations: 'Сақланган суҳбатлар йўқ',
+      noConversations: 'Сақланган суҳбатлар йўқ', searchConversations: 'Чатлардан қидириш…', nothingFound: 'Ҳеч нарса топилмади',
       matchedLawyers: 'Мос юристлар',
       topicPrefix: 'Мавзу',
       askToMatch: 'Савол беринг — мутахассис танлаймиз',
@@ -1867,7 +1867,7 @@ const translations = {
       // Сообщения
       welcome: 'Hello! I am MaslaXat AI assistant. Ask me any legal question and I will try to help.',
       disclaimer: 'Please note: AI consultation is for informational purposes only and does not replace consultation with a professional lawyer.',
-      noConversations: 'No saved conversations',
+      noConversations: 'No saved conversations', searchConversations: 'Search chats…', nothingFound: 'Nothing found',
       matchedLawyers: 'Matching lawyers',
       topicPrefix: 'Topic',
       askToMatch: 'Ask a question — we will match specialists',
