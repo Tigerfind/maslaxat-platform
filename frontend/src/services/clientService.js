@@ -3,20 +3,11 @@ import api from './api';
 // Client Dashboard Service
 export const clientDashboardService = {
   // Get dashboard stats
+  // Бросаем ошибку наружу — дашборд покажет состояние ошибки, а не тихие нули
+  // (иначе сбой бэкенда выглядит как «0 консультаций»).
   getStats: async () => {
-    try {
-      const response = await api.get('/client/dashboard/stats');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching stats:', error);
-      // Честный фолбэк: при ошибке показываем нули, а не выдуманные данные
-      return {
-        activeConsultations: 0,
-        documents: 0,
-        completedConsultations: 0,
-        rating: 0,
-      };
-    }
+    const response = await api.get('/client/dashboard/stats');
+    return response.data;
   },
 
   // Get upcoming consultations

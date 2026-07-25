@@ -186,16 +186,9 @@ const AIChatPageGlass = () => {
     setMatchedLawyers([]);
   };
 
-  const handleCategoryClick = (category) => {
-    const prompts = {
-      'Гражданское право': 'У меня вопрос по гражданскому праву. Какие основные права я имею как гражданин Узбекистана?',
-      'Семейное право': 'У меня вопрос по семейному праву. Расскажите о порядке расторжения брака в Узбекистане.',
-      'Трудовое право': 'У меня вопрос по трудовому праву. Какие мои права как работника в Узбекистане?',
-      'Уголовное право': 'У меня вопрос по уголовному праву. Какие права имеет обвиняемый в Узбекистане?',
-      'Корпоративное право': 'У меня вопрос по корпоративному праву. Как зарегистрировать ООО в Узбекистане?',
-      'Земельное право': 'У меня вопрос по земельному праву. Какие документы нужны для покупки квартиры в Узбекистане?',
-    };
-    setInputMessage(prompts[category] || `У меня вопрос по теме: ${category}`);
+  // Быстрый вопрос по категории — текст берём из i18n (язык интерфейса)
+  const handleCategoryClick = (catKey) => {
+    setInputMessage(t('aiPrompts.' + catKey));
   };
 
   const handleFileSelect = (event) => {
@@ -243,6 +236,7 @@ const AIChatPageGlass = () => {
         isUser: false,
         timestamp: new Date().toISOString(),
         category: response.category,
+        fallback: response.fallback === true,
       };
 
       setMessages((prev) => [...prev, aiMessage]);
@@ -504,7 +498,7 @@ const AIChatPageGlass = () => {
               {LAW_CATS.map((cat) => (
                 <button
                   key={cat.k}
-                  onClick={() => handleCategoryClick(cat.full)}
+                  onClick={() => handleCategoryClick(cat.k)}
                   style={{
                     background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 20,
                     padding: '8px 14px', fontSize: 13, color: 'var(--text2)', cursor: 'pointer', fontFamily: 'inherit',
@@ -594,11 +588,14 @@ const AIChatPageGlass = () => {
                   </div>
                 )}
 
-                {/* Карточка «Важно» — предупреждение, что AI-ответ не заменяет юриста */}
+                {/* Карточка «Важно» — предупреждение, что AI-ответ не заменяет юриста.
+                    Для fallback (шаблонного) ответа — отдельная пометка, что это демо-режим. */}
                 {!m.isError && m.category && (
                   <div style={{ marginTop: 10, padding: '11px 14px', background: 'rgba(196,163,90,0.10)', border: '1px solid rgba(196,163,90,0.3)', borderRadius: 12, display: 'flex', gap: 9 }}>
                     <WarningAmberOutlined sx={{ fontSize: 17, color: '#B08A3A', flexShrink: 0, mt: '1px' }} />
-                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text2)' }}>{t('ai.cautionText')}</div>
+                    <div style={{ fontSize: 12.5, lineHeight: 1.5, color: 'var(--text2)' }}>
+                      {m.fallback ? t('ai.cautionFallback') : t('ai.cautionText')}
+                    </div>
                   </div>
                 )}
                 {!m.isError && (

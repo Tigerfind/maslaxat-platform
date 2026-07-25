@@ -129,6 +129,13 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     if (!lawyer) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
+    // Нельзя бронировать непроверенного или недоступного (offline) юриста
+    if (!lawyer.isVerified) {
+      return res.status(400).json({ error: 'Этот юрист ещё не прошёл проверку' });
+    }
+    if (!lawyer.profile || lawyer.profile.isAvailable === false) {
+      return res.status(400).json({ error: 'Юрист сейчас недоступен для записи' });
+    }
 
     // Акция «каждая 3-я бесплатно»: право всегда пересчитываем на сервере,
     // клиентскому флагу не доверяем.

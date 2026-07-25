@@ -143,14 +143,15 @@ const generateAIResponse = async (message, attachments = []) => {
       const detectedCategory = categoryMatch ? categoryMatch[1] : null;
       const cleanText = text.replace(/\[КАТЕГОРИЯ:\s*.+?\]/, '').trim();
 
-      return { reply: cleanText, category: detectedCategory };
+      return { reply: cleanText, category: detectedCategory, fallback: false };
     } catch (err) {
       console.error('Claude API error:', err.message);
     }
   }
 
-  // Fallback: rule-based responses with real law references
-  return generateFallbackResponse(message);
+  // Fallback: rule-based responses with real law references.
+  // Помечаем fallback:true — это шаблонный справочный ответ, а не живой AI.
+  return { ...generateFallbackResponse(message), fallback: true };
 };
 
 const generateFallbackResponse = (message) => {
@@ -495,6 +496,7 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
       message: aiResponse.reply,
       category: aiResponse.category,
       conversationId: conversation.id,
+      fallback: aiResponse.fallback === true,
     });
   } catch (err) {
     next(err);

@@ -12,6 +12,7 @@ import api from '../../services/api';
 import { updateProfile } from '../../store/slices/authSlice';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
+import { specLabel } from '../../utils/specLabel';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -333,7 +334,7 @@ const LawyerProfileEditPage = () => {
               return (
                 <Chip
                   key={spec}
-                  label={spec}
+                  label={specLabel(t, spec)}
                   icon={<GavelOutlined sx={{ fontSize: 14, color: selected ? '#fff !important' : 'var(--accent) !important' }} />}
                   onClick={() => handleChange('specialization', selected ? '' : spec)}
                   sx={{

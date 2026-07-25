@@ -3,22 +3,10 @@ import api from './api';
 // Admin Dashboard Service
 export const adminDashboardService = {
   // Get admin stats
+  // Бросаем ошибку наружу — дашборд покажет состояние ошибки, а не тихие нули
   getStats: async () => {
-    try {
-      const response = await api.get('/admin/dashboard/stats');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching admin stats:', error);
-      // Честный фолбэк: при ошибке показываем нули, а не выдуманные данные
-      return {
-        totalUsers: 0,
-        totalLawyers: 0,
-        totalClients: 0,
-        activeConsultations: 0,
-        totalRevenue: 0,
-        monthlyRevenue: 0,
-      };
-    }
+    const response = await api.get('/admin/dashboard/stats');
+    return response.data;
   },
 
   // Get recent activity

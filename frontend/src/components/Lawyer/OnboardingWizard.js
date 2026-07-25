@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { specLabel } from '../../utils/specLabel';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -109,7 +110,7 @@ const StepProfile = ({ data, onChange, t }) => (
 );
 
 // ── Step 2: Specializations ───────────────────────────────────
-const StepSpecializations = ({ data, onChange }) => (
+const StepSpecializations = ({ data, onChange, t }) => (
   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
     {SPECIALIZATIONS.map((spec) => {
       const selected = data.specializations.includes(spec);
@@ -124,7 +125,7 @@ const StepSpecializations = ({ data, onChange }) => (
           }}
           style={chipStyle(selected)}
         >
-          {spec}
+          {specLabel(t, spec)}
         </button>
       );
     })}
@@ -315,7 +316,7 @@ const OnboardingWizard = ({ onComplete }) => {
         {/* Step content */}
         <div style={{ minHeight: 220 }}>
           {step === 0 && <StepProfile data={data} onChange={handleChange} t={t} />}
-          {step === 1 && <StepSpecializations data={data} onChange={handleChange} />}
+          {step === 1 && <StepSpecializations data={data} onChange={handleChange} t={t} />}
           {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} t={t} />}
           {step === 3 && <StepPrice data={data} onChange={handleChange} t={t} />}
         </div>

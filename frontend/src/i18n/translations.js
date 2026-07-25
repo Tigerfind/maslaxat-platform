@@ -921,6 +921,18 @@ const translations = {
     en: { prompt: 'Please verify your email. Check your inbox.', resend: 'Resend', sending: 'Sending…', sent: 'Email sent — check your inbox' },
   },
 
+  specNames: {
+    ru: { civil: 'Гражданское право', family: 'Семейное право', labor: 'Трудовое право', criminal: 'Уголовное право', commercial: 'Коммерческое право', tax: 'Налоговое право', administrative: 'Административное право', land: 'Земельное право', corporate: 'Корпоративное право', ip: 'Интеллектуальная собственность', housing: 'Жилищное право', insurance: 'Страховое право' },
+    uz: { civil: 'Фуқаролик ҳуқуқи', family: 'Оила ҳуқуқи', labor: 'Меҳнат ҳуқуқи', criminal: 'Жиноят ҳуқуқи', commercial: 'Тижорат ҳуқуқи', tax: 'Солиқ ҳуқуқи', administrative: 'Маъмурий ҳуқуқ', land: 'Ер ҳуқуқи', corporate: 'Корпоратив ҳуқуқ', ip: 'Интеллектуал мулк', housing: 'Уй-жой ҳуқуқи', insurance: 'Суғурта ҳуқуқи' },
+    en: { civil: 'Civil law', family: 'Family law', labor: 'Labor law', criminal: 'Criminal law', commercial: 'Commercial law', tax: 'Tax law', administrative: 'Administrative law', land: 'Land law', corporate: 'Corporate law', ip: 'Intellectual property', housing: 'Housing law', insurance: 'Insurance law' },
+  },
+
+  aiPrompts: {
+    ru: { catCivil: 'У меня вопрос по гражданскому праву. Какие основные права я имею как гражданин Узбекистана?', catFamily: 'У меня вопрос по семейному праву. Расскажите о порядке расторжения брака в Узбекистане.', catLabor: 'У меня вопрос по трудовому праву. Какие мои права как работника в Узбекистане?', catCriminal: 'У меня вопрос по уголовному праву. Какие права имеет обвиняемый в Узбекистане?', catCorporate: 'У меня вопрос по корпоративному праву. Как зарегистрировать ООО в Узбекистане?', catLand: 'У меня вопрос по земельному праву. Какие документы нужны для покупки квартиры в Узбекистане?' },
+    uz: { catCivil: 'Фуқаролик ҳуқуқи бўйича саволим бор. Ўзбекистон фуқароси сифатида қандай асосий ҳуқуқларим бор?', catFamily: 'Оила ҳуқуқи бўйича саволим бор. Ўзбекистонда никоҳни бекор қилиш тартиби ҳақида айтинг.', catLabor: 'Меҳнат ҳуқуқи бўйича саволим бор. Ўзбекистонда ходим сифатида қандай ҳуқуқларим бор?', catCriminal: 'Жиноят ҳуқуқи бўйича саволим бор. Ўзбекистонда айбланувчининг қандай ҳуқуқлари бор?', catCorporate: 'Корпоратив ҳуқуқ бўйича саволим бор. Ўзбекистонда МЧЖни қандай рўйхатдан ўтказиш мумкин?', catLand: 'Ер ҳуқуқи бўйича саволим бор. Ўзбекистонда квартира сотиб олиш учун қандай ҳужжатлар керак?' },
+    en: { catCivil: 'I have a civil law question. What basic rights do I have as a citizen of Uzbekistan?', catFamily: 'I have a family law question. Please explain the divorce procedure in Uzbekistan.', catLabor: 'I have a labor law question. What are my rights as an employee in Uzbekistan?', catCriminal: 'I have a criminal law question. What rights does an accused person have in Uzbekistan?', catCorporate: 'I have a corporate law question. How do I register an LLC in Uzbekistan?', catLand: 'I have a land law question. What documents are needed to buy an apartment in Uzbekistan?' },
+  },
+
   notif: {
     ru: { title: 'Уведомления', markAll: 'Прочитать все', empty: 'Нет уведомлений', justNow: 'только что', minAgo: 'мин назад', hourAgo: 'ч назад', dayAgo: 'дн назад' },
     uz: { title: 'Билдиришномалар', markAll: 'Барчасини ўқилган деб белгилаш', empty: 'Билдиришномалар йўқ', justNow: 'ҳозиргина', minAgo: 'дақ. олдин', hourAgo: 'соат олдин', dayAgo: 'кун олдин' },
@@ -1712,7 +1724,7 @@ const translations = {
       catLand: 'Земельное',
       saveToPortfolio: 'Сохранить в Досье',
       bookByTopic: 'Записаться к юристу по теме', searching: 'Ищем юриста…',
-      lawsTitle: 'Статьи закона', cautionText: 'Это справочный AI-ответ по законам РУз, а не юридическая консультация. Для вашей ситуации решение лучше подтвердить у юриста.',
+      lawsTitle: 'Статьи закона', cautionText: 'Это справочный AI-ответ по законам РУз, а не юридическая консультация. Для вашей ситуации решение лучше подтвердить у юриста.', cautionFallback: 'Демо-режим: это шаблонный справочный ответ по законам РУз (без подключённого AI), а не юридическая консультация. Подтвердите решение у юриста.',
       copy: 'Копировать',
       copied: 'Скопировано',
       readyToAnalyze: 'Готов к анализу',
@@ -1764,7 +1776,7 @@ const translations = {
       catLand: 'Ер',
       saveToPortfolio: 'Досьега сақлаш',
       bookByTopic: 'Мавзу бўйича юристга ёзилиш', searching: 'Юрист қидирилмоқда…',
-      lawsTitle: 'Қонун моддалари', cautionText: 'Бу — ЎзР қонунлари бўйича маълумот берувчи AI-жавоб, юридик консультация эмас. Ҳолатингиз учун ечимни юрист билан тасдиқлаган маъқул.',
+      lawsTitle: 'Қонун моддалари', cautionText: 'Бу — ЎзР қонунлари бўйича маълумот берувчи AI-жавоб, юридик консультация эмас. Ҳолатингиз учун ечимни юрист билан тасдиқлаган маъқул.', cautionFallback: 'Демо-режим: бу — ЎзР қонунлари бўйича шаблонли маълумот (уланган AI-сиз), юридик консультация эмас. Ечимни юрист билан тасдиқланг.',
       copy: 'Нусхалаш',
       copied: 'Нусхаланди',
       readyToAnalyze: 'Таҳлилга тайёр',
@@ -1816,7 +1828,7 @@ const translations = {
       catLand: 'Land',
       saveToPortfolio: 'Save to Portfolio',
       bookByTopic: 'Book a lawyer on this topic', searching: 'Finding a lawyer…',
-      lawsTitle: 'Relevant laws', cautionText: 'This is an informational AI answer on Uzbekistan law, not legal advice. For your situation, confirm the solution with a lawyer.',
+      lawsTitle: 'Relevant laws', cautionText: 'This is an informational AI answer on Uzbekistan law, not legal advice. For your situation, confirm the solution with a lawyer.', cautionFallback: 'Demo mode: this is a templated reference answer on Uzbekistan law (no live AI connected), not legal advice. Confirm with a lawyer.',
       copy: 'Copy',
       copied: 'Copied',
       readyToAnalyze: 'Ready for analysis',
