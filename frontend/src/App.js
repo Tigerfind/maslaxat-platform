@@ -115,8 +115,6 @@ const AppContent = () => {
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="payments" element={<PaymentsPageGlass />} />
           <Route path="profile" element={<ProfilePageGlass />} />
-          <Route path="settings" element={<SettingsPageGlass />} />
-          <Route path="help" element={<HelpPage />} />
         </Route>
 
         {/* Video call — accessible to both client and lawyer, fullscreen (no Layout) */}
@@ -130,6 +128,18 @@ const AppContent = () => {
         <Route path="/consultations/chat/:consultationId" element={
           <ProtectedRoute allowedRoles={['client', 'lawyer']}>
             <ChatPage />
+          </ProtectedRoute>
+        } />
+
+        {/* Settings & Help — доступны всем авторизованным ролям (свой GlassShell-каркас) */}
+        <Route path="/settings" element={
+          <ProtectedRoute allowedRoles={['client', 'lawyer', 'admin']}>
+            <SettingsPageGlass />
+          </ProtectedRoute>
+        } />
+        <Route path="/help" element={
+          <ProtectedRoute allowedRoles={['client', 'lawyer', 'admin']}>
+            <HelpPage />
           </ProtectedRoute>
         } />
 

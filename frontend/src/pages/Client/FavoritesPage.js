@@ -25,6 +25,7 @@ import { toast } from 'react-toastify';
 import { axelionColors } from '../../theme/axelionTheme';
 import clientService from '../../services/clientService';
 import EmptyState from '../../components/UI/EmptyState';
+import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
 
 const fadeInUp = keyframes`
@@ -75,84 +76,28 @@ const FavoritesPage = () => {
     navigate(`/lawyers/${lawyerId}`);
   };
 
+  const subtitle = `${favorites.length} ${favorites.length === 1 ? t('favorites.lawyerOne') : t('favorites.lawyerMany')}`;
+
   if (loading) {
     return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          backgroundColor: axelionColors.bgCream,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <Box
-          sx={{
-            width: 48,
-            height: 48,
-            borderRadius: '50%',
-            border: `2px solid ${axelionColors.borderLight}`,
-            borderTopColor: axelionColors.gold,
-            animation: 'spin 1s linear infinite',
-            '@keyframes spin': {
-              '0%': { transform: 'rotate(0deg)' },
-              '100%': { transform: 'rotate(360deg)' },
-            },
-          }}
-        />
-      </Box>
+      <GlassShell active="/favorites" title={t('favorites.title')} subtitle="" role="client">
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <Box
+            sx={{
+              width: 48, height: 48, borderRadius: '50%',
+              border: `2px solid ${axelionColors.borderLight}`, borderTopColor: axelionColors.gold,
+              animation: 'spin 1s linear infinite',
+              '@keyframes spin': { '0%': { transform: 'rotate(0deg)' }, '100%': { transform: 'rotate(360deg)' } },
+            }}
+          />
+        </Box>
+      </GlassShell>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: axelionColors.bgCream, pb: 6 }}>
-      {/* Header */}
-      <Box
-        sx={{
-          bgcolor: axelionColors.bgLight,
-          borderBottom: `1px solid ${axelionColors.borderLight}`,
-          py: { xs: 2, md: 4 },
-          px: { xs: 1, md: 2 },
-        }}
-      >
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: { xs: 1.5, md: 3 } }}>
-            <IconButton
-              onClick={() => navigate('/dashboard')}
-              sx={{
-                border: `1px solid ${axelionColors.borderLight}`,
-                bgcolor: axelionColors.bgLight,
-                borderRadius: '8px',
-                '&:hover': {
-                  bgcolor: axelionColors.bgWarm,
-                  borderColor: axelionColors.gold,
-                },
-              }}
-            >
-              <ArrowBack sx={{ color: axelionColors.textDark }} />
-            </IconButton>
-            <Box>
-              <Typography
-                sx={{
-                  fontWeight: 300,
-                  fontSize: { xs: '1.25rem', md: '1.75rem' },
-                  letterSpacing: '0.1em',
-                  textTransform: 'uppercase',
-                  color: axelionColors.textDark,
-                  mb: 0.5,
-                }}
-              >
-                {t('favorites.title')}
-              </Typography>
-              <Typography sx={{ color: axelionColors.textMuted, fontSize: '0.9rem' }}>
-                {favorites.length} {favorites.length === 1 ? t('favorites.lawyerOne') : t('favorites.lawyerMany')}
-              </Typography>
-            </Box>
-          </Box>
-        </Container>
-      </Box>
-
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
+    <GlassShell active="/favorites" title={t('favorites.title')} subtitle={subtitle} role="client">
+      <Container maxWidth="xl" disableGutters>
         {favorites.length === 0 ? (
           <EmptyState
             icon={<FavoriteBorder sx={{ fontSize: 64, color: axelionColors.borderLight }} />}
@@ -349,7 +294,7 @@ const FavoritesPage = () => {
           </Grid>
         )}
       </Container>
-    </Box>
+    </GlassShell>
   );
 };
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import { Slider, Dialog, DialogTitle, DialogContent, DialogActions } from '@mui/material';
 import {
   NotificationsNoneOutlined,
@@ -144,6 +144,7 @@ const Row = ({ label, description, control, last }) => (
 const SettingsPageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { role } = useSelector((s) => s.auth);
   const { t } = useTranslation();
 
   // ── appSettings: local-only preferences (NOT theme/language) ──
@@ -248,7 +249,7 @@ const SettingsPageGlass = () => {
   };
 
   return (
-    <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')}>
+    <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')} role={role || 'client'}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Уведомления ── */}
         <Section

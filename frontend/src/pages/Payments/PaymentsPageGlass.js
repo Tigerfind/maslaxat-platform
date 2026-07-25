@@ -28,13 +28,20 @@ const PaymentsPageGlass = () => {
   const { t } = useTranslation();
   const [payments, setPayments] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const data = await clientService.payments.getMy();
-      setPayments(Array.isArray(data) ? data : []);
-      setLoading(false);
+      setError(false);
+      try {
+        const data = await clientService.payments.getMy();
+        setPayments(Array.isArray(data) ? data : []);
+      } catch (e) {
+        setError(true);
+      } finally {
+        setLoading(false);
+      }
     })();
   }, []);
 
@@ -88,6 +95,10 @@ const PaymentsPageGlass = () => {
         {loading ? (
           <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
             {t('common.loading')}
+          </div>
+        ) : error ? (
+          <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: '#B07070', fontSize: 14 }}>
+            {t('payments.loadError')}
           </div>
         ) : payments.length === 0 ? (
           <div style={{ ...glassCard, padding: '48px 24px', textAlign: 'center' }}>

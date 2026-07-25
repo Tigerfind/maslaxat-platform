@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import {
   ChatBubbleOutline,
@@ -66,6 +67,7 @@ const SUP_CATS = [{ k: 'catGeneral' }, { k: 'catPayment' }, { k: 'catTech' }, { 
 
 const HelpPage = () => {
   const navigate = useNavigate();
+  const { role } = useSelector((s) => s.auth);
   const { t } = useTranslation();
 
   const [faqOpen, setFaqOpen] = useState(null);
@@ -126,7 +128,7 @@ const HelpPage = () => {
   };
 
   return (
-    <GlassShell active="/help" title={t('help.title')} subtitle={t('help.subtitle')}>
+    <GlassShell active="/help" title={t('help.title')} subtitle={t('help.subtitle')} role={role || 'client'}>
       <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* SUPPORT CHANNELS */}

@@ -94,6 +94,8 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
   const { t } = useTranslation();
   const isDesktop = useMediaQuery('(min-width:1024px)');
   const [dark, toggleDark] = useDarkMode();
+  // Профиль по роли (у юриста своя страница, у клиента — /profile)
+  const profilePath = role === 'lawyer' ? '/lawyer/profile/edit' : role === 'admin' ? '/admin/dashboard' : '/profile';
   const [drawerOpen, setDrawerOpen] = useState(false);
 
   const navItems = NAV[role] || NAV.client;
@@ -187,7 +189,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
             {!isDesktop && (
-              <button onClick={() => setDrawerOpen(true)} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+              <button onClick={() => setDrawerOpen(true)} aria-label={t('nav.menu')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
                 <MenuOutlined />
               </button>
             )}
@@ -197,12 +199,12 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <button onClick={toggleDark} title="Тема" style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+            <button onClick={toggleDark} aria-label={t('nav.theme')} title={t('nav.theme')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
               {dark ? <LightModeOutlined sx={{ fontSize: 19 }} /> : <DarkModeOutlined sx={{ fontSize: 19 }} />}
             </button>
             {isDesktop && <LanguageSwitcher variant="dropdown" />}
             <NotificationCenter />
-            <button onClick={() => navigate('/profile')} style={{ display: 'flex', alignItems: 'center', gap: 11, paddingLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => navigate(profilePath)} aria-label={t('nav.profile')} style={{ display: 'flex', alignItems: 'center', gap: 11, paddingLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #B8956E, #8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 15, fontWeight: 500 }}>
                 {(user?.name?.charAt(0) || 'К').toUpperCase()}
               </div>
@@ -215,6 +217,10 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
           {children}
         </main>
       </div>
+
+      {/* На мобиле оставляем место под фиксированную нижнюю панель (MobileBottomNav ~64px),
+          чтобы последний ряд контента не уходил под неё. */}
+      <style>{`@media (max-width: 1023px){ .screen { padding: 20px 16px 88px !important; } }`}</style>
     </div>
   );
 };

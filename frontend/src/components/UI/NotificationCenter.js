@@ -137,6 +137,7 @@ const NotificationCenter = ({ sx = {} }) => {
       <IconButton
         ref={anchorRef}
         onClick={handleToggle}
+        aria-label="Уведомления"
         sx={{
           backgroundColor: axelionColors.bgLight,
           border: `1px solid ${axelionColors.borderLight}`,

@@ -50,8 +50,11 @@ const MobileBottomNav = () => {
 
         return (
           <Box
+            component="button"
             key={item.path}
             onClick={() => navigate(item.path)}
+            aria-label={t(item.tKey)}
+            aria-current={active ? 'page' : undefined}
             sx={{
               display: 'flex',
               flexDirection: 'column',
@@ -60,6 +63,9 @@ const MobileBottomNav = () => {
               flex: 1,
               py: 1,
               cursor: 'pointer',
+              border: 'none',
+              background: 'transparent',
+              fontFamily: 'inherit',
               transition: 'all 0.2s ease',
               '-webkit-tap-highlight-color': 'transparent',
             }}

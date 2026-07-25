@@ -350,14 +350,10 @@ export const clientPromoService = {
 };
 
 export const clientPaymentService = {
+  // Бросает ошибку наружу, чтобы страница показала состояние ошибки (а не пустоту как «нет платежей»)
   getMy: async () => {
-    try {
-      const response = await api.get('/payments/my');
-      return Array.isArray(response.data) ? response.data : (response.data.payments || []);
-    } catch (error) {
-      console.error('Error fetching payments:', error);
-      return [];
-    }
+    const response = await api.get('/payments/my');
+    return Array.isArray(response.data) ? response.data : (response.data.payments || []);
   },
 };
 
