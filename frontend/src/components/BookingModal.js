@@ -192,9 +192,17 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         status: 'pending',
       };
 
-      const existingConsultations = JSON.parse(
-        localStorage.getItem('consultationRequests') || '[]'
-      );
+      // Реальные консультации клиента (раньше читался несуществующий localStorage-ключ →
+      // проверка конфликтов была фиктивной). Берём активные/предстоящие с сервера.
+      let existingConsultations = [];
+      try {
+        const all = await clientService.consultations.getConsultations('all');
+        existingConsultations = (Array.isArray(all) ? all : []).filter((c) =>
+          ['payment_pending', 'pending', 'accepted', 'in_progress'].includes(c.status)
+        );
+      } catch (e) {
+        existingConsultations = [];
+      }
 
       const validation = ConflictDetector.validateConsultationBooking(bookingData, {
         existingConsultations,

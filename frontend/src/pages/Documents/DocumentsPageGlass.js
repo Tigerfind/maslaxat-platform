@@ -247,10 +247,20 @@ const DocumentsPageGlass = () => {
     }
   };
 
-  const handleDownload = (doc) => {
-    // No download endpoint in the service layer yet — stubbed notification.
-    console.log('Downloading document:', doc);
-    showSnackbar(`${t('documents.download')}: ${doc.name}`, 'info');
+  const handleDownload = async (doc) => {
+    try {
+      const blob = await clientService.documents.downloadDocument(doc.id);
+      const url = window.URL.createObjectURL(blob);
+      const a = window.document.createElement('a');
+      a.href = url;
+      a.download = doc.name || 'document';
+      window.document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (e) {
+      showSnackbar(t('documents.downloadError'), 'error');
+    }
   };
 
   const docScore = (doc) =>

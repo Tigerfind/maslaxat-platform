@@ -189,6 +189,7 @@ const ProfilePageGlass = () => {
       const payload = new FormData();
       payload.append('name', formData.name);
       payload.append('phone', formData.phone || '');
+      payload.append('address', formData.address || '');
       if (formData.avatarFile) payload.append('avatar', formData.avatarFile);
 
       const response = await api.put('/client/users/profile', payload, {
@@ -235,7 +236,7 @@ const ProfilePageGlass = () => {
 
   const fields = [
     { label: t('profile.fullName'), name: 'name', value: formData.name, type: 'text' },
-    { label: t('profile.email'), name: 'email', value: formData.email, type: 'email' },
+    { label: t('profile.email'), name: 'email', value: formData.email, type: 'email', readOnly: true },
     { label: t('profile.phone'), name: 'phone', value: formData.phone, type: 'tel' },
     { label: t('profile.address'), name: 'address', value: formData.address, type: 'text' },
   ];
@@ -362,8 +363,8 @@ const ProfilePageGlass = () => {
                       type={f.type}
                       value={f.value}
                       onChange={handleInputChange}
-                      disabled={!isEditMode}
-                      style={{ ...inputStyle, opacity: isEditMode ? 1 : 0.7, cursor: isEditMode ? 'text' : 'default' }}
+                      disabled={!isEditMode || f.readOnly}
+                      style={{ ...inputStyle, opacity: (isEditMode && !f.readOnly) ? 1 : 0.7, cursor: (isEditMode && !f.readOnly) ? 'text' : 'default' }}
                     />
                   </div>
                 ))}

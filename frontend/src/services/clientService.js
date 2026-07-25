@@ -207,6 +207,12 @@ export const clientDocumentService = {
     }
   },
 
+  // Download original file (returns a Blob)
+  downloadDocument: async (documentId) => {
+    const response = await api.get(`/client/documents/${documentId}/download`, { responseType: 'blob' });
+    return response.data;
+  },
+
   // AI document check
   checkDocument: async (documentId) => {
     try {

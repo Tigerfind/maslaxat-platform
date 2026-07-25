@@ -8,6 +8,7 @@ import {
   KeyboardArrowDownOutlined,
 } from '@mui/icons-material';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 
 /*
@@ -71,6 +72,7 @@ const HelpPage = () => {
   const [supCat, setSupCat] = useState('catGeneral');
   const [supSubject, setSupSubject] = useState('');
   const [supMsg, setSupMsg] = useState('');
+  const [sending, setSending] = useState(false);
 
   const supChannels = [
     {
@@ -104,15 +106,23 @@ const HelpPage = () => {
 
   const disabled = !supSubject.trim() && !supMsg.trim();
 
-  const handleSubmit = () => {
-    if (disabled) {
+  const handleSubmit = async () => {
+    if (!supMsg.trim()) {
       toast.error(t('help.fillRequired'));
       return;
     }
-    // No backend endpoint yet — acknowledge locally.
-    toast.success(t('help.sent'));
-    setSupSubject('');
-    setSupMsg('');
+    setSending(true);
+    try {
+      const subject = [t('help.' + supCat), supSubject.trim()].filter(Boolean).join(' — ');
+      await api.post('/support', { subject, message: supMsg.trim() });
+      toast.success(t('help.sent'));
+      setSupSubject('');
+      setSupMsg('');
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('help.sendError'));
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -204,10 +214,10 @@ const HelpPage = () => {
 
             <button
               onClick={handleSubmit}
-              disabled={disabled}
-              style={{ width: '100%', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 14, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: disabled ? 'default' : 'pointer', fontFamily: 'inherit', opacity: disabled ? 0.5 : 1 }}
+              disabled={disabled || sending}
+              style={{ width: '100%', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 14, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: (disabled || sending) ? 'default' : 'pointer', fontFamily: 'inherit', opacity: (disabled || sending) ? 0.5 : 1 }}
             >
-              {t('help.submit')}
+              {sending ? t('help.sending') : t('help.submit')}
             </button>
           </div>
         </div>
