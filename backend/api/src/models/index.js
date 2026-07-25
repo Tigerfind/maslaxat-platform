@@ -462,6 +462,43 @@ const SupportTicket = sequelize.define('SupportTicket', {
   },
 });
 
+// ─── PROMO CODE MODEL ───────────────────────────────────────
+const Promo = sequelize.define('Promo', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  code: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+  },
+  discountPercent: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: { min: 1, max: 100 },
+  },
+  isActive: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true,
+  },
+  expiresAt: {
+    type: DataTypes.DATE, // null = бессрочный
+  },
+  usageLimit: {
+    type: DataTypes.INTEGER, // null = без лимита
+  },
+  usedCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+  },
+  minAmount: {
+    type: DataTypes.INTEGER, // минимальная сумма для применения
+    defaultValue: 0,
+  },
+});
+
 // ─── ASSOCIATIONS ───────────────────────────────────────────
 
 // User <-> LawyerProfile (1:1 for lawyers)
@@ -552,4 +589,5 @@ module.exports = {
   Payment,
   Subscription,
   SupportTicket,
+  Promo,
 };

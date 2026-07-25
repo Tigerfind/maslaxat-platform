@@ -113,6 +113,8 @@ app.use('/api/client/favorites', require('./routes/favorites'));
 app.use('/api/payments', require('./routes/payments'));
 app.use('/api/subscriptions', require('./routes/subscriptions'));
 app.use('/api/support', require('./routes/support'));
+app.use('/api/promo', require('./routes/promo'));
+app.use('/api/client/promo', require('./routes/promo'));
 
 // Client-facing routes (frontend compatibility)
 // Dashboard: frontend calls /api/client/dashboard/stats → rewrite to /client/stats

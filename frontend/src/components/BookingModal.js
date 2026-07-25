@@ -42,6 +42,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [promo, setPromo] = useState('');
   const [promoApplied, setPromoApplied] = useState(false);
   const [promoBad, setPromoBad] = useState(false);
+  const [promoPercent, setPromoPercent] = useState(0);
+  const [promoMsg, setPromoMsg] = useState('');
+  const [promoLoading, setPromoLoading] = useState(false);
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
   const [loyalty, setLoyalty] = useState(null);
@@ -79,8 +82,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   // ---- Derived pricing (UI stub — no real payment yet) ----
   const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
   const subtotal = Math.round((basePrice * duration) / 60);
-  const discount = promoApplied ? Math.round(subtotal * 0.1) : 0;
-  const total = useFree ? 0 : subtotal - discount;
+  const discount = promoApplied && promoPercent ? Math.round((subtotal * promoPercent) / 100) : 0;
+  const total = useFree ? 0 : Math.max(0, subtotal - discount);
   const fmt = (n) => Number(n || 0).toLocaleString('ru-RU');
 
   const profName = lawyer.name || '';
@@ -103,6 +106,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setPromo('');
     setPromoApplied(false);
     setPromoBad(false);
+    setPromoPercent(0);
+    setPromoMsg('');
     setNotify(true);
     setPayMethod('payme');
     setUseFree(false);
@@ -115,13 +120,25 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setTimeout(resetAll, 250);
   };
 
-  const applyPromo = () => {
-    if (promo.trim().toUpperCase() === 'EMAS10') {
-      setPromoApplied(true);
-      setPromoBad(false);
-    } else {
-      setPromoApplied(false);
-      setPromoBad(true);
+  const applyPromo = async () => {
+    const code = promo.trim();
+    if (!code || promoLoading) return;
+    setPromoLoading(true);
+    try {
+      const res = await clientService.promo.validate(code, subtotal);
+      if (res.valid) {
+        setPromoApplied(true);
+        setPromoBad(false);
+        setPromoPercent(res.discountPercent || 0);
+        setPromoMsg('');
+      } else {
+        setPromoApplied(false);
+        setPromoBad(true);
+        setPromoPercent(0);
+        setPromoMsg(res.message || '');
+      }
+    } finally {
+      setPromoLoading(false);
     }
   };
 
@@ -164,6 +181,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         paymentMethod: payMethod,
         notify,
         useFreePromo: useFree,
+        promoCode: promoApplied && !useFree ? promo.trim().toUpperCase() : undefined,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
         client: {
@@ -606,7 +624,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               </div>
               {promoApplied && !useFree && (
                 <div style={{ ...rowStyle, color: '#1F8A5B' }}>
-                  <span>{t('booking.promo')} EMAS10</span>
+                  <span>{t('booking.promo')} {promo.trim().toUpperCase()} (−{promoPercent}%)</span>
                   <span style={{ fontWeight: 500 }}>−{fmt(discount)} {t('booking.sum')}</span>
                 </div>
               )}
@@ -665,6 +683,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               />
               <button
                 onClick={applyPromo}
+                disabled={promoLoading}
                 style={{
                   flexShrink: 0,
                   background: 'var(--canvas)',
@@ -675,21 +694,22 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   textTransform: 'uppercase',
                   padding: '0 18px',
                   borderRadius: 'var(--radius)',
-                  cursor: 'pointer',
+                  cursor: promoLoading ? 'default' : 'pointer',
+                  opacity: promoLoading ? 0.6 : 1,
                   fontFamily: 'inherit',
                 }}
               >
-                {t('booking.apply')}
+                {promoLoading ? t('booking.checking') : t('booking.apply')}
               </button>
             </div>
             {promoApplied && (
               <div style={{ fontSize: 12, color: '#1F8A5B', marginBottom: 18 }}>
-                {t('booking.promoOk')}
+                {t('booking.promoOk')} −{promoPercent}%
               </div>
             )}
             {promoBad && (
               <div style={{ fontSize: 12, color: '#C0492F', marginBottom: 18 }}>
-                {t('booking.promoBad')}
+                {promoMsg || t('booking.promoBad')}
               </div>
             )}
 

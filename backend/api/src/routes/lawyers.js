@@ -118,6 +118,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     let price = lawyer.profile.price;
     let isFree = false;
     let notes = req.body.notes || null;
+    let appliedPromo = null;
     if (req.body.useFreePromo) {
       const { computeLoyalty } = require('../services/loyaltyService');
       const loyalty = await computeLoyalty(req.userId);
@@ -125,6 +126,15 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
         price = 0;
         isFree = true;
         notes = 'Бесплатно по акции «первая консультация бесплатно»';
+      }
+    } else if (req.body.promoCode) {
+      // Промокод: скидку ВСЕГДА пересчитываем на сервере (клиенту не доверяем)
+      const { validatePromo } = require('../services/promoService');
+      const result = await validatePromo(req.body.promoCode, price);
+      if (result.valid) {
+        price = Math.max(0, price - result.discountAmount);
+        appliedPromo = result.promo;
+        notes = `Промокод ${result.code} (−${result.discountPercent}%)${notes ? '. ' + notes : ''}`;
       }
     }
 
@@ -143,6 +153,11 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       notes,
       status: isFree ? 'pending' : 'payment_pending',
     });
+
+    // Учитываем использование промокода
+    if (appliedPromo) {
+      await appliedPromo.increment('usedCount');
+    }
 
     // Уведомляем юриста только о бесплатной брони; платную — после оплаты
     if (isFree) {

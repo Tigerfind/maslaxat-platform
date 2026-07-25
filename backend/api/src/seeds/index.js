@@ -84,6 +84,11 @@ async function seed() {
     }
     console.log(`${specializations.length} specializations created`);
 
+    // Create demo promo codes
+    const { seedPromos } = require('./promos');
+    await seedPromos();
+    console.log('promo codes created');
+
     console.log('\nSeed complete!');
     process.exit(0);
   } catch (error) {

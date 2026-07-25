@@ -321,6 +321,18 @@ export const clientSubscriptionService = {
   },
 };
 
+export const clientPromoService = {
+  // Проверить промокод для суммы → { valid, discountPercent, discountAmount, message, minAmount }
+  validate: async (code, amount) => {
+    try {
+      const response = await api.post('/promo/validate', { code, amount });
+      return response.data;
+    } catch (error) {
+      return { valid: false, message: 'Не удалось проверить промокод' };
+    }
+  },
+};
+
 export const clientPaymentService = {
   getMy: async () => {
     try {
@@ -342,6 +354,7 @@ const clientService = {
   favorites: clientFavoritesService,
   subscription: clientSubscriptionService,
   payments: clientPaymentService,
+  promo: clientPromoService,
 };
 
 export default clientService;
