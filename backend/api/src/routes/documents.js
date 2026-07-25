@@ -81,6 +81,12 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
 
     const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {};
 
+    // Категория (папка) — необязательна; ограничиваем длину, пустую → null
+    let category = null;
+    if (typeof metadata.category === 'string' && metadata.category.trim()) {
+      category = metadata.category.trim().slice(0, 50);
+    }
+
     const document = await Document.create({
       userId: req.userId,
       name: req.file.originalname,
@@ -88,6 +94,7 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
       size: req.file.size,
       path: req.file.path,
       status: 'pending',
+      category,
     });
 
     res.status(201).json(document);

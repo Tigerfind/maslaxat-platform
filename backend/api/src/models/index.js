@@ -264,6 +264,11 @@ const Document = sequelize.define('Document', {
   aiAnalysis: {
     type: DataTypes.JSONB,
   },
+  // Категория/папка документа (Договор, Доверенность, Заявление, Иск, Другое)
+  category: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
 });
 
 // ─── REVIEW MODEL ───────────────────────────────────────────

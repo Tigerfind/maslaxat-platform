@@ -20,6 +20,7 @@ import {
   WarningAmberOutlined,
   LightbulbOutlined,
   VisibilityOutlined,
+  FolderOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -103,6 +104,7 @@ const DocumentsPageGlass = () => {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
+  const [filterCategory, setFilterCategory] = useState(null); // null = все категории
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -377,6 +379,36 @@ const DocumentsPageGlass = () => {
           </div>
         )}
 
+        {/* Фильтр по категориям (папкам) */}
+        {!isLoading && documents.length > 0 && (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+            {[{ v: null, k: 'catAll' }, ...DOC_CATEGORIES].map((cat) => {
+              const active = filterCategory === cat.v;
+              const count = cat.v === null
+                ? documents.length
+                : documents.filter((d) => ((d.category && d.category.trim()) || 'Другое') === cat.v).length;
+              if (cat.v !== null && count === 0) return null; // прячем пустые категории
+              return (
+                <button
+                  key={cat.v || 'all'}
+                  onClick={() => setFilterCategory(cat.v)}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 7, padding: '8px 15px', borderRadius: 20,
+                    fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', transition: 'all .15s ease',
+                    background: active ? 'var(--accent)' : 'var(--card-glass)',
+                    color: active ? '#FFFFFF' : 'var(--text2)',
+                    border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                    fontWeight: active ? 600 : 400,
+                  }}
+                >
+                  {cat.v === null ? t('documents.catAll') : t('documents.' + cat.k)}
+                  <span style={{ fontSize: 11, opacity: 0.85, background: active ? 'rgba(255,255,255,0.22)' : 'var(--border)', padding: '1px 7px', borderRadius: 10 }}>{count}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+
         {/* Content states */}
         {isLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -400,9 +432,12 @@ const DocumentsPageGlass = () => {
           </div>
         ) : (
           <Grid container spacing={2.25}>
-            {documents.map((doc) => {
+            {documents
+              .filter((doc) => !filterCategory || ((doc.category && doc.category.trim()) || 'Другое') === filterCategory)
+              .map((doc) => {
               const meta = statusMeta(doc.status);
               const score = docScore(doc);
+              const docCat = (doc.category && doc.category.trim()) || null;
               return (
                 <Grid item xs={12} sm={6} lg={4} key={doc.id}>
                   <div style={{ ...glassCard, padding: 22, height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -438,6 +473,16 @@ const DocumentsPageGlass = () => {
                         .filter(Boolean)
                         .join(' · ')}
                     </div>
+
+                    {/* Category (folder) chip */}
+                    {docCat && (
+                      <div style={{ marginTop: 10 }}>
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '4px 10px', borderRadius: 20 }}>
+                          <FolderOutlined sx={{ fontSize: 14 }} />
+                          {(() => { const c = DOC_CATEGORIES.find((x) => x.v === docCat); return c ? t('documents.' + c.k) : docCat; })()}
+                        </span>
+                      </div>
+                    )}
 
                     {/* AI score */}
                     {score !== null && score !== undefined && (
