@@ -19,6 +19,7 @@ import {
   GavelOutlined,
   WarningAmberOutlined,
   LightbulbOutlined,
+  VisibilityOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -108,6 +109,11 @@ const DocumentsPageGlass = () => {
   const [selectedDocument, setSelectedDocument] = useState(null);
   const [aiCheckLoading, setAiCheckLoading] = useState(false);
   const [aiCheckResult, setAiCheckResult] = useState(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewDoc, setPreviewDoc] = useState(null);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const [previewKind, setPreviewKind] = useState(null); // 'image' | 'pdf' | 'other'
+  const [previewLoading, setPreviewLoading] = useState(false);
 
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
 
@@ -261,6 +267,42 @@ const DocumentsPageGlass = () => {
     } catch (e) {
       showSnackbar(t('documents.downloadError'), 'error');
     }
+  };
+
+  const handlePreview = async (doc) => {
+    setPreviewDoc(doc);
+    setPreviewOpen(true);
+    setPreviewLoading(true);
+    setPreviewUrl(null);
+    setPreviewKind(null);
+    try {
+      const blob = await clientService.documents.downloadDocument(doc.id);
+      // Тип берём из blob (сервер ставит Content-Type), иначе — по расширению имени
+      const mime = blob.type || '';
+      const name = (doc.name || '').toLowerCase();
+      let kind = 'other';
+      if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/.test(name)) kind = 'image';
+      else if (mime === 'application/pdf' || name.endsWith('.pdf')) kind = 'pdf';
+      setPreviewKind(kind);
+      if (kind === 'image' || kind === 'pdf') {
+        setPreviewUrl(window.URL.createObjectURL(blob));
+      }
+    } catch (e) {
+      showSnackbar(t('documents.previewError'), 'error');
+      setPreviewKind('other');
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
+
+  const closePreview = () => {
+    setPreviewOpen(false);
+    if (previewUrl) {
+      window.URL.revokeObjectURL(previewUrl);
+      setPreviewUrl(null);
+    }
+    setPreviewDoc(null);
+    setPreviewKind(null);
   };
 
   const docScore = (doc) =>
@@ -423,6 +465,14 @@ const DocumentsPageGlass = () => {
                       >
                         <AutoAwesomeOutlined sx={{ fontSize: 16 }} /> {t('documents.aiAnalysis')}
                       </button>
+                      <Tooltip title={t('documents.preview')}>
+                        <button
+                          onClick={() => handlePreview(doc)}
+                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                        >
+                          <VisibilityOutlined sx={{ fontSize: 18 }} />
+                        </button>
+                      </Tooltip>
                       <Tooltip title={t('documents.download')}>
                         <button
                           onClick={() => handleDownload(doc)}
@@ -720,6 +770,52 @@ const DocumentsPageGlass = () => {
             <Alert severity="error" sx={{ borderRadius: 'var(--radius)' }}>
               {t('documents.analysisResultError')}
             </Alert>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      {/* ── Preview dialog ─────────────────────────────────────── */}
+      <Dialog
+        open={previewOpen}
+        onClose={closePreview}
+        maxWidth="md"
+        fullWidth
+        PaperProps={{ sx: { borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}
+      >
+        <div style={{ padding: '16px 20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid var(--border)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
+            <VisibilityOutlined sx={{ fontSize: 20, color: 'var(--accent)' }} />
+            <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {previewDoc?.name}
+            </span>
+          </div>
+          <button onClick={closePreview} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+            <CloseOutlined sx={{ fontSize: 20 }} />
+          </button>
+        </div>
+        <DialogContent sx={{ p: 0, background: 'var(--canvas)', minHeight: 360, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          {previewLoading ? (
+            <div style={{ padding: 60 }}><CircularProgress sx={{ color: 'var(--accent)' }} /></div>
+          ) : previewKind === 'image' && previewUrl ? (
+            <img src={previewUrl} alt={previewDoc?.name} style={{ maxWidth: '100%', maxHeight: '72vh', display: 'block', margin: '0 auto' }} />
+          ) : previewKind === 'pdf' && previewUrl ? (
+            <iframe src={previewUrl} title={previewDoc?.name} style={{ width: '100%', height: '72vh', border: 'none' }} />
+          ) : (
+            <div style={{ padding: '56px 32px', textAlign: 'center' }}>
+              <DescriptionOutlined sx={{ fontSize: 48, color: 'var(--text3)', mb: 1.5 }} />
+              <div style={{ fontSize: 15, color: 'var(--text2)', marginBottom: 6 }}>{t('documents.previewUnavailable')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{t('documents.previewUnavailableSub')}</div>
+              <button
+                onClick={() => { if (previewDoc) handleDownload(previewDoc); }}
+                style={{
+                  background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none',
+                  fontSize: 12, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase', padding: '11px 22px',
+                  borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 8,
+                }}
+              >
+                <DownloadOutlined sx={{ fontSize: 16 }} /> {t('documents.download')}
+              </button>
+            </div>
           )}
         </DialogContent>
       </Dialog>
