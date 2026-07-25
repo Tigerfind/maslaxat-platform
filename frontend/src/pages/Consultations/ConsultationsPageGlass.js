@@ -267,8 +267,10 @@ const ConsultationsPageGlass = () => {
     // Оценивать можно только завершённую и ещё не оценённую (признак — Review, не c.rating).
     const canRate = c.status === 'completed' && !rated;
     const canRebook = c.status === 'completed' && Boolean(c.lawyer);
+    // История переписки доступна после завершения/отмены (read-only)
+    const canChatHistory = ['completed', 'cancelled', 'rejected'].includes(c.status);
 
-    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook;
+    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory;
     const StatusIcon = st.icon;
 
     return (
@@ -362,6 +364,12 @@ const ConsultationsPageGlass = () => {
               <button className="cons-foot-btn" onClick={() => setRebookLawyer(c.lawyer)} style={{ color: 'var(--accent)' }}>
                 <ReplayOutlined sx={{ fontSize: 17 }} />
                 {t('consultations.rebook')}
+              </button>
+            )}
+            {canChatHistory && (
+              <button className="cons-foot-btn" onClick={() => navigate(`/consultations/chat/${c.id}`)} style={{ color: 'var(--text2)' }}>
+                <ChatBubbleOutline sx={{ fontSize: 16 }} />
+                {t('consultations.chatHistory')}
               </button>
             )}
             {canCancel && (

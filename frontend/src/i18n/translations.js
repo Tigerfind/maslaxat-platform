@@ -765,15 +765,15 @@ const translations = {
   chat: {
     ru: {
       loadError: 'Ошибка загрузки чата', sendError: 'Ошибка отправки', partnerFallback: 'Собеседник', lawyerFallback: 'Юрист', clientFallback: 'Клиент',
-      typing: 'печатает…', startTitle: 'Начните диалог', startSub: 'Напишите первое сообщение, чтобы начать консультацию', messagePlaceholder: 'Сообщение…',
+      typing: 'печатает…', startTitle: 'Начните диалог', startSub: 'Напишите первое сообщение, чтобы начать консультацию', messagePlaceholder: 'Сообщение…', readOnly: 'Консультация завершена — это история переписки, только для чтения',
     },
     uz: {
       loadError: 'Чатни юклашда хатолик', sendError: 'Юборишда хатолик', partnerFallback: 'Суҳбатдош', lawyerFallback: 'Юрист', clientFallback: 'Мижоз',
-      typing: 'ёзмоқда…', startTitle: 'Суҳбатни бошланг', startSub: 'Консультацияни бошлаш учун биринчи хабарни ёзинг', messagePlaceholder: 'Хабар…',
+      typing: 'ёзмоқда…', startTitle: 'Суҳбатни бошланг', startSub: 'Консультацияни бошлаш учун биринчи хабарни ёзинг', messagePlaceholder: 'Хабар…', readOnly: 'Консультация якунланди — бу ёзишмалар тарихи, фақат ўқиш учун',
     },
     en: {
       loadError: 'Error loading chat', sendError: 'Error sending', partnerFallback: 'Contact', lawyerFallback: 'Lawyer', clientFallback: 'Client',
-      typing: 'typing…', startTitle: 'Start the conversation', startSub: 'Write the first message to begin the consultation', messagePlaceholder: 'Message…',
+      typing: 'typing…', startTitle: 'Start the conversation', startSub: 'Write the first message to begin the consultation', messagePlaceholder: 'Message…', readOnly: 'Consultation finished — this is the chat history, read-only',
     },
   },
 
@@ -1263,7 +1263,7 @@ const translations = {
       joinVideo: 'Войти в видео',
       openChat: 'Открыть чат',
       cancelRequest: 'Отменить запрос',
-      rate: 'Оценить', rebook: 'Записаться снова', complete: 'Завершить', completeConfirm: 'Завершить эту консультацию? Отменить действие будет нельзя.', completeSuccess: 'Консультация завершена', completeError: 'Не удалось завершить консультацию',
+      rate: 'Оценить', rebook: 'Записаться снова', chatHistory: 'История чата', complete: 'Завершить', completeConfirm: 'Завершить эту консультацию? Отменить действие будет нельзя.', completeSuccess: 'Консультация завершена', completeError: 'Не удалось завершить консультацию',
       book: 'Записаться',
       findLawyer: 'Найти юриста',
       emptyTitle: 'Консультаций не найдено',
@@ -1337,7 +1337,7 @@ const translations = {
       joinVideo: 'Видеога кириш',
       openChat: 'Чатни очиш',
       cancelRequest: 'Сўровни бекор қилиш',
-      rate: 'Баҳолаш', rebook: 'Қайта ёзилиш', complete: 'Якунлаш', completeConfirm: 'Ушбу консультацияни якунлайсизми? Бу амални бекор қилиб бўлмайди.', completeSuccess: 'Консультация якунланди', completeError: 'Консультацияни якунлаб бўлмади',
+      rate: 'Баҳолаш', rebook: 'Қайта ёзилиш', chatHistory: 'Чат тарихи', complete: 'Якунлаш', completeConfirm: 'Ушбу консультацияни якунлайсизми? Бу амални бекор қилиб бўлмайди.', completeSuccess: 'Консультация якунланди', completeError: 'Консультацияни якунлаб бўлмади',
       book: 'Ёзилиш',
       findLawyer: 'Юрист топиш',
       emptyTitle: 'Консультациялар топилмади',
@@ -1411,7 +1411,7 @@ const translations = {
       joinVideo: 'Join video',
       openChat: 'Open chat',
       cancelRequest: 'Cancel request',
-      rate: 'Rate', rebook: 'Book again', complete: 'Finish', completeConfirm: 'Finish this consultation? This action cannot be undone.', completeSuccess: 'Consultation completed', completeError: 'Could not complete the consultation',
+      rate: 'Rate', rebook: 'Book again', chatHistory: 'Chat history', complete: 'Finish', completeConfirm: 'Finish this consultation? This action cannot be undone.', completeSuccess: 'Consultation completed', completeError: 'Could not complete the consultation',
       book: 'Book',
       findLawyer: 'Find a lawyer',
       emptyTitle: 'No consultations found',

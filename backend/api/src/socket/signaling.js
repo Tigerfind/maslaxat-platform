@@ -145,6 +145,9 @@ function initSignaling(io) {
           consultation.lawyerId === socket.userId;
         if (!isParticipant) return;
 
+        // Завершённая консультация — только чтение, новые сообщения не принимаем
+        if (['completed', 'cancelled', 'rejected'].includes(consultation.status)) return;
+
         // Filter out phone numbers to prevent bypassing the platform
         let filteredText = text.trim()
           .replace(/(\+?998[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2})/g, '***')

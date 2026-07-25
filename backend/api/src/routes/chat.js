@@ -51,6 +51,11 @@ router.post('/:consultationId/messages', authenticate, async (req, res, next) =>
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    // В завершённую/отменённую консультацию писать нельзя — только читать историю
+    if (['completed', 'cancelled', 'rejected'].includes(consultation.status)) {
+      return res.status(403).json({ error: 'Консультация завершена — чат доступен только для чтения' });
+    }
+
     const { text } = req.body;
     if (!text || !text.trim()) {
       return res.status(400).json({ error: 'Сообщение не может быть пустым' });

@@ -192,6 +192,8 @@ const ChatPage = () => {
   }
 
   const partnerName = getPartnerName();
+  // Завершённая/отменённая консультация — чат только для чтения (история переписки)
+  const isReadOnly = consultation && ['completed', 'cancelled', 'rejected'].includes(consultation.status);
 
   return (
     <Box
@@ -311,7 +313,12 @@ const ChatPage = () => {
         </Box>
       </Box>
 
-      {/* Input */}
+      {/* Input / read-only banner */}
+      {isReadOnly ? (
+        <Box sx={{ flexShrink: 0, borderTop: '1px solid var(--border)', px: { xs: 2, sm: 3.5 }, py: 2.5, textAlign: 'center', ...glassBar }}>
+          <Typography sx={{ color: 'var(--text3)', fontSize: 13 }}>{t('chat.readOnly')}</Typography>
+        </Box>
+      ) : (
       <Box
         sx={{
           flexShrink: 0,
@@ -372,6 +379,7 @@ const ChatPage = () => {
           </IconButton>
         </Box>
       </Box>
+      )}
     </Box>
   );
 };
