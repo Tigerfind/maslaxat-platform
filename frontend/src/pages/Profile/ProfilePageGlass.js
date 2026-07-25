@@ -34,6 +34,19 @@ const glassCard = {
   borderRadius: 'var(--radius)',
 };
 
+// Оформление событий ленты активности по типу
+const ACT_META = {
+  consultation: { dot: '⚖', color: 'var(--accent)', bg: 'rgba(184,149,110,0.14)' },
+  document: { dot: '📄', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)' },
+  review: { dot: '★', color: '#C4A35A', bg: 'rgba(196,163,90,0.16)' },
+};
+
+const fmtActDate = (d) => {
+  if (!d) return '';
+  const dt = new Date(d);
+  return dt.toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+};
+
 const sectionTitle = {
   fontSize: 14,
   fontWeight: 600,
@@ -100,6 +113,8 @@ const ProfilePageGlass = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
   const [stats, setStats] = useState(null);
+  const [activity, setActivity] = useState([]);
+  const [activityLoaded, setActivityLoaded] = useState(false);
 
   // Personal info — seeded from real user, empty fallback (no placeholder mock)
   const [formData, setFormData] = useState({
@@ -120,6 +135,15 @@ const ProfilePageGlass = () => {
   useEffect(() => {
     clientService.dashboard.getStats().then(setStats).catch(() => setStats(null));
   }, []);
+
+  // Лента активности грузим при первом открытии вкладки «История»
+  useEffect(() => {
+    if (activeTab === 2 && !activityLoaded) {
+      clientService.dashboard.getActivity()
+        .then((a) => setActivity(Array.isArray(a) ? a : []))
+        .finally(() => setActivityLoaded(true));
+    }
+  }, [activeTab, activityLoaded]);
 
   const resetForm = () => {
     setFormData({
@@ -444,47 +468,43 @@ const ProfilePageGlass = () => {
           </>
         )}
 
-        {/* Tab 2 — Activity history (no real data source → honest empty state) */}
+        {/* Tab 2 — Реальная лента активности (консультации/документы/отзывы) */}
         {activeTab === 2 && (
-          <div style={{ ...glassCard, padding: '48px 26px', textAlign: 'center' }}>
-            <div
-              style={{
-                width: 64,
-                height: 64,
-                borderRadius: '50%',
-                background: 'rgba(184,149,110,0.12)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                margin: '0 auto 18px',
-                color: 'var(--accent)',
-              }}
-            >
-              <HistoryOutlined sx={{ fontSize: 30 }} />
+          activity.length > 0 ? (
+            <div style={{ ...glassCard, padding: '8px 24px' }}>
+              {activity.map((e, i) => {
+                const meta = ACT_META[e.type] || ACT_META.consultation;
+                let title = t('profile.act_' + e.type);
+                if (e.name) title += ` — ${e.name}`;
+                if (e.type === 'review' && e.rating) title += ` (${e.rating}★)`;
+                return (
+                  <div key={i} style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '14px 0', borderBottom: i < activity.length - 1 ? '1px solid var(--border)' : 'none' }}>
+                    <span style={{ width: 34, height: 34, flexShrink: 0, borderRadius: 10, background: meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 16 }}>{meta.dot}</span>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 14, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+                      <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 2 }}>{fmtActDate(e.date)}</div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <div style={{ fontSize: 16, fontWeight: 400, color: 'var(--text)', marginBottom: 6 }}>{t('profile.noActivityTitle')}</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22, maxWidth: 360, margin: '0 auto 22px' }}>
-              {t('profile.noActivitySub')}
+          ) : (
+            <div style={{ ...glassCard, padding: '48px 26px', textAlign: 'center' }}>
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: 'rgba(184,149,110,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 18px', color: 'var(--accent)' }}>
+                <HistoryOutlined sx={{ fontSize: 30 }} />
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 400, color: 'var(--text)', marginBottom: 6 }}>{t('profile.noActivityTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22, maxWidth: 360, margin: '0 auto 22px' }}>
+                {t('profile.noActivitySub')}
+              </div>
+              <button
+                onClick={() => navigate('/lawyers')}
+                style={{ background: 'var(--accent)', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}
+              >
+                {t('profile.findLawyer')} →
+              </button>
             </div>
-            <button
-              onClick={() => navigate('/lawyers')}
-              style={{
-                background: 'var(--accent)',
-                color: '#FFFFFF',
-                border: 'none',
-                fontSize: 12,
-                fontWeight: 500,
-                letterSpacing: '0.07em',
-                textTransform: 'uppercase',
-                padding: '12px 22px',
-                borderRadius: 'var(--radius)',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-              }}
-            >
-              Найти юриста →
-            </button>
-          </div>
+          )
         )}
       </div>
 

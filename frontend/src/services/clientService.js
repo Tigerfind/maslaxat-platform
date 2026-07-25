@@ -10,6 +10,17 @@ export const clientDashboardService = {
     return response.data;
   },
 
+  // Лента активности клиента (консультации/документы/отзывы)
+  getActivity: async () => {
+    try {
+      const response = await api.get('/client/dashboard/activity');
+      return Array.isArray(response.data) ? response.data : [];
+    } catch (error) {
+      console.error('Error fetching activity:', error);
+      return [];
+    }
+  },
+
   // Get upcoming consultations
   getUpcomingConsultations: async () => {
     try {

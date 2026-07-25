@@ -261,6 +261,36 @@ router.get('/admin/stats', authenticate, authorize('admin'), async (req, res, ne
   }
 });
 
+// GET /api/client/dashboard/activity — лента активности клиента (агрегация реальных
+// событий: консультации, загруженные документы, оставленные отзывы). Без выдуманных данных.
+router.get('/client/activity', authenticate, authorize('client'), async (req, res, next) => {
+  try {
+    const [cons, docs, reviews] = await Promise.all([
+      Consultation.findAll({
+        where: { clientId: req.userId },
+        include: [{ model: User, as: 'lawyer', attributes: ['name'] }],
+        order: [['createdAt', 'DESC']], limit: 20,
+      }),
+      Document.findAll({ where: { userId: req.userId }, order: [['createdAt', 'DESC']], limit: 20 }),
+      Review.findAll({
+        where: { clientId: req.userId },
+        include: [{ model: User, as: 'lawyer', attributes: ['name'] }],
+        order: [['createdAt', 'DESC']], limit: 20,
+      }),
+    ]);
+
+    const events = [];
+    for (const c of cons) events.push({ type: 'consultation', date: c.createdAt, name: c.lawyer?.name || null, status: c.status });
+    for (const d of docs) events.push({ type: 'document', date: d.createdAt, name: d.name });
+    for (const r of reviews) events.push({ type: 'review', date: r.createdAt, name: r.lawyer?.name || null, rating: r.rating });
+
+    events.sort((a, b) => new Date(b.date) - new Date(a.date));
+    res.json(events.slice(0, 30));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/dashboard/specializations
 router.get('/specializations', async (req, res, next) => {
   try {
