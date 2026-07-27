@@ -1138,9 +1138,9 @@ const translations = {
   },
 
   call: {
-    ru: { incoming: 'Входящий видеозвонок', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
-    uz: { incoming: 'Кирувчи видеоқўнғироқ', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
-    en: { incoming: 'Incoming video call', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
+    ru: { incoming: 'Входящий видеозвонок', callBtn: 'Позвонить', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
+    uz: { incoming: 'Кирувчи видеоқўнғироқ', callBtn: 'Қўнғироқ қилиш', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
+    en: { incoming: 'Incoming video call', callBtn: 'Call', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
   },
 
   compare: {
@@ -1359,7 +1359,7 @@ const translations = {
       tabCancelled: 'Отменённые', tabArchive: 'Архив', yourRating: 'Ваша оценка',
       typeVideo: 'Видео',
       typeChat: 'Чат',
-      joinVideo: 'Войти в видео',
+      joinVideo: 'Войти в видео', call: 'Позвонить', joinCall: 'Присоединиться',
       openChat: 'Открыть чат',
       cancelRequest: 'Отменить запрос',
       rate: 'Оценить', rebook: 'Записаться снова', chatHistory: 'История чата', reschedule: 'Перенести', rescheduleSub: 'Выберите новую дату и время консультации', newDate: 'Новая дата', newTime: 'Новое время', rescheduleSave: 'Перенести', rescheduleSaving: 'Переносим…', rescheduleOk: 'Консультация перенесена', rescheduleErr: 'Не удалось перенести', complete: 'Завершить', completeConfirm: 'Завершить эту консультацию? Отменить действие будет нельзя.', completeSuccess: 'Консультация завершена', completeError: 'Не удалось завершить консультацию',
@@ -1433,7 +1433,7 @@ const translations = {
       tabCancelled: 'Бекор қилинган', tabArchive: 'Архив', yourRating: 'Сизнинг баҳойингиз',
       typeVideo: 'Видео',
       typeChat: 'Чат',
-      joinVideo: 'Видеога кириш',
+      joinVideo: 'Видеога кириш', call: 'Қўнғироқ қилиш', joinCall: 'Қўшилиш',
       openChat: 'Чатни очиш',
       cancelRequest: 'Сўровни бекор қилиш',
       rate: 'Баҳолаш', rebook: 'Қайта ёзилиш', chatHistory: 'Чат тарихи', reschedule: 'Кўчириш', rescheduleSub: 'Консультация учун янги сана ва вақтни танланг', newDate: 'Янги сана', newTime: 'Янги вақт', rescheduleSave: 'Кўчириш', rescheduleSaving: 'Кўчирилмоқда…', rescheduleOk: 'Консультация кўчирилди', rescheduleErr: 'Кўчириб бўлмади', complete: 'Якунлаш', completeConfirm: 'Ушбу консультацияни якунлайсизми? Бу амални бекор қилиб бўлмайди.', completeSuccess: 'Консультация якунланди', completeError: 'Консультацияни якунлаб бўлмади',
@@ -1507,7 +1507,7 @@ const translations = {
       tabCancelled: 'Cancelled', tabArchive: 'Archive', yourRating: 'Your rating',
       typeVideo: 'Video',
       typeChat: 'Chat',
-      joinVideo: 'Join video',
+      joinVideo: 'Join video', call: 'Call', joinCall: 'Join call',
       openChat: 'Open chat',
       cancelRequest: 'Cancel request',
       rate: 'Rate', rebook: 'Book again', chatHistory: 'Chat history', reschedule: 'Reschedule', rescheduleSub: 'Choose a new date and time for the consultation', newDate: 'New date', newTime: 'New time', rescheduleSave: 'Reschedule', rescheduleSaving: 'Rescheduling…', rescheduleOk: 'Consultation rescheduled', rescheduleErr: 'Could not reschedule', complete: 'Finish', completeConfirm: 'Finish this consultation? This action cannot be undone.', completeSuccess: 'Consultation completed', completeError: 'Could not complete the consultation',

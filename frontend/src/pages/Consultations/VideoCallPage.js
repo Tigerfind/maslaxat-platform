@@ -75,13 +75,20 @@ const VideoCallPage = () => {
   const timerRef = useRef(null);
   const pendingSignalsRef = useRef([]);
   const callStartedRef = useRef(false);
+  const calleeIdRef = useRef(null); // id другой стороны — чтобы отменить ring при отбое
+  const peerConnectedRef = useRef(false);
 
   // Load consultation details
   useEffect(() => {
     const loadConsultation = async () => {
       try {
         const response = await api.get(`/video/consultation/${consultationId}`);
-        setConsultation(response.data);
+        const cons = response.data;
+        setConsultation(cons);
+        // id собеседника (для отмены ring при отбое до ответа)
+        if (cons && user?.id) {
+          calleeIdRef.current = cons.clientId === user.id ? cons.lawyerId : cons.clientId;
+        }
       } catch (err) {
         setError(t('videoCall.loadError'));
         console.error('Load consultation error:', err);
@@ -92,12 +99,18 @@ const VideoCallPage = () => {
     loadConsultation();
   }, [consultationId]);
 
-  // Start call timer
+  // Start call timer + перевод в in_progress ТОЛЬКО когда оба реально соединились
+  // (раньше /start дёргался при входе одного — тогда «дозвон без ответа» + отбой
+  // завершал консультацию и выплачивал юристу за несостоявшийся звонок).
   useEffect(() => {
     if (peerConnected && !callStartTime) {
       setCallStartTime(Date.now());
+      api.post(`/video/consultation/${consultationId}/start`).catch(() => {});
     }
-  }, [peerConnected, callStartTime]);
+  }, [peerConnected, callStartTime, consultationId]);
+
+  // Держим ref в синхроне со state (для доступа из endCall-замыкания)
+  useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
 
   useEffect(() => {
     if (callStartTime) {
@@ -221,6 +234,10 @@ const VideoCallPage = () => {
     // Notify other party and disconnect socket
     if (emitEvent && socketRef.current) {
       socketRef.current.emit('end-call');
+      // Если собеседник ещё не ответил (мы только звонили) — гасим у него ring
+      if (!peerConnectedRef.current && calleeIdRef.current) {
+        socketRef.current.emit('call-cancel', { consultationId, calleeId: calleeIdRef.current });
+      }
     }
     if (socketRef.current) {
       socketRef.current.disconnect();
@@ -269,13 +286,6 @@ const VideoCallPage = () => {
         localStreamRef.current = stream;
         if (localVideoRef.current) {
           localVideoRef.current.srcObject = stream;
-        }
-
-        // Mark consultation as in_progress
-        try {
-          await api.post(`/video/consultation/${consultationId}/start`);
-        } catch (e) {
-          // Ignore — may already be in_progress
         }
 
         if (cancelled) return;

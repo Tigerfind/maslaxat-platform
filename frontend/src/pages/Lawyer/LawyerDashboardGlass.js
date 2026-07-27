@@ -7,6 +7,7 @@ import {
   CheckCircleOutline,
   SavingsOutlined,
   VideocamOutlined,
+  CallOutlined,
   ChatBubbleOutline,
   StarOutlined,
   StarBorderOutlined,
@@ -314,7 +315,9 @@ const LawyerDashboardGlass = () => {
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: chip.color, background: chip.bg, padding: '6px 12px', borderRadius: 'var(--radius)' }}>
                     {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}{chip.label}
                   </span>
-                  <button onClick={() => handleStartConsultation(c)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.start')}</button>
+                  <button onClick={() => handleStartConsultation(c)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    {isVideo && <CallOutlined sx={{ fontSize: 15 }} />}{isVideo ? t('call.callBtn') : t('lawyerPanel.start')}
+                  </button>
                 </div>
               );
             })

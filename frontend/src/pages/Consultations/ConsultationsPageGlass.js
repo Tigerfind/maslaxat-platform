@@ -12,6 +12,7 @@ import {
 import {
   CalendarMonthOutlined,
   VideocamOutlined,
+  CallOutlined,
   ChatBubbleOutline,
   AddOutlined,
   ReplayOutlined,
@@ -160,20 +161,14 @@ const ConsultationsPageGlass = () => {
     }
   };
 
-  const handleJoinConsultation = async (consultation) => {
-    try {
-      setActionLoading(true);
-      await clientService.consultations.joinConsultation(consultation.id);
-      if (consultation.type === 'video') {
-        navigate(`/consultations/video/${consultation.id}`);
-      } else {
-        navigate(`/consultations/chat/${consultation.id}`);
-      }
-    } catch (err) {
-      console.error('Error joining consultation:', err);
-      toast.error(t('consultations.joinError'));
-    } finally {
-      setActionLoading(false);
+  const handleJoinConsultation = (consultation) => {
+    // Просто открываем комнату. В in_progress переводим только когда стороны
+    // реально соединились (видео — по peer-connect на странице звонка), чтобы
+    // «дозвон без ответа» не завершал консультацию и не выплачивал юристу.
+    if (consultation.type === 'video') {
+      navigate(`/consultations/video/${consultation.id}`);
+    } else {
+      navigate(`/consultations/chat/${consultation.id}`);
     }
   };
 
@@ -373,8 +368,8 @@ const ConsultationsPageGlass = () => {
           <div style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
             {canJoin && (
               <button className="cons-foot-btn" onClick={() => handleJoinConsultation(c)} disabled={actionLoading} style={{ color: '#C0492F' }}>
-                {isVideo ? <VideocamOutlined sx={{ fontSize: 17 }} /> : <ChatBubbleOutline sx={{ fontSize: 17 }} />}
-                {isVideo ? t('consultations.joinVideo') : t('consultations.openChat')}
+                {isVideo ? <CallOutlined sx={{ fontSize: 17 }} /> : <ChatBubbleOutline sx={{ fontSize: 17 }} />}
+                {isVideo ? (c.status === 'in_progress' ? t('consultations.joinCall') : t('consultations.call')) : t('consultations.openChat')}
               </button>
             )}
             {canComplete && (
