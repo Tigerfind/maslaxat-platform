@@ -134,7 +134,9 @@ const LawyerProfilePage = () => {
   }, [lawyerId]);
 
   const goAiChat = () => navigate('/ai-chat', { state: { lawyerId } });
-  const startVideo = () => navigate(`/consultations/video/${lawyerId}`);
+  // Видеозвонок возможен только по забронированной консультации — открываем бронь
+  // (раньше кнопка вела на /consultations/video/<lawyerId> с id юриста вместо
+  // consultationId → экран звонка не находил консультацию и не работал).
 
   // ── loading / error states (inside the shell so chrome persists) ──
   if (loading) {
@@ -232,7 +234,7 @@ const LawyerProfilePage = () => {
             </button>
             <div style={{ display: 'flex', gap: 10 }}>
               <button onClick={goAiChat} style={outlineBtn}>{t('lawyerProfile.write')}</button>
-              <button onClick={startVideo} style={outlineBtn}>{t('lawyerProfile.video')}</button>
+              <button onClick={() => setBookingOpen(true)} style={outlineBtn}>{t('lawyerProfile.video')}</button>
             </div>
           </div>
 

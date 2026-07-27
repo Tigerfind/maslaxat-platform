@@ -44,6 +44,15 @@ const NAV = {
     { key: '/lawyer/reviews', tKey: 'nav.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/profile/edit', tKey: 'nav.profile', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
   ],
+  admin: [
+    { key: '/admin/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/users', tKey: 'admin.manageUsers', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/lawyers', tKey: 'admin.manageLawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/specializations', tKey: 'admin.specializations', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/promos', tKey: 'admin.promos', icon: <ReceiptLongOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/reviews', tKey: 'admin.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/support', tKey: 'admin.support', icon: <HelpOutlineOutlined sx={{ fontSize: 20 }} /> },
+  ],
 };
 
 function useDarkMode() {

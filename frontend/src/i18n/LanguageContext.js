@@ -69,10 +69,18 @@ export const LanguageProvider = ({ children }) => {
       return key;
     }
 
-    let translation = languageTranslations[translationKey];
+    // Достаём перевод: сначала плоский ключ ('key'), затем вложенный путь
+    // ('twoFA.title' → obj.twoFA.title) — чтобы работали секции с вложенными
+    // объектами (login.twoFA.*, login.social.*). Обратная совместимость сохранена.
+    const dig = (obj) => {
+      if (!obj) return undefined;
+      if (obj[translationKey] !== undefined) return obj[translationKey];
+      return rest.reduce((o, k) => (o == null ? undefined : o[k]), obj);
+    };
+    let translation = dig(languageTranslations);
     if (translation === undefined) {
       // Попробуем найти в русском как fallback
-      translation = sectionTranslations['ru']?.[translationKey];
+      translation = dig(sectionTranslations['ru']);
       if (translation === undefined) {
         console.warn(`Translation not found: ${key}`);
         return key;
