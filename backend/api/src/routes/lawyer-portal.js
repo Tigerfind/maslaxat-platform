@@ -441,7 +441,12 @@ router.post('/reviews/:id/reply', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    review.replyText = req.body.reply;
+    const reply = typeof req.body.reply === 'string' ? req.body.reply.trim() : '';
+    if (!reply) {
+      return res.status(400).json({ error: 'Ответ не может быть пустым' });
+    }
+
+    review.replyText = reply.slice(0, 2000);
     review.repliedAt = new Date();
     await review.save();
 
@@ -457,6 +462,10 @@ router.post('/reviews/:id/helpful', async (req, res, next) => {
     const review = await Review.findByPk(req.params.id);
     if (!review) {
       return res.status(404).json({ error: 'Отзыв не найден' });
+    }
+    // Нельзя накручивать «полезность» собственному отзыву
+    if (review.lawyerId === req.userId) {
+      return res.status(403).json({ error: 'Нельзя отмечать свой отзыв' });
     }
 
     review.helpfulCount = (review.helpfulCount || 0) + 1;

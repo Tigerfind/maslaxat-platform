@@ -108,8 +108,18 @@ router.put('/settings', authenticate, async (req, res, next) => {
     if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
     }
-    // Merge incoming settings over existing ones
-    user.settings = { ...(user.settings || {}), ...(req.body.settings || req.body || {}) };
+    // Мержим только известные ключи настроек (whitelist) — чтобы в JSONB не
+    // попадал произвольный мусор из тела запроса.
+    const ALLOWED = [
+      'emailNotifications', 'pushNotifications', 'profileVisibility',
+      'dataSharing', 'showEmail', 'showPhone', 'fontSize', 'compactMode', 'language', 'theme',
+    ];
+    const incoming = req.body.settings || req.body || {};
+    const clean = {};
+    for (const key of ALLOWED) {
+      if (incoming[key] !== undefined) clean[key] = incoming[key];
+    }
+    user.settings = { ...(user.settings || {}), ...clean };
     await user.save();
     res.json({ success: true, settings: user.settings });
   } catch (err) {

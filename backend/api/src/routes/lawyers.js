@@ -144,6 +144,16 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     let duration = parseInt(req.body.duration, 10);
     if (!ALLOWED_DURATIONS.includes(duration)) duration = 60;
 
+    // Валидация формата даты/времени, если переданы (как в reschedule) — иначе
+    // мусорные значения молча игнорировались напоминаниями/календарём.
+    const { preferredDate, preferredTime } = req.body;
+    if (preferredDate && !/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
+      return res.status(400).json({ error: 'Неверный формат даты (YYYY-MM-DD)' });
+    }
+    if (preferredTime && !/^([01]\d|2[0-3]):[0-5]\d$/.test(preferredTime)) {
+      return res.status(400).json({ error: 'Неверный формат времени (HH:mm)' });
+    }
+
     // Акция «первая консультация бесплатно»: право всегда пересчитываем на сервере,
     // клиентскому флагу не доверяем.
     let price = Math.round((lawyer.profile.price * duration) / 60);

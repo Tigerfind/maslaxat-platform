@@ -1,12 +1,12 @@
 const express = require('express');
 const router = express.Router();
 const { User, FavoriteLawyer, LawyerProfile } = require('../models');
-const { authenticate } = require('../middleware/auth');
+const { authenticate, authorize } = require('../middleware/auth');
 
 // @route   POST /api/favorites/:lawyerId
 // @desc    Add lawyer to favorites
 // @access  Private (Client)
-router.post('/:lawyerId', authenticate, async (req, res, next) => {
+router.post('/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -38,7 +38,7 @@ router.post('/:lawyerId', authenticate, async (req, res, next) => {
 // @route   DELETE /api/favorites/:lawyerId
 // @desc    Remove lawyer from favorites
 // @access  Private (Client)
-router.delete('/:lawyerId', authenticate, async (req, res, next) => {
+router.delete('/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -62,7 +62,7 @@ router.delete('/:lawyerId', authenticate, async (req, res, next) => {
 // @route   GET /api/favorites
 // @desc    Get all favorite lawyers for current client
 // @access  Private (Client)
-router.get('/', authenticate, async (req, res, next) => {
+router.get('/', authenticate, authorize('client'), async (req, res, next) => {
   try {
     const clientId = req.userId;
 
@@ -108,7 +108,7 @@ router.get('/', authenticate, async (req, res, next) => {
 // @route   GET /api/favorites/check/:lawyerId
 // @desc    Check if lawyer is favorited
 // @access  Private (Client)
-router.get('/check/:lawyerId', authenticate, async (req, res, next) => {
+router.get('/check/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;

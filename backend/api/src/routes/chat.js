@@ -113,6 +113,11 @@ router.get('/:consultationId/unread', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Консультация не найдена' });
     }
 
+    // Только участник видит счётчик непрочитанных (как в /messages)
+    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+      return res.status(403).json({ error: 'Нет доступа' });
+    }
+
     const otherUserId = consultation.clientId === req.userId ? consultation.lawyerId : consultation.clientId;
 
     const count = await Message.count({
