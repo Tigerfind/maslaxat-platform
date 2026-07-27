@@ -85,10 +85,17 @@ router.post('/upgrade', authenticate, async (req, res, next) => {
       providerResponse: { test: true, subscription: plan, paidAt: Date.now() },
     });
 
-    const expiresAt = new Date();
+    let subscription = await Subscription.findOne({ where: { userId: req.userId } });
+
+    // Продлеваем от текущего срока, если подписка ещё активна (тот же план) —
+    // иначе повторная оплата до истечения теряла оплаченный остаток.
+    const now = new Date();
+    const base = subscription && subscription.plan === plan && subscription.expiresAt && new Date(subscription.expiresAt) > now
+      ? new Date(subscription.expiresAt)
+      : now;
+    const expiresAt = new Date(base);
     expiresAt.setMonth(expiresAt.getMonth() + 1); // +1 месяц
 
-    let subscription = await Subscription.findOne({ where: { userId: req.userId } });
     if (subscription) {
       await subscription.update({ plan, price, expiresAt });
     } else {

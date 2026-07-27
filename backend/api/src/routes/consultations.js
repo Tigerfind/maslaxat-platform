@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Consultation, User, LawyerProfile, Payment, Review } = require('../models');
+const { Consultation, User, LawyerProfile, Payment, Review, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation } = require('../services/escrow');
@@ -245,17 +245,22 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    // Нельзя отменять завершённую/отменённую, а также ИДУЩУЮ (in_progress):
-    // иначе можно провести видеозвонок и «отменить» его вместо завершения,
-    // вернув деньги после оказанной услуги (гонка cancel vs complete).
-    if (['completed', 'cancelled', 'in_progress'].includes(consultation.status)) {
+    // Атомарный переход в cancelled ТОЛЬКО из отменяемых статусов. Это одновременно:
+    // (а) запрещает отмену completed/cancelled/in_progress (в т.ч. после оказанной
+    // услуги), (б) исключает гонку двойного клика — только один запрос выиграет
+    // переход, поэтому возврат эскроу выполнится ровно один раз.
+    const [affected] = await Consultation.update(
+      { status: 'cancelled', notes: req.body.reason || 'Отменено пользователем' },
+      { where: { id: consultation.id, status: { [Op.in]: ['payment_pending', 'pending', 'accepted'] } } }
+    );
+    if (affected === 0) {
       return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
     }
 
     // Возврат эскроу: если консультация была оплачена — снимаем резерв с
     // pendingBalance юриста и помечаем платёж возвращённым (иначе деньги
-    // зависали в pendingBalance навсегда). Реальный возврат клиенту через
-    // Payme — отдельно (Фаза 6); здесь чиним учёт.
+    // зависали бы в pendingBalance). Реальный возврат клиенту через Payme —
+    // отдельно (Фаза 6); здесь чиним учёт.
     const paidPayment = await Payment.findOne({
       where: { consultationId: consultation.id, status: 'paid' },
     });
@@ -265,9 +270,17 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
       await paidPayment.update({ status: 'refunded' });
     }
 
-    consultation.status = 'cancelled';
-    consultation.notes = req.body.reason || 'Отменено пользователем';
-    await consultation.save();
+    // Возвращаем использование промокода, если он применялся к этой брони
+    // (иначе usedCount сгорал на отменённых бронях).
+    if (consultation.promoCode) {
+      const { literal } = require('sequelize');
+      await Promo.increment('usedCount', {
+        by: -1,
+        where: { code: consultation.promoCode, usedCount: { [Op.gt]: 0 } },
+      });
+    }
+
+    await consultation.reload();
 
     // Notify the other party about cancellation
     const canceller = await User.findByPk(req.userId, { attributes: ['name'] });

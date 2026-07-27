@@ -193,6 +193,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       price,
       isFree,
       notes,
+      promoCode: appliedPromo ? appliedPromo.code : null,
       status: isFree ? 'pending' : 'payment_pending',
     });
 

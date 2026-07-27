@@ -38,11 +38,15 @@ async function completeConsultation(consultationId, notes, actualDuration) {
       await lp.increment('balance', { by: payment.amount });
       released = true;
     }
-    await LawyerProfile.increment('completedCases', {
-      by: 1,
-      where: { userId: consultation.lawyerId },
-    });
   }
+
+  // completedCases растёт для ЛЮБОЙ завершённой консультации, включая бесплатные
+  // (у которых нет Payment) — раньше инкремент был внутри if(payment) и занижал
+  // статистику юриста (топ-юристов, онбординг, рейтинги).
+  await LawyerProfile.increment('completedCases', {
+    by: 1,
+    where: { userId: consultation.lawyerId },
+  });
 
   return { consultation, released, alreadyCompleted: false };
 }

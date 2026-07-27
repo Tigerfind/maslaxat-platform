@@ -224,6 +224,10 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  // Применённый промокод (чтобы вернуть usedCount при отмене брони)
+  promoCode: {
+    type: DataTypes.STRING,
+  },
   notes: {
     type: DataTypes.TEXT,
   },

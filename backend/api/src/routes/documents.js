@@ -49,9 +49,16 @@ const upload = multer({
   storage,
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
-    const allowed = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png'];
+    const allowedExt = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png'];
+    const allowedMime = [
+      'application/pdf', 'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'text/plain', 'image/jpeg', 'image/png',
+    ];
     const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
+    // Проверяем И расширение, И заявленный MIME — чтобы нельзя было протащить
+    // произвольный файл, переименовав его в .pdf.
+    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) {
       cb(null, true);
     } else {
       cb(new Error('Неподдерживаемый формат файла'));

@@ -60,14 +60,23 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
     const amountTiyin = amount * 100;  // Payme работает в тийинах
 
     // Создаём или обновляем платёж
-    const payment = existingPayment || await Payment.create({
-      consultationId,
-      userId: req.userId,
-      amount,
-      currency: 'UZS',
-      provider: 'payme',
-      status: 'pending',
-    });
+    let payment = existingPayment;
+    if (payment) {
+      // Прошлая попытка не удалась/отменена (failed) — сбрасываем в pending,
+      // иначе повторная оплата навсегда блокировалась (webhook требует pending).
+      if (payment.status === 'failed') {
+        await payment.update({ status: 'pending', amount, providerResponse: null });
+      }
+    } else {
+      payment = await Payment.create({
+        consultationId,
+        userId: req.userId,
+        amount,
+        currency: 'UZS',
+        provider: 'payme',
+        status: 'pending',
+      });
+    }
 
     // Payme checkout URL
     // Формат: account[consultation_id]=ID&amount=TIYIN
@@ -371,27 +380,36 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
       return res.status(400).json({ error: 'Укажите корректную сумму вывода' });
     }
 
-    // БЕЗОПАСНОСТЬ: атомарное списание одним UPDATE с условием balance >= amt —
-    // защита от гонки/овердрафта при параллельных запросах (amt — проверенное число).
-    const [affected] = await LawyerProfile.update(
-      { balance: LawyerProfile.sequelize.literal(`balance - ${amt}`) },
-      { where: { userId: req.userId, balance: { [Op.gte]: amt } } }
-    );
-    if (affected === 0) {
-      return res.status(400).json({ error: 'Недостаточно средств на балансе' });
+    // Списание баланса и запись в леджер — в ОДНОЙ транзакции: иначе при сбое
+    // Withdrawal.create баланс уже уменьшен, а заявки нет → деньги «пропадают»
+    // без следа. Атомарный UPDATE с условием balance >= amt защищает от овердрафта.
+    let profile;
+    let withdrawal;
+    try {
+      await LawyerProfile.sequelize.transaction(async (t) => {
+        const [affected] = await LawyerProfile.update(
+          { balance: LawyerProfile.sequelize.literal(`balance - ${amt}`) },
+          { where: { userId: req.userId, balance: { [Op.gte]: amt } }, transaction: t }
+        );
+        if (affected === 0) {
+          const err = new Error('INSUFFICIENT_FUNDS');
+          err.code = 'INSUFFICIENT_FUNDS';
+          throw err;
+        }
+        withdrawal = await Withdrawal.create({
+          lawyerId: req.userId,
+          amount: amt,
+          status: 'pending',
+          provider: 'manual',
+        }, { transaction: t });
+        profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'], transaction: t });
+      });
+    } catch (e) {
+      if (e.code === 'INSUFFICIENT_FUNDS') {
+        return res.status(400).json({ error: 'Недостаточно средств на балансе' });
+      }
+      throw e;
     }
-
-    const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'] });
-
-    // ЛЕДЖЕР: фиксируем заявку на вывод (аудит-трейл). Раньше баланс списывался
-    // без единой записи о выплате. Статус 'pending' — реальный перевод (Payme
-    // Transfer / Click) выполняется в Фазе 6, тогда статус станет 'paid'.
-    const withdrawal = await Withdrawal.create({
-      lawyerId: req.userId,
-      amount: amt,
-      status: 'pending',
-      provider: 'manual',
-    });
 
     res.json({
       success: true,
