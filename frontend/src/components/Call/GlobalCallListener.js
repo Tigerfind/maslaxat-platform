@@ -80,6 +80,8 @@ const GlobalCallListener = () => {
 
   // На самой странице звонка входящие подавляем (мы уже в звонке)
   const onCallPage = location.pathname.startsWith('/consultations/video/');
+  const onCallPageRef = useRef(onCallPage);
+  useEffect(() => { onCallPageRef.current = onCallPage; }, [onCallPage]);
 
   useEffect(() => {
     const authToken = token || localStorage.getItem('token');
@@ -90,6 +92,9 @@ const GlobalCallListener = () => {
 
     socket.on('incoming-call', (data) => {
       if (!data || !data.consultationId) return;
+      // Уже на странице звонка — не поднимаем модалку/таймаут (иначе устаревшая
+      // модалка всплывёт при уходе со звонка, а таймаут пошлёт лишний decline).
+      if (onCallPageRef.current) return;
       setCall(data);
     });
     socket.on('call-cancelled', ({ consultationId }) => {

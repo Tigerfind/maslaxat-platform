@@ -197,7 +197,11 @@ const VideoCallPage = () => {
 
   // Create WebRTC peer connection
   const createPeer = useCallback((targetSocketId, stream, initiator) => {
-    // Clear stale pending signals from any previous peer
+    // Забираем накопленные ранние сигналы (пришли до создания peer) в локальную
+    // переменную ДО очистки буфера — чтобы прогнать их после создания peer.
+    // Раньше буфер очищался здесь, а flush ниже видел уже пустой массив → ранние
+    // WebRTC-сигналы (offer/answer) молча терялись.
+    const buffered = pendingSignalsRef.current;
     pendingSignalsRef.current = [];
 
     if (peerRef.current) {
@@ -261,17 +265,14 @@ const VideoCallPage = () => {
 
     peerRef.current = peer;
 
-    // Flush any pending signals that arrived before peer was created
-    if (pendingSignalsRef.current.length > 0) {
-      pendingSignalsRef.current.forEach((sig) => {
-        try {
-          peer.signal(sig);
-        } catch (e) {
-          console.error('Error applying pending signal:', e);
-        }
-      });
-      pendingSignalsRef.current = [];
-    }
+    // Прогоняем ранние сигналы, пришедшие до создания peer
+    buffered.forEach((sig) => {
+      try {
+        peer.signal(sig);
+      } catch (e) {
+        console.error('Error applying pending signal:', e);
+      }
+    });
   }, []);
 
   // End call

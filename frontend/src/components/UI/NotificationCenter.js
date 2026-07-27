@@ -26,6 +26,7 @@ import {
   AccessTime,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import io from 'socket.io-client';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
@@ -51,6 +52,7 @@ const NOTIFICATION_ICONS = {
 const NotificationCenter = ({ sx = {} }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const authToken = useSelector((s) => s.auth.token);
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -64,10 +66,11 @@ const NotificationCenter = ({ sx = {} }) => {
     return () => clearInterval(interval);
   }, []);
 
-  // Realtime-пуш: мгновенно добавляем новое уведомление без ожидания опроса
+  // Realtime-пуш: мгновенно добавляем новое уведомление без ожидания опроса.
+  // Пересоздаём сокет при смене токена (логин/логаут) — иначе realtime «залипал».
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
+    const token = authToken || localStorage.getItem('token');
+    if (!token) return undefined;
     const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
 
     socket.on('notification:new', (notif) => {
@@ -83,7 +86,7 @@ const NotificationCenter = ({ sx = {} }) => {
     });
 
     return () => { socket.disconnect(); };
-  }, []);
+  }, [authToken]);
 
   const fetchNotifications = async () => {
     try {
