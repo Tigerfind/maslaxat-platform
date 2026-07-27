@@ -81,6 +81,7 @@ const VideoCallPage = () => {
   const [remoteRole, setRemoteRole] = useState('');
   const [remoteMedia, setRemoteMedia] = useState({ audio: true, video: true }); // состояние камеры/микрофона собеседника
   const [endSummary, setEndSummary] = useState(null); // { seconds } — сводка после завершения
+  const [remoteLeft, setRemoteLeft] = useState(false); // собеседник вышел из звонка (не краткий обрыв)
   const wasConnectedRef = useRef(false); // был ли реальный сеанс (для «переподключение» и сводки)
 
   // Экран подготовки перед входом (лобби)
@@ -626,6 +627,7 @@ const VideoCallPage = () => {
         socket.on('user-joined', ({ socketId, userName, userRole }) => {
           if (cancelled) return;
           setRingStatus(null); // дозвонились — собеседник в комнате
+          setRemoteLeft(false); // вернулся/подключился
           setRemoteName(userName);
           setRemoteRole(userRole);
           createPeer(socketId, stream, false);
@@ -651,6 +653,7 @@ const VideoCallPage = () => {
           if (cancelled) return;
           setPeerConnected(false);
           setRemoteName('');
+          setRemoteLeft(true); // собеседник вышел (не краткий обрыв)
           // Собеседник ушёл — закрываем диалоги продления (нельзя принять/ждать
           // продление, если оплачивать/подтверждать некому)
           setIncomingExtend(null);
@@ -973,16 +976,18 @@ const VideoCallPage = () => {
     : `${t('videoCall.timeLeft')} ${formatDuration(remaining)}`;
   const timeColor = overtime ? '#D9534F' : remaining <= 300 ? '#C4A35A' : '#C9A980';
 
-  // Связь прервалась после реального соединения → «переподключение»
-  const reconnecting = !peerConnected && wasConnectedRef.current && connected;
+  // Различаем «собеседник вышел» (насовсем) и краткий обрыв («переподключение»)
+  const reconnecting = !peerConnected && wasConnectedRef.current && connected && !remoteLeft;
   const statusText = peerConnected
     ? timeText
+    : remoteLeft
+    ? t('videoCall.remoteLeft')
     : reconnecting
     ? t('videoCall.reconnecting')
     : connected
     ? (ringText || t('videoCall.waiting'))
     : t('videoCall.connecting');
-  const statusDotColor = peerConnected ? (overtime ? '#D9534F' : '#7A9A6B') : reconnecting ? '#D9534F' : '#C4A35A';
+  const statusDotColor = peerConnected ? (overtime ? '#D9534F' : '#7A9A6B') : (remoteLeft || reconnecting) ? '#D9534F' : '#C4A35A';
 
   // Shared control-button recipe
   const controlBtnSx = (active) => ({
@@ -1273,7 +1278,21 @@ const VideoCallPage = () => {
             >
               {remoteRole === 'client' ? t('videoCall.roleClient') : t('videoCall.roleLawyer')}
             </Typography>
-            {ringStatus === 'declined' || ringStatus === 'offline' ? (
+            {remoteLeft ? (
+              <>
+                <Typography sx={{ color: '#E06B6B', fontSize: 14, mt: 2 }}>{t('videoCall.remoteLeft')}</Typography>
+                <button
+                  onClick={() => handleEndCall(true)}
+                  style={{
+                    marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 8,
+                    background: '#B07070', color: '#FFFFFF', border: 'none', fontSize: 14, fontWeight: 600,
+                    padding: '12px 24px', borderRadius: 24, cursor: 'pointer', fontFamily: 'inherit',
+                  }}
+                >
+                  <CallEndOutlined sx={{ fontSize: 20 }} /> {t('videoCall.finish')}
+                </button>
+              </>
+            ) : ringStatus === 'declined' || ringStatus === 'offline' ? (
               <button
                 onClick={retryCall}
                 style={{
