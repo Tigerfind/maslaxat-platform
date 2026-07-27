@@ -130,7 +130,20 @@ function initSignaling(io) {
           type: consultation.type,
         };
 
-        // Онлайн ли собеседник? Если нет — оставляем уведомление (пропущенный).
+        // Web-push собеседнику — ловит звонок даже при свёрнутой/закрытой вкладке.
+        // Service Worker сам не покажет системное уведомление, если вкладка открыта
+        // (тогда звонок показывает in-app модалка). Fire-and-forget, no-op без VAPID.
+        const pushService = require('../services/pushService');
+        pushService
+          .sendToUser(calleeId, {
+            title: 'Входящий звонок',
+            body: `${socket.userName} звонит вам`,
+            type: 'incoming_call',
+            metadata: { url: `/consultations/video/${consultationId}`, consultationId },
+          })
+          .catch(() => {});
+
+        // Онлайн ли собеседник (socket)? Если нет — оставляем уведомление (пропущенный).
         const calleeSockets = await io.in(`user:${calleeId}`).fetchSockets();
         if (calleeSockets.length > 0) {
           io.to(`user:${calleeId}`).emit('incoming-call', payload);

@@ -2,7 +2,7 @@
 // устанавливаемым приложением). Стратегия: сеть в приоритете, кэш как запасной
 // вариант при отсутствии сети. Ничего заранее не кэшируем — чтобы в разработке
 // не показывались устаревшие версии.
-const CACHE = 'maslaxat-runtime-v1';
+const CACHE = 'maslaxat-runtime-v2';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
@@ -36,27 +36,43 @@ self.addEventListener('push', (event) => {
     data = { title: 'MaslaXat', body: event.data ? event.data.text() : '' };
   }
   const title = data.title || 'MaslaXat';
-  const options = {
-    body: data.body || '',
-    icon: '/icon-192.png',
-    badge: '/favicon-64.png',
-    data: { url: (data.metadata && data.metadata.url) || '/', ...data },
-    tag: data.type || undefined,
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+  const isCall = data.type === 'incoming_call';
+  event.waitUntil((async () => {
+    // Входящий звонок: если вкладка открыта и на виду — звонок покажет in-app
+    // модалка (со звуком), системное уведомление не дублируем.
+    if (isCall) {
+      const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      if (clients.some((c) => c.visibilityState === 'visible')) return;
+    }
+    const options = {
+      body: data.body || '',
+      icon: '/icon-192.png',
+      badge: '/favicon-64.png',
+      data: { url: (data.metadata && data.metadata.url) || '/', ...data },
+      tag: data.type || undefined,
+      requireInteraction: isCall, // звонок висит, пока не ответишь
+      renotify: isCall,
+      vibrate: isCall ? [600, 400, 600, 400, 600] : undefined,
+    };
+    await self.registration.showNotification(title, options);
+  })());
 });
 
-// Клик по уведомлению — фокус на открытой вкладке или открытие новой.
+// Клик по уведомлению — фокус вкладки (+ переход по адресу) или открытие новой.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const targetUrl = (event.notification.data && event.notification.data.url) || '/';
-  event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      for (const client of clientList) {
-        if ('focus' in client) return client.focus();
+  event.waitUntil((async () => {
+    const clients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of clients) {
+      if ('focus' in client) {
+        await client.focus();
+        if (targetUrl !== '/' && 'navigate' in client) {
+          try { await client.navigate(targetUrl); } catch (e) { /* другой origin/ошибка */ }
+        }
+        return;
       }
-      if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
-      return undefined;
-    })
-  );
+    }
+    if (self.clients.openWindow) await self.clients.openWindow(targetUrl);
+  })());
 });
