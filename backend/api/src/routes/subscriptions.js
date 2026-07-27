@@ -2,6 +2,7 @@ const router = require('express').Router();
 const { Subscription, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { getRedis } = require('../config/redis');
+const { computeSubscriptionBenefit } = require('../services/subscriptionService');
 
 const PLANS = {
   free:  { price: 0,      aiLimit: 3,        consultations: 0, label: 'Бесплатный' },
@@ -41,6 +42,9 @@ router.get('/my', authenticate, async (req, res, next) => {
       }
     }
 
+    // Остаток бесплатных консультаций по подписке в этом месяце
+    const benefit = await computeSubscriptionBenefit(req.userId);
+
     res.json({
       plan: activePlan,
       expiresAt: subscription.expiresAt,
@@ -48,6 +52,8 @@ router.get('/my', authenticate, async (req, res, next) => {
       aiLimit: PLANS[activePlan].aiLimit === Infinity ? null : PLANS[activePlan].aiLimit,
       aiUsedToday,
       consultationsPerMonth: PLANS[activePlan].consultations,
+      consultationsLeft: benefit.remaining,
+      consultationsUsed: benefit.used,
       price: PLANS[activePlan].price,
     });
   } catch (err) {

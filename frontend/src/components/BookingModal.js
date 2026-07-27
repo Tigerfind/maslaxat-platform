@@ -49,17 +49,35 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [payMethod, setPayMethod] = useState('payme');
   const [loyalty, setLoyalty] = useState(null);
   const [useFree, setUseFree] = useState(false);
+  const [subLeft, setSubLeft] = useState(0);
+  const [useSubFree, setUseSubFree] = useState(false);
 
-  // Загружаем статус акции «каждая 3-я бесплатно» при открытии окна
+  // При открытии: сначала акция «первая бесплатно» (приоритетнее), затем —
+  // бесплатная консультация, включённая в подписку (если лоялти недоступна).
   useEffect(() => {
     if (!open) return;
     setUseFree(false);
-    api.get('/client/consultations/loyalty')
-      .then((res) => {
-        setLoyalty(res.data);
-        if (res.data?.freeNow) setUseFree(true); // авто-применяем бесплатную
-      })
-      .catch(() => setLoyalty(null));
+    setUseSubFree(false);
+    setSubLeft(0);
+    let alive = true;
+    (async () => {
+      let freeNow = false;
+      try {
+        const l = await api.get('/client/consultations/loyalty');
+        if (!alive) return;
+        setLoyalty(l.data);
+        freeNow = !!l.data?.freeNow;
+      } catch { if (alive) setLoyalty(null); }
+      if (freeNow) { if (alive) setUseFree(true); return; }
+      try {
+        const s = await api.get('/subscriptions/my');
+        if (!alive) return;
+        const left = s.data?.consultationsLeft || 0;
+        setSubLeft(left);
+        if (left > 0) setUseSubFree(true);
+      } catch { /* нет подписки */ }
+    })();
+    return () => { alive = false; };
   }, [open]);
 
   const dates = useMemo(() => {
@@ -83,7 +101,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
   const subtotal = Math.round((basePrice * duration) / 60);
   const discount = promoApplied && promoPercent ? Math.round((subtotal * promoPercent) / 100) : 0;
-  const total = useFree ? 0 : Math.max(0, subtotal - discount);
+  const freeBooking = useFree || useSubFree; // бесплатно (акция ИЛИ подписка)
+  const total = freeBooking ? 0 : Math.max(0, subtotal - discount);
   const fmt = (n) => Number(n || 0).toLocaleString('ru-RU');
 
   const profName = lawyer.name || '';
@@ -182,7 +201,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         paymentMethod: payMethod,
         notify,
         useFreePromo: useFree,
-        promoCode: promoApplied && !useFree ? promo.trim().toUpperCase() : undefined,
+        useSubscriptionFree: useSubFree,
+        promoCode: promoApplied && !freeBooking ? promo.trim().toUpperCase() : undefined,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
         client: {
@@ -234,7 +254,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       // Платная бронь создаётся как payment_pending — проводим тестовую оплату.
       // Бесплатная (акция) уже в статусе pending, оплата не нужна.
       const consultationId = booking?.consultation?.id;
-      if (!useFree && booking?.requiresPayment && consultationId) {
+      if (!freeBooking && booking?.requiresPayment && consultationId) {
         try {
           // dev/test-режим: имитация оплаты
           await clientService.lawyers.simulatePayment(consultationId);
@@ -635,7 +655,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               <div style={rowStyle}>
                 <span>{t('booking.cost')}</span>
                 <span style={rowVal}>
-                  {useFree ? (
+                  {freeBooking ? (
                     <>
                       <span style={{ textDecoration: 'line-through', color: 'var(--text3)', marginRight: 8 }}>
                         {fmt(subtotal)} {t('booking.sum')}
@@ -647,13 +667,13 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   )}
                 </span>
               </div>
-              {promoApplied && !useFree && (
+              {promoApplied && !freeBooking && (
                 <div style={{ ...rowStyle, color: '#1F8A5B' }}>
                   <span>{t('booking.promo')} {promo.trim().toUpperCase()} (−{promoPercent}%)</span>
                   <span style={{ fontWeight: 500 }}>−{fmt(discount)} {t('booking.sum')}</span>
                 </div>
               )}
-              {(promoApplied || useFree) && (
+              {(promoApplied || freeBooking) && (
                 <div
                   style={{
                     display: 'flex',
@@ -665,8 +685,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   }}
                 >
                   <span style={{ fontWeight: 500 }}>{t('booking.total')}</span>
-                  <span style={{ fontWeight: 600, color: useFree ? 'var(--accent-dark)' : undefined }}>
-                    {useFree ? t('booking.freeTotal') : `${fmt(total)} ${t('booking.sum')}`}
+                  <span style={{ fontWeight: 600, color: freeBooking ? 'var(--accent-dark)' : undefined }}>
+                    {freeBooking ? t('booking.freeTotal') : `${fmt(total)} ${t('booking.sum')}`}
                   </span>
                 </div>
               )}
@@ -693,6 +713,32 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   </div>
                   <div style={{ fontSize: 12, color: 'var(--text2)' }}>
                     {t('booking.firstFreeSub')}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ---------- Бесплатно по подписке (Basic/Pro) ---------- */}
+            {useSubFree && (
+              <div style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                background: 'linear-gradient(135deg, rgba(184,149,110,0.12), rgba(184,149,110,0.04))',
+                border: '1px solid var(--accent)', borderRadius: 'var(--radius)',
+                padding: '12px 14px', marginBottom: 16,
+              }}>
+                <div style={{
+                  width: 34, height: 34, flexShrink: 0, borderRadius: '50%',
+                  background: 'color-mix(in srgb, var(--accent) 14%, transparent)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                  <CardGiftcardOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)' }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--accent-dark)' }}>
+                    {t('booking.subFree')}
+                  </div>
+                  <div style={{ fontSize: 12, color: 'var(--text2)' }}>
+                    {t('booking.subFreeSub').replace('{n}', subLeft)}
                   </div>
                 </div>
               </div>
@@ -784,7 +830,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               </div>
             </div>
 
-            {!useFree && (
+            {!freeBooking && (
             <>
             <div style={label}>{t('booking.payMethod')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
@@ -945,7 +991,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </button>
             {step === 3 ? (
               <button onClick={handlePayNow} disabled={loading} style={primaryBtn}>
-                {loading ? t('booking.paying') : (useFree ? t('booking.bookFree') : `${t('booking.pay')} · ${fmt(total)} ${t('booking.sum')}`)}
+                {loading ? t('booking.paying') : (freeBooking ? t('booking.bookFree') : `${t('booking.pay')} · ${fmt(total)} ${t('booking.sum')}`)}
               </button>
             ) : (
               <button onClick={goNext} style={primaryBtn}>

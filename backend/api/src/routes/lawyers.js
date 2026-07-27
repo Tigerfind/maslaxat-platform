@@ -158,6 +158,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     // клиентскому флагу не доверяем.
     let price = Math.round((lawyer.profile.price * duration) / 60);
     let isFree = false;
+    let freeSource = null;
     let notes = req.body.notes || null;
     let appliedPromo = null;
     if (req.body.useFreePromo) {
@@ -166,7 +167,19 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       if (loyalty.freeNow) {
         price = 0;
         isFree = true;
+        freeSource = 'loyalty';
         notes = 'Бесплатно по акции «первая консультация бесплатно»';
+      }
+    } else if (req.body.useSubscriptionFree) {
+      // Бесплатная консультация, включённая в тариф. Право пересчитываем на
+      // сервере (клиентскому флагу не доверяем): нужен остаток лимита месяца.
+      const { computeSubscriptionBenefit } = require('../services/subscriptionService');
+      const benefit = await computeSubscriptionBenefit(req.userId);
+      if (benefit.remaining > 0) {
+        price = 0;
+        isFree = true;
+        freeSource = 'subscription';
+        notes = `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»`;
       }
     } else if (req.body.promoCode) {
       // Промокод: скидку ВСЕГДА пересчитываем на сервере (клиенту не доверяем)
@@ -192,6 +205,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       duration,
       price,
       isFree,
+      freeSource,
       notes,
       promoCode: appliedPromo ? appliedPromo.code : null,
       status: isFree ? 'pending' : 'payment_pending',

@@ -233,6 +233,12 @@ const Consultation = sequelize.define('Consultation', {
   promoCode: {
     type: DataTypes.STRING,
   },
+  // Источник бесплатной брони: 'loyalty' (первая бесплатно) | 'subscription'
+  // (включена в тариф) | null. Нужен, чтобы считать месячный лимит подписки
+  // отдельно от акции лояльности.
+  freeSource: {
+    type: DataTypes.STRING,
+  },
   notes: {
     type: DataTypes.TEXT,
   },
