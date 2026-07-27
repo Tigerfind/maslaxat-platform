@@ -5,7 +5,9 @@ import io from 'socket.io-client';
 import { CallOutlined, CallEndOutlined, VideocamOutlined } from '@mui/icons-material';
 import { useTranslation } from '../../i18n';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// socket.io живёт на корне хоста, а REACT_APP_API_URL в проде включает /api —
+// срезаем его (иначе в проде сокет цепляется к неверному namespace).
+const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
 const RING_TIMEOUT_MS = 45000;
 
 // Рингтон без файлов-ассетов: классический двухтональный звонок через Web Audio

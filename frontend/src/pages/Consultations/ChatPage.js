@@ -18,7 +18,8 @@ import io from 'socket.io-client';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 
-const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
+// socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
+const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
 
 const ChatPage = () => {
   const { consultationId } = useParams();

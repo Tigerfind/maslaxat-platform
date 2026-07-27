@@ -11,6 +11,13 @@ const authenticate = async (req, res, next) => {
     const token = header.split(' ')[1];
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
+    // Промежуточный токен-вызов 2FA (twofa:'pending') НЕ является полноценным
+    // токеном доступа — с ним нельзя ходить по защищённым роутам, только пройти
+    // второй шаг входа (/auth/login/2fa). Иначе 2FA полностью обходится.
+    if (decoded.twofa) {
+      return res.status(401).json({ error: 'Требуется подтверждение 2FA' });
+    }
+
     const user = await User.findByPk(decoded.id);
     if (!user || !user.isActive) {
       return res.status(401).json({ error: 'Пользователь не найден' });

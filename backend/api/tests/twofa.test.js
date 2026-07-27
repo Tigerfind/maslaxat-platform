@@ -77,6 +77,23 @@ describe('2FA (TOTP)', () => {
     expect(v2.status).toBe(400);
   });
 
+  test('challenge-токен (twoFactorRequired) НЕ пускает на защищённые роуты', async () => {
+    const { user: lawyer } = await makeLawyer('twofa4@test.uz');
+    const token = tokenFor(lawyer);
+    const setup = await request(app).post('/api/2fa/setup').set('Authorization', `Bearer ${token}`);
+    await request(app).post('/api/2fa/enable').set('Authorization', `Bearer ${token}`)
+      .send({ token: authenticator.generate(setup.body.secret) });
+
+    const login = await request(app).post('/api/auth/login')
+      .send({ email: 'twofa4@test.uz', password: 'passw0rd' });
+    const tempToken = login.body.tempToken;
+    expect(tempToken).toBeTruthy();
+
+    // С challenge-токеном нельзя ходить по защищённым роутам (иначе обход 2FA)
+    const res = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${tempToken}`);
+    expect(res.status).toBe(401);
+  });
+
   test('клиенту 2FA setup запрещён → 403', async () => {
     const client = await makeClient('twofaclient@test.uz');
     const token = tokenFor(client);
