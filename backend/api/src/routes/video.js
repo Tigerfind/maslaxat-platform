@@ -41,6 +41,13 @@ router.get('/consultation/:id', async (req, res, next) => {
       question: consultation.question,
       preferredDate: consultation.preferredDate,
       preferredTime: consultation.preferredTime,
+      // нужны фронту: обратный отсчёт (duration), превью доплаты (price),
+      // определение собеседника для отмены дозвона (clientId/lawyerId)
+      duration: consultation.duration,
+      price: consultation.price,
+      actualDuration: consultation.actualDuration,
+      clientId: consultation.clientId,
+      lawyerId: consultation.lawyerId,
       client: consultation.client,
       lawyer: consultation.lawyer,
     });
@@ -142,33 +149,47 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
       return res.status(501).json({ error: 'Оплата продления через Payme ещё не подключена' });
     }
 
-    // Продлеваем длительность и цену
-    consultation.duration = (consultation.duration || 60) + minutes;
-    consultation.price = (consultation.price || 0) + addAmount;
-    await consultation.save();
+    // Продление + резерв эскроу — в ОДНОЙ транзакции с блокировкой строки
+    // консультации, чтобы конкурентные продления не искажали price/duration
+    // и не задваивали резерв (SELECT ... FOR UPDATE через lock).
+    let newDuration; let newPrice;
+    await Consultation.sequelize.transaction(async (t) => {
+      const locked = await Consultation.findByPk(consultation.id, { lock: t.LOCK.UPDATE, transaction: t });
+      // Внутри лока перепроверяем статус (мог измениться между проверкой и локом)
+      if (!locked || locked.status !== 'in_progress') {
+        const err = new Error('NOT_IN_PROGRESS');
+        err.code = 'NOT_IN_PROGRESS';
+        throw err;
+      }
+      newDuration = (locked.duration || 60) + minutes;
+      newPrice = (locked.price || 0) + addAmount;
+      await locked.update({ duration: newDuration, price: newPrice }, { transaction: t });
 
-    // Резервируем доплату на эскроу юриста + фиксируем платёж (тест)
-    if (addAmount > 0) {
-      await Payment.create({
-        userId: consultation.clientId,
-        consultationId: consultation.id,
-        amount: addAmount,
-        currency: 'UZS',
-        provider: 'payme',
-        status: 'paid',
-        providerResponse: { test: true, extension: minutes, paidAt: Date.now() },
-      });
-      await LawyerProfile.increment('pendingBalance', { by: addAmount, where: { userId: consultation.lawyerId } });
-    }
+      if (addAmount > 0) {
+        await Payment.create({
+          userId: locked.clientId,
+          consultationId: locked.id,
+          amount: addAmount,
+          currency: 'UZS',
+          provider: 'payme',
+          status: 'paid',
+          providerResponse: { test: true, extension: minutes, paidAt: Date.now() },
+        }, { transaction: t });
+        await LawyerProfile.increment('pendingBalance', { by: addAmount, where: { userId: locked.lawyerId }, transaction: t });
+      }
+    });
 
     res.json({
       success: true,
       minutes,
       addAmount,
-      duration: consultation.duration,
-      price: consultation.price,
+      duration: newDuration,
+      price: newPrice,
     });
   } catch (err) {
+    if (err.code === 'NOT_IN_PROGRESS') {
+      return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
+    }
     next(err);
   }
 });

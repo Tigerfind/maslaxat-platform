@@ -98,6 +98,8 @@ const VideoCallPage = () => {
   const [incomingExtend, setIncomingExtend] = useState(null); // { minutes, from }
   const EXTEND_MIN = 15;
   const extendWaitRef = useRef(null);
+  const extendWaitingRef = useRef(false);
+  const endedRef = useRef(false);
 
   // In-call chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -157,6 +159,8 @@ const VideoCallPage = () => {
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
   useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
+
+  useEffect(() => { extendWaitingRef.current = extendWaiting; }, [extendWaiting]);
 
   // Синхронизируем состояние фуллскрина с реальным (в т.ч. выход по ESC),
   // иначе кнопка «залипала» в неверном состоянии.
@@ -220,7 +224,17 @@ const VideoCallPage = () => {
   useEffect(() => {
     let alive = true;
     api.get(`/chat/${consultationId}/messages`)
-      .then((res) => { if (alive) setChatMessages(res.data || []); })
+      .then((res) => {
+        if (!alive) return;
+        // Мержим историю с уже пришедшими realtime-сообщениями (дедуп по id),
+        // а не затираем — иначе сообщение, пришедшее до резолва истории, терялось.
+        const hist = res.data || [];
+        setChatMessages((prev) => {
+          const ids = new Set(hist.map((m) => m.id));
+          const extra = prev.filter((m) => !ids.has(m.id));
+          return [...hist, ...extra];
+        });
+      })
       .catch(() => {});
     return () => { alive = false; };
   }, [consultationId]);
@@ -329,6 +343,10 @@ const VideoCallPage = () => {
 
   // End call
   const handleEndCall = useCallback(async (emitEvent = true) => {
+    // Guard от повторного завершения (гонка call-ended + ручной отбой → двойной navigate)
+    if (endedRef.current) return;
+    endedRef.current = true;
+
     // Stop all media
     if (localStreamRef.current) {
       localStreamRef.current.getTracks().forEach((tr) => tr.stop());
@@ -376,8 +394,12 @@ const VideoCallPage = () => {
   }, [consultationId, navigate, user]);
 
   // Initialize media and socket connection
+  // Булев флаг «консультация загружена» — меняется false→true один раз. Init-эффект
+  // зависит от него, а НЕ от объекта consultation: иначе setConsultation (продление)
+  // пересоздавал бы эффект → полный обрыв и реконнект звонка на каждом extend.
+  const consultationLoaded = Boolean(consultation);
   useEffect(() => {
-    if (!consultation || error) return;
+    if (!consultationLoaded || error) return;
     // Prevent double-start from React StrictMode
     if (callStartedRef.current) return;
     callStartedRef.current = true;
@@ -431,7 +453,10 @@ const VideoCallPage = () => {
         // ─── Продление по согласию ───
         // Пришло предложение продлить — показываем окошко для принятия
         socket.on('extend-request', ({ minutes, from }) => {
-          if (!cancelled) setIncomingExtend({ minutes: minutes || 15, from });
+          // Игнорируем чужое предложение, если сами уже предлагаем/ждём ответ —
+          // иначе одновременный обоюдный extend приводил бы к двойному продлению.
+          if (cancelled || extendWaitingRef.current) return;
+          setIncomingExtend({ minutes: minutes || 15, from });
         });
         // Собеседник принял наше предложение — применяем новые значения у себя
         socket.on('extend-accept', (data) => {
@@ -510,6 +535,10 @@ const VideoCallPage = () => {
           if (cancelled) return;
           setPeerConnected(false);
           setRemoteName('');
+          // Собеседник ушёл — закрываем диалоги продления (нельзя принять/ждать
+          // продление, если оплачивать/подтверждать некому)
+          setIncomingExtend(null);
+          setExtendWaiting(false);
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = null;
           }
@@ -548,6 +577,12 @@ const VideoCallPage = () => {
       if (stream) {
         stream.getTracks().forEach((tr) => tr.stop());
       }
+      // Останавливаем и захват экрана (иначе при уходе со страницы во время
+      // шаринга без явного завершения он продолжает жить)
+      if (screenStreamRef.current) {
+        screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
+        screenStreamRef.current = null;
+      }
       if (peerRef.current) {
         peerRef.current.destroy();
         peerRef.current = null;
@@ -559,11 +594,12 @@ const VideoCallPage = () => {
       if (timerRef.current) {
         clearInterval(timerRef.current);
       }
+      clearTimeout(extendWaitRef.current); // таймаут ожидания продления
       pendingSignalsRef.current = [];
       localStreamRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultation, consultationId, createPeer, handleEndCall]);
+  }, [consultationLoaded, consultationId]);
 
   // Toggle audio
   const toggleAudio = () => {
@@ -645,26 +681,29 @@ const VideoCallPage = () => {
     }
   };
 
+  // Остановить показ экрана (только рефы + setState — без stale-closure, чтобы
+  // безопасно вызываться из screenTrack.onended при системной «Остановить показ»)
+  const stopScreenShare = useCallback(() => {
+    if (screenStreamRef.current) {
+      screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
+      screenStreamRef.current = null;
+    }
+    const videoTrack = localStreamRef.current?.getVideoTracks()[0];
+    if (peerRef.current && videoTrack) {
+      const senders = peerRef.current._pc?.getSenders();
+      const videoSender = senders?.find((s) => s.track?.kind === 'video');
+      if (videoSender) videoSender.replaceTrack(videoTrack);
+    }
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+    setScreenSharing(false);
+  }, []);
+
   // Toggle screen sharing
   const toggleScreenShare = async () => {
     if (screenSharing) {
-      // Stop screen sharing, restore camera
-      if (screenStreamRef.current) {
-        screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
-        screenStreamRef.current = null;
-      }
-      const videoTrack = localStreamRef.current?.getVideoTracks()[0];
-      if (peerRef.current && videoTrack) {
-        const senders = peerRef.current._pc?.getSenders();
-        const videoSender = senders?.find((s) => s.track?.kind === 'video');
-        if (videoSender) {
-          videoSender.replaceTrack(videoTrack);
-        }
-      }
-      if (localVideoRef.current && localStreamRef.current) {
-        localVideoRef.current.srcObject = localStreamRef.current;
-      }
-      setScreenSharing(false);
+      stopScreenShare();
     } else {
       if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
         toast.error(t('videoCall.screenShareUnsupported'));
@@ -688,8 +727,9 @@ const VideoCallPage = () => {
           localVideoRef.current.srcObject = screenStream;
         }
 
+        // Системная кнопка «Остановить показ» → чистый стоп (не открывать пикер заново)
         screenTrack.onended = () => {
-          toggleScreenShare();
+          stopScreenShare();
         };
 
         setScreenSharing(true);
