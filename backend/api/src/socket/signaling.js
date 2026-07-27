@@ -186,6 +186,12 @@ function initSignaling(io) {
       io.to(`user:${otherId}`).emit(event, { consultationId, byUserId: socket.userId });
     };
 
+    // Состояние медиа (микрофон/камера вкл/выкл) — реле собеседнику в комнате,
+    // чтобы показать «выключил камеру/микрофон» вместо чёрного кадра.
+    socket.on('media-state', ({ audio, video }) => {
+      if (socket.roomId) socket.to(socket.roomId).emit('media-state', { audio: !!audio, video: !!video });
+    });
+
     // ─── ПРОДЛЕНИЕ ПО СОГЛАСИЮ ────────────────────────────────
     // Реле внутри видео-комнаты (оба участника уже проверены в join-room):
     // один предлагает продлить, другой принимает/отклоняет.

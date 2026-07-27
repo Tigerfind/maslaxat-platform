@@ -79,6 +79,7 @@ const VideoCallPage = () => {
   const [peerConnected, setPeerConnected] = useState(false);
   const [remoteName, setRemoteName] = useState('');
   const [remoteRole, setRemoteRole] = useState('');
+  const [remoteMedia, setRemoteMedia] = useState({ audio: true, video: true }); // состояние камеры/микрофона собеседника
 
   // Media controls
   const [audioEnabled, setAudioEnabled] = useState(true);
@@ -315,6 +316,12 @@ const VideoCallPage = () => {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setPeerConnected(true);
+      // Синхронизируем своё состояние камеры/микрофона с собеседником при соединении
+      const s = localStreamRef.current;
+      socketRef.current?.emit('media-state', {
+        audio: s?.getAudioTracks()[0]?.enabled ?? true,
+        video: s?.getVideoTracks()[0]?.enabled ?? true,
+      });
     });
 
     peer.on('close', () => {
@@ -448,6 +455,11 @@ const VideoCallPage = () => {
           if (cancelled || !msg) return;
           setChatMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
           if (!chatOpenRef.current) setChatUnread((u) => u + 1);
+        });
+
+        // Состояние медиа собеседника (камера/микрофон вкл/выкл)
+        socket.on('media-state', ({ audio, video }) => {
+          if (!cancelled) setRemoteMedia({ audio: audio !== false, video: video !== false });
         });
 
         // ─── Продление по согласию ───
@@ -602,12 +614,21 @@ const VideoCallPage = () => {
   }, [consultationLoaded, consultationId]);
 
   // Toggle audio
+  // Сообщаем собеседнику своё состояние (микрофон/камера) по факту стримов
+  const emitMediaState = () => {
+    const s = localStreamRef.current;
+    const audio = s?.getAudioTracks()[0]?.enabled ?? true;
+    const video = s?.getVideoTracks()[0]?.enabled ?? true;
+    socketRef.current?.emit('media-state', { audio, video });
+  };
+
   const toggleAudio = () => {
     if (localStreamRef.current) {
       const audioTrack = localStreamRef.current.getAudioTracks()[0];
       if (audioTrack) {
         audioTrack.enabled = !audioTrack.enabled;
         setAudioEnabled(audioTrack.enabled);
+        emitMediaState();
       }
     }
   };
@@ -677,6 +698,7 @@ const VideoCallPage = () => {
       if (videoTrack) {
         videoTrack.enabled = !videoTrack.enabled;
         setVideoEnabled(videoTrack.enabled);
+        emitMediaState();
       }
     }
   };
@@ -983,16 +1005,36 @@ const VideoCallPage = () => {
       >
         {/* Remote video (fills area) */}
         {peerConnected ? (
-          <video
-            ref={remoteVideoRef}
-            autoPlay
-            playsInline
-            style={{
-              width: '100%',
-              height: '100%',
-              objectFit: 'cover',
-            }}
-          />
+          <>
+            <video
+              ref={remoteVideoRef}
+              autoPlay
+              playsInline
+              style={{
+                width: '100%',
+                height: '100%',
+                objectFit: 'cover',
+                visibility: remoteMedia.video ? 'visible' : 'hidden',
+              }}
+            />
+            {/* Камера собеседника выключена → аватар вместо чёрного кадра */}
+            {!remoteMedia.video && (
+              <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+                <Box sx={{ width: 120, height: 120, borderRadius: '50%', background: 'linear-gradient(135deg, #B8956E, #8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontSize: 44, fontWeight: 300 }}>
+                  {(otherPartyName || remoteName)?.charAt(0) || '?'}
+                </Box>
+                <Typography sx={{ color: '#FFF', fontSize: 18 }}>{otherPartyName || remoteName || t('videoCall.participant')}</Typography>
+                <Typography sx={{ color: '#9A9A9A', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                  <VideocamOffOutlined sx={{ fontSize: 16 }} /> {t('videoCall.remoteCameraOff')}
+                </Typography>
+              </Box>
+            )}
+            {/* Плашка с именем + индикатор выключенного микрофона собеседника */}
+            <Box sx={{ position: 'absolute', bottom: 16, left: 16, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.55)', px: 1.5, py: 0.75, borderRadius: '20px', backdropFilter: 'blur(6px)' }}>
+              {!remoteMedia.audio && <MicOffOutlined sx={{ fontSize: 16, color: '#E06B6B' }} />}
+              <Typography sx={{ color: '#FFF', fontSize: 13, fontWeight: 500 }}>{otherPartyName || remoteName || t('videoCall.participant')}</Typography>
+            </Box>
+          </>
         ) : (
           <Box sx={{ textAlign: 'center', animation: `${fadeIn} 0.5s ease-out` }}>
             <Box
