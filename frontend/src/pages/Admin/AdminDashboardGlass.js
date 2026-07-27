@@ -61,7 +61,7 @@ const AdminDashboardGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [stats, setStats] = useState(null);
   const [recentActivity, setRecentActivity] = useState([]);
@@ -457,7 +457,9 @@ const AdminDashboardGlass = () => {
                 <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 150 }}>
                   {(() => {
                     const max = Math.max(1, ...reports.monthlyRevenue.map((m) => m.revenue));
-                    const ML = ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
+                    const ML = language === 'en'
+                      ? ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+                      : ['Янв', 'Фев', 'Мар', 'Апр', 'Май', 'Июн', 'Июл', 'Авг', 'Сен', 'Окт', 'Ноя', 'Дек'];
                     return reports.monthlyRevenue.map((m) => {
                       const h = Math.round((m.revenue / max) * 120);
                       return (

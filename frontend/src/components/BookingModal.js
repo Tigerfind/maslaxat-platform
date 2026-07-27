@@ -135,7 +135,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         setPromoApplied(false);
         setPromoBad(true);
         setPromoPercent(0);
-        setPromoMsg(res.message || '');
+        // Переводим причину по коду reason; fallback — сообщение с сервера
+        setPromoMsg(res.reason ? t('booking.promo_' + res.reason) : (res.message || ''));
       }
     } finally {
       setPromoLoading(false);
@@ -212,16 +213,19 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       ConflictDetector.logConflicts(validation);
 
+      // Переводим конфликт по его типу (раньше сообщения были захардкожены по-русски)
+      const conflictText = (c) => t('booking.conflict_' + c.type, { hours: c.details?.minimumAdvance ?? 2 });
+
       if (!validation.isValid) {
-        const message = ConflictDetector.formatConflictMessage(validation);
-        toast.error(message || t('booking.toastConflict'));
+        const crit = validation.criticalConflicts[0];
+        toast.error(crit ? conflictText(crit) : t('booking.toastConflict'));
         setLoading(false);
         return;
       }
 
       if (validation.warnings.length > 0) {
         validation.warnings.forEach((warning) => {
-          toast.warning(warning.message, { autoClose: 5000 });
+          toast.warning(conflictText(warning), { autoClose: 5000 });
         });
       }
 

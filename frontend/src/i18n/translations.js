@@ -590,7 +590,7 @@ const translations = {
       lawyer: 'Юрист', paid: 'Оплачено', confirmSent: 'Подтверждение отправлено на email и SMS',
       addCalendar: 'Добавить в календарь', myConsultations: 'Мои консультации',
       back: 'Назад', paying: 'Оплата…', bookFree: 'Записаться бесплатно', pay: 'Оплатить', next: 'Далее',
-      toastQuestion: 'Пожалуйста, опишите ваш вопрос', toastDateTime: 'Пожалуйста, выберите дату и время', toastConflict: 'Обнаружены конфликты при бронировании', toastError: 'Ошибка отправки запроса', toastCalendar: 'Событие добавлено в календарь',
+      toastQuestion: 'Пожалуйста, опишите ваш вопрос', toastDateTime: 'Пожалуйста, выберите дату и время', toastConflict: 'Обнаружены конфликты при бронировании', toastError: 'Ошибка отправки запроса', toastCalendar: 'Событие добавлено в календарь', conflict_duplicate: 'У вас уже есть активный запрос к этому юристу', conflict_time_overlap: 'Это время уже занято другой консультацией', conflict_unique_violation: 'Эти контактные данные уже используются', conflict_capacity_exceeded: 'Юрист полностью занят на эту дату', conflict_business_rule: 'Консультация должна быть забронирована минимум за {{hours}} ч', promoCheckError: 'Не удалось проверить промокод', promo_empty: 'Введите промокод', promo_notfound: 'Промокод не найден или неактивен', promo_expired: 'Срок действия промокода истёк', promo_limit: 'Лимит использований исчерпан', promo_min: 'Сумма меньше минимальной для этого промокода', promo_error: 'Не удалось проверить промокод',
       months: ['янв','фев','мар','апр','мая','июн','июл','авг','сен','окт','ноя','дек'], dows: ['Вс','Пн','Вт','Ср','Чт','Пт','Сб'],
     },
     uz: {
@@ -606,7 +606,7 @@ const translations = {
       lawyer: 'Юрист', paid: 'Тўланди', confirmSent: 'Тасдиқ email ва SMS орқали юборилди',
       addCalendar: 'Календарга қўшиш', myConsultations: 'Менинг консультацияларим',
       back: 'Орқага', paying: 'Тўлов…', bookFree: 'Бепул ёзилиш', pay: 'Тўлаш', next: 'Кейинги',
-      toastQuestion: 'Илтимос, саволингизни ёзинг', toastDateTime: 'Илтимос, сана ва вақтни танланг', toastConflict: 'Банд қилишда зиддиятлар аниқланди', toastError: 'Сўровни юборишда хатолик', toastCalendar: 'Тадбир календарга қўшилди',
+      toastQuestion: 'Илтимос, саволингизни ёзинг', toastDateTime: 'Илтимос, сана ва вақтни танланг', toastConflict: 'Банд қилишда зиддиятлар аниқланди', toastError: 'Сўровни юборишда хатолик', toastCalendar: 'Тадбир календарга қўшилди', conflict_duplicate: 'Сизда бу юристга фаол сўров бор', conflict_time_overlap: 'Бу вақт бошқа консультация билан банд', conflict_unique_violation: 'Бу контакт маълумотлари аллақачон ишлатилмоқда', conflict_capacity_exceeded: 'Юрист бу санага тўлиқ банд', conflict_business_rule: 'Консультация камида {{hours}} соат олдин банд қилиниши керак', promoCheckError: 'Промокодни текшириб бўлмади', promo_empty: 'Промокодни киритинг', promo_notfound: 'Промокод топилмади ёки нофаол', promo_expired: 'Промокод муддати тугаган', promo_limit: 'Фойдаланиш лимити тугаган', promo_min: 'Сумма бу промокод учун минимумдан кам', promo_error: 'Промокодни текшириб бўлмади',
       months: ['янв','фев','мар','апр','май','июн','июл','авг','сен','окт','ноя','дек'], dows: ['Як','Ду','Се','Чо','Па','Жу','Ша'],
     },
     en: {
@@ -622,7 +622,7 @@ const translations = {
       lawyer: 'Lawyer', paid: 'Paid', confirmSent: 'Confirmation sent to email and SMS',
       addCalendar: 'Add to calendar', myConsultations: 'My consultations',
       back: 'Back', paying: 'Paying…', bookFree: 'Book for free', pay: 'Pay', next: 'Next',
-      toastQuestion: 'Please describe your question', toastDateTime: 'Please select a date and time', toastConflict: 'Booking conflicts detected', toastError: 'Error sending request', toastCalendar: 'Event added to calendar',
+      toastQuestion: 'Please describe your question', toastDateTime: 'Please select a date and time', toastConflict: 'Booking conflicts detected', toastError: 'Error sending request', toastCalendar: 'Event added to calendar', conflict_duplicate: 'You already have an active request to this lawyer', conflict_time_overlap: 'This time is already taken by another consultation', conflict_unique_violation: 'These contact details are already in use', conflict_capacity_exceeded: 'The lawyer is fully booked on this date', conflict_business_rule: 'A consultation must be booked at least {{hours}}h in advance', promoCheckError: 'Could not validate the promo code', promo_empty: 'Enter a promo code', promo_notfound: 'Promo code not found or inactive', promo_expired: 'The promo code has expired', promo_limit: 'Usage limit reached', promo_min: 'Order amount is below the minimum for this code', promo_error: 'Could not validate the promo code',
       months: ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'], dows: ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'],
     },
   },

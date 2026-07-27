@@ -358,7 +358,7 @@ export const clientPromoService = {
       const response = await api.post('/promo/validate', { code, amount });
       return response.data;
     } catch (error) {
-      return { valid: false, message: 'Не удалось проверить промокод' };
+      return { valid: false, reason: 'error' };
     }
   },
 };

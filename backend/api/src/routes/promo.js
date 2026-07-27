@@ -21,6 +21,7 @@ router.post('/validate', authenticate, async (req, res, next) => {
     if (!result.valid) {
       return res.status(200).json({
         valid: false,
+        reason: result.reason, // код для перевода на фронте
         message: REASONS[result.reason] || 'Промокод недействителен',
         minAmount: result.minAmount,
       });
