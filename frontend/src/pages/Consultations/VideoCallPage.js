@@ -88,9 +88,10 @@ const VideoCallPage = () => {
 
   // Экран подготовки перед входом (лобби)
   const [inLobby, setInLobby] = useState(true);
-  const [devices, setDevices] = useState({ cameras: [], mics: [] });
+  const [devices, setDevices] = useState({ cameras: [], mics: [], speakers: [] });
   const [selectedCam, setSelectedCam] = useState('');
   const [selectedMic, setSelectedMic] = useState('');
+  const [selectedSpeaker, setSelectedSpeaker] = useState(''); // устройство вывода звука (setSinkId)
   const [lobbyCamOn, setLobbyCamOn] = useState(true);
   const [lobbyMicOn, setLobbyMicOn] = useState(true);
   const [micLevel, setMicLevel] = useState(0);
@@ -454,6 +455,7 @@ const VideoCallPage = () => {
           setDevices({
             cameras: list.filter((d) => d.kind === 'videoinput'),
             mics: list.filter((d) => d.kind === 'audioinput'),
+            speakers: list.filter((d) => d.kind === 'audiooutput'),
           });
           if (!selectedCam) { const c = stream.getVideoTracks()[0]?.getSettings().deviceId; if (c) setSelectedCam(c); }
           if (!selectedMic) { const m = stream.getAudioTracks()[0]?.getSettings().deviceId; if (m) setSelectedMic(m); }
@@ -738,6 +740,19 @@ const VideoCallPage = () => {
       toast.info(t('videoCall.pipUnsupported'));
     }
   };
+
+  // Применяем выбранный динамик к элементу с аудио собеседника (setSinkId —
+  // Chrome/Edge; в Safari/Firefox метода нет → тихо игнорируем). Пустой id = дефолт.
+  const applySinkId = useCallback((deviceId) => {
+    const el = remoteVideoRef.current;
+    if (!el || typeof el.setSinkId !== 'function' || !deviceId) return;
+    el.setSinkId(deviceId).catch(() => {});
+  }, []);
+
+  // Переключаем динамик и во время звонка (не только в лобби)
+  useEffect(() => {
+    applySinkId(selectedSpeaker);
+  }, [selectedSpeaker, peerConnected, applySinkId]);
 
   // Сообщаем собеседнику своё состояние (микрофон/камера) по факту стримов
   const emitMediaState = () => {
@@ -1126,6 +1141,12 @@ const VideoCallPage = () => {
             {devices.mics.length > 1 && (
               <select value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)} style={selStyle}>
                 {devices.mics.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.mic')} ${i + 1}`}</option>)}
+              </select>
+            )}
+            {devices.speakers.length > 1 && typeof document.createElement('video').setSinkId === 'function' && (
+              <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)} style={selStyle}>
+                <option value="">{t('videoCall.speakerDefault')}</option>
+                {devices.speakers.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.speaker')} ${i + 1}`}</option>)}
               </select>
             )}
           </Box>
