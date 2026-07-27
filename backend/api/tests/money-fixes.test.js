@@ -78,6 +78,25 @@ describe('деньги/эскроу — фиксы аудита', () => {
     expect(res.status).toBe(400);
   });
 
+  test('нельзя отменить идущую консультацию (in_progress)', async () => {
+    const client = await makeClient('mf-c8@test.uz');
+    const { user: lawyer } = await makeLawyer('mf-l8@test.uz');
+    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 100000 });
+    const res = await request(app).post(`/api/client/consultations/${cons.id}/cancel`)
+      .set('Authorization', `Bearer ${tokenFor(client)}`);
+    expect(res.status).toBe(400);
+  });
+
+  test('/join НЕ переводит консультацию в in_progress (закрыт бэкдор эскроу)', async () => {
+    const client = await makeClient('mf-c9@test.uz');
+    const { user: lawyer } = await makeLawyer('mf-l9@test.uz');
+    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000 });
+    const res = await request(app).post(`/api/client/consultations/${cons.id}/join`)
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+    expect(res.status).toBe(200);
+    expect((await Consultation.findByPk(cons.id)).status).toBe('accepted'); // статус не изменился
+  });
+
   test('акция «первая бесплатно» сгорает после отмены (нельзя фармить)', async () => {
     const client = await makeClient('mf-c6@test.uz');
     const { user: lawyer } = await makeLawyer('mf-l6@test.uz');

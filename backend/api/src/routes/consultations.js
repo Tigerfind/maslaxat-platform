@@ -174,11 +174,10 @@ router.post('/:id/join', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа к этой консультации' });
     }
 
-    if (['accepted', 'pending'].includes(consultation.status)) {
-      consultation.status = 'in_progress';
-      await consultation.save();
-    }
-
+    // ВАЖНО: /join НЕ переводит в in_progress. Раньше это давало бэкдор —
+    // юрист делал /join (pending/accepted → in_progress), затем /status=completed
+    // и забирал эскроу без реального звонка. В in_progress переводит только
+    // реальное соединение видеозвонка (video /start по peer-connect).
     res.json({ consultation });
   } catch (err) {
     next(err);
@@ -246,8 +245,10 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    // Нельзя отменять завершённую или уже отменённую (заодно идемпотентность возврата)
-    if (['completed', 'cancelled'].includes(consultation.status)) {
+    // Нельзя отменять завершённую/отменённую, а также ИДУЩУЮ (in_progress):
+    // иначе можно провести видеозвонок и «отменить» его вместо завершения,
+    // вернув деньги после оказанной услуги (гонка cancel vs complete).
+    if (['completed', 'cancelled', 'in_progress'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
     }
 
