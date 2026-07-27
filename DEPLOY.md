@@ -17,6 +17,9 @@
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |
 | `TURN_URL/USERNAME/CREDENTIAL` | Свой coturn-сервер или платный TURN (Twilio, Metered) | Видео нестабильно за реальными NAT (сейчас публичный демо-TURN) |
 | `SOCKET_REDIS` | `1` только при деплое на >1 инстанс | На одном инстансе не нужен (оставить `0`) |
+| `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
+| `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |
+| `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` | @BotFather (токен бота и его username без `@`) | Кнопка «Войти через Telegram» скрыта |
 
 > ⚠️ **Никогда не коммить `.env`** — он уже в `.gitignore`. Реальные секреты вносите
 > через хранилище платформы (Railway Variables, Docker secrets, env хостинга).
@@ -53,6 +56,11 @@ cp .env.example .env
   заблокированы (fail-closed).
 - **Почта**: при заданном `SMTP_*` письма идут реальным провайдером вместо Ethereal.
 - **Масштаб сокетов**: `SOCKET_REDIS=1` включает Redis-адаптер (уведомления/чат между инстансами).
+- **Web-push**: при заданных `VAPID_*` появляется тумблер «Push на это устройство» и уведомления
+  доставляются даже при закрытой вкладке (иначе фича просто скрыта, ничего не ломается).
+- **Соц-вход**: `GOOGLE_CLIENT_ID` показывает кнопку Google; `TELEGRAM_BOT_TOKEN` +
+  `TELEGRAM_BOT_USERNAME` — кнопку Telegram. Прод-примечание: для внешних скриптов в CSP фронта
+  разрешить `accounts.google.com` и `telegram.org`.
 
 ---
 
@@ -110,6 +118,9 @@ docker compose up -d --build
 - [ ] Видеозвонок между двумя устройствами соединяется (нужен TURN)
 - [ ] Уведомления приходят мгновенно (socket), не только по опросу
 - [ ] На телефоне сайт предлагает «Установить приложение» (PWA-иконки на месте)
+- [ ] 2FA: юрист/админ включает в Настройках (QR + код), при след. входе спрашивает код
+- [ ] Web-push (если `VAPID_*`): тумблер в Настройках подписывает, уведомление приходит при закрытой вкладке
+- [ ] Соц-вход (если ключи заданы): кнопки Google/Telegram видны и логинят
 - [ ] Ошибки не показывают stack trace клиенту (скрыт при `NODE_ENV=production`)
 
 ---
