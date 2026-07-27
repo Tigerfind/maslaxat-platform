@@ -77,4 +77,5 @@ async function disable() {
   }
 }
 
-export default { isSupported, getStatus, enable, disable };
+const pushService = { isSupported, getStatus, enable, disable };
+export default pushService;
