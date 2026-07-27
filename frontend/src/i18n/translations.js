@@ -788,19 +788,19 @@ const translations = {
 
   videoCall: {
     ru: {
-      connected: 'Соединено', waiting: 'Ожидание собеседника…', connecting: 'Соединение…', chatTitle: 'Чат', chatEmpty: 'Сообщений пока нет', chatPlaceholder: 'Написать…', qGood: 'Хорошая связь', qOk: 'Средняя связь', qPoor: 'Слабая связь',
+      connected: 'Соединено', waiting: 'Ожидание собеседника…', connecting: 'Соединение…', chatTitle: 'Чат', chatEmpty: 'Сообщений пока нет', chatPlaceholder: 'Написать…', qGood: 'Хорошая связь', qOk: 'Средняя связь', qPoor: 'Слабая связь', timeLeft: 'Осталось', overtime: 'Превышено', warn5: 'До конца консультации 5 минут', warn1: 'Осталась 1 минута', timeUp: 'Время консультации истекло',
       participant: 'Участник', roleClient: 'Клиент', roleLawyer: 'Юрист', cameraOff: 'Камера выкл.', you: 'Вы',
       connectionError: 'Ошибка соединения', goBack: 'Назад',
       loadError: 'Не удалось загрузить данные консультации', connectError: 'Не удалось подключиться к серверу связи', peerError: 'Не удалось установить соединение. Проверьте интернет и попробуйте снова.', mediaError: 'Доступ к камере/микрофону запрещён. Разрешите доступ и попробуйте снова.', startError: 'Не удалось начать видеозвонок: ',
     },
     uz: {
-      connected: 'Уланди', waiting: 'Суҳбатдош кутилмоқда…', connecting: 'Уланмоқда…', chatTitle: 'Чат', chatEmpty: 'Ҳали хабарлар йўқ', chatPlaceholder: 'Ёзиш…', qGood: 'Яхши алоқа', qOk: 'Ўртача алоқа', qPoor: 'Заиф алоқа',
+      connected: 'Уланди', waiting: 'Суҳбатдош кутилмоқда…', connecting: 'Уланмоқда…', chatTitle: 'Чат', chatEmpty: 'Ҳали хабарлар йўқ', chatPlaceholder: 'Ёзиш…', qGood: 'Яхши алоқа', qOk: 'Ўртача алоқа', qPoor: 'Заиф алоқа', timeLeft: 'Қолди', overtime: 'Ошиб кетди', warn5: 'Консультация тугашига 5 дақиқа', warn1: '1 дақиқа қолди', timeUp: 'Консультация вақти тугади',
       participant: 'Иштирокчи', roleClient: 'Мижоз', roleLawyer: 'Юрист', cameraOff: 'Камера ўчиқ', you: 'Сиз',
       connectionError: 'Уланиш хатоси', goBack: 'Орқага',
       loadError: 'Консультация маълумотларини юклаб бўлмади', connectError: 'Алоқа серверига уланиб бўлмади', peerError: 'Уланишни ўрнатиб бўлмади. Интернетни текширинг ва қайта уриниб кўринг.', mediaError: 'Камера/микрофонга рухсат берилмади. Рухсат беринг ва қайта уриниб кўринг.', startError: 'Видеоқўнғироқни бошлаб бўлмади: ',
     },
     en: {
-      connected: 'Connected', waiting: 'Waiting for the other party…', connecting: 'Connecting…', chatTitle: 'Chat', chatEmpty: 'No messages yet', chatPlaceholder: 'Type a message…', qGood: 'Good connection', qOk: 'Average connection', qPoor: 'Weak connection',
+      connected: 'Connected', waiting: 'Waiting for the other party…', connecting: 'Connecting…', chatTitle: 'Chat', chatEmpty: 'No messages yet', chatPlaceholder: 'Type a message…', qGood: 'Good connection', qOk: 'Average connection', qPoor: 'Weak connection', timeLeft: 'Left', overtime: 'Overtime', warn5: '5 minutes left in the consultation', warn1: '1 minute left', timeUp: 'Consultation time is up',
       participant: 'Participant', roleClient: 'Client', roleLawyer: 'Lawyer', cameraOff: 'Camera off', you: 'You',
       connectionError: 'Connection Error', goBack: 'Go Back',
       loadError: 'Failed to load consultation details', connectError: 'Failed to connect to signaling server', peerError: 'Failed to establish connection. Check your internet and try again.', mediaError: 'Camera/microphone access denied. Please allow access and try again.', startError: 'Failed to start video call: ',

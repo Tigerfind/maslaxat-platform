@@ -27,8 +27,28 @@ import {
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
 import { axelionColors } from '../../theme/axelionTheme';
+import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+
+// Короткий сигнал (Web Audio, без файлов) — уведомление о времени
+function beep() {
+  try {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    const ctx = new AC();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.frequency.value = 660;
+    gain.gain.setValueAtTime(0.0001, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.2, ctx.currentTime + 0.05);
+    gain.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + 0.5);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.52);
+    setTimeout(() => ctx.close().catch(() => {}), 700);
+  } catch (e) { /* автоплей заблокирован */ }
+}
 
 const fadeIn = keyframes`
   from { opacity: 0; transform: scale(0.95); }
@@ -92,6 +112,7 @@ const VideoCallPage = () => {
   const calleeIdRef = useRef(null); // id другой стороны — чтобы отменить ring при отбое
   const peerConnectedRef = useRef(false);
   const callDurationRef = useRef(0);
+  const warnedRef = useRef({ five: false, one: false, up: false });
 
   // Load consultation details
   useEffect(() => {
@@ -127,6 +148,16 @@ const VideoCallPage = () => {
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
   useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
+
+  // Предупреждения о времени: за 5 мин, за 1 мин (+сигнал) и при истечении.
+  useEffect(() => {
+    if (!peerConnected || !consultation) return;
+    const rem = (consultation.duration || 60) * 60 - callDuration;
+    const w = warnedRef.current;
+    if (rem <= 300 && rem > 60 && !w.five) { w.five = true; toast.info(t('videoCall.warn5')); }
+    if (rem <= 60 && rem > 0 && !w.one) { w.one = true; toast.warning(t('videoCall.warn1')); beep(); }
+    if (rem <= 0 && !w.up) { w.up = true; toast.warning(t('videoCall.timeUp')); beep(); }
+  }, [callDuration, peerConnected, consultation, t]);
 
   // Индикатор качества связи: опрашиваем WebRTC-статистику (RTT + потери пакетов)
   useEffect(() => {
@@ -663,12 +694,21 @@ const VideoCallPage = () => {
     : ringStatus === 'ringing'
     ? t('call.calling')
     : null;
+  // Обратный отсчёт от забронированной длительности (duration в минутах)
+  const bookedSeconds = (consultation?.duration || 60) * 60;
+  const remaining = bookedSeconds - callDuration;
+  const overtime = remaining < 0;
+  const timeText = overtime
+    ? `${t('videoCall.overtime')} +${formatDuration(-remaining)}`
+    : `${t('videoCall.timeLeft')} ${formatDuration(remaining)}`;
+  const timeColor = overtime ? '#D9534F' : remaining <= 300 ? '#C4A35A' : '#C9A980';
+
   const statusText = peerConnected
-    ? `${t('videoCall.connected')} · ${formatDuration(callDuration)}`
+    ? timeText
     : connected
     ? (ringText || t('videoCall.waiting'))
     : t('videoCall.connecting');
-  const statusDotColor = peerConnected ? '#7A9A6B' : '#C4A35A';
+  const statusDotColor = peerConnected ? (overtime ? '#D9534F' : '#7A9A6B') : '#C4A35A';
 
   // Shared control-button recipe
   const controlBtnSx = (active) => ({
@@ -752,8 +792,9 @@ const VideoCallPage = () => {
           />
           <Typography
             sx={{
-              color: '#C9A980',
+              color: peerConnected ? timeColor : '#C9A980',
               fontSize: 13,
+              fontWeight: peerConnected && remaining <= 300 ? 700 : 400,
               letterSpacing: '0.06em',
               whiteSpace: 'nowrap',
             }}
