@@ -138,9 +138,15 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(400).json({ error: 'Юрист сейчас недоступен для записи' });
     }
 
-    // Акция «каждая 3-я бесплатно»: право всегда пересчитываем на сервере,
+    // Длительность (30/60/90 мин) масштабирует цену — считаем на сервере так же,
+    // как показывает UI (base * duration / 60). Клиентской сумме не доверяем.
+    const ALLOWED_DURATIONS = [30, 60, 90];
+    let duration = parseInt(req.body.duration, 10);
+    if (!ALLOWED_DURATIONS.includes(duration)) duration = 60;
+
+    // Акция «первая консультация бесплатно»: право всегда пересчитываем на сервере,
     // клиентскому флагу не доверяем.
-    let price = lawyer.profile.price;
+    let price = Math.round((lawyer.profile.price * duration) / 60);
     let isFree = false;
     let notes = req.body.notes || null;
     let appliedPromo = null;
@@ -173,15 +179,20 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,
+      duration,
       price,
       isFree,
       notes,
       status: isFree ? 'pending' : 'payment_pending',
     });
 
-    // Учитываем использование промокода
+    // Учитываем использование промокода. Атомарно и с защитой лимита: условие
+    // used_count < usage_limit в самом UPDATE не даёт гонке превысить usageLimit.
     if (appliedPromo) {
-      await appliedPromo.increment('usedCount');
+      const { literal } = require('sequelize');
+      await appliedPromo.increment('usedCount', {
+        where: { [Op.or]: [{ usageLimit: null }, literal('used_count < usage_limit')] },
+      });
     }
 
     // Уведомляем юриста только о бесплатной брони; платную — после оплаты

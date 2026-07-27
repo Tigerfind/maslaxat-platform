@@ -246,6 +246,24 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    // Нельзя отменять завершённую или уже отменённую (заодно идемпотентность возврата)
+    if (['completed', 'cancelled'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
+    }
+
+    // Возврат эскроу: если консультация была оплачена — снимаем резерв с
+    // pendingBalance юриста и помечаем платёж возвращённым (иначе деньги
+    // зависали в pendingBalance навсегда). Реальный возврат клиенту через
+    // Payme — отдельно (Фаза 6); здесь чиним учёт.
+    const paidPayment = await Payment.findOne({
+      where: { consultationId: consultation.id, status: 'paid' },
+    });
+    if (paidPayment) {
+      const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
+      if (lp) await lp.decrement('pendingBalance', { by: paidPayment.amount });
+      await paidPayment.update({ status: 'refunded' });
+    }
+
     consultation.status = 'cancelled';
     consultation.notes = req.body.reason || 'Отменено пользователем';
     await consultation.save();

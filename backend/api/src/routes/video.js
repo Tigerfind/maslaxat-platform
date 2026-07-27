@@ -65,9 +65,13 @@ router.post('/consultation/:id/start', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
-    if (consultation.status === 'accepted' || consultation.status === 'pending') {
+    // Старт только из подтверждённой юристом консультации (accepted).
+    // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
+    if (consultation.status === 'accepted') {
       consultation.status = 'in_progress';
       await consultation.save();
+    } else if (consultation.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
     }
 
     res.json({ success: true, status: consultation.status });
@@ -90,6 +94,12 @@ router.post('/consultation/:id/end', async (req, res, next) => {
 
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    // Завершить можно только идущую сессию (in_progress) — иначе юрист мог бы
+    // забрать эскроу за непроведённую консультацию (pending/accepted).
+    if (consultation.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Завершить можно только начатую консультацию' });
     }
 
     // Единый идемпотентный путь: завершение + высвобождение эскроу (раньше видео-

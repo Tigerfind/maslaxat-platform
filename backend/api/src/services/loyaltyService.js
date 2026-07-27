@@ -3,7 +3,11 @@ const { Consultation } = require('../models');
 
 // Акция «первая консультация бесплатно»: приветственный бонус новому клиенту.
 // Первая консультация — бесплатно, все последующие — платные.
-const NOT_COUNTED = ['cancelled', 'rejected']; // отменённые/отклонённые не считаем
+const NOT_COUNTED = ['cancelled', 'rejected']; // платные: отменённые/отклонённые не считаем
+// Бесплатный бонус: не сгорает только если юрист ОТКЛОНИЛ (rejected) — это не вина
+// клиента. А отменённая клиентом бесплатная бронь (cancelled) СЧИТАЕТСЯ использованной,
+// иначе бонус фармится бесконечно (бронь → отмена → снова бесплатно).
+const FREE_NOT_COUNTED = ['rejected'];
 
 /**
  * Считает статус акции «первая консультация бесплатно» по факту бронирования.
@@ -15,7 +19,7 @@ async function computeLoyalty(clientId) {
     where: { clientId, isFree: false, status: { [Op.notIn]: NOT_COUNTED } },
   });
   const freeUsed = await Consultation.count({
-    where: { clientId, isFree: true, status: { [Op.notIn]: NOT_COUNTED } },
+    where: { clientId, isFree: true, status: { [Op.notIn]: FREE_NOT_COUNTED } },
   });
 
   const totalCount = paidCount + freeUsed;

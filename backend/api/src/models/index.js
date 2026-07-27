@@ -207,6 +207,11 @@ const Consultation = sequelize.define('Consultation', {
   preferredTime: {
     type: DataTypes.STRING,
   },
+  // Длительность в минутах (30/60/90) — влияет на цену
+  duration: {
+    type: DataTypes.INTEGER,
+    defaultValue: 60,
+  },
   price: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
