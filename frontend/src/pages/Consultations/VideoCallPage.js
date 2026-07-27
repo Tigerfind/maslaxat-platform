@@ -25,6 +25,7 @@ import {
   CloseOutlined,
   CallOutlined,
   MoreTimeOutlined,
+  PictureInPictureAltOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -721,6 +722,21 @@ const VideoCallPage = () => {
   }, [consultationLoaded, consultationId, inLobby]);
 
   // Toggle audio
+  // Мини-режим: видео собеседника в плавающем окне (браузерный Picture-in-Picture)
+  const togglePiP = async () => {
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (remoteVideoRef.current && document.pictureInPictureEnabled) {
+        await remoteVideoRef.current.requestPictureInPicture();
+      } else {
+        toast.info(t('videoCall.pipUnsupported'));
+      }
+    } catch (e) {
+      toast.info(t('videoCall.pipUnsupported'));
+    }
+  };
+
   // Сообщаем собеседнику своё состояние (микрофон/камера) по факту стримов
   const emitMediaState = () => {
     const s = localStreamRef.current;
@@ -1416,6 +1432,13 @@ const VideoCallPage = () => {
         <IconButton onClick={toggleFullscreen} sx={controlBtnSx(false)}>
           {isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
         </IconButton>
+
+        {/* Мини-режим (Picture-in-Picture) — только когда есть видео собеседника */}
+        {peerConnected && (
+          <IconButton onClick={togglePiP} sx={controlBtnSx(false)} title={t('videoCall.pip')}>
+            <PictureInPictureAltOutlined />
+          </IconButton>
+        )}
 
         {/* Extend consultation */}
         <IconButton onClick={() => setExtendOpen(true)} sx={controlBtnSx(false)} title={t('videoCall.extend')}>
