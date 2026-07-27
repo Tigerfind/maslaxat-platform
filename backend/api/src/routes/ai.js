@@ -416,12 +416,13 @@ const checkAIRateLimit = async (req, res, next) => {
       });
     }
 
-    await redis.incr(key);
-    if (used === 0) await redis.expire(key, 86400);
-
+    // НЕ инкрементим здесь — счётчик увеличиваем только после УСПЕШНОГО ответа
+    // (иначе пустое/провальное сообщение сжигало бы дневной лимит free-плана).
     res.set('X-AI-Limit', limit);
     res.set('X-AI-Remaining', limit - used - 1);
     req.subscriptionPlan = 'free';
+    req.aiLimitKey = key;
+    req.aiLimitUsed = used;
     next();
   } catch (err) {
     logger.error('AI rate limit check failed:', err.message);
@@ -432,9 +433,16 @@ const checkAIRateLimit = async (req, res, next) => {
 
 // ─── POST /api/ai/chat/message — send message (with optional files) ───
 router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files', 5), async (req, res, next) => {
+  const uploaded = req.files || [];
+  const cleanupFiles = () => {
+    for (const att of uploaded) {
+      try { fs.unlinkSync(att.path); } catch (e) { /* ignore */ }
+    }
+  };
   try {
     const { message, conversationId } = req.body;
     if (!message || !message.trim()) {
+      // файлы почистит finally
       return res.status(400).json({ error: 'Сообщение не может быть пустым' });
     }
 
@@ -486,11 +494,15 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
       await conversation.save();
     }
 
-    // Cleanup uploaded files
-    for (const att of attachments) {
+    // Учитываем free-лимит ТОЛЬКО после успешного ответа (не на ошибках)
+    if (req.aiLimitKey) {
       try {
-        fs.unlinkSync(att.path);
-      } catch (e) { /* ignore */ }
+        const redis = getRedis();
+        if (redis) {
+          await redis.incr(req.aiLimitKey);
+          if (req.aiLimitUsed === 0) await redis.expire(req.aiLimitKey, 86400);
+        }
+      } catch (e) { /* лимитер недоступен — не блокируем ответ */ }
     }
 
     res.json({
@@ -501,6 +513,8 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
     });
   } catch (err) {
     next(err);
+  } finally {
+    cleanupFiles(); // файлы удаляются на ЛЮБОМ исходе (успех/ошибка)
   }
 });
 
