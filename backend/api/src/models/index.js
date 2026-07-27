@@ -57,6 +57,11 @@ const User = sequelize.define('User', {
   verificationToken: {
     type: DataTypes.STRING,
   },
+  // Момент смены пароля — токены, выданные ДО него, отклоняются (сброс пароля
+  // при компрометации выкидывает старые сессии).
+  passwordChangedAt: {
+    type: DataTypes.DATE,
+  },
   // Соц-вход: идентификаторы провайдеров (заполняются при первом входе)
   googleId: {
     type: DataTypes.STRING,

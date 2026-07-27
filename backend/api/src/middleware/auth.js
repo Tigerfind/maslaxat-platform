@@ -23,6 +23,14 @@ const authenticate = async (req, res, next) => {
       return res.status(401).json({ error: 'Пользователь не найден' });
     }
 
+    // Токен, выданный ДО последней смены пароля (сброс при компрометации),
+    // считается недействительным — старые сессии выкидываются.
+    if (user.passwordChangedAt && decoded.iat) {
+      if (decoded.iat * 1000 < new Date(user.passwordChangedAt).getTime()) {
+        return res.status(401).json({ error: 'Сессия недействительна, войдите заново' });
+      }
+    }
+
     req.user = user;
     req.userId = user.id;
     req.userRole = user.role;

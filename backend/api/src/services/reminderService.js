@@ -64,27 +64,37 @@ async function checkUpcomingReminders() {
 
     let sent = 0;
     for (const c of candidates) {
-      const start = startDateTime(c);
-      if (!start) continue;
-      // Только если старт в пределах ближайшего часа и ещё не прошёл
-      if (start <= now || start > horizon) continue;
+      // Сбой на одной консультации не должен прерывать всю пачку
+      try {
+        const start = startDateTime(c);
+        if (!start) continue;
+        // Только если старт в пределах ближайшего часа и ещё не прошёл
+        if (start <= now || start > horizon) continue;
 
-      const lawyerName = c.lawyer?.name || 'юристом';
-      const clientName = c.client?.name || 'клиентом';
+        // Помечаем ОТПРАВЛЕННЫМ до рассылки: если письмо/уведомление упадёт
+        // после этого, следующий прогон не задублирует напоминание. Атомарно —
+        // чтобы параллельные прогоны не отправили дважды.
+        const [claimed] = await Consultation.update(
+          { reminderSent: true },
+          { where: { id: c.id, reminderSent: false } }
+        );
+        if (claimed === 0) continue; // уже занято другим прогоном
 
-      // Уведомление + email обоим участникам
-      if (c.clientId) {
-        await notifyConsultationReminder(c.clientId, lawyerName, c);
-        await sendReminderEmail(c.client, lawyerName, c);
+        const lawyerName = c.lawyer?.name || 'юристом';
+        const clientName = c.client?.name || 'клиентом';
+
+        if (c.clientId) {
+          await notifyConsultationReminder(c.clientId, lawyerName, c);
+          await sendReminderEmail(c.client, lawyerName, c);
+        }
+        if (c.lawyerId) {
+          await notifyConsultationReminder(c.lawyerId, clientName, c);
+          await sendReminderEmail(c.lawyer, clientName, c);
+        }
+        sent++;
+      } catch (itemErr) {
+        logger.error('[Reminder] item failed', { consultationId: c.id, error: itemErr.message });
       }
-      if (c.lawyerId) {
-        await notifyConsultationReminder(c.lawyerId, clientName, c);
-        await sendReminderEmail(c.lawyer, clientName, c);
-      }
-
-      c.reminderSent = true;
-      await c.save();
-      sent++;
     }
 
     if (sent > 0) logger.info(`[Reminder] Sent reminders for ${sent} consultation(s)`);

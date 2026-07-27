@@ -16,6 +16,15 @@ const twoFactorLimiter = rateLimit({
   message: { error: 'Слишком много попыток кода, попробуйте позже' },
 });
 
+// Лимитер на эндпоинты, рассылающие письма / перебираемые (register, forgot,
+// resend). Считает ВСЕ попытки (не только неудачные) — общий /api/auth лимитер
+// их пропускает из-за skipSuccessfulRequests → возможен email-бомбинг/enumeration.
+const emailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 15 : 200,
+  message: { error: 'Слишком много запросов, попробуйте позже' },
+});
+
 const signToken = (user) => {
   return jwt.sign(
     { id: user.id, role: user.role },
@@ -34,7 +43,7 @@ const signTwoFactorChallenge = (user) => {
 };
 
 // POST /api/auth/register
-router.post('/register', async (req, res, next) => {
+router.post('/register', emailLimiter, async (req, res, next) => {
   try {
     const schema = Joi.object({
       email: Joi.string().email().required(),
@@ -242,15 +251,19 @@ router.post('/telegram', async (req, res, next) => {
 
 // GET /api/auth/me
 const { authenticate } = require('../middleware/auth');
-router.get('/me', authenticate, async (req, res) => {
-  const user = await User.findByPk(req.userId, {
-    include: req.userRole === 'lawyer' ? [{ model: LawyerProfile, as: 'profile' }] : [],
-  });
-  res.json({ user });
+router.get('/me', authenticate, async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.userId, {
+      include: req.userRole === 'lawyer' ? [{ model: LawyerProfile, as: 'profile' }] : [],
+    });
+    res.json({ user });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // POST /api/auth/forgot-password
-router.post('/forgot-password', async (req, res, next) => {
+router.post('/forgot-password', emailLimiter, async (req, res, next) => {
   try {
     const { email } = req.body;
     if (!email) {
@@ -270,12 +283,11 @@ router.post('/forgot-password', async (req, res, next) => {
     user.resetTokenExpiry = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
     await user.save();
 
-    // Send email
-    try {
-      await sendPasswordResetEmail(email, resetToken);
-    } catch (emailErr) {
+    // Отправляем письмо fire-and-forget — не ждём, чтобы время ответа не
+    // отличалось для существующего/несуществующего email (тайминг-энумерация).
+    sendPasswordResetEmail(email, resetToken).catch((emailErr) => {
       logger.error('Failed to send reset email:', emailErr.message);
-    }
+    });
 
     res.json({ message: 'Если аккаунт существует, вы получите письмо для сброса пароля' });
   } catch (err) {
@@ -310,6 +322,7 @@ router.post('/reset-password', async (req, res, next) => {
     user.password = value.password;
     user.resetToken = null;
     user.resetTokenExpiry = null;
+    user.passwordChangedAt = new Date(); // инвалидирует ранее выданные JWT
     await user.save();
 
     res.json({ message: 'Пароль успешно изменён' });
@@ -338,10 +351,12 @@ router.get('/verify-email/:token', async (req, res, next) => {
 });
 
 // POST /api/auth/resend-verification
-router.post('/resend-verification', authenticate, async (req, res, next) => {
+router.post('/resend-verification', emailLimiter, authenticate, async (req, res, next) => {
   try {
     const user = await User.findByPk(req.userId);
-
+    if (!user) {
+      return res.status(404).json({ error: 'Пользователь не найден' });
+    }
     if (user.isVerified) {
       return res.status(400).json({ error: 'Email уже подтверждён' });
     }
