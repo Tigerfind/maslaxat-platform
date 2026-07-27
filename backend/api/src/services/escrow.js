@@ -30,12 +30,15 @@ async function completeConsultation(consultationId, notes, actualDuration) {
   }
 
   let released = false;
-  const payment = await Payment.findOne({ where: { consultationId, status: 'paid' } });
-  if (payment) {
+  // Сумма ВСЕХ оплаченных платежей по консультации (оригинал + продления) —
+  // раньше бралась только одна запись, и доплата за продление не выплачивалась.
+  const payments = await Payment.findAll({ where: { consultationId, status: 'paid' }, attributes: ['amount'] });
+  const totalPaid = payments.reduce((s, p) => s + Number(p.amount), 0);
+  if (totalPaid > 0) {
     const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
     if (lp) {
-      await lp.decrement('pendingBalance', { by: payment.amount });
-      await lp.increment('balance', { by: payment.amount });
+      await lp.decrement('pendingBalance', { by: totalPaid });
+      await lp.increment('balance', { by: totalPaid });
       released = true;
     }
   }

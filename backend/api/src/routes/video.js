@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { Consultation, User, LawyerProfile } = require('../models');
+const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
 
@@ -108,6 +108,66 @@ router.post('/consultation/:id/end', async (req, res, next) => {
     await completeConsultation(consultation.id, undefined, durationSeconds);
 
     res.json({ success: true, status: 'completed' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/video/consultation/:id/extend — продлить идущую консультацию
+// Доплата резервируется на эскроу юриста (в dev — тест-оплата; реальный Payme —
+// Фаза 6). Только участник, только in_progress.
+const EXTEND_MINUTES = [15, 30];
+router.post('/consultation/:id/extend', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id, {
+      include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile', attributes: ['price'] }] }],
+    });
+    if (!consultation) return res.status(404).json({ error: 'Consultation not found' });
+
+    const isParticipant = consultation.clientId === req.userId || consultation.lawyerId === req.userId;
+    if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
+    if (consultation.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
+    }
+
+    let minutes = parseInt(req.body?.minutes, 10);
+    if (!EXTEND_MINUTES.includes(minutes)) minutes = 15;
+
+    // Доплата = базовая ставка юриста × минуты/60 (на сервере, клиенту не доверяем)
+    const basePrice = consultation.lawyer?.profile?.price || 0;
+    const addAmount = Math.round((basePrice * minutes) / 60);
+
+    // Реальная оплата продления через Payme — Фаза 6; сейчас тест-режим.
+    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
+      return res.status(501).json({ error: 'Оплата продления через Payme ещё не подключена' });
+    }
+
+    // Продлеваем длительность и цену
+    consultation.duration = (consultation.duration || 60) + minutes;
+    consultation.price = (consultation.price || 0) + addAmount;
+    await consultation.save();
+
+    // Резервируем доплату на эскроу юриста + фиксируем платёж (тест)
+    if (addAmount > 0) {
+      await Payment.create({
+        userId: consultation.clientId,
+        consultationId: consultation.id,
+        amount: addAmount,
+        currency: 'UZS',
+        provider: 'payme',
+        status: 'paid',
+        providerResponse: { test: true, extension: minutes, paidAt: Date.now() },
+      });
+      await LawyerProfile.increment('pendingBalance', { by: addAmount, where: { userId: consultation.lawyerId } });
+    }
+
+    res.json({
+      success: true,
+      minutes,
+      addAmount,
+      duration: consultation.duration,
+      price: consultation.price,
+    });
   } catch (err) {
     next(err);
   }

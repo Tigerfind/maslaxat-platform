@@ -7,6 +7,7 @@ import {
   IconButton,
   CircularProgress,
   Badge,
+  Dialog,
   keyframes,
 } from '@mui/material';
 import {
@@ -23,6 +24,7 @@ import {
   SendOutlined,
   CloseOutlined,
   CallOutlined,
+  MoreTimeOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -89,6 +91,9 @@ const VideoCallPage = () => {
   const [callStartTime, setCallStartTime] = useState(null);
   const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
   const [quality, setQuality] = useState(null); // null|'good'|'ok'|'poor' — качество связи
+  const [extendOpen, setExtendOpen] = useState(false);
+  const [extending, setExtending] = useState(false);
+  const EXTEND_MIN = 15;
 
   // In-call chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -534,6 +539,28 @@ const VideoCallPage = () => {
     if (!socketRef.current) return;
     socketRef.current.emit('call-user', { consultationId });
     setRingStatus('ringing');
+  };
+
+  // Продление консультации: доплата резервируется, длительность растёт
+  const confirmExtend = async () => {
+    setExtending(true);
+    try {
+      const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: EXTEND_MIN });
+      const { addAmount, duration, price } = res.data || {};
+      setConsultation((prev) => (prev ? { ...prev, duration, price } : prev));
+      // сбрасываем предупреждения — они сработают заново ближе к новому концу
+      warnedRef.current = { five: false, one: false, up: false };
+      setExtendOpen(false);
+      toast.success(
+        t('videoCall.extendedOk')
+          .replace('{min}', EXTEND_MIN)
+          .replace('{sum}', Number(addAmount || 0).toLocaleString('ru-RU'))
+      );
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('videoCall.extendErr'));
+    } finally {
+      setExtending(false);
+    }
   };
 
   // Отправка сообщения в чат во время звонка
@@ -1006,6 +1033,11 @@ const VideoCallPage = () => {
           {isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
         </IconButton>
 
+        {/* Extend consultation */}
+        <IconButton onClick={() => setExtendOpen(true)} sx={controlBtnSx(false)} title={t('videoCall.extend')}>
+          <MoreTimeOutlined />
+        </IconButton>
+
         {/* Chat toggle */}
         <Badge badgeContent={chatUnread} color="error" overlap="circular">
           <IconButton onClick={() => setChatOpen((o) => !o)} sx={controlBtnSx(chatOpen)}>
@@ -1072,6 +1104,35 @@ const VideoCallPage = () => {
           </Box>
         </Box>
       )}
+
+      {/* ─── Диалог продления ─── */}
+      <Dialog open={extendOpen} onClose={() => !extending && setExtendOpen(false)} maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
+        <Box sx={{ p: 3, textAlign: 'center' }}>
+          <Box sx={{ width: 56, height: 56, mx: 'auto', mb: 2, borderRadius: '50%', bgcolor: 'rgba(184,149,110,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MoreTimeOutlined sx={{ fontSize: 28, color: '#C9A980' }} />
+          </Box>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{t('videoCall.extendTitle')}</Typography>
+          <Typography sx={{ fontSize: 14, color: '#AAA', mb: 0.5 }}>
+            {t('videoCall.extendBody').replace('{min}', EXTEND_MIN)}
+          </Typography>
+          {consultation && consultation.duration > 0 && (
+            <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 2.5 }}>
+              {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * EXTEND_MIN).toLocaleString('ru-RU')} {t('videoCall.sum')}
+            </Typography>
+          )}
+          <Box sx={{ display: 'flex', gap: 1.5 }}>
+            <button onClick={() => setExtendOpen(false)} disabled={extending}
+              style={{ flex: 1, background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
+              {t('videoCall.cancel')}
+            </button>
+            <button onClick={confirmExtend} disabled={extending}
+              style={{ flex: 1, background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}>
+              {extending ? t('videoCall.extendWait') : t('videoCall.extendConfirm')}
+            </button>
+          </Box>
+        </Box>
+      </Dialog>
     </Box>
   );
 };
