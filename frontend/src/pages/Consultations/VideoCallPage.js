@@ -6,6 +6,7 @@ import {
   Typography,
   IconButton,
   CircularProgress,
+  Badge,
   keyframes,
 } from '@mui/material';
 import {
@@ -18,6 +19,9 @@ import {
   StopScreenShareOutlined,
   FullscreenExitOutlined,
   FullscreenOutlined,
+  ChatBubbleOutline,
+  SendOutlined,
+  CloseOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -63,6 +67,14 @@ const VideoCallPage = () => {
   const [callDuration, setCallDuration] = useState(0);
   const [callStartTime, setCallStartTime] = useState(null);
   const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
+
+  // In-call chat
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatUnread, setChatUnread] = useState(0);
+  const chatOpenRef = useRef(false);
+  const chatEndRef = useRef(null);
 
   // Refs
   const localVideoRef = useRef(null);
@@ -111,6 +123,24 @@ const VideoCallPage = () => {
 
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
+
+  // Чат: синхрон ref, сброс непрочитанных при открытии, автоскролл
+  useEffect(() => {
+    chatOpenRef.current = chatOpen;
+    if (chatOpen) setChatUnread(0);
+  }, [chatOpen]);
+  useEffect(() => {
+    if (chatOpen) chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, chatOpen]);
+
+  // История чата этой консультации (чтобы в звонке была видна прежняя переписка)
+  useEffect(() => {
+    let alive = true;
+    api.get(`/chat/${consultationId}/messages`)
+      .then((res) => { if (alive) setChatMessages(res.data || []); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [consultationId]);
 
   useEffect(() => {
     if (callStartTime) {
@@ -302,6 +332,14 @@ const VideoCallPage = () => {
           if (cancelled) return;
           setConnected(true);
           socket.emit('join-room', { consultationId });
+          socket.emit('join-chat', { consultationId }); // чат в звонке — та же комната
+        });
+
+        // Сообщение чата во время звонка
+        socket.on('message-received', (msg) => {
+          if (cancelled || !msg) return;
+          setChatMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
+          if (!chatOpenRef.current) setChatUnread((u) => u + 1);
         });
 
         socket.on('connect_error', (err) => {
@@ -424,6 +462,14 @@ const VideoCallPage = () => {
         setAudioEnabled(audioTrack.enabled);
       }
     }
+  };
+
+  // Отправка сообщения в чат во время звонка
+  const sendChat = () => {
+    const text = chatInput.trim();
+    if (!text || !socketRef.current) return;
+    socketRef.current.emit('send-message', { consultationId, text });
+    setChatInput('');
   };
 
   // Toggle video
@@ -851,6 +897,13 @@ const VideoCallPage = () => {
           {isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
         </IconButton>
 
+        {/* Chat toggle */}
+        <Badge badgeContent={chatUnread} color="error" overlap="circular">
+          <IconButton onClick={() => setChatOpen((o) => !o)} sx={controlBtnSx(chatOpen)}>
+            <ChatBubbleOutline />
+          </IconButton>
+        </Badge>
+
         {/* End call */}
         <IconButton
           onClick={() => handleEndCall(true)}
@@ -868,6 +921,48 @@ const VideoCallPage = () => {
           <CallEndOutlined />
         </IconButton>
       </Box>
+
+      {/* ─── In-call chat panel ─── */}
+      {chatOpen && (
+        <Box
+          sx={{
+            position: 'absolute', top: 0, right: 0, bottom: 0, width: { xs: '100%', sm: 340 },
+            bgcolor: '#1E1E1E', borderLeft: '1px solid #3A3A3A', display: 'flex', flexDirection: 'column', zIndex: 20,
+          }}
+        >
+          <Box sx={{ height: 56, flexShrink: 0, px: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #3A3A3A' }}>
+            <Typography sx={{ color: '#FFF', fontSize: 15, fontWeight: 600 }}>{t('videoCall.chatTitle')}</Typography>
+            <IconButton onClick={() => setChatOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
+          </Box>
+          <Box sx={{ flex: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+            {chatMessages.length === 0 ? (
+              <Typography sx={{ color: '#777', fontSize: 13, textAlign: 'center', mt: 3 }}>{t('videoCall.chatEmpty')}</Typography>
+            ) : chatMessages.map((m) => {
+              const own = m.senderId === user?.id;
+              return (
+                <Box key={m.id} sx={{ alignSelf: own ? 'flex-end' : 'flex-start', maxWidth: '80%' }}>
+                  <Box sx={{ px: 1.5, py: 1, borderRadius: '12px', bgcolor: own ? '#B8956E' : '#2C2C2C', color: own ? '#1A1A1A' : '#EEE', fontSize: 13.5, lineHeight: 1.4, wordBreak: 'break-word' }}>
+                    {m.text}
+                  </Box>
+                </Box>
+              );
+            })}
+            <div ref={chatEndRef} />
+          </Box>
+          <Box sx={{ flexShrink: 0, p: 1.5, borderTop: '1px solid #3A3A3A', display: 'flex', gap: 1 }}>
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
+              placeholder={t('videoCall.chatPlaceholder')}
+              style={{ flex: 1, background: '#2C2C2C', border: '1px solid #3A3A3A', borderRadius: 10, color: '#FFF', padding: '10px 12px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' }}
+            />
+            <IconButton onClick={sendChat} disabled={!chatInput.trim()} sx={{ bgcolor: '#B8956E', color: '#1A1A1A', borderRadius: '10px', '&:hover': { bgcolor: '#C9A980' }, '&.Mui-disabled': { bgcolor: '#3A3A3A', color: '#666' } }}>
+              <SendOutlined sx={{ fontSize: 20 }} />
+            </IconButton>
+          </Box>
+        </Box>
+      )}
     </Box>
   );
 };
