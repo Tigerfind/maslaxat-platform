@@ -94,8 +94,12 @@ function initSignaling(io) {
       }
     });
 
-    // Relay WebRTC signaling data between peers
+    // Relay WebRTC signaling data between peers — только участнику ТОЙ ЖЕ комнаты
+    // (раньше релеили на любой socketId; теперь проверяем принадлежность к комнате).
     socket.on('signal', ({ to, signal }) => {
+      if (!socket.roomId || !to) return;
+      const target = io.sockets.sockets.get(to);
+      if (!target || !target.rooms.has(socket.roomId)) return;
       io.to(to).emit('signal', {
         from: socket.id,
         signal,
@@ -109,6 +113,12 @@ function initSignaling(io) {
     // комнату другой стороны (доходит на любой странице, если пользователь онлайн).
     socket.on('call-user', async ({ consultationId }) => {
       try {
+        // Троттлинг: не чаще одного вызова раз в 3с с одного сокета (анти-спам
+        // входящих/пропущенных, чтобы нельзя было завалить собеседника push/ring).
+        const now = Date.now();
+        if (socket._lastCallAt && now - socket._lastCallAt < 3000) return;
+        socket._lastCallAt = now;
+
         const consultation = await Consultation.findByPk(consultationId);
         if (!consultation) return;
         const isParticipant =
