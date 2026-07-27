@@ -26,6 +26,7 @@ import {
   CallOutlined,
   MoreTimeOutlined,
   PictureInPictureAltOutlined,
+  KeyboardOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -122,6 +123,7 @@ const VideoCallPage = () => {
   const endedRef = useRef(false);
 
   // In-call chat
+  const [shortcutsOpen, setShortcutsOpen] = useState(false); // оверлей-шпаргалка горячих клавиш
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
@@ -905,6 +907,33 @@ const VideoCallPage = () => {
     }
   };
 
+  // Горячие клавиши во время звонка: M — микрофон, V — камера, S — показ экрана,
+  // F — во весь экран, P — мини-режим, ? — шпаргалка. Слушатель вешаем один раз;
+  // актуальные обработчики читаем из рефа (не пересоздают listener каждый рендер).
+  // Игнорируем ввод в текстовых полях (чат) и лобби.
+  const shortcutActionsRef = useRef(null);
+  shortcutActionsRef.current = { toggleAudio, toggleVideo, toggleScreenShare, toggleFullscreen, togglePiP, inLobby };
+  useEffect(() => {
+    const onKey = (e) => {
+      const a = shortcutActionsRef.current;
+      if (!a || a.inLobby) return;
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const el = e.target;
+      if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable)) return;
+      switch (e.key.toLowerCase()) {
+        case 'm': e.preventDefault(); a.toggleAudio(); break;
+        case 'v': e.preventDefault(); a.toggleVideo(); break;
+        case 's': e.preventDefault(); a.toggleScreenShare(); break;
+        case 'f': e.preventDefault(); a.toggleFullscreen(); break;
+        case 'p': e.preventDefault(); a.togglePiP(); break;
+        case '?': e.preventDefault(); setShortcutsOpen((o) => !o); break;
+        default: break;
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Determine the other party's name
   const otherPartyName = consultation
     ? user?.role === 'lawyer'
@@ -1445,6 +1474,11 @@ const VideoCallPage = () => {
           <MoreTimeOutlined />
         </IconButton>
 
+        {/* Шпаргалка горячих клавиш */}
+        <IconButton onClick={() => setShortcutsOpen((o) => !o)} sx={controlBtnSx(shortcutsOpen)} title={t('videoCall.shortcuts')}>
+          <KeyboardOutlined />
+        </IconButton>
+
         {/* Chat toggle */}
         <Badge badgeContent={chatUnread} color="error" overlap="circular">
           <IconButton onClick={() => setChatOpen((o) => !o)} sx={controlBtnSx(chatOpen)}>
@@ -1469,6 +1503,49 @@ const VideoCallPage = () => {
           <CallEndOutlined />
         </IconButton>
       </Box>
+
+      {/* ─── Шпаргалка горячих клавиш ─── */}
+      {shortcutsOpen && (
+        <Box
+          onClick={() => setShortcutsOpen(false)}
+          sx={{
+            position: 'absolute', inset: 0, zIndex: 30, display: 'flex',
+            alignItems: 'center', justifyContent: 'center', bgcolor: 'rgba(0,0,0,0.55)',
+          }}
+        >
+          <Box
+            onClick={(e) => e.stopPropagation()}
+            sx={{
+              bgcolor: '#1E1E1E', border: '1px solid #3A3A3A', borderRadius: '16px',
+              p: 3, width: { xs: '86%', sm: 340 }, boxShadow: '0 12px 40px rgba(0,0,0,0.5)',
+            }}
+          >
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+              <Typography sx={{ color: '#F5F1EB', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <KeyboardOutlined sx={{ fontSize: 20, color: '#C9A980' }} /> {t('videoCall.shortcuts')}
+              </Typography>
+              <IconButton onClick={() => setShortcutsOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
+            </Box>
+            {[
+              ['M', t('videoCall.shortcutMic')],
+              ['V', t('videoCall.shortcutCam')],
+              ['S', t('videoCall.shortcutScreen')],
+              ['F', t('videoCall.shortcutFull')],
+              ['P', t('videoCall.shortcutPip')],
+              ['?', t('videoCall.shortcutHelp')],
+            ].map(([key, label]) => (
+              <Box key={key} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', py: 0.75 }}>
+                <Typography sx={{ color: '#C9C4BC', fontSize: '0.9rem' }}>{label}</Typography>
+                <Box component="kbd" sx={{
+                  minWidth: 28, textAlign: 'center', px: 1, py: 0.25, bgcolor: 'rgba(255,255,255,0.08)',
+                  border: '1px solid rgba(255,255,255,0.16)', borderRadius: '6px', color: '#F5F1EB',
+                  fontFamily: 'monospace', fontSize: '0.85rem', fontWeight: 600,
+                }}>{key}</Box>
+              </Box>
+            ))}
+          </Box>
+        </Box>
+      )}
 
       {/* ─── In-call chat panel ─── */}
       {chatOpen && (
