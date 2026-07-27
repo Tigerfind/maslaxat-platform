@@ -8,6 +8,58 @@ import { useTranslation } from '../../i18n';
 const API_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001';
 const RING_TIMEOUT_MS = 45000;
 
+// Рингтон без файлов-ассетов: классический двухтональный звонок через Web Audio
+// (440+480 Гц, «звонок… пауза»). Автозапуск может быть заблокирован политикой
+// автоплей до первого клика — тогда просто тихо (модалка всё равно видна).
+function createRingtone() {
+  let ctx = null;
+  let interval = null;
+  let stopped = true;
+
+  const burst = () => {
+    if (!ctx || ctx.state === 'closed') return;
+    const now = ctx.currentTime;
+    // Два тона по 0.4с (как телефонный «дзынь-дзынь»), затем пауза до след. цикла
+    [0, 0.6].forEach((offset) => {
+      [440, 480].forEach((freq) => {
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.value = freq;
+        gain.gain.setValueAtTime(0.0001, now + offset);
+        gain.gain.exponentialRampToValueAtTime(0.18, now + offset + 0.05);
+        gain.gain.exponentialRampToValueAtTime(0.0001, now + offset + 0.4);
+        osc.connect(gain).connect(ctx.destination);
+        osc.start(now + offset);
+        osc.stop(now + offset + 0.42);
+      });
+    });
+  };
+
+  return {
+    start() {
+      if (!stopped) return;
+      stopped = false;
+      try {
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) {
+          ctx = new AC();
+          if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+          burst();
+          interval = setInterval(burst, 3000);
+        }
+      } catch (e) { /* автоплей заблокирован — тихо */ }
+      try { navigator.vibrate?.([600, 400, 600, 400, 600]); } catch (e) { /* нет вибрации */ }
+    },
+    stop() {
+      stopped = true;
+      if (interval) { clearInterval(interval); interval = null; }
+      if (ctx) { ctx.close().catch(() => {}); ctx = null; }
+      try { navigator.vibrate?.(0); } catch (e) { /* noop */ }
+    },
+  };
+}
+
 /*
   Глобальный приём входящих звонков. Держит собственный socket на уровне App
   (переживает навигацию), слушает 'incoming-call' в персональной комнате
@@ -21,6 +73,7 @@ const GlobalCallListener = () => {
   const { isAuthenticated, token } = useSelector((s) => s.auth);
   const socketRef = useRef(null);
   const timeoutRef = useRef(null);
+  const ringtoneRef = useRef(null);
   const [call, setCall] = useState(null); // { consultationId, callerId, callerName, callerAvatar, type }
 
   // На самой странице звонка входящие подавляем (мы уже в звонке)
@@ -46,6 +99,14 @@ const GlobalCallListener = () => {
       socketRef.current = null;
     };
   }, [isAuthenticated, token]);
+
+  // Рингтон + вибрация, пока есть входящий вызов
+  useEffect(() => {
+    if (!call || onCallPage) return undefined;
+    if (!ringtoneRef.current) ringtoneRef.current = createRingtone();
+    ringtoneRef.current.start();
+    return () => ringtoneRef.current && ringtoneRef.current.stop();
+  }, [call, onCallPage]);
 
   // Автосброс вызова по таймауту (не ответили)
   useEffect(() => {
