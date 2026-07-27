@@ -212,6 +212,10 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.INTEGER,
     defaultValue: 60,
   },
+  // Фактическая длительность видеозвонка в секундах (по факту соединения)
+  actualDuration: {
+    type: DataTypes.INTEGER,
+  },
   price: {
     type: DataTypes.INTEGER,
     defaultValue: 0,

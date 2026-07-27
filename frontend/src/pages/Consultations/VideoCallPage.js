@@ -68,6 +68,7 @@ const VideoCallPage = () => {
   const [callDuration, setCallDuration] = useState(0);
   const [callStartTime, setCallStartTime] = useState(null);
   const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
+  const [quality, setQuality] = useState(null); // null|'good'|'ok'|'poor' — качество связи
 
   // In-call chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -90,6 +91,7 @@ const VideoCallPage = () => {
   const callStartedRef = useRef(false);
   const calleeIdRef = useRef(null); // id другой стороны — чтобы отменить ring при отбое
   const peerConnectedRef = useRef(false);
+  const callDurationRef = useRef(0);
 
   // Load consultation details
   useEffect(() => {
@@ -124,6 +126,34 @@ const VideoCallPage = () => {
 
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
+  useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
+
+  // Индикатор качества связи: опрашиваем WebRTC-статистику (RTT + потери пакетов)
+  useEffect(() => {
+    if (!peerConnected) { setQuality(null); return undefined; }
+    const iv = setInterval(async () => {
+      const pc = peerRef.current && peerRef.current._pc;
+      if (!pc || !pc.getStats) return;
+      try {
+        const stats = await pc.getStats();
+        let rtt = null; let lost = 0; let recv = 0;
+        stats.forEach((r) => {
+          if (r.type === 'candidate-pair' && r.currentRoundTripTime != null && (r.nominated || r.state === 'succeeded')) {
+            rtt = r.currentRoundTripTime;
+          }
+          if (r.type === 'inbound-rtp' && (r.kind === 'video' || r.mediaType === 'video')) {
+            lost = r.packetsLost || 0; recv = r.packetsReceived || 0;
+          }
+        });
+        const loss = recv + lost > 0 ? lost / (recv + lost) : 0;
+        let q = 'good';
+        if ((rtt != null && rtt > 0.3) || loss > 0.05) q = 'ok';
+        if ((rtt != null && rtt > 0.6) || loss > 0.12) q = 'poor';
+        setQuality(q);
+      } catch (e) { /* stats недоступны — игнор */ }
+    }, 3000);
+    return () => clearInterval(iv);
+  }, [peerConnected]);
 
   // Чат: синхрон ref, сброс непрочитанных при открытии, автоскролл
   useEffect(() => {
@@ -275,9 +305,11 @@ const VideoCallPage = () => {
       socketRef.current = null;
     }
 
-    // Mark consultation as completed
+    // Mark consultation as completed + фактическая длительность звонка
     try {
-      await api.post(`/video/consultation/${consultationId}/end`);
+      await api.post(`/video/consultation/${consultationId}/end`, {
+        durationSeconds: callDurationRef.current,
+      });
     } catch (err) {
       // Silently ignore — may already be completed
     }
@@ -727,6 +759,23 @@ const VideoCallPage = () => {
           >
             {statusText}
           </Typography>
+
+          {/* Индикатор качества связи (полоски сигнала) */}
+          {peerConnected && quality && (() => {
+            const qColor = quality === 'good' ? '#5AA06A' : quality === 'ok' ? '#C4A35A' : '#D9534F';
+            const bars = quality === 'good' ? 3 : quality === 'ok' ? 2 : 1;
+            const qLabel = t(quality === 'good' ? 'videoCall.qGood' : quality === 'ok' ? 'videoCall.qOk' : 'videoCall.qPoor');
+            return (
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 1.25 }} title={qLabel}>
+                <Box sx={{ display: 'flex', gap: '2px', alignItems: 'flex-end', height: 13 }}>
+                  {[1, 2, 3].map((n) => (
+                    <Box key={n} sx={{ width: 3, height: 3 + n * 3, borderRadius: '1px', bgcolor: n <= bars ? qColor : 'rgba(255,255,255,0.22)' }} />
+                  ))}
+                </Box>
+                <Typography sx={{ color: qColor, fontSize: 11, letterSpacing: '0.04em' }}>{qLabel}</Typography>
+              </Box>
+            );
+          })()}
         </Box>
 
         {/* Right spacer to keep status centred */}

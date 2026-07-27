@@ -11,9 +11,13 @@ const { Consultation, Payment, LawyerProfile } = require('../models');
  *
  * @returns {Promise<{consultation, released:boolean, alreadyCompleted:boolean}>}
  */
-async function completeConsultation(consultationId, notes) {
+async function completeConsultation(consultationId, notes, actualDuration) {
   const patch = { status: 'completed' };
   if (notes) patch.notes = notes;
+  // Фактическая длительность звонка (сек) — только если валидная и положительная
+  if (Number.isFinite(actualDuration) && actualDuration > 0) {
+    patch.actualDuration = Math.round(actualDuration);
+  }
 
   // Кто первый переведёт в completed — тот и высвобождает эскроу (гонки исключены).
   const [affected] = await Consultation.update(patch, {

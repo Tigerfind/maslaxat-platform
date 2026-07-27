@@ -36,12 +36,14 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const cons = await paidConsultation(client.id, lawyer.id, { status: 'in_progress' });
 
     const res = await request(app).post(`/api/video/consultation/${cons.id}/end`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`).send({ durationSeconds: 725 });
     expect(res.status).toBe(200);
 
     const after = await LawyerProfile.findByPk(lp.id);
     expect(Number(after.balance)).toBe(200000);
     expect(Number(after.pendingBalance)).toBe(0);
+    // фактическая длительность звонка сохранена
+    expect((await Consultation.findByPk(cons.id)).actualDuration).toBe(725);
   });
 
   test('video /start только из accepted, не из pending', async () => {

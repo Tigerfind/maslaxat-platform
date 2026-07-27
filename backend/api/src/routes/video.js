@@ -104,7 +104,8 @@ router.post('/consultation/:id/end', async (req, res, next) => {
 
     // Единый идемпотентный путь: завершение + высвобождение эскроу (раньше видео-
     // завершение НЕ платило юристу — деньги застревали в pendingBalance).
-    await completeConsultation(consultation.id);
+    const durationSeconds = parseInt(req.body?.durationSeconds, 10);
+    await completeConsultation(consultation.id, undefined, durationSeconds);
 
     res.json({ success: true, status: 'completed' });
   } catch (err) {
