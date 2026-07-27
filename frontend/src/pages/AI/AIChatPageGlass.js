@@ -50,14 +50,14 @@ const glassPanel = {
   overflow: 'hidden',
 };
 
-// Empty-state legal category chips → full prompt keys used by handleCategoryClick
+// Empty-state legal category chips. Метка → t('ai.'+k), клик → t('aiPrompts.'+k).
 const LAW_CATS = [
-  { k: 'catCivil', full: 'Гражданское право' },
-  { k: 'catFamily', full: 'Семейное право' },
-  { k: 'catLabor', full: 'Трудовое право' },
-  { k: 'catCriminal', full: 'Уголовное право' },
-  { k: 'catCorporate', full: 'Корпоративное право' },
-  { k: 'catLand', full: 'Земельное право' },
+  { k: 'catCivil' },
+  { k: 'catFamily' },
+  { k: 'catLabor' },
+  { k: 'catCriminal' },
+  { k: 'catCorporate' },
+  { k: 'catLand' },
 ];
 
 const AV_BG = [

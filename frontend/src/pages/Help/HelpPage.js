@@ -21,8 +21,7 @@ import { useTranslation } from '../../i18n';
    • FAQ accordions (animated grid-rows expand)
    • Ticket form: category chips + subject + message → submit
   Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
-  NOTE: ticket submit is client-side only — surfaces a toast. There is
-  no /api/support endpoint yet (see report), so no request is sent.
+  Ticket submit → POST /api/support (создаёт SupportTicket), затем toast.
   ─────────────────────────────────────────────────────────────
 */
 
