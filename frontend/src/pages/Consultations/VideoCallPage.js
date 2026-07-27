@@ -80,6 +80,8 @@ const VideoCallPage = () => {
   const [remoteName, setRemoteName] = useState('');
   const [remoteRole, setRemoteRole] = useState('');
   const [remoteMedia, setRemoteMedia] = useState({ audio: true, video: true }); // состояние камеры/микрофона собеседника
+  const [endSummary, setEndSummary] = useState(null); // { seconds } — сводка после завершения
+  const wasConnectedRef = useRef(false); // был ли реальный сеанс (для «переподключение» и сводки)
 
   // Экран подготовки перед входом (лобби)
   const [inLobby, setInLobby] = useState(true);
@@ -331,6 +333,7 @@ const VideoCallPage = () => {
         remoteVideoRef.current.srcObject = remoteStream;
       }
       setPeerConnected(true);
+      wasConnectedRef.current = true;
       // Синхронизируем своё состояние камеры/микрофона с собеседником при соединении
       const s = localStreamRef.current;
       socketRef.current?.emit('media-state', {
@@ -399,21 +402,29 @@ const VideoCallPage = () => {
     }
 
     // Mark consultation as completed + фактическая длительность звонка
+    const seconds = callDurationRef.current;
     try {
       await api.post(`/video/consultation/${consultationId}/end`, {
-        durationSeconds: callDurationRef.current,
+        durationSeconds: seconds,
       });
     } catch (err) {
       // Silently ignore — may already be completed
     }
 
-    // Navigate back
-    if (user?.role === 'lawyer') {
+    // Если был реальный сеанс — показываем сводку (уходим по кнопке «Готово»),
+    // иначе (недозвон/отмена) — сразу возвращаемся.
+    if (wasConnectedRef.current) {
+      setEndSummary({ seconds });
+    } else if (user?.role === 'lawyer') {
       navigate('/lawyer/dashboard');
     } else {
       navigate('/consultations');
     }
   }, [consultationId, navigate, user]);
+
+  const leaveSummary = () => {
+    navigate(user?.role === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
+  };
 
   // ─── Лобби: превью камеры, список устройств, уровень микрофона ───
   const consultationLoaded = Boolean(consultation);
@@ -962,12 +973,16 @@ const VideoCallPage = () => {
     : `${t('videoCall.timeLeft')} ${formatDuration(remaining)}`;
   const timeColor = overtime ? '#D9534F' : remaining <= 300 ? '#C4A35A' : '#C9A980';
 
+  // Связь прервалась после реального соединения → «переподключение»
+  const reconnecting = !peerConnected && wasConnectedRef.current && connected;
   const statusText = peerConnected
     ? timeText
+    : reconnecting
+    ? t('videoCall.reconnecting')
     : connected
     ? (ringText || t('videoCall.waiting'))
     : t('videoCall.connecting');
-  const statusDotColor = peerConnected ? (overtime ? '#D9534F' : '#7A9A6B') : '#C4A35A';
+  const statusDotColor = peerConnected ? (overtime ? '#D9534F' : '#7A9A6B') : reconnecting ? '#D9534F' : '#C4A35A';
 
   // Shared control-button recipe
   const controlBtnSx = (active) => ({
@@ -982,6 +997,26 @@ const VideoCallPage = () => {
     },
     transition: 'all 0.2s ease',
   });
+
+  // ─── Экран сводки после завершения ───
+  if (endSummary) {
+    const planned = (consultation?.duration || 60) * 60;
+    return (
+      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, animation: `${fadeIn} 0.3s ease-out` }}>
+        <Box sx={{ width: 72, height: 72, mb: 2.5, borderRadius: '50%', bgcolor: 'rgba(90,160,106,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <CallEndOutlined sx={{ fontSize: 34, color: '#5AA06A' }} />
+        </Box>
+        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 1 }}>{t('videoCall.callEnded')}</Typography>
+        <Typography sx={{ fontSize: 32, fontWeight: 300, color: '#C9A980', mb: 0.5 }}>{formatDuration(endSummary.seconds)}</Typography>
+        <Typography sx={{ fontSize: 13, color: '#9A9A9A', mb: 3 }}>
+          {t('videoCall.callDurationOf').replace('{planned}', Math.round(planned / 60))}
+        </Typography>
+        <button onClick={leaveSummary} style={{ background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px 40px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}>
+          {t('videoCall.done')}
+        </button>
+      </Box>
+    );
+  }
 
   // ─── Экран подготовки (лобби) ───
   if (inLobby) {
