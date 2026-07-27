@@ -158,6 +158,18 @@ const VideoCallPage = () => {
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
   useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
 
+  // Синхронизируем состояние фуллскрина с реальным (в т.ч. выход по ESC),
+  // иначе кнопка «залипала» в неверном состоянии.
+  useEffect(() => {
+    const onFsChange = () => setIsFullscreen(!!(document.fullscreenElement || document.webkitFullscreenElement));
+    document.addEventListener('fullscreenchange', onFsChange);
+    document.addEventListener('webkitfullscreenchange', onFsChange);
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange);
+      document.removeEventListener('webkitfullscreenchange', onFsChange);
+    };
+  }, []);
+
   // Предупреждения о времени: за 5 мин, за 1 мин (+сигнал) и при истечении.
   useEffect(() => {
     if (!peerConnected || !consultation) return;
@@ -654,6 +666,10 @@ const VideoCallPage = () => {
       }
       setScreenSharing(false);
     } else {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        toast.error(t('videoCall.screenShareUnsupported'));
+        return;
+      }
       try {
         const screenStream = await navigator.mediaDevices.getDisplayMedia({
           video: true,
@@ -679,18 +695,28 @@ const VideoCallPage = () => {
         setScreenSharing(true);
       } catch (err) {
         console.error('Screen share error:', err);
+        // Отмену пользователем (закрыл диалог выбора) молчим, прочее — сообщаем
+        if (err.name !== 'NotAllowedError' && err.name !== 'AbortError') {
+          toast.error(t('videoCall.screenShareError'));
+        }
       }
     }
   };
 
-  // Toggle fullscreen
+  // Toggle fullscreen (кросс-браузерно; состояние синхронит fullscreenchange-эффект)
   const toggleFullscreen = () => {
-    if (!document.fullscreenElement) {
-      containerRef.current?.requestFullscreen();
-      setIsFullscreen(true);
+    const fsEl = document.fullscreenElement || document.webkitFullscreenElement;
+    if (!fsEl) {
+      const el = containerRef.current;
+      const req = el && (el.requestFullscreen || el.webkitRequestFullscreen);
+      if (req) {
+        try { const p = req.call(el); if (p && p.catch) p.catch(() => {}); } catch (e) { /* не поддержано */ }
+      }
     } else {
-      document.exitFullscreen();
-      setIsFullscreen(false);
+      const exit = document.exitFullscreen || document.webkitExitFullscreen;
+      if (exit) {
+        try { const p = exit.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) { /* noop */ }
+      }
     }
   };
 
@@ -1041,12 +1067,14 @@ const VideoCallPage = () => {
       {/* Controls bar */}
       <Box
         sx={{
-          height: 96,
+          minHeight: 96,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          gap: 2,
+          flexWrap: 'wrap',
+          gap: { xs: 1.25, sm: 2 },
+          py: 1.5,
           borderTop: '1px solid #3A3A3A',
         }}
       >
