@@ -22,6 +22,7 @@ import {
   ChatBubbleOutline,
   SendOutlined,
   CloseOutlined,
+  CallOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -464,6 +465,13 @@ const VideoCallPage = () => {
     }
   };
 
+  // Перезвонить — повторный вызов собеседника после отклонения/недозвона
+  const retryCall = () => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('call-user', { consultationId });
+    setRingStatus('ringing');
+  };
+
   // Отправка сообщения в чат во время звонка
   const sendChat = () => {
     const text = chatInput.trim();
@@ -784,11 +792,21 @@ const VideoCallPage = () => {
             >
               {remoteRole === 'client' ? t('videoCall.roleClient') : t('videoCall.roleLawyer')}
             </Typography>
-            <CircularProgress
-              size={28}
-              thickness={2}
-              sx={{ color: '#C9A980', mt: 3 }}
-            />
+            {ringStatus === 'declined' || ringStatus === 'offline' ? (
+              <button
+                onClick={retryCall}
+                style={{
+                  marginTop: 24, display: 'inline-flex', alignItems: 'center', gap: 8,
+                  background: '#5AA06A', color: '#FFFFFF', border: 'none', fontSize: 14, fontWeight: 600,
+                  padding: '12px 24px', borderRadius: 24, cursor: 'pointer', fontFamily: 'inherit',
+                  boxShadow: '0 6px 18px rgba(90,160,106,0.4)',
+                }}
+              >
+                <CallOutlined sx={{ fontSize: 20 }} /> {t('call.callBack')}
+              </button>
+            ) : (
+              <CircularProgress size={28} thickness={2} sx={{ color: '#C9A980', mt: 3 }} />
+            )}
           </Box>
         )}
 

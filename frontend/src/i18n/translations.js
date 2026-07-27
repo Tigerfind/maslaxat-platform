@@ -1138,9 +1138,9 @@ const translations = {
   },
 
   call: {
-    ru: { incoming: 'Входящий видеозвонок', callBtn: 'Позвонить', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
-    uz: { incoming: 'Кирувчи видеоқўнғироқ', callBtn: 'Қўнғироқ қилиш', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
-    en: { incoming: 'Incoming video call', callBtn: 'Call', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
+    ru: { incoming: 'Входящий видеозвонок', callBtn: 'Позвонить', callBack: 'Перезвонить', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
+    uz: { incoming: 'Кирувчи видеоқўнғироқ', callBtn: 'Қўнғироқ қилиш', callBack: 'Қайта қўнғироқ', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
+    en: { incoming: 'Incoming video call', callBtn: 'Call', callBack: 'Call back', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
   },
 
   compare: {

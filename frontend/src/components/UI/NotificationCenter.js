@@ -231,6 +231,13 @@ const NotificationCenter = ({ sx = {} }) => {
                           onClick={() => {
                             if (!notif.isRead) handleMarkRead(notif.id);
                             handleClose();
+                            const m = notif.metadata || {};
+                            // Пропущенный звонок → открыть звонок (перезвонить);
+                            // прочие с консультацией → в «Мои консультации».
+                            if (m.consultationId) {
+                              if (m.missedCall) navigate(`/consultations/video/${m.consultationId}`);
+                              else navigate('/consultations');
+                            }
                           }}
                           sx={{
                             display: 'flex', gap: 1.5, p: 2,
