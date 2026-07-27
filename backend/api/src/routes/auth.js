@@ -4,8 +4,17 @@ const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const { Op } = require('sequelize');
+const rateLimit = require('express-rate-limit');
 const { User, LawyerProfile } = require('../models');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
+
+// Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
+// (считаем все попытки, не только неудачные).
+const twoFactorLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: process.env.NODE_ENV === 'production' ? 10 : 100,
+  message: { error: 'Слишком много попыток кода, попробуйте позже' },
+});
 
 const signToken = (user) => {
   return jwt.sign(
@@ -122,7 +131,7 @@ router.post('/login', async (req, res, next) => {
 });
 
 // POST /api/auth/login/2fa — второй шаг входа: проверка кода TOTP или резервного
-router.post('/login/2fa', async (req, res, next) => {
+router.post('/login/2fa', twoFactorLimiter, async (req, res, next) => {
   try {
     const { tempToken, code } = req.body || {};
     if (!tempToken || !code) {

@@ -164,19 +164,29 @@ function initSignaling(io) {
       }
     });
 
+    // Ответ на вызов (accept/decline/cancel): адресата вычисляем на СЕРВЕРЕ по
+    // консультации и проверяем участие — раньше слепо верили payload-у callerId/
+    // calleeId, и любой мог слать call-accepted/declined/cancelled кому угодно.
+    const relayCall = async (event, consultationId) => {
+      if (!consultationId) return;
+      const consultation = await Consultation.findByPk(consultationId, { attributes: ['id', 'clientId', 'lawyerId'] });
+      if (!consultation) return;
+      if (consultation.clientId !== socket.userId && consultation.lawyerId !== socket.userId) return;
+      const otherId = consultation.clientId === socket.userId ? consultation.lawyerId : consultation.clientId;
+      io.to(`user:${otherId}`).emit(event, { consultationId, byUserId: socket.userId });
+    };
+
     // Собеседник принял вызов — сообщаем звонящему (оба идут в видео-комнату)
-    socket.on('call-accept', ({ consultationId, callerId }) => {
-      if (callerId) io.to(`user:${callerId}`).emit('call-accepted', { consultationId, byUserId: socket.userId });
+    socket.on('call-accept', ({ consultationId }) => {
+      relayCall('call-accepted', consultationId).catch((err) => logger.error('[Socket] call-accept', { error: err.message }));
     });
-
     // Собеседник отклонил вызов
-    socket.on('call-decline', ({ consultationId, callerId }) => {
-      if (callerId) io.to(`user:${callerId}`).emit('call-declined', { consultationId, byUserId: socket.userId });
+    socket.on('call-decline', ({ consultationId }) => {
+      relayCall('call-declined', consultationId).catch((err) => logger.error('[Socket] call-decline', { error: err.message }));
     });
-
     // Звонящий отменил вызов до ответа
-    socket.on('call-cancel', ({ consultationId, calleeId }) => {
-      if (calleeId) io.to(`user:${calleeId}`).emit('call-cancelled', { consultationId });
+    socket.on('call-cancel', ({ consultationId }) => {
+      relayCall('call-cancelled', consultationId).catch((err) => logger.error('[Socket] call-cancel', { error: err.message }));
     });
 
     // ─── CHAT EVENTS ─────────────────────────────────────────

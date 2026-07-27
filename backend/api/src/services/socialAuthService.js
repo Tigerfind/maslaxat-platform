@@ -28,6 +28,9 @@ async function verifyGoogleToken(credential) {
     const ticket = await googleClient.verifyIdToken({ idToken: credential, audience: GOOGLE_CLIENT_ID });
     const p = ticket.getPayload();
     if (!p || !p.email) return null;
+    // Требуем подтверждённый Google email — иначе нельзя связывать по email с
+    // существующим аккаунтом (иначе возможен захват чужого аккаунта).
+    if (p.email_verified !== true) return null;
     return { googleId: p.sub, email: p.email.toLowerCase(), name: p.name || p.email.split('@')[0], avatar: p.picture || null };
   } catch (err) {
     logger.error('Google token verify failed:', err.message);
@@ -46,7 +49,10 @@ function verifyTelegramAuth(data) {
     .join('\n');
   const secretKey = crypto.createHash('sha256').update(TELEGRAM_BOT_TOKEN).digest();
   const hmac = crypto.createHmac('sha256', secretKey).update(checkString).digest('hex');
-  if (hmac !== hash) return null;
+  // Constant-time сравнение (одинаковой длины) вместо !==
+  const a = Buffer.from(hmac, 'hex');
+  const b = Buffer.from(String(hash), 'hex');
+  if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
   // Защита от повторного использования старых данных (24 часа)
   const authDate = parseInt(fields.auth_date, 10);
   if (!authDate || Date.now() / 1000 - authDate > 86400) return null;
