@@ -339,6 +339,12 @@ const ConsultationsPageGlass = () => {
                   {isVideo ? t('consultations.typeVideo') : t('consultations.typeChat')}
                 </span>
                 <span style={{ color: 'var(--text)', fontWeight: 500 }}>{price} {t('consultations.sum')}</span>
+                {c.actualDuration > 0 && (
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                    <AccessTimeRounded sx={{ fontSize: 16 }} />
+                    {t('consultations.callDuration')}: {Math.floor(c.actualDuration / 60)}:{String(c.actualDuration % 60).padStart(2, '0')}
+                  </span>
+                )}
               </div>
 
               {/* Архив: показываем оценку, которую поставил клиент (звёзды + текст) */}
