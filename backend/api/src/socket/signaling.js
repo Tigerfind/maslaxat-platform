@@ -186,6 +186,19 @@ function initSignaling(io) {
       io.to(`user:${otherId}`).emit(event, { consultationId, byUserId: socket.userId });
     };
 
+    // ─── ПРОДЛЕНИЕ ПО СОГЛАСИЮ ────────────────────────────────
+    // Реле внутри видео-комнаты (оба участника уже проверены в join-room):
+    // один предлагает продлить, другой принимает/отклоняет.
+    socket.on('extend-request', ({ minutes }) => {
+      if (socket.roomId) socket.to(socket.roomId).emit('extend-request', { minutes, from: socket.userName });
+    });
+    socket.on('extend-accept', (payload) => {
+      if (socket.roomId) socket.to(socket.roomId).emit('extend-accept', payload || {});
+    });
+    socket.on('extend-decline', () => {
+      if (socket.roomId) socket.to(socket.roomId).emit('extend-decline');
+    });
+
     // Собеседник принял вызов — сообщаем звонящему (оба идут в видео-комнату)
     socket.on('call-accept', ({ consultationId }) => {
       relayCall('call-accepted', consultationId).catch((err) => logger.error('[Socket] call-accept', { error: err.message }));

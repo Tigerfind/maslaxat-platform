@@ -93,7 +93,11 @@ const VideoCallPage = () => {
   const [quality, setQuality] = useState(null); // null|'good'|'ok'|'poor' — качество связи
   const [extendOpen, setExtendOpen] = useState(false);
   const [extending, setExtending] = useState(false);
+  const [extendMin, setExtendMin] = useState(15); // выбор длительности продления
+  const [extendWaiting, setExtendWaiting] = useState(false); // ждём ответ собеседника
+  const [incomingExtend, setIncomingExtend] = useState(null); // { minutes, from }
   const EXTEND_MIN = 15;
+  const extendWaitRef = useRef(null);
 
   // In-call chat
   const [chatOpen, setChatOpen] = useState(false);
@@ -412,6 +416,32 @@ const VideoCallPage = () => {
           if (!chatOpenRef.current) setChatUnread((u) => u + 1);
         });
 
+        // ─── Продление по согласию ───
+        // Пришло предложение продлить — показываем окошко для принятия
+        socket.on('extend-request', ({ minutes, from }) => {
+          if (!cancelled) setIncomingExtend({ minutes: minutes || 15, from });
+        });
+        // Собеседник принял наше предложение — применяем новые значения у себя
+        socket.on('extend-accept', (data) => {
+          if (cancelled) return;
+          setExtendWaiting(false);
+          if (data && data.duration) {
+            setConsultation((prev) => (prev ? { ...prev, duration: data.duration, price: data.price } : prev));
+            warnedRef.current = { five: false, one: false, up: false };
+            toast.success(
+              t('videoCall.extendedOk')
+                .replace('{min}', data.minutes || EXTEND_MIN)
+                .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
+            );
+          }
+        });
+        // Собеседник отклонил продление
+        socket.on('extend-decline', () => {
+          if (cancelled) return;
+          setExtendWaiting(false);
+          toast.info(t('videoCall.extendDeclined'));
+        });
+
         socket.on('connect_error', (err) => {
           console.error('Socket connection error:', err.message);
           if (!cancelled) {
@@ -541,26 +571,47 @@ const VideoCallPage = () => {
     setRingStatus('ringing');
   };
 
-  // Продление консультации: доплата резервируется, длительность растёт
-  const confirmExtend = async () => {
+  // Предлагаем продление собеседнику (применяется только после его согласия)
+  const proposeExtend = () => {
+    if (!socketRef.current) return;
+    socketRef.current.emit('extend-request', { minutes: extendMin });
+    setExtendOpen(false);
+    setExtendWaiting(true);
+    clearTimeout(extendWaitRef.current);
+    extendWaitRef.current = setTimeout(() => setExtendWaiting(false), 30000);
+  };
+
+  // Применяем продление у себя из ответа бэкенда
+  const applyExtendResult = (data) => {
+    setConsultation((prev) => (prev ? { ...prev, duration: data.duration, price: data.price } : prev));
+    warnedRef.current = { five: false, one: false, up: false };
+    toast.success(
+      t('videoCall.extendedOk')
+        .replace('{min}', data.minutes || EXTEND_MIN)
+        .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
+    );
+  };
+
+  // Принять входящее предложение продления: применяем на сервере (доплата
+  // клиента) и сообщаем инициатору новыми значениями.
+  const acceptIncomingExtend = async () => {
+    if (!incomingExtend) return;
     setExtending(true);
     try {
-      const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: EXTEND_MIN });
-      const { addAmount, duration, price } = res.data || {};
-      setConsultation((prev) => (prev ? { ...prev, duration, price } : prev));
-      // сбрасываем предупреждения — они сработают заново ближе к новому концу
-      warnedRef.current = { five: false, one: false, up: false };
-      setExtendOpen(false);
-      toast.success(
-        t('videoCall.extendedOk')
-          .replace('{min}', EXTEND_MIN)
-          .replace('{sum}', Number(addAmount || 0).toLocaleString('ru-RU'))
-      );
+      const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: incomingExtend.minutes });
+      applyExtendResult(res.data || {});
+      socketRef.current?.emit('extend-accept', res.data || {});
+      setIncomingExtend(null);
     } catch (e) {
       toast.error(e.response?.data?.error || t('videoCall.extendErr'));
     } finally {
       setExtending(false);
     }
+  };
+
+  const declineIncomingExtend = () => {
+    socketRef.current?.emit('extend-decline');
+    setIncomingExtend(null);
   };
 
   // Отправка сообщения в чат во время звонка
@@ -1105,34 +1156,82 @@ const VideoCallPage = () => {
         </Box>
       )}
 
-      {/* ─── Диалог продления ─── */}
-      <Dialog open={extendOpen} onClose={() => !extending && setExtendOpen(false)} maxWidth="xs" fullWidth
+      {/* ─── Диалог предложения продления (выбор 15/30) ─── */}
+      <Dialog open={extendOpen} onClose={() => setExtendOpen(false)} maxWidth="xs" fullWidth
         PaperProps={{ sx: { borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <Box sx={{ width: 56, height: 56, mx: 'auto', mb: 2, borderRadius: '50%', bgcolor: 'rgba(184,149,110,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MoreTimeOutlined sx={{ fontSize: 28, color: '#C9A980' }} />
           </Box>
-          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1 }}>{t('videoCall.extendTitle')}</Typography>
-          <Typography sx={{ fontSize: 14, color: '#AAA', mb: 0.5 }}>
-            {t('videoCall.extendBody').replace('{min}', EXTEND_MIN)}
-          </Typography>
+          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{t('videoCall.extendTitle')}</Typography>
+          {/* выбор длительности */}
+          <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 2 }}>
+            {[15, 30].map((m) => (
+              <button key={m} onClick={() => setExtendMin(m)}
+                style={{ padding: '10px 22px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
+                  border: extendMin === m ? '1px solid #C9A980' : '1px solid #444',
+                  background: extendMin === m ? 'rgba(184,149,110,0.22)' : 'transparent',
+                  color: extendMin === m ? '#C9A980' : '#CCC' }}>
+                +{m} {t('videoCall.min')}
+              </button>
+            ))}
+          </Box>
           {consultation && consultation.duration > 0 && (
-            <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 2.5 }}>
-              {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * EXTEND_MIN).toLocaleString('ru-RU')} {t('videoCall.sum')}
+            <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 0.5 }}>
+              {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * extendMin).toLocaleString('ru-RU')} {t('videoCall.sum')}
             </Typography>
           )}
+          <Typography sx={{ fontSize: 12, color: '#888', mb: 2.5 }}>{t('videoCall.extendNeedsConsent')}</Typography>
           <Box sx={{ display: 'flex', gap: 1.5 }}>
-            <button onClick={() => setExtendOpen(false)} disabled={extending}
+            <button onClick={() => setExtendOpen(false)}
               style={{ flex: 1, background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
               {t('videoCall.cancel')}
             </button>
-            <button onClick={confirmExtend} disabled={extending}
+            <button onClick={proposeExtend}
               style={{ flex: 1, background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}>
-              {extending ? t('videoCall.extendWait') : t('videoCall.extendConfirm')}
+              {t('videoCall.extendPropose')}
             </button>
           </Box>
         </Box>
       </Dialog>
+
+      {/* ─── Входящее предложение продления ─── */}
+      <Dialog open={!!incomingExtend} onClose={() => !extending && declineIncomingExtend()} maxWidth="xs" fullWidth
+        PaperProps={{ sx: { borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
+        {incomingExtend && (
+          <Box sx={{ p: 3, textAlign: 'center' }}>
+            <Box sx={{ width: 56, height: 56, mx: 'auto', mb: 2, borderRadius: '50%', bgcolor: 'rgba(184,149,110,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+              <MoreTimeOutlined sx={{ fontSize: 28, color: '#C9A980' }} />
+            </Box>
+            <Typography sx={{ fontSize: 17, fontWeight: 600, mb: 1 }}>
+              {t('videoCall.extendIncoming').replace('{name}', incomingExtend.from || t('videoCall.participant')).replace('{min}', incomingExtend.minutes)}
+            </Typography>
+            {consultation && consultation.duration > 0 && (
+              <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 2.5 }}>
+                {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * incomingExtend.minutes).toLocaleString('ru-RU')} {t('videoCall.sum')}
+              </Typography>
+            )}
+            <Box sx={{ display: 'flex', gap: 1.5 }}>
+              <button onClick={declineIncomingExtend} disabled={extending}
+                style={{ flex: 1, background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
+                {t('videoCall.decline')}
+              </button>
+              <button onClick={acceptIncomingExtend} disabled={extending}
+                style={{ flex: 1, background: 'linear-gradient(135deg,#5AA06A,#4A8A5A)', border: 'none', color: '#FFF', padding: '12px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600 }}>
+                {extending ? t('videoCall.extendWait') : t('videoCall.accept')}
+              </button>
+            </Box>
+          </Box>
+        )}
+      </Dialog>
+
+      {/* Индикатор ожидания ответа на продление */}
+      {extendWaiting && (
+        <Box sx={{ position: 'absolute', top: 70, left: '50%', transform: 'translateX(-50%)', bgcolor: 'rgba(30,30,30,0.92)', color: '#C9A980', px: 2.5, py: 1.25, borderRadius: '20px', fontSize: 13, display: 'flex', alignItems: 'center', gap: 1, zIndex: 30 }}>
+          <CircularProgress size={14} thickness={3} sx={{ color: '#C9A980' }} />
+          {t('videoCall.extendWaiting')}
+        </Box>
+      )}
     </Box>
   );
 };
