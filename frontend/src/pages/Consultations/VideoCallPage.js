@@ -81,6 +81,21 @@ const VideoCallPage = () => {
   const [remoteRole, setRemoteRole] = useState('');
   const [remoteMedia, setRemoteMedia] = useState({ audio: true, video: true }); // состояние камеры/микрофона собеседника
 
+  // Экран подготовки перед входом (лобби)
+  const [inLobby, setInLobby] = useState(true);
+  const [devices, setDevices] = useState({ cameras: [], mics: [] });
+  const [selectedCam, setSelectedCam] = useState('');
+  const [selectedMic, setSelectedMic] = useState('');
+  const [lobbyCamOn, setLobbyCamOn] = useState(true);
+  const [lobbyMicOn, setLobbyMicOn] = useState(true);
+  const [micLevel, setMicLevel] = useState(0);
+  const [permError, setPermError] = useState(false);
+  const lobbyVideoRef = useRef(null);
+  const lobbyStreamRef = useRef(null);
+  const lobbyAudioCtxRef = useRef(null);
+  // выбранные устройства/состояние переносим в звонок
+  const joinPrefsRef = useRef({ camId: '', micId: '', cam: true, mic: true });
+
   // Media controls
   const [audioEnabled, setAudioEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
@@ -400,13 +415,84 @@ const VideoCallPage = () => {
     }
   }, [consultationId, navigate, user]);
 
-  // Initialize media and socket connection
-  // Булев флаг «консультация загружена» — меняется false→true один раз. Init-эффект
-  // зависит от него, а НЕ от объекта consultation: иначе setConsultation (продление)
-  // пересоздавал бы эффект → полный обрыв и реконнект звонка на каждом extend.
+  // ─── Лобби: превью камеры, список устройств, уровень микрофона ───
   const consultationLoaded = Boolean(consultation);
   useEffect(() => {
-    if (!consultationLoaded || error) return;
+    if (!inLobby || !consultationLoaded) return undefined;
+    let cancelled = false;
+    let raf;
+    const start = async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: selectedCam ? { deviceId: { exact: selectedCam } } : true,
+          audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
+        });
+        if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
+        lobbyStreamRef.current = stream;
+        setPermError(false);
+        if (lobbyVideoRef.current) lobbyVideoRef.current.srcObject = stream;
+        stream.getVideoTracks().forEach((tr) => { tr.enabled = lobbyCamOn; });
+        stream.getAudioTracks().forEach((tr) => { tr.enabled = lobbyMicOn; });
+
+        const list = await navigator.mediaDevices.enumerateDevices();
+        if (!cancelled) {
+          setDevices({
+            cameras: list.filter((d) => d.kind === 'videoinput'),
+            mics: list.filter((d) => d.kind === 'audioinput'),
+          });
+          if (!selectedCam) { const c = stream.getVideoTracks()[0]?.getSettings().deviceId; if (c) setSelectedCam(c); }
+          if (!selectedMic) { const m = stream.getAudioTracks()[0]?.getSettings().deviceId; if (m) setSelectedMic(m); }
+        }
+
+        const AC = window.AudioContext || window.webkitAudioContext;
+        if (AC) {
+          const ctx = new AC();
+          lobbyAudioCtxRef.current = ctx;
+          const analyser = ctx.createAnalyser();
+          analyser.fftSize = 256;
+          ctx.createMediaStreamSource(stream).connect(analyser);
+          const data = new Uint8Array(analyser.frequencyBinCount);
+          const tick = () => {
+            if (cancelled) return;
+            analyser.getByteFrequencyData(data);
+            const avg = data.reduce((a, b) => a + b, 0) / data.length;
+            setMicLevel(Math.min(100, Math.round(avg * 1.6)));
+            raf = requestAnimationFrame(tick);
+          };
+          tick();
+        }
+      } catch (e) {
+        if (!cancelled) setPermError(true);
+      }
+    };
+    start();
+    return () => {
+      cancelled = true;
+      if (raf) cancelAnimationFrame(raf);
+      if (lobbyStreamRef.current) { lobbyStreamRef.current.getTracks().forEach((tr) => tr.stop()); lobbyStreamRef.current = null; }
+      if (lobbyAudioCtxRef.current) { lobbyAudioCtxRef.current.close().catch(() => {}); lobbyAudioCtxRef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inLobby, consultationLoaded, selectedCam, selectedMic]);
+
+  const toggleLobbyCam = () => {
+    const on = !lobbyCamOn; setLobbyCamOn(on);
+    lobbyStreamRef.current?.getVideoTracks().forEach((tr) => { tr.enabled = on; });
+  };
+  const toggleLobbyMic = () => {
+    const on = !lobbyMicOn; setLobbyMicOn(on);
+    lobbyStreamRef.current?.getAudioTracks().forEach((tr) => { tr.enabled = on; });
+  };
+  const joinCall = () => {
+    joinPrefsRef.current = { camId: selectedCam, micId: selectedMic, cam: lobbyCamOn, mic: lobbyMicOn };
+    setInLobby(false); // init-эффект поднимет звонок с выбранными устройствами
+  };
+
+  // Initialize media and socket connection.
+  // Init-эффект зависит от булевых флагов (загружено/не в лобби), а НЕ от объекта
+  // consultation: иначе setConsultation (продление) пересоздавал бы эффект → обрыв.
+  useEffect(() => {
+    if (!consultationLoaded || error || inLobby) return;
     // Prevent double-start from React StrictMode
     if (callStartedRef.current) return;
     callStartedRef.current = true;
@@ -417,16 +503,23 @@ const VideoCallPage = () => {
 
     const init = async () => {
       try {
-        // Get local media stream
+        // Get local media stream с устройствами и состоянием, выбранными в лобби
+        const prefs = joinPrefsRef.current;
         stream = await navigator.mediaDevices.getUserMedia({
-          video: true,
-          audio: true,
+          video: prefs.camId ? { deviceId: { exact: prefs.camId } } : true,
+          audio: prefs.micId ? { deviceId: { exact: prefs.micId } } : true,
         });
 
         if (cancelled) {
           stream.getTracks().forEach((tr) => tr.stop());
           return;
         }
+
+        // Применяем выбор «камера/микрофон вкл/выкл» из лобби
+        stream.getVideoTracks().forEach((tr) => { tr.enabled = prefs.cam; });
+        stream.getAudioTracks().forEach((tr) => { tr.enabled = prefs.mic; });
+        setVideoEnabled(prefs.cam);
+        setAudioEnabled(prefs.mic);
 
         localStreamRef.current = stream;
         if (localVideoRef.current) {
@@ -611,7 +704,7 @@ const VideoCallPage = () => {
       localStreamRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultationLoaded, consultationId]);
+  }, [consultationLoaded, consultationId, inLobby]);
 
   // Toggle audio
   // Сообщаем собеседнику своё состояние (микрофон/камера) по факту стримов
@@ -889,6 +982,82 @@ const VideoCallPage = () => {
     },
     transition: 'all 0.2s ease',
   });
+
+  // ─── Экран подготовки (лобби) ───
+  if (inLobby) {
+    const selStyle = { width: '100%', marginTop: 6, padding: '9px 10px', borderRadius: 8, background: '#2C2C2C', color: '#EEE', border: '1px solid #3A3A3A', fontSize: 13, fontFamily: 'inherit' };
+    return (
+      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, animation: `${fadeIn} 0.3s ease-out` }}>
+        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 0.5 }}>{t('videoCall.lobbyTitle')}</Typography>
+        <Typography sx={{ fontSize: 13, color: '#9A9A9A', mb: 2.5 }}>
+          {t('videoCall.lobbyWith')} {otherPartyName || t('videoCall.participant')}
+        </Typography>
+
+        {/* Превью камеры */}
+        <Box sx={{ position: 'relative', width: 'min(440px, 92vw)', aspectRatio: '16/9', bgcolor: '#000', borderRadius: '14px', overflow: 'hidden', mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <video ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />
+          {permError && (
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 3, textAlign: 'center' }}>
+              <VideocamOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} />
+              <Typography sx={{ fontSize: 14, color: '#E0E0E0' }}>{t('videoCall.permDenied')}</Typography>
+              <Typography sx={{ fontSize: 12, color: '#9A9A9A' }}>{t('videoCall.permHint')}</Typography>
+            </Box>
+          )}
+          {!permError && !lobbyCamOn && (
+            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
+              <VideocamOffOutlined sx={{ fontSize: 36, color: '#888' }} />
+              <Typography sx={{ fontSize: 13, color: '#888' }}>{t('videoCall.camOff')}</Typography>
+            </Box>
+          )}
+          {/* индикатор уровня микрофона */}
+          {!permError && (
+            <Box sx={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.5)', px: 1, py: 0.5, borderRadius: '12px' }}>
+              {lobbyMicOn ? <MicOutlined sx={{ fontSize: 15, color: '#FFF' }} /> : <MicOffOutlined sx={{ fontSize: 15, color: '#E06B6B' }} />}
+              <Box sx={{ width: 60, height: 5, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' }}>
+                <Box sx={{ width: `${lobbyMicOn ? micLevel : 0}%`, height: '100%', bgcolor: micLevel > 60 ? '#E0A24A' : '#5AA06A', transition: 'width 0.1s' }} />
+              </Box>
+            </Box>
+          )}
+        </Box>
+
+        {/* Кнопки микрофон/камера */}
+        <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
+          <IconButton onClick={toggleLobbyMic} sx={controlBtnSx(!lobbyMicOn)}>
+            {lobbyMicOn ? <MicOutlined /> : <MicOffOutlined />}
+          </IconButton>
+          <IconButton onClick={toggleLobbyCam} sx={controlBtnSx(!lobbyCamOn)}>
+            {lobbyCamOn ? <VideocamOutlined /> : <VideocamOffOutlined />}
+          </IconButton>
+        </Box>
+
+        {/* Выбор устройств */}
+        {!permError && (
+          <Box sx={{ width: 'min(440px, 92vw)', mb: 2 }}>
+            {devices.cameras.length > 1 && (
+              <select value={selectedCam} onChange={(e) => setSelectedCam(e.target.value)} style={selStyle}>
+                {devices.cameras.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.camera')} ${i + 1}`}</option>)}
+              </select>
+            )}
+            {devices.mics.length > 1 && (
+              <select value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)} style={selStyle}>
+                {devices.mics.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.mic')} ${i + 1}`}</option>)}
+              </select>
+            )}
+          </Box>
+        )}
+
+        {/* Войти */}
+        <Box sx={{ display: 'flex', gap: 1.5 }}>
+          <button onClick={() => navigate(-1)} style={{ background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px 24px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
+            {t('videoCall.cancel')}
+          </button>
+          <button onClick={joinCall} style={{ background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px 32px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <CallOutlined sx={{ fontSize: 18 }} /> {t('videoCall.joinCall')}
+          </button>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box
