@@ -13,6 +13,7 @@ import { LanguageProvider } from './i18n';
 
 // Components
 import Layout from './components/Layout/Layout';
+import GlobalCallListener from './components/Call/GlobalCallListener';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
@@ -92,6 +93,7 @@ const AppContent = () => {
 
   return (
     <Router>
+      {isAuthenticated && <GlobalCallListener />}
       <Routes>
         <Route path="/" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage />

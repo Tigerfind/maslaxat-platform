@@ -104,6 +104,68 @@ function initSignaling(io) {
       });
     });
 
+    // ─── CALL INVITATION (ring) ──────────────────────────────
+    // Звонящий вызывает собеседника: шлём «входящий звонок» в персональную
+    // комнату другой стороны (доходит на любой странице, если пользователь онлайн).
+    socket.on('call-user', async ({ consultationId }) => {
+      try {
+        const consultation = await Consultation.findByPk(consultationId);
+        if (!consultation) return;
+        const isParticipant =
+          consultation.clientId === socket.userId || consultation.lawyerId === socket.userId;
+        if (!isParticipant) return;
+        // Звонок доступен только по подтверждённой/идущей консультации
+        if (!['accepted', 'in_progress'].includes(consultation.status)) {
+          return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации' });
+        }
+        const calleeId =
+          consultation.clientId === socket.userId ? consultation.lawyerId : consultation.clientId;
+
+        const payload = {
+          consultationId,
+          callerId: socket.userId,
+          callerName: socket.userName,
+          callerAvatar: socket.userAvatar,
+          callerRole: socket.userRole,
+          type: consultation.type,
+        };
+
+        // Онлайн ли собеседник? Если нет — оставляем уведомление (пропущенный).
+        const calleeSockets = await io.in(`user:${calleeId}`).fetchSockets();
+        if (calleeSockets.length > 0) {
+          io.to(`user:${calleeId}`).emit('incoming-call', payload);
+          socket.emit('call-ringing', { consultationId });
+        } else {
+          socket.emit('call-offline', { consultationId });
+          const notificationService = require('../services/notificationService');
+          await notificationService.createNotification(
+            calleeId,
+            'consultation_started',
+            'Пропущенный звонок',
+            `${socket.userName} пытался связаться с вами`,
+            { consultationId, missedCall: true }
+          );
+        }
+      } catch (err) {
+        logger.error('[Socket] call-user error', { error: err.message });
+      }
+    });
+
+    // Собеседник принял вызов — сообщаем звонящему (оба идут в видео-комнату)
+    socket.on('call-accept', ({ consultationId, callerId }) => {
+      if (callerId) io.to(`user:${callerId}`).emit('call-accepted', { consultationId, byUserId: socket.userId });
+    });
+
+    // Собеседник отклонил вызов
+    socket.on('call-decline', ({ consultationId, callerId }) => {
+      if (callerId) io.to(`user:${callerId}`).emit('call-declined', { consultationId, byUserId: socket.userId });
+    });
+
+    // Звонящий отменил вызов до ответа
+    socket.on('call-cancel', ({ consultationId, calleeId }) => {
+      if (calleeId) io.to(`user:${calleeId}`).emit('call-cancelled', { consultationId });
+    });
+
     // ─── CHAT EVENTS ─────────────────────────────────────────
     // Join a chat room (separate from video room)
     socket.on('join-chat', async ({ consultationId }) => {

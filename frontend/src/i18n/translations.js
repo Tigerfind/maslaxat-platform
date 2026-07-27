@@ -1137,6 +1137,12 @@ const translations = {
     },
   },
 
+  call: {
+    ru: { incoming: 'Входящий видеозвонок', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
+    uz: { incoming: 'Кирувчи видеоқўнғироқ', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
+    en: { incoming: 'Incoming video call', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
+  },
+
   compare: {
     ru: { title: 'Сравнение юристов', toggle: 'Сравнить', selected: 'Выбрано: {n}', open: 'Сравнить', clear: 'Очистить', max: 'Можно сравнить максимум {n} юристов', rating: 'Рейтинг', reviews: 'Отзывы', experience: 'Опыт', completed: 'Завершено дел', price: 'Цена от', specialization: 'Специализация', region: 'Регион', languages: 'Языки', online: 'Онлайн сейчас', yes: 'Да', no: 'Нет', book: 'Записаться' },
     uz: { title: 'Юристларни солиштириш', toggle: 'Солиштириш', selected: 'Танланди: {n}', open: 'Солиштириш', clear: 'Тозалаш', max: 'Кўпи билан {n} та юристни солиштириш мумкин', rating: 'Рейтинг', reviews: 'Отзивлар', experience: 'Тажриба', completed: 'Якунланган ишлар', price: 'Нархи', specialization: 'Ихтисослик', region: 'Ҳудуд', languages: 'Тиллар', online: 'Ҳозир онлайн', yes: 'Ҳа', no: 'Йўқ', book: 'Ёзилиш' },

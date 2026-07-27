@@ -62,6 +62,7 @@ const VideoCallPage = () => {
   // Call state
   const [callDuration, setCallDuration] = useState(0);
   const [callStartTime, setCallStartTime] = useState(null);
+  const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
 
   // Refs
   const localVideoRef = useRef(null);
@@ -308,12 +309,22 @@ const VideoCallPage = () => {
             setRemoteName(remoteUser.userName);
             setRemoteRole(remoteUser.userRole);
             createPeer(remoteUser.socketId, stream, true);
+          } else {
+            // Мы зашли первыми — «звоним» собеседнику (ему прилетит ring)
+            socket.emit('call-user', { consultationId });
+            setRingStatus('ringing');
           }
         });
+
+        // Статус дозвона другой стороне
+        socket.on('call-ringing', () => { if (!cancelled) setRingStatus('ringing'); });
+        socket.on('call-offline', () => { if (!cancelled) setRingStatus('offline'); });
+        socket.on('call-declined', () => { if (!cancelled) setRingStatus('declined'); });
 
         // When another user joins — they will initiate, we respond
         socket.on('user-joined', ({ socketId, userName, userRole }) => {
           if (cancelled) return;
+          setRingStatus(null); // дозвонились — собеседник в комнате
           setRemoteName(userName);
           setRemoteRole(userRole);
           createPeer(socketId, stream, false);
@@ -548,10 +559,17 @@ const VideoCallPage = () => {
   }
 
   // Status label shown in the top bar (design: dot + "Соединено · timer")
+  const ringText = ringStatus === 'offline'
+    ? t('call.calleeOffline')
+    : ringStatus === 'declined'
+    ? t('call.calleeDeclined')
+    : ringStatus === 'ringing'
+    ? t('call.calling')
+    : null;
   const statusText = peerConnected
     ? `${t('videoCall.connected')} · ${formatDuration(callDuration)}`
     : connected
-    ? t('videoCall.waiting')
+    ? (ringText || t('videoCall.waiting'))
     : t('videoCall.connecting');
   const statusDotColor = peerConnected ? '#7A9A6B' : '#C4A35A';
 
