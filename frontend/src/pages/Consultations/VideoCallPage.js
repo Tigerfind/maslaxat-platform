@@ -135,6 +135,7 @@ const VideoCallPage = () => {
   // Refs
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const remoteStreamRef = useRef(null); // держим удалённый поток, т.к. <video> монтируется только при peerConnected
   const socketRef = useRef(null);
   const peerRef = useRef(null);
   const localStreamRef = useRef(null);
@@ -334,6 +335,10 @@ const VideoCallPage = () => {
     });
 
     peer.on('stream', (remoteStream) => {
+      // Сохраняем поток в реф: сам <video ref={remoteVideoRef}> ещё НЕ смонтирован
+      // (он рендерится только при peerConnected). Прямое присваивание тут делает
+      // no-op, если элемента нет — реальное подключение делает эффект по peerConnected.
+      remoteStreamRef.current = remoteStream;
       if (remoteVideoRef.current) {
         remoteVideoRef.current.srcObject = remoteStream;
       }
@@ -740,6 +745,21 @@ const VideoCallPage = () => {
       toast.info(t('videoCall.pipUnsupported'));
     }
   };
+
+  // Подключаем удалённый поток к <video>, КОГДА он смонтирован. Элемент рендерится
+  // только при peerConnected, а поток приходит в peer.on('stream') ДО этого флага —
+  // поэтому присваиваем srcObject здесь, после появления элемента в DOM. Без этого
+  // большой тайл собеседника оставался чёрным (поток есть, но не привязан к элементу).
+  useEffect(() => {
+    if (!peerConnected) return;
+    const el = remoteVideoRef.current;
+    const stream = remoteStreamRef.current;
+    if (!el || !stream) return;
+    if (el.srcObject !== stream) el.srcObject = stream;
+    // play() на случай строгой autoplay-политики (Safari): жест пользователя уже был
+    const p = el.play?.();
+    if (p && p.catch) p.catch(() => {});
+  }, [peerConnected, remoteMedia.video]);
 
   // Применяем выбранный динамик к элементу с аудио собеседника (setSinkId —
   // Chrome/Edge; в Safari/Firefox метода нет → тихо игнорируем). Пустой id = дефолт.
