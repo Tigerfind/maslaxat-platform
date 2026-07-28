@@ -5,7 +5,13 @@ const path = require('path');
 const { Consultation, User, LawyerProfile, Review, Notification, Payment } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
-const { completeConsultation } = require('../services/escrow');
+const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+
+// Источники-статусы, из которых юрист вправе делать переход (машина состояний).
+// Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
+const ACCEPTABLE_FROM = ['pending']; // принять/подтвердить можно только новую заявку
+const REJECTABLE_FROM = ['payment_pending', 'pending', 'accepted']; // до начала сессии
+const STARTABLE_FROM = ['accepted']; // начать можно только подтверждённую
 
 // Avatar upload config (reuse same setup as users.js)
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -85,15 +91,24 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    // Источник-гейт: принять можно только новую заявку (pending). Повторный вызов на
+    // уже принятой — идемпотентный no-op; из completed/in_progress/rejected — нельзя.
+    if (![...ACCEPTABLE_FROM, 'accepted'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Запрос нельзя принять в текущем статусе' });
+    }
+    const wasAlreadyAccepted = consultation.status === 'accepted';
+
     consultation.status = 'accepted';
     if (req.body.responseMessage) {
       consultation.notes = req.body.responseMessage;
     }
     await consultation.save();
 
-    // Notify client
-    const lawyer = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyBookingAccepted(consultation.clientId, lawyer?.name || 'Юрист', consultation);
+    // Уведомляем только при реальном переходе pending → accepted (не при повторе)
+    if (!wasAlreadyAccepted) {
+      const lawyer = await User.findByPk(req.userId, { attributes: ['name'] });
+      notificationService.notifyBookingAccepted(consultation.clientId, lawyer?.name || 'Юрист', consultation);
+    }
 
     res.json({ success: true, message: 'Запрос принят', consultation });
   } catch (err) {
@@ -112,11 +127,22 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    consultation.status = 'rejected';
-    if (req.body.reason) {
-      consultation.notes = req.body.reason;
+    // Атомарно: источник-гейт (только до начала сессии) + перевод в rejected +
+    // возврат удержанного эскроу клиенту — в одной транзакции. Reject недостижим для
+    // completed/in_progress, поэтому возврат всегда идёт из pendingBalance (не balance).
+    const rejected = await Consultation.sequelize.transaction(async (tx) => {
+      const [affected] = await Consultation.update(
+        { status: 'rejected', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
+      );
+      if (affected === 0) return null;
+      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      return true;
+    });
+    if (!rejected) {
+      return res.status(400).json({ error: 'Заявку нельзя отклонить в текущем статусе' });
     }
-    await consultation.save();
+    await consultation.reload();
 
     // Notify client
     const lawyerForReject = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -175,12 +201,20 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    // Источник-гейт (как в accept): подтвердить можно только pending; повтор на
+    // accepted — no-op; из completed/in_progress/rejected — нельзя (без отката).
+    if (![...ACCEPTABLE_FROM, 'accepted'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Консультацию нельзя подтвердить в текущем статусе' });
+    }
+    const wasAlreadyAccepted = consultation.status === 'accepted';
+
     consultation.status = 'accepted';
     await consultation.save();
 
-    // Notify client
-    const lawyerConfirm = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyBookingAccepted(consultation.clientId, lawyerConfirm?.name || 'Юрист', consultation);
+    if (!wasAlreadyAccepted) {
+      const lawyerConfirm = await User.findByPk(req.userId, { attributes: ['name'] });
+      notificationService.notifyBookingAccepted(consultation.clientId, lawyerConfirm?.name || 'Юрист', consultation);
+    }
 
     res.json({ success: true, message: 'Консультация подтверждена', consultation });
   } catch (err) {
@@ -199,9 +233,20 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    consultation.status = 'rejected';
-    if (req.body.reason) consultation.notes = req.body.reason;
-    await consultation.save();
+    // Атомарно: источник-гейт (только до начала сессии) + rejected + возврат эскроу.
+    const rejected = await Consultation.sequelize.transaction(async (tx) => {
+      const [affected] = await Consultation.update(
+        { status: 'rejected', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
+      );
+      if (affected === 0) return null;
+      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      return true;
+    });
+    if (!rejected) {
+      return res.status(400).json({ error: 'Консультацию нельзя отклонить в текущем статусе' });
+    }
+    await consultation.reload();
 
     // Notify client
     const lawyerReject2 = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -224,12 +269,17 @@ router.post('/consultations/:id/start', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    consultation.status = 'in_progress';
-    await consultation.save();
-
-    // Notify client that consultation started
-    const lawyerStart = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyConsultationStarted(consultation.clientId, lawyerStart?.name || 'Юрист', consultation);
+    // Источник-гейт: начать можно ТОЛЬКО подтверждённую (accepted). Идемпотентно, если
+    // уже in_progress. Запрет старта из completed убирает revert-примитив (повторную
+    // выплату эскроу через start→end по уже завершённой консультации).
+    if (STARTABLE_FROM.includes(consultation.status)) {
+      consultation.status = 'in_progress';
+      await consultation.save();
+      const lawyerStart = await User.findByPk(req.userId, { attributes: ['name'] });
+      notificationService.notifyConsultationStarted(consultation.clientId, lawyerStart?.name || 'Юрист', consultation);
+    } else if (consultation.status !== 'in_progress') {
+      return res.status(400).json({ error: 'Начать можно только подтверждённую консультацию' });
+    }
 
     res.json({ success: true, message: 'Консультация начата', consultation });
   } catch (err) {

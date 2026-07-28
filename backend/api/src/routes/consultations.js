@@ -108,6 +108,22 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
       return res.status(400).json({ error: 'Недопустимый статус' });
     }
 
+    // МАШИНА СОСТОЯНИЙ для ЮРИСТА: только легальные переходы вперёд. НЕТ перехода ИЗ
+    // completed (иначе revert-примитив → повторная выплата эскроу). rejected/cancelled
+    // недоступны здесь намеренно — у них отдельные эндпоинты с возвратом эскроу.
+    // Админ сохраняет широту (модерация/разбор спора) и этот гейт минует.
+    const LAWYER_TRANSITIONS = {
+      pending: ['accepted'],
+      accepted: ['in_progress'],
+      in_progress: ['completed'],
+    };
+    if (req.userRole === 'lawyer') {
+      const allowed = LAWYER_TRANSITIONS[consultation.status] || [];
+      if (!allowed.includes(req.body.status)) {
+        return res.status(400).json({ error: 'Недопустимый переход статуса' });
+      }
+    }
+
     // Завершение — через единый идемпотентный хелпер (высвобождает эскроу один раз).
     if (req.body.status === 'completed') {
       // ДЕНЬГИ: юрист может завершить (и высвободить эскроу) только начатую консультацию.

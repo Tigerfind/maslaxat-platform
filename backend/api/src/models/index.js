@@ -498,6 +498,14 @@ const Payment = sequelize.define('Payment', {
     type: DataTypes.JSONB,
     defaultValue: {},
   },
+  // Эскроу по этому платежу уже высвобождено юристу (pendingBalance → balance).
+  // Признак привязан к ПЛАТЕЖУ, а не к изменяемому статусу консультации: повторное
+  // завершение (в т.ч. после отката статуса) НЕ выплачивает второй раз.
+  escrowReleased: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
 });
 
 // ─── SUPPORT TICKET MODEL ───────────────────────────────────
