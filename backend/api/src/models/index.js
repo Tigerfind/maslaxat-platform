@@ -250,6 +250,11 @@ const Consultation = sequelize.define('Consultation', {
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
+  //
+  // Частичный УНИКАЛЬНЫЙ индекс consultations_loyalty_free_unique (одна не-отклонённая
+  // loyalty-бесплатная бронь на клиента) создаётся МИГРАЦИЕЙ 20260807000000 (dev/prod)
+  // и вручную в tests/helpers.resetDb (тестовая БД через sync). В модели не объявлен:
+  // Sequelize не underscore-мапит колонки в предикате частичного индекса при sync.
 });
 
 // ─── AI CONVERSATION MODEL ──────────────────────────────────

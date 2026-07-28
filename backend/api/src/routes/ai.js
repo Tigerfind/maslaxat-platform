@@ -403,26 +403,44 @@ const checkAIRateLimit = async (req, res, next) => {
     const key = `ai_limit:${req.userId}:${today}`;
     const limit = PLAN_LIMITS.free;
 
-    const count = await redis.get(key);
-    const used = parseInt(count) || 0;
+    // РЕЗЕРВИРОВАНИЕ (закрывает гонку): атомарно захватываем слот через INCR, а не
+    // read-then-increment. incr возвращает новое значение атомарно — конкурентные
+    // запросы получают разные n, лимит не пробить пачкой параллельных вызовов.
+    const n = await redis.incr(key);
+    // TTL ставим на ПЕРВОМ инкременте дня (ключ и так датирован — суточный сброс встроен
+    // в ключ, expire лишь GC). Идемпотентно перезаписывать не нужно.
+    if (n === 1) await redis.expire(key, 86400);
 
-    if (used >= limit) {
+    if (n > limit) {
+      // Превышение: сразу возвращаем слот (этот запрос его не займёт) и 429.
+      // Refund-on-finish на этой ветке НЕ вешаем — иначе двойной decr.
+      await redis.decr(key);
       return res.status(429).json({
         error: 'Достигнут дневной лимит AI запросов (3/день для бесплатного плана)',
         limit,
-        used,
+        used: limit,
         resetAt: `${today}T23:59:59`,
         upgradeTo: 'basic',
       });
     }
 
-    // НЕ инкрементим здесь — счётчик увеличиваем только после УСПЕШНОГО ответа
-    // (иначе пустое/провальное сообщение сжигало бы дневной лимит free-плана).
+    // Слот захвачен. ВОЗВРАТ на неуспехе (сохраняет UX «неуспех не сжигает лимит»):
+    // на любой не-2xx ответ — включая ошибку multer, который стоит в цепочке ПОСЛЕ
+    // этого гейта и не попадает в try/finally хендлера — возвращаем слот. res.on('finish')
+    // ловит любой финальный статус. Идемпотентный флаг — decr максимум один раз.
+    // Успешный ответ (в т.ч. fallback Claude, 200) слот ПОТРАЧИВАЕТ — как и раньше.
+    let refunded = false;
+    res.on('finish', () => {
+      if (res.statusCode >= 400 && !refunded) {
+        refunded = true;
+        redis.decr(key).catch(() => {});
+      }
+    });
+
     res.set('X-AI-Limit', limit);
-    res.set('X-AI-Remaining', limit - used - 1);
+    res.set('X-AI-Remaining', Math.max(0, limit - n));
     req.subscriptionPlan = 'free';
     req.aiLimitKey = key;
-    req.aiLimitUsed = used;
     next();
   } catch (err) {
     logger.error('AI rate limit check failed:', err.message);
@@ -494,17 +512,8 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
       await conversation.save();
     }
 
-    // Учитываем free-лимит ТОЛЬКО после успешного ответа (не на ошибках)
-    if (req.aiLimitKey) {
-      try {
-        const redis = getRedis();
-        if (redis) {
-          await redis.incr(req.aiLimitKey);
-          if (req.aiLimitUsed === 0) await redis.expire(req.aiLimitKey, 86400);
-        }
-      } catch (e) { /* лимитер недоступен — не блокируем ответ */ }
-    }
-
+    // Free-лимит уже захвачен в checkAIRateLimit (reserve). Успешный ответ (2xx)
+    // слот потрачивает; возврат на неуспехе делает res.on('finish') в гейте.
     res.json({
       message: aiResponse.reply,
       category: aiResponse.category,

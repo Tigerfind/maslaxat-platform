@@ -22,7 +22,10 @@ function startOfMonth() {
  * Сколько подписочных бесплатных консультаций осталось у клиента в этом месяце.
  * @returns {{ plan, limit, used, remaining }}
  */
-async function computeSubscriptionBenefit(userId) {
+async function computeSubscriptionBenefit(userId, opts = {}) {
+  // opts.transaction — чтобы пересчёт шёл на той же транзакции, что и advisory-lock
+  // при бронировании (re-check внутри лока). Read-only вызовы — без аргумента.
+  const transaction = opts.transaction;
   const { plan } = await activePlan(userId);
   const limit = PLAN_CONSULTATIONS[plan] || 0;
   if (limit === 0) return { plan, limit: 0, used: 0, remaining: 0 };
@@ -36,6 +39,7 @@ async function computeSubscriptionBenefit(userId) {
       status: { [Op.notIn]: ['cancelled', 'rejected'] },
       createdAt: { [Op.gte]: startOfMonth() },
     },
+    transaction,
   });
   return { plan, limit, used, remaining: Math.max(0, limit - used) };
 }

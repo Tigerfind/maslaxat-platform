@@ -154,47 +154,10 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(400).json({ error: 'Неверный формат времени (HH:mm)' });
     }
 
-    // Акция «первая консультация бесплатно»: право всегда пересчитываем на сервере,
-    // клиентскому флагу не доверяем.
-    let price = Math.round((lawyer.profile.price * duration) / 60);
-    let isFree = false;
-    let freeSource = null;
-    let notes = req.body.notes || null;
-    let appliedPromo = null;
-    if (req.body.useFreePromo) {
-      const { computeLoyalty } = require('../services/loyaltyService');
-      const loyalty = await computeLoyalty(req.userId);
-      if (loyalty.freeNow) {
-        price = 0;
-        isFree = true;
-        freeSource = 'loyalty';
-        notes = 'Бесплатно по акции «первая консультация бесплатно»';
-      }
-    } else if (req.body.useSubscriptionFree) {
-      // Бесплатная консультация, включённая в тариф. Право пересчитываем на
-      // сервере (клиентскому флагу не доверяем): нужен остаток лимита месяца.
-      const { computeSubscriptionBenefit } = require('../services/subscriptionService');
-      const benefit = await computeSubscriptionBenefit(req.userId);
-      if (benefit.remaining > 0) {
-        price = 0;
-        isFree = true;
-        freeSource = 'subscription';
-        notes = `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»`;
-      }
-    } else if (req.body.promoCode) {
-      // Промокод: скидку ВСЕГДА пересчитываем на сервере (клиенту не доверяем)
-      const { validatePromo } = require('../services/promoService');
-      const result = await validatePromo(req.body.promoCode, price);
-      if (result.valid) {
-        price = Math.max(0, price - result.discountAmount);
-        appliedPromo = result.promo;
-        notes = `Промокод ${result.code} (−${result.discountPercent}%)${notes ? '. ' + notes : ''}`;
-      }
-    }
-
-    // Бесплатная бронь (акция) сразу уходит юристу; платная ждёт оплаты
-    // (status = payment_pending), а юрист узнаёт о ней только после оплаты.
-    const consultation = await Consultation.create({
+    // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
+    // не доверяем). Базовая (платная) цена — по длительности.
+    const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
+    const baseFields = {
       clientId: req.userId,
       lawyerId: lawyer.id,
       type: req.body.consultationType || 'video',
@@ -203,24 +166,86 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,
       duration,
-      price,
-      isFree,
-      freeSource,
-      notes,
-      promoCode: appliedPromo ? appliedPromo.code : null,
-      status: isFree ? 'pending' : 'payment_pending',
+    };
+
+    let price = fullPrice;
+    let notes = req.body.notes || null;
+    let appliedPromo = null;
+    // Промокод — отдельный (НЕ бесплатный) путь; скидку считаем на сервере.
+    if (!req.body.useFreePromo && !req.body.useSubscriptionFree && req.body.promoCode) {
+      const { validatePromo } = require('../services/promoService');
+      const result = await validatePromo(req.body.promoCode, fullPrice);
+      if (result.valid) {
+        price = Math.max(0, fullPrice - result.discountAmount);
+        appliedPromo = result.promo;
+        notes = `Промокод ${result.code} (−${result.discountPercent}%)${notes ? '. ' + notes : ''}`;
+      }
+    }
+
+    const wantsFree = Boolean(req.body.useFreePromo || req.body.useSubscriptionFree);
+    let isFree = false;
+    let freeSource = null;
+    let consultation;
+
+    // Платная/промо-бронь ждёт оплаты (payment_pending); бесплатная сразу уходит юристу.
+    const paidFields = () => ({
+      ...baseFields, price, isFree: false, freeSource: null, notes,
+      promoCode: appliedPromo ? appliedPromo.code : null, status: 'payment_pending',
     });
 
-    // Учитываем использование промокода. Атомарно и с защитой лимита: условие
-    // used_count < usage_limit в самом UPDATE не даёт гонке превысить usageLimit.
+    if (!wantsFree) {
+      consultation = await Consultation.create(paidFields());
+    } else {
+      // ГОНКА #3: право на бесплатное пересчитываем и создаём бронь ПОД per-client
+      // advisory-локом в одной транзакции. Лок сериализует брони ТОЛЬКО этого клиента
+      // (не все) — второй параллельный запрос дождётся коммита, увидит used++ и уйдёт
+      // в платный путь. Частичный уникальный индекс consultations_loyalty_free_unique —
+      // hard-гарантия для loyalty (defense-in-depth).
+      try {
+        await Consultation.sequelize.transaction(async (t) => {
+          await Consultation.sequelize.query(
+            'SELECT pg_advisory_xact_lock(hashtext(:k))',
+            { replacements: { k: `booking:${req.userId}` }, transaction: t }
+          );
+
+          let fields = paidFields(); // если право не подтвердится под локом — платно
+          if (req.body.useFreePromo) {
+            const { computeLoyalty } = require('../services/loyaltyService');
+            const loyalty = await computeLoyalty(req.userId, { transaction: t });
+            if (loyalty.freeNow) {
+              isFree = true; freeSource = 'loyalty';
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'loyalty', promoCode: null, status: 'pending', notes: 'Бесплатно по акции «первая консультация бесплатно»' };
+            }
+          } else if (req.body.useSubscriptionFree) {
+            const { computeSubscriptionBenefit } = require('../services/subscriptionService');
+            const benefit = await computeSubscriptionBenefit(req.userId, { transaction: t });
+            if (benefit.remaining > 0) {
+              isFree = true; freeSource = 'subscription';
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
+            }
+          }
+          consultation = await Consultation.create(fields, { transaction: t });
+        });
+      } catch (e) {
+        // Защита в глубину: если частичный уникальный индекс поймал вторую loyalty-бронь
+        // (лок не спас в экзотическом случае) — бронируем как ПЛАТНУЮ, не роняем запрос.
+        if (e.name === 'SequelizeUniqueConstraintError') {
+          isFree = false; freeSource = null;
+          consultation = await Consultation.create(paidFields());
+        } else {
+          throw e;
+        }
+      }
+    }
+
+    // Промо-инкремент и уведомления — ПОСЛЕ commit (не внутри транзакции, чтобы не
+    // трогать бронь, которая могла откатиться). Атомарный гейт used_count < usage_limit.
     if (appliedPromo) {
       const { literal } = require('sequelize');
       await appliedPromo.increment('usedCount', {
         where: { [Op.or]: [{ usageLimit: null }, literal('used_count < usage_limit')] },
       });
     }
-
-    // Уведомляем юриста только о бесплатной брони; платную — после оплаты
     if (isFree) {
       const client = await User.findByPk(req.userId, { attributes: ['name'] });
       notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);

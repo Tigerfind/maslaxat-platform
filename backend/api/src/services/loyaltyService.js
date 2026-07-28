@@ -14,12 +14,18 @@ const FREE_NOT_COUNTED = ['rejected'];
  * @param {string} clientId
  * @returns {{ paidCount, freeUsed, totalCount, freeAvailable, freeNow }}
  */
-async function computeLoyalty(clientId) {
+async function computeLoyalty(clientId, opts = {}) {
+  // opts.transaction — чтобы пересчёт шёл на той же транзакции/соединении, что и
+  // advisory-lock при бронировании (иначе re-check вне лока бессмыслен). Read-only
+  // вызовы (GET /consultations/loyalty) зовут без аргумента — поведение не меняется.
+  const transaction = opts.transaction;
   const paidCount = await Consultation.count({
     where: { clientId, isFree: false, status: { [Op.notIn]: NOT_COUNTED } },
+    transaction,
   });
   const freeUsed = await Consultation.count({
     where: { clientId, isFree: true, status: { [Op.notIn]: FREE_NOT_COUNTED } },
+    transaction,
   });
 
   const totalCount = paidCount + freeUsed;

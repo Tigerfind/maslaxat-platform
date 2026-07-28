@@ -5,6 +5,14 @@ const { sequelize, User, LawyerProfile } = db;
 // Пересоздаёт схему в тестовой БД (чистый старт для набора тестов)
 async function resetDb() {
   await sequelize.sync({ force: true });
+  // Частичный уникальный индекс (как в миграции 20260807000000): в модели не объявлен
+  // из-за underscored-мапинга при sync, поэтому создаём вручную — чтобы тестовая БД
+  // совпадала с прод-схемой (одна не-отклонённая loyalty-бесплатная бронь на клиента).
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS consultations_loyalty_free_unique
+    ON consultations (client_id)
+    WHERE free_source = 'loyalty' AND status <> 'rejected'
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })
