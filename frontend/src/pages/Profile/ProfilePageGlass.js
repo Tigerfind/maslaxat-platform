@@ -246,10 +246,15 @@ const ProfilePageGlass = () => {
       return;
     }
     try {
-      await api.put('/client/users/password', {
+      const res = await api.put('/client/users/password', {
         oldPassword: passwordData.oldPassword,
         newPassword: passwordData.newPassword,
       });
+      // Смена пароля инвалидирует старые токены (другие сессии выпадут). Сервер выдал
+      // свежий токен для ТЕКУЩЕЙ сессии — сохраняем его, иначе следующий запрос → 401.
+      if (res.data?.token) {
+        localStorage.setItem('token', res.data.token);
+      }
       toast.success(t('profile.passwordChanged'));
       setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });
     } catch (error) {

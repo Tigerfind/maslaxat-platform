@@ -286,11 +286,22 @@ router.post('/:id/review', authenticate, authorize('client'), async (req, res, n
       return res.status(400).json({ error: 'Оценить можно только завершённую консультацию' });
     }
 
-    // Один отзыв на консультацию (idempotent — заодно чинит дубли из backlog)
-    const [review, created] = await Review.findOrCreate({
-      where: { consultationId },
-      defaults: { clientId: req.userId, lawyerId, consultationId, rating: r, text },
-    });
+    // Один отзыв на консультацию. Уникальный индекс reviews_consultation_id_unique
+    // делает findOrCreate атомарным: под конкуренцией проигравший INSERT ловит
+    // unique-violation — отдаём чистый 409, а не 500.
+    let review;
+    let created;
+    try {
+      [review, created] = await Review.findOrCreate({
+        where: { consultationId },
+        defaults: { clientId: req.userId, lawyerId, consultationId, rating: r, text },
+      });
+    } catch (e) {
+      if (e.name === 'SequelizeUniqueConstraintError') {
+        return res.status(409).json({ error: 'Вы уже оценили эту консультацию' });
+      }
+      throw e;
+    }
     if (!created) {
       return res.status(409).json({ error: 'Вы уже оценили эту консультацию' });
     }

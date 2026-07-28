@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const jwt = require('jsonwebtoken');
 const multer = require('multer');
 const path = require('path');
 const { User } = require('../models');
@@ -78,11 +79,24 @@ router.put('/password', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Неверный текущий пароль' });
     }
 
-    // Update password (hook will hash it)
+    // Update password (hook will hash it) + инвалидируем ранее выданные токены:
+    // passwordChangedAt усечён до секунды, чтобы свежий токен ТЕКУЩЕЙ сессии (JWT iat
+    // в секундах) не самоинвалидировался — middleware выкидывает токены с iat < этого
+    // момента. Итог: другие сессии выпадают, текущая — остаётся (по новому токену).
     user.password = newPassword;
+    const nowSec = Math.floor(Date.now() / 1000);
+    user.passwordChangedAt = new Date(nowSec * 1000);
     await user.save();
 
-    res.json({ success: true, message: 'Пароль успешно изменён' });
+    // Свежий токен для текущей сессии (как signToken при логине). Клиент должен его
+    // сохранить вместо старого — иначе следующий запрос со старым токеном получит 401.
+    const token = jwt.sign(
+      { id: user.id, role: user.role },
+      process.env.JWT_SECRET,
+      { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
+    );
+
+    res.json({ success: true, message: 'Пароль успешно изменён', token });
   } catch (err) {
     next(err);
   }

@@ -13,6 +13,12 @@ async function resetDb() {
     ON consultations (client_id)
     WHERE free_source = 'loyalty' AND status <> 'rejected'
   `);
+  // Уникальный индекс на отзыв-на-консультацию (как миграция 20260808000001) —
+  // чтобы тестовая БД совпадала с прод-схемой (findOrCreate атомарен).
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS reviews_consultation_id_unique
+    ON reviews (consultation_id)
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })
