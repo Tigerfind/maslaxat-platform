@@ -13,6 +13,7 @@ import {
 import clientService from '../../services/clientService';
 import EmptyState from '../../components/UI/EmptyState';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import MarkdownMessage from '../../components/MarkdownMessage';
 import { useTranslation } from '../../i18n';
 
 /*
@@ -301,7 +302,7 @@ const PortfolioPage = () => {
                     </div>
                     {preview && (
                       <div style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text2)', borderTop: '1px dashed var(--border)', paddingTop: 12 }}>
-                        {preview}
+                        <MarkdownMessage text={preview} />
                       </div>
                     )}
                     <div style={{ display: 'flex', gap: 16, marginTop: 14 }}>

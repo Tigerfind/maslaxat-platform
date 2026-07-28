@@ -20,7 +20,8 @@ import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import AILimitUpsell from '../../components/AILimitUpsell';
 import BookingModal from '../../components/BookingModal';
-import { renderRichText, extractLaws } from './aiFormat';
+import { extractLaws, stripMarkdown } from './aiFormat';
+import MarkdownMessage from '../../components/MarkdownMessage';
 import { useTranslation } from '../../i18n';
 
 /*
@@ -419,7 +420,7 @@ const AIChatPageGlass = () => {
                 }}
               >
                 <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {c.title || t('ai.newChat')}
+                  {c.title ? stripMarkdown(c.title) : t('ai.newChat')}
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                   {new Date(c.updatedAt || c.createdAt).toLocaleDateString('ru-RU')}
@@ -589,7 +590,7 @@ const AIChatPageGlass = () => {
                   </div>
                 ) : (
                   <div style={{ fontSize: 14, color: '#2D2D2D', wordBreak: 'break-word' }}>
-                    {renderRichText(m.text)}
+                    <MarkdownMessage text={m.text} />
                   </div>
                 )}
 

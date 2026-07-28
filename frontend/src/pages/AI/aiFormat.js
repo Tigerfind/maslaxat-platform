@@ -1,70 +1,19 @@
-import React from 'react';
-
 /**
- * Лёгкий рендер AI-ответа: **жирный** текст, маркированные и нумерованные списки.
- * Работает и для «живых» ответов, и для истории — без изменений на бэкенде.
- * Не полноценный markdown: намеренно простой и предсказуемый.
+ * Утилиты для AI-ответов. Рендер markdown теперь делает components/MarkdownMessage
+ * (react-markdown) — самописный renderRichText удалён как мёртвый код. Здесь остались:
+ *  - stripMarkdown: плоский однострочный текст для заголовков бесед;
+ *  - extractLaws: извлечение ссылок на законы РУз для карточки «Статьи закона».
  */
 
-// Разбивает строку на JSX с учётом **жирного** текста.
-const renderInline = (text, keyPrefix) => {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (/^\*\*[^*]+\*\*$/.test(part)) {
-      return (
-        <strong key={`${keyPrefix}-b${i}`} style={{ fontWeight: 600, color: 'var(--text)' }}>
-          {part.slice(2, -2)}
-        </strong>
-      );
-    }
-    return <React.Fragment key={`${keyPrefix}-t${i}`}>{part}</React.Fragment>;
-  });
-};
-
-const BULLET_RE = /^\s*[•\-–*]\s+(.*)$/;
-const NUMBERED_RE = /^\s*(\d+)[.)]\s+(.*)$/;
-
-export const renderRichText = (raw) => {
-  if (!raw) return null;
-  const lines = String(raw).split('\n');
-  const blocks = [];
-  let list = null; // { ordered, items: [] }
-
-  const flushList = () => {
-    if (!list) return;
-    const Tag = list.ordered ? 'ol' : 'ul';
-    blocks.push(
-      <Tag key={`list-${blocks.length}`} style={{ margin: '6px 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 5 }}>
-        {list.items.map((it, i) => (
-          <li key={i} style={{ lineHeight: 1.55 }}>{renderInline(it, `li-${blocks.length}-${i}`)}</li>
-        ))}
-      </Tag>
-    );
-    list = null;
-  };
-
-  lines.forEach((line, idx) => {
-    const bullet = line.match(BULLET_RE);
-    const numbered = line.match(NUMBERED_RE);
-    if (bullet) {
-      if (!list || list.ordered) { flushList(); list = { ordered: false, items: [] }; }
-      list.items.push(bullet[1]);
-    } else if (numbered) {
-      if (!list || !list.ordered) { flushList(); list = { ordered: true, items: [] }; }
-      list.items.push(numbered[2]);
-    } else if (line.trim() === '') {
-      flushList();
-    } else {
-      flushList();
-      blocks.push(
-        <p key={`p-${idx}`} style={{ margin: '4px 0', lineHeight: 1.6 }}>
-          {renderInline(line, `p-${idx}`)}
-        </p>
-      );
-    }
-  });
-  flushList();
-  return blocks;
+// Убирает markdown-разметку для мест, где нужен ПЛОСКИЙ однострочный текст
+// (заголовки бесед в сайдбаре): маркеры **/*, _, `, ~, #, >, и [текст](url) → текст.
+export const stripMarkdown = (raw) => {
+  if (!raw) return '';
+  return String(raw)
+    .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
+    .replace(/[*_`~#>]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
 };
 
 /**
