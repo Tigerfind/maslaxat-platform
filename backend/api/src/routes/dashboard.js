@@ -126,6 +126,10 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       unreadNotifications,
       weeklyActivity,
       responseRate: responseRate || 0,
+      // Профиль настроен? Признак = заполнено описание (его ставит онбординг/редактор
+      // профиля и НЕ трогает переключатель онлайн/офлайн — в отличие от isAvailable).
+      // Нужен фронту, чтобы показывать мастер онбординга только пока профиль не заполнен.
+      profileComplete: !!(profile && profile.description && String(profile.description).trim()),
     });
   } catch (err) {
     next(err);

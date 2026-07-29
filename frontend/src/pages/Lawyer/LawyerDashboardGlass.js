@@ -144,8 +144,11 @@ const LawyerDashboardGlass = () => {
     return d.toLocaleDateString('ru-RU', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   };
 
-  // Показываем онбординг новым юристам (без кейсов и отзывов)
-  const isNewLawyer = !onboardingDone && stats && stats.completedCases === 0 && stats.reviewsCount === 0;
+  // Показываем онбординг, пока профиль юриста не заполнен (нет описания). Раньше
+  // сверялись поля stats.completedCases/reviewsCount, которых бэкенд НЕ отдаёт
+  // (он шлёт completedConsultations/totalReviews) → условие было всегда false и
+  // мастер не показывался никому. Теперь ориентируемся на серверный profileComplete.
+  const isNewLawyer = !onboardingDone && stats && !stats.profileComplete;
   if (isNewLawyer) {
     return <OnboardingWizard onComplete={() => { setOnboardingDone(true); loadDashboardData(); }} />;
   }

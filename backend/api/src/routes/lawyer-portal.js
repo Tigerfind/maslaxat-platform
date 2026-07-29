@@ -13,6 +13,27 @@ const ACCEPTABLE_FROM = ['pending']; // принять/подтвердить м
 const REJECTABLE_FROM = ['payment_pending', 'pending', 'accepted']; // до начала сессии
 const STARTABLE_FROM = ['accepted']; // начать можно только подтверждённую
 
+// Канонический формат недельного расписания: { mon:{enabled,from,to}, …, sun:{…} }.
+// Приводим к нему ЛЮБОЙ вход — и старый {start,end}/присутствие-ключа-=-активен
+// (онбординг, редактор профиля), и {enabled,from,to} (редактор «Часы приёма») —
+// чтобы часы совпадали во всех редакторах (раньше форматы клобберили друг друга в
+// одной колонке profile.schedule).
+const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const isHHmm = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
+function normalizeSchedule(raw) {
+  const src = raw && typeof raw === 'object' ? raw : {};
+  const out = {};
+  for (const day of SCHEDULE_DAYS) {
+    const v = src[day];
+    if (!v || typeof v !== 'object') { out[day] = { enabled: false, from: '09:00', to: '18:00' }; continue; }
+    const enabled = 'enabled' in v ? Boolean(v.enabled) : true; // старый формат: присутствие = включён
+    const from = isHHmm(v.from) ? v.from : (isHHmm(v.start) ? v.start : '09:00');
+    const to = isHHmm(v.to) ? v.to : (isHHmm(v.end) ? v.end : '18:00');
+    out[day] = { enabled, from, to };
+  }
+  return out;
+}
+
 // Avatar upload config (reuse same setup as users.js)
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
 const storage = multer.diskStorage({
@@ -587,7 +608,11 @@ router.get('/profile', async (req, res, next) => {
 
     if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
 
-    res.json({ user, profile: user.profile });
+    // Отдаём расписание в каноническом формате (совместимо с редактором «Часы приёма»)
+    const profileOut = user.profile
+      ? { ...user.profile.toJSON(), schedule: normalizeSchedule(user.profile.schedule) }
+      : null;
+    res.json({ user, profile: profileOut });
   } catch (err) {
     next(err);
   }
@@ -638,8 +663,10 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       catch { profile.certificates = []; }
     }
     if (schedule !== undefined) {
-      try { profile.schedule = typeof schedule === 'string' ? JSON.parse(schedule) : schedule; }
-      catch { profile.schedule = {}; }
+      let parsed;
+      try { parsed = typeof schedule === 'string' ? JSON.parse(schedule) : schedule; }
+      catch { parsed = {}; }
+      profile.schedule = normalizeSchedule(parsed); // единый формат {enabled,from,to}
     }
 
     // After onboarding wizard completes — make profile visible
@@ -694,7 +721,7 @@ router.get('/availability', async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     res.json({
-      schedule: (profile && profile.schedule) || {},
+      schedule: normalizeSchedule(profile && profile.schedule),
       isAvailable: profile ? profile.isAvailable : true,
     });
   } catch (err) {
@@ -709,20 +736,7 @@ router.put('/availability', async (req, res, next) => {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
 
-    // Валидация времени HH:mm для включённых дней
-    const clean = {};
-    const isTime = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
-    if (schedule && typeof schedule === 'object') {
-      for (const [day, val] of Object.entries(schedule)) {
-        if (!val || typeof val !== 'object') continue;
-        clean[day] = {
-          enabled: Boolean(val.enabled),
-          from: isTime(val.from) ? val.from : '09:00',
-          to: isTime(val.to) ? val.to : '18:00',
-        };
-      }
-    }
-    profile.schedule = clean;
+    profile.schedule = normalizeSchedule(schedule); // единый формат + валидация HH:mm
     await profile.save();
     res.json({ success: true, schedule: profile.schedule });
   } catch (err) {

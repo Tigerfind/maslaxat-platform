@@ -109,20 +109,18 @@ const StepProfile = ({ data, onChange, t }) => (
   </div>
 );
 
-// ── Step 2: Specializations ───────────────────────────────────
+// ── Step 2: Specialization (одиночный выбор) ──────────────────
+// Бэкенд хранит ОДНУ специализацию (LawyerProfile.specialization — STRING), и по
+// ней же фильтруется каталог. Раньше был мульти-выбор, но сохранялась только [0] —
+// остальные молча терялись. Делаем честный одиночный выбор (радио-поведение).
 const StepSpecializations = ({ data, onChange, t }) => (
   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
     {SPECIALIZATIONS.map((spec) => {
-      const selected = data.specializations.includes(spec);
+      const selected = data.specializations[0] === spec;
       return (
         <button
           key={spec}
-          onClick={() => {
-            const next = selected
-              ? data.specializations.filter((s) => s !== spec)
-              : [...data.specializations, spec];
-            onChange('specializations', next);
-          }}
+          onClick={() => onChange('specializations', [spec])}
           style={chipStyle(selected)}
         >
           {specLabel(t, spec)}
@@ -135,31 +133,35 @@ const StepSpecializations = ({ data, onChange, t }) => (
 // ── Step 3: Schedule ──────────────────────────────────────────
 const StepSchedule = ({ data, onChange, times, setTimes, t }) => {
   const DAYS = t('onboarding.days');
+  // Единый формат {enabled, from, to} (как в редакторе «Часы приёма»).
   const toggleDay = (key) => {
     const current = data.schedule[key];
     onChange('schedule', {
       ...data.schedule,
-      [key]: current ? null : { start: times.start, end: times.end },
+      [key]: current?.enabled
+        ? { ...current, enabled: false }
+        : { enabled: true, from: times.start, to: times.end },
     });
   };
 
+  // field: 'from' | 'to' — общие часы применяются ко всем включённым дням.
   const applyTime = (field, value) => {
-    setTimes((t) => ({ ...t, [field]: value }));
+    setTimes((t) => ({ ...t, [field === 'from' ? 'start' : 'end']: value }));
     const next = { ...data.schedule };
     Object.keys(next).forEach((k) => {
-      if (next[k]) next[k] = { ...next[k], [field]: value };
+      if (next[k]?.enabled) next[k] = { ...next[k], [field]: value };
     });
     onChange('schedule', next);
   };
 
-  const activeCount = Object.values(data.schedule).filter(Boolean).length;
+  const activeCount = Object.values(data.schedule).filter((d) => d?.enabled).length;
 
   return (
     <div>
       <div style={label}>{t('onboarding.workDays')} {activeCount > 0 && <span style={{ color: 'var(--accent)' }}>· {t('onboarding.selected', { n: activeCount })}</span>}</div>
       <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
         {DAY_KEYS.map((key, idx) => (
-          <button key={key} onClick={() => toggleDay(key)} style={{ ...chipStyle(!!data.schedule[key]), minWidth: 52, textAlign: 'center' }}>
+          <button key={key} onClick={() => toggleDay(key)} style={{ ...chipStyle(!!data.schedule[key]?.enabled), minWidth: 52, textAlign: 'center' }}>
             {DAYS[idx]}
           </button>
         ))}
@@ -168,11 +170,11 @@ const StepSchedule = ({ data, onChange, times, setTimes, t }) => {
       <div style={{ display: 'flex', gap: 16, marginTop: 26 }}>
         <div style={{ flex: 1 }}>
           <div style={label}>{t('onboarding.start')}</div>
-          <input type="time" value={times.start} onChange={(e) => applyTime('start', e.target.value)} style={inputStyle} />
+          <input type="time" value={times.start} onChange={(e) => applyTime('from', e.target.value)} style={inputStyle} />
         </div>
         <div style={{ flex: 1 }}>
           <div style={label}>{t('onboarding.end')}</div>
-          <input type="time" value={times.end} onChange={(e) => applyTime('end', e.target.value)} style={inputStyle} />
+          <input type="time" value={times.end} onChange={(e) => applyTime('to', e.target.value)} style={inputStyle} />
         </div>
       </div>
     </div>
@@ -235,7 +237,7 @@ const OnboardingWizard = ({ onComplete }) => {
   const canProceed = () => {
     if (step === 0) return data.description.length >= 50;
     if (step === 1) return data.specializations.length >= 1;
-    if (step === 2) return Object.values(data.schedule).filter(Boolean).length >= 3;
+    if (step === 2) return Object.values(data.schedule).filter((d) => d?.enabled).length >= 3;
     if (step === 3) return data.price >= 50000;
     return false;
   };

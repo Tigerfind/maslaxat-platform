@@ -135,11 +135,14 @@ const LawyerProfileEditPage = () => {
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
+  // Единый формат {enabled, from, to} (совместимо с редактором «Часы приёма»).
   const toggleDay = (key) => {
     const current = form.schedule[key];
     handleChange('schedule', {
       ...form.schedule,
-      [key]: current ? null : { start: '09:00', end: '18:00' },
+      [key]: current?.enabled
+        ? { ...current, enabled: false }
+        : { enabled: true, from: current?.from || '09:00', to: current?.to || '18:00' },
     });
   };
 
@@ -373,7 +376,7 @@ const LawyerProfileEditPage = () => {
           <div style={cardHeading}>{t('lawyerPanel.schedule')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
             {DAY_KEYS.map((key, idx) => {
-              const active = !!form.schedule[key];
+              const active = !!form.schedule[key]?.enabled;
               return (
                 <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <Chip
@@ -396,16 +399,16 @@ const LawyerProfileEditPage = () => {
                       <TextField
                         type="time"
                         size="small"
-                        value={form.schedule[key].start}
-                        onChange={(e) => updateTime(key, 'start', e.target.value)}
+                        value={form.schedule[key]?.from || '09:00'}
+                        onChange={(e) => updateTime(key, 'from', e.target.value)}
                         sx={timeSx}
                       />
                       <span style={{ color: 'var(--text3)' }}>—</span>
                       <TextField
                         type="time"
                         size="small"
-                        value={form.schedule[key].end}
-                        onChange={(e) => updateTime(key, 'end', e.target.value)}
+                        value={form.schedule[key]?.to || '18:00'}
+                        onChange={(e) => updateTime(key, 'to', e.target.value)}
                         sx={timeSx}
                       />
                     </div>

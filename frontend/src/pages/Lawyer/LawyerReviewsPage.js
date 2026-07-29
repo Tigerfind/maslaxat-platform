@@ -97,16 +97,8 @@ const LawyerReviewsPage = () => {
 
   useEffect(() => { load(); }, [load]);
 
-  const handleLike = async (id) => {
-    try {
-      const res = await lawyerReviewsService.markHelpful(id);
-      setReviews((prev) => prev.map((r) => (r.id === id
-        ? { ...r, helpful: res?.helpfulCount ?? (r.helpful || 0) + 1, liked: true }
-        : r)));
-    } catch (err) {
-      toast.error(err.response?.data?.error || t('lawyerPanel.genericError'));
-    }
-  };
+  // «Полезно» юрист не ставит на СВОИ отзывы (бэкенд всегда 403), поэтому в кабинете
+  // показываем счётчик только для чтения — кнопка handleLike убрана как всегда-ошибка.
 
   const openReply = (r) => {
     setReplyingId(r.id);
@@ -301,18 +293,17 @@ const LawyerReviewsPage = () => {
                             {t('lawyerPanel.reply')}
                           </button>
                         )}
-                        <button
-                          onClick={() => handleLike(rv.id)}
-                          disabled={rv.liked}
-                          style={{
-                            display: 'flex', alignItems: 'center', gap: 6, background: 'transparent',
-                            border: '1px solid var(--border)', color: rv.liked ? 'var(--accent)' : 'var(--text2)',
-                            fontSize: 12, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
-                            padding: '9px 18px', borderRadius: 'var(--radius)', cursor: rv.liked ? 'default' : 'pointer', fontFamily: 'inherit',
-                          }}
-                        >
-                          ♥ {rv.helpful ?? rv.helpfulCount ?? 0}
-                        </button>
+                        {(rv.helpful ?? rv.helpfulCount ?? 0) > 0 && (
+                          <span
+                            style={{
+                              display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text3)',
+                              fontSize: 12, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
+                              padding: '9px 0',
+                            }}
+                          >
+                            ♥ {rv.helpful ?? rv.helpfulCount ?? 0}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>
