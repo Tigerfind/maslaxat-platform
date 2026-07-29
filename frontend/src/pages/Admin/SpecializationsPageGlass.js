@@ -54,8 +54,9 @@ const SpecializationsPageGlass = () => {
   const [currentSpec, setCurrentSpec] = useState({
     id: '',
     name: '',
-    description: '',
-    active: true,
+    nameUz: '',
+    nameEn: '',
+    isActive: true,
   });
 
   useEffect(() => {
@@ -84,8 +85,9 @@ const SpecializationsPageGlass = () => {
       setCurrentSpec({
         id: '',
         name: '',
-        description: '',
-        active: true,
+        nameUz: '',
+        nameEn: '',
+        isActive: true,
       });
       setEditMode(false);
     }
@@ -97,14 +99,15 @@ const SpecializationsPageGlass = () => {
     setCurrentSpec({
       id: '',
       name: '',
-      description: '',
-      active: true,
+      nameUz: '',
+      nameEn: '',
+      isActive: true,
     });
     setEditMode(false);
   };
 
   const handleSave = async () => {
-    if (!currentSpec.name || !currentSpec.description) {
+    if (!currentSpec.name) {
       toast.error(t('specPage.fillAllFields'));
       return;
     }
@@ -152,7 +155,7 @@ const SpecializationsPageGlass = () => {
       if (spec) {
         await adminSpecializationService.updateSpecialization(id, {
           ...spec,
-          active: !currentStatus,
+          isActive: !currentStatus,
         });
         toast.success(
           !currentStatus ? t('specPage.specActivated') : t('specPage.specDeactivated')
@@ -165,7 +168,7 @@ const SpecializationsPageGlass = () => {
     }
   };
 
-  const activeCount = specializations.filter((s) => s.active).length;
+  const activeCount = specializations.filter((s) => s.isActive).length;
   const lawyerCount = specializations.reduce(
     (sum, s) => sum + (s.lawyerCount || 0),
     0
@@ -368,7 +371,7 @@ const SpecializationsPageGlass = () => {
                       {t('specPage.colName')}
                     </TableCell>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
-                      {t('specPage.colDesc')}
+                      {t('specPage.colTranslations')}
                     </TableCell>
                     <TableCell align="center" sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
                       {t('specPage.colLawyers')}
@@ -390,7 +393,7 @@ const SpecializationsPageGlass = () => {
                         '&:hover': {
                           background: axelionColors.bgWarm,
                         },
-                        opacity: spec.active ? 1 : 0.6,
+                        opacity: spec.isActive ? 1 : 0.6,
                       }}
                     >
                       <TableCell>
@@ -407,7 +410,7 @@ const SpecializationsPageGlass = () => {
                           variant="body2"
                           sx={{ color: axelionColors.textMuted }}
                         >
-                          {spec.description}
+                          {[spec.nameUz, spec.nameEn].filter(Boolean).join(' · ') || '—'}
                         </Typography>
                       </TableCell>
                       <TableCell align="center">
@@ -427,7 +430,7 @@ const SpecializationsPageGlass = () => {
                         />
                       </TableCell>
                       <TableCell align="center">
-                        {spec.active ? (
+                        {spec.isActive ? (
                           <Chip
                             label={t('specPage.statusActive')}
                             size="small"
@@ -463,11 +466,11 @@ const SpecializationsPageGlass = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
-                          <Tooltip title={spec.active ? t('specPage.deactivate') : t('specPage.activate')}>
+                          <Tooltip title={spec.isActive ? t('specPage.deactivate') : t('specPage.activate')}>
                             <Switch
-                              checked={spec.active}
+                              checked={spec.isActive}
                               onChange={() =>
-                                handleToggleActive(spec.id, spec.active)
+                                handleToggleActive(spec.id, spec.isActive)
                               }
                               sx={{
                                 '& .MuiSwitch-switchBase.Mui-checked': {
@@ -576,40 +579,49 @@ const SpecializationsPageGlass = () => {
               }}
             />
             <TextField
-              label={t('specPage.descLabel')}
+              label={t('specPage.nameUzLabel')}
               fullWidth
-              multiline
-              rows={4}
-              value={currentSpec.description}
+              value={currentSpec.nameUz || ''}
               onChange={(e) =>
-                setCurrentSpec({ ...currentSpec, description: e.target.value })
+                setCurrentSpec({ ...currentSpec, nameUz: e.target.value })
               }
-              placeholder={t('specPage.descPlaceholder')}
+              placeholder={t('specPage.nameUzPlaceholder')}
               variant="outlined"
               sx={{
                 '& .MuiOutlinedInput-root': {
                   borderRadius: '8px',
-                  '& fieldset': {
-                    borderColor: axelionColors.borderLight,
-                  },
-                  '&:hover fieldset': {
-                    borderColor: axelionColors.gold,
-                  },
-                  '&.Mui-focused fieldset': {
-                    borderColor: axelionColors.gold,
-                  },
+                  '& fieldset': { borderColor: axelionColors.borderLight },
+                  '&:hover fieldset': { borderColor: axelionColors.gold },
+                  '&.Mui-focused fieldset': { borderColor: axelionColors.gold },
                 },
-                '& .MuiInputLabel-root.Mui-focused': {
-                  color: axelionColors.gold,
+                '& .MuiInputLabel-root.Mui-focused': { color: axelionColors.gold },
+              }}
+            />
+            <TextField
+              label={t('specPage.nameEnLabel')}
+              fullWidth
+              value={currentSpec.nameEn || ''}
+              onChange={(e) =>
+                setCurrentSpec({ ...currentSpec, nameEn: e.target.value })
+              }
+              placeholder={t('specPage.nameEnPlaceholder')}
+              variant="outlined"
+              sx={{
+                '& .MuiOutlinedInput-root': {
+                  borderRadius: '8px',
+                  '& fieldset': { borderColor: axelionColors.borderLight },
+                  '&:hover fieldset': { borderColor: axelionColors.gold },
+                  '&.Mui-focused fieldset': { borderColor: axelionColors.gold },
                 },
+                '& .MuiInputLabel-root.Mui-focused': { color: axelionColors.gold },
               }}
             />
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
               <Typography sx={{ color: axelionColors.textDark, fontWeight: 500 }}>{t('specPage.activeLabel')}</Typography>
               <Switch
-                checked={currentSpec.active}
+                checked={currentSpec.isActive}
                 onChange={(e) =>
-                  setCurrentSpec({ ...currentSpec, active: e.target.checked })
+                  setCurrentSpec({ ...currentSpec, isActive: e.target.checked })
                 }
                 sx={{
                   '& .MuiSwitch-switchBase.Mui-checked': {
@@ -646,7 +658,7 @@ const SpecializationsPageGlass = () => {
           <Button
             variant="contained"
             onClick={handleSave}
-            disabled={!currentSpec.name || !currentSpec.description}
+            disabled={!currentSpec.name}
             sx={{
               background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
               color: '#FFFFFF',
