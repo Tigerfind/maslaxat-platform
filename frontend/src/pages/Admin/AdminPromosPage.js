@@ -6,7 +6,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableRow, Paper,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, Chip,
 } from '@mui/material';
-import { ArrowBack, Add, DeleteOutline } from '@mui/icons-material';
+import { ArrowBack, Add, DeleteOutline, EditOutlined } from '@mui/icons-material';
 import adminService from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -17,7 +17,8 @@ const AdminPromosPage = () => {
   const [promos, setPromos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [form, setForm] = useState({ code: '', discountPercent: 10, minAmount: 0, usageLimit: '' });
+  const [form, setForm] = useState({ code: '', discountPercent: 10, minAmount: 0, usageLimit: '', expiresAt: '' });
+  const [editId, setEditId] = useState(null); // null = создание, иначе id редактируемого промо
   const [saving, setSaving] = useState(false);
 
   const load = async () => {
@@ -27,14 +28,42 @@ const AdminPromosPage = () => {
   };
   useEffect(() => { load(); }, []);
 
-  const handleCreate = async () => {
-    if (!form.code.trim()) { toast.error(t('adminPromo.needCode')); return; }
+  const openCreate = () => {
+    setEditId(null);
+    setForm({ code: '', discountPercent: 10, minAmount: 0, usageLimit: '', expiresAt: '' });
+    setDialogOpen(true);
+  };
+
+  const openEdit = (p) => {
+    setEditId(p.id);
+    setForm({
+      code: p.code || '',
+      discountPercent: p.discountPercent ?? 10,
+      minAmount: p.minAmount ?? 0,
+      usageLimit: p.usageLimit ?? '',
+      expiresAt: p.expiresAt ? String(p.expiresAt).split('T')[0] : '',
+    });
+    setDialogOpen(true);
+  };
+
+  const handleSave = async () => {
+    if (!editId && !form.code.trim()) { toast.error(t('adminPromo.needCode')); return; }
     setSaving(true);
     try {
-      await adminService.promos.create(form);
-      toast.success(t('adminPromo.created'));
+      if (editId) {
+        // Код не меняем (идентификатор промо); PATCH правит остальные поля.
+        await adminService.promos.update(editId, {
+          discountPercent: form.discountPercent,
+          minAmount: form.minAmount,
+          usageLimit: form.usageLimit,
+          expiresAt: form.expiresAt || null,
+        });
+        toast.success(t('adminPromo.updated'));
+      } else {
+        await adminService.promos.create(form);
+        toast.success(t('adminPromo.created'));
+      }
       setDialogOpen(false);
-      setForm({ code: '', discountPercent: 10, minAmount: 0, usageLimit: '' });
       load();
     } catch (e) {
       toast.error(e.response?.data?.error || t('common.error'));
@@ -70,7 +99,7 @@ const AdminPromosPage = () => {
                 {t('adminPromo.title')}
               </Typography>
             </Box>
-            <Button startIcon={<Add />} onClick={() => setDialogOpen(true)} variant="contained"
+            <Button startIcon={<Add />} onClick={openCreate} variant="contained"
               sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark, boxShadow: 'none' } }}>
               {t('adminPromo.add')}
             </Button>
@@ -105,6 +134,7 @@ const AdminPromosPage = () => {
                     <TableCell>{p.usedCount || 0}{p.usageLimit ? ` / ${p.usageLimit}` : ''}</TableCell>
                     <TableCell><Switch checked={p.isActive} onChange={() => toggleActive(p)} sx={{ '& .Mui-checked': { color: axelionColors.gold } }} /></TableCell>
                     <TableCell align="right">
+                      <IconButton onClick={() => openEdit(p)} size="small" sx={{ color: axelionColors.textMuted }}><EditOutlined /></IconButton>
                       <IconButton onClick={() => remove(p)} size="small" sx={{ color: axelionColors.error }}><DeleteOutline /></IconButton>
                     </TableCell>
                   </TableRow>
@@ -116,17 +146,18 @@ const AdminPromosPage = () => {
       </Container>
 
       <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
-        <DialogTitle>{t('adminPromo.add')}</DialogTitle>
+        <DialogTitle>{editId ? t('adminPromo.edit') : t('adminPromo.add')}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
-          <TextField label={t('adminPromo.code')} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} fullWidth />
+          <TextField label={t('adminPromo.code')} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} fullWidth disabled={!!editId} helperText={editId ? t('adminPromo.codeLocked') : undefined} />
           <TextField label={t('adminPromo.discountPct')} type="number" value={form.discountPercent} onChange={(e) => setForm({ ...form, discountPercent: e.target.value })} fullWidth />
           <TextField label={t('adminPromo.minAmount')} type="number" value={form.minAmount} onChange={(e) => setForm({ ...form, minAmount: e.target.value })} fullWidth />
           <TextField label={t('adminPromo.usageLimit')} type="number" value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value })} fullWidth helperText={t('adminPromo.usageLimitHint')} />
+          <TextField label={t('adminPromo.expiresAt')} type="date" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} fullWidth InputLabelProps={{ shrink: true }} helperText={t('adminPromo.expiresAtHint')} />
         </DialogContent>
         <DialogActions sx={{ px: 3, pb: 2 }}>
           <Button onClick={() => setDialogOpen(false)} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>{t('common.cancel')}</Button>
-          <Button onClick={handleCreate} disabled={saving} variant="contained" sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark } }}>
-            {saving ? t('adminPromo.saving') : t('adminPromo.save')}
+          <Button onClick={handleSave} disabled={saving} variant="contained" sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark } }}>
+            {saving ? t('adminPromo.saving') : (editId ? t('adminPromo.saveEdit') : t('adminPromo.save'))}
           </Button>
         </DialogActions>
       </Dialog>
