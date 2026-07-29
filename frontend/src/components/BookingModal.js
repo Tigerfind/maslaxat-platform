@@ -18,6 +18,7 @@ import { useTranslation } from '../i18n';
 const DURATIONS = [30, 60, 90];
 
 const TIME_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
+const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay() → ключ расписания
 
 const STEPS = [1, 2, 3];
 
@@ -47,6 +48,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [promoLoading, setPromoLoading] = useState(false);
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
+  const [schedule, setSchedule] = useState(null); // недельные часы приёма юриста
   const [loyalty, setLoyalty] = useState(null);
   const [useFree, setUseFree] = useState(false);
   const [subLeft, setSubLeft] = useState(0);
@@ -60,6 +62,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setUseSubFree(false);
     setSubLeft(0);
     let alive = true;
+    // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
+    // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
+    setSchedule(lawyer?.profile?.schedule || null);
+    (async () => {
+      try {
+        const r = await api.get(`/lawyers/${lawyer.id}`);
+        if (alive) setSchedule(r.data?.lawyer?.profile?.schedule || null);
+      } catch { /* оставим prop/none — фолбэк на все слоты */ }
+    })();
     (async () => {
       let freeNow = false;
       try {
@@ -80,11 +91,20 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     return () => { alive = false; };
   }, [open]);
 
+  const hasSchedule = schedule && typeof schedule === 'object'
+    && Object.values(schedule).some((d) => d && d.enabled);
+
   const dates = useMemo(() => {
     const arr = [];
-    for (let i = 1; i <= 5; i += 1) {
+    const scan = hasSchedule ? 21 : 5; // ищем открытые дни среди ближайших
+    const want = hasSchedule ? 8 : 5;
+    for (let i = 1; i <= scan && arr.length < want; i += 1) {
       const dt = new Date();
       dt.setDate(dt.getDate() + i);
+      if (hasSchedule) {
+        const day = schedule[DAY_KEYS[dt.getDay()]];
+        if (!day || !day.enabled) continue; // закрытые дни не показываем
+      }
       arr.push({
         iso: dt.toISOString().split('T')[0],
         dow: DOWS[dt.getDay()],
@@ -93,7 +113,28 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       });
     }
     return arr;
-  }, [t]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [t, schedule, hasSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Слоты выбранного дня: почасовые старты внутри [from, to) расписания юриста.
+  // Без расписания — прежний фиксированный список (фолбэк, не блокируем бронь).
+  const timeSlots = useMemo(() => {
+    if (!hasSchedule) return TIME_SLOTS;
+    if (!formData.preferredDate) return [];
+    const day = schedule[DAY_KEYS[new Date(`${formData.preferredDate}T00:00:00`).getDay()]];
+    if (!day || !day.enabled) return [];
+    const fromH = parseInt(String(day.from).split(':')[0], 10);
+    const toH = parseInt(String(day.to).split(':')[0], 10);
+    const out = [];
+    for (let h = fromH; h < toH; h += 1) out.push(`${String(h).padStart(2, '0')}:00`);
+    return out;
+  }, [hasSchedule, schedule, formData.preferredDate]);
+
+  // Если выбранное время выпало из доступных слотов (сменился день/юрист) — сбрасываем.
+  useEffect(() => {
+    if (formData.preferredTime && !timeSlots.includes(formData.preferredTime)) {
+      setFormData((p) => ({ ...p, preferredTime: '' }));
+    }
+  }, [timeSlots]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!lawyer) return null;
 
@@ -648,24 +689,30 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </div>
 
             <div style={label}>{t('booking.time')}</div>
-            <div
-              style={{
-                display: 'grid',
-                gridTemplateColumns: 'repeat(3, 1fr)',
-                gap: 8,
-                marginBottom: 22,
-              }}
-            >
-              {TIME_SLOTS.map((t) => (
-                <div
-                  key={t}
-                  onClick={() => handleChange('preferredTime', t)}
-                  style={timePill(formData.preferredTime === t)}
-                >
-                  {t}
-                </div>
-              ))}
-            </div>
+            {timeSlots.length === 0 ? (
+              <div style={{ fontSize: 13, color: 'var(--text3)', padding: '10px 0 22px' }}>
+                {formData.preferredDate ? t('booking.noSlots') : t('booking.pickDateFirst')}
+              </div>
+            ) : (
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(3, 1fr)',
+                  gap: 8,
+                  marginBottom: 22,
+                }}
+              >
+                {timeSlots.map((slot) => (
+                  <div
+                    key={slot}
+                    onClick={() => handleChange('preferredTime', slot)}
+                    style={timePill(formData.preferredTime === slot)}
+                  >
+                    {slot}
+                  </div>
+                ))}
+              </div>
+            )}
           </>
         )}
 

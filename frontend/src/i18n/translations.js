@@ -580,7 +580,7 @@ const translations = {
     ru: {
       title: 'Запись на консультацию', sum: 'сум', typeLabel: 'Тип консультации', video: 'Видео', chat: 'Чат',
       duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…',
-      date: 'Дата', time: 'Время', dateTime: 'Дата и время', cost: 'Стоимость', free: 'Бесплатно',
+      date: 'Дата', time: 'Время', dateTime: 'Дата и время', cost: 'Стоимость', free: 'Бесплатно', noSlots: 'На этот день нет свободных часов', pickDateFirst: 'Сначала выберите дату',
       promo: 'Промокод', total: 'Итого', freeTotal: '0 сум · Бесплатно',
       firstFree: 'Первая консультация — бесплатно', firstFreeSub: 'Приветственный бонус применён — оплата не требуется.', subFree: 'Бесплатно по вашей подписке', subFreeSub: 'Консультация включена в тариф. Осталось в этом месяце: {n}.',
       promoPlaceholder: 'Введите код', apply: 'Применить', checking: 'Проверка…', promoOk: '✓ Промокод применён —', promoBad: 'Код недействителен',
@@ -596,7 +596,7 @@ const translations = {
     uz: {
       title: 'Консультацияга ёзилиш', sum: 'сўм', typeLabel: 'Консультация тури', video: 'Видео', chat: 'Чат',
       duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…',
-      date: 'Сана', time: 'Вақт', dateTime: 'Сана ва вақт', cost: 'Нархи', free: 'Бепул',
+      date: 'Сана', time: 'Вақт', dateTime: 'Сана ва вақт', cost: 'Нархи', free: 'Бепул', noSlots: 'Бу кунда бўш вақт йўқ', pickDateFirst: 'Аввал санани танланг',
       promo: 'Промокод', total: 'Жами', freeTotal: '0 сўм · Бепул',
       firstFree: 'Биринчи консультация — бепул', firstFreeSub: 'Хуш келибсиз бонуси қўлланилди — тўлов талаб қилинмайди.', subFree: 'Обунангиз бўйича бепул', subFreeSub: 'Консультация тарифга киритилган. Шу ойда қолди: {n}.',
       promoPlaceholder: 'Кодни киритинг', apply: 'Қўллаш', checking: 'Текширилмоқда…', promoOk: '✓ Промокод қўлланилди —', promoBad: 'Код нотўғри',
@@ -612,7 +612,7 @@ const translations = {
     en: {
       title: 'Book a consultation', sum: 'UZS', typeLabel: 'Consultation type', video: 'Video', chat: 'Chat',
       duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…',
-      date: 'Date', time: 'Time', dateTime: 'Date and time', cost: 'Cost', free: 'Free',
+      date: 'Date', time: 'Time', dateTime: 'Date and time', cost: 'Cost', free: 'Free', noSlots: 'No open hours on this day', pickDateFirst: 'Select a date first',
       promo: 'Promo code', total: 'Total', freeTotal: '0 UZS · Free',
       firstFree: 'First consultation — free', firstFreeSub: 'Welcome bonus applied — no payment required.', subFree: 'Free with your subscription', subFreeSub: 'Included in your plan. Left this month: {n}.',
       promoPlaceholder: 'Enter code', apply: 'Apply', checking: 'Checking…', promoOk: '✓ Promo code applied —', promoBad: 'Invalid code',

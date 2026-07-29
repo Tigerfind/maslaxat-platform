@@ -154,6 +154,20 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(400).json({ error: 'Неверный формат времени (HH:mm)' });
     }
 
+    // Слот должен попадать в рабочие часы юриста (если расписание задано). Раньше
+    // валидировался только формат — клиент мог забронировать закрытый день/время.
+    const sched = lawyer.profile.schedule;
+    const scheduled = sched && typeof sched === 'object' && Object.values(sched).some((day) => day && day.enabled);
+    if (scheduled && preferredDate && preferredTime) {
+      const DK = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay() → ключ расписания
+      const key = DK[new Date(`${preferredDate}T00:00:00`).getDay()];
+      const day = sched[key];
+      // Строки HH:mm сравниваются лексикографически корректно (нули впереди).
+      if (!day || !day.enabled || preferredTime < day.from || preferredTime >= day.to) {
+        return res.status(400).json({ error: 'Выбранное время вне рабочих часов юриста' });
+      }
+    }
+
     // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
     // не доверяем). Базовая (платная) цена — по длительности.
     const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
