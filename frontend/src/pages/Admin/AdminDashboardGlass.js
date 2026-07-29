@@ -16,7 +16,6 @@ import {
   TableContainer,
   TableHead,
   TableRow,
-  Badge,
   keyframes,
   CircularProgress,
   Card,
@@ -222,9 +221,7 @@ const AdminDashboardGlass = () => {
                   },
                 }}
               >
-                <Badge badgeContent={5} color="error">
-                  <Notifications />
-                </Badge>
+                <Notifications />
               </IconButton>
               <IconButton
                 sx={{
@@ -726,7 +723,7 @@ const AdminDashboardGlass = () => {
                     <Box
                       sx={{
                         height: '100%',
-                        width: '85%',
+                        width: '100%',
                         background: axelionColors.gold,
                       }}
                     />
@@ -753,7 +750,7 @@ const AdminDashboardGlass = () => {
                     <Box
                       sx={{
                         height: '100%',
-                        width: '72%',
+                        width: stats?.totalUsers ? `${Math.round((stats.totalLawyers / stats.totalUsers) * 100)}%` : '0%',
                         background: axelionColors.warning,
                       }}
                     />
@@ -780,7 +777,7 @@ const AdminDashboardGlass = () => {
                     <Box
                       sx={{
                         height: '100%',
-                        width: '65%',
+                        width: stats?.totalConsultations ? `${Math.round((stats.activeConsultations / stats.totalConsultations) * 100)}%` : '0%',
                         background: axelionColors.success,
                       }}
                     />
@@ -804,11 +801,11 @@ const AdminDashboardGlass = () => {
               </Typography>
 
               <Box sx={{ display: 'flex', flexDirection: 'column', gap: 2, mt: 3 }}>
+                {/* Честный статус: панель загрузилась → API и БД доступны сейчас.
+                    Выдуманные аптаймы и непроверяемые Video/AI убраны. */}
                 {[
-                  { label: t('admin.apiServer'), status: 'online', uptime: '99.9%' },
-                  { label: t('admin.database'), status: 'online', uptime: '99.8%' },
-                  { label: t('admin.videoServer'), status: 'online', uptime: '98.5%' },
-                  { label: t('admin.aiService'), status: 'online', uptime: '99.2%' },
+                  { label: t('admin.apiServer') },
+                  { label: t('admin.database') },
                 ].map((system, index) => (
                   <Box
                     key={index}
@@ -832,8 +829,8 @@ const AdminDashboardGlass = () => {
                         {system.label}
                       </Typography>
                     </Box>
-                    <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>
-                      {t('admin.uptime')}: {system.uptime}
+                    <Typography variant="caption" sx={{ color: axelionColors.success }}>
+                      {t('admin.working')}
                     </Typography>
                   </Box>
                 ))}

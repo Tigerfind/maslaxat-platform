@@ -525,7 +525,7 @@ const translations = {
       recentActivity: 'Последняя активность', records: 'записей', colType: 'Тип', colDesc: 'Описание', colUser: 'Пользователь', colDate: 'Дата',
       userUnknown: 'Неизвестно', dateRecently: 'Недавно', noActivity: 'Нет данных о последней активности',
       systemOverview: 'Обзор системы', activeLawyers: 'Активные юристы', consultations: 'Консультации', detailedAnalytics: 'Подробная аналитика',
-      systemHealth: 'Состояние системы', apiServer: 'API сервер', database: 'База данных', videoServer: 'Видео сервер', aiService: 'AI сервис', uptime: 'Uptime',
+      systemHealth: 'Состояние системы', apiServer: 'API сервер', database: 'База данных', videoServer: 'Видео сервер', aiService: 'AI сервис', uptime: 'Uptime', working: 'работает',
     },
     uz: {
       title: 'Администратор панели', adminFallback: 'Администратор', fullAccess: '| Тўлиқ рухсат', loadError: 'Маълумотларни юклашда хатолик', sum: 'сўм',
@@ -535,7 +535,7 @@ const translations = {
       recentActivity: 'Сўнгги фаоллик', records: 'ёзув', colType: 'Тури', colDesc: 'Тавсиф', colUser: 'Фойдаланувчи', colDate: 'Сана',
       userUnknown: 'Номаълум', dateRecently: 'Яқинда', noActivity: 'Сўнгги фаоллик ҳақида маълумот йўқ',
       systemOverview: 'Тизим кўриниши', activeLawyers: 'Фаол юристлар', consultations: 'Консультациялар', detailedAnalytics: 'Батафсил таҳлил',
-      systemHealth: 'Тизим ҳолати', apiServer: 'API сервер', database: 'Маълумотлар базаси', videoServer: 'Видео сервер', aiService: 'AI хизмат', uptime: 'Uptime',
+      systemHealth: 'Тизим ҳолати', apiServer: 'API сервер', database: 'Маълумотлар базаси', videoServer: 'Видео сервер', aiService: 'AI хизмат', uptime: 'Uptime', working: 'ишламоқда',
     },
     en: {
       title: 'Admin panel', adminFallback: 'Administrator', fullAccess: '| Full access', loadError: 'Error loading data', sum: 'UZS',
@@ -545,7 +545,7 @@ const translations = {
       recentActivity: 'Recent activity', records: 'records', colType: 'Type', colDesc: 'Description', colUser: 'User', colDate: 'Date',
       userUnknown: 'Unknown', dateRecently: 'Recently', noActivity: 'No recent activity data',
       systemOverview: 'System overview', activeLawyers: 'Active lawyers', consultations: 'Consultations', detailedAnalytics: 'Detailed analytics',
-      systemHealth: 'System health', apiServer: 'API server', database: 'Database', videoServer: 'Video server', aiService: 'AI service', uptime: 'Uptime',
+      systemHealth: 'System health', apiServer: 'API server', database: 'Database', videoServer: 'Video server', aiService: 'AI service', uptime: 'Uptime', working: 'operational',
     },
   },
 
