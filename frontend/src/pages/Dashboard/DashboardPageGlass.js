@@ -90,6 +90,13 @@ const DashboardPageGlass = () => {
   const [upcoming, setUpcoming] = useState([]);
   const [sub, setSub] = useState(null);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const [qaInput, setQaInput] = useState('');
+
+  // Отправить вопрос в AI-чат: он авто-отправится там (location.state.autoSend).
+  const goToChat = (text) => {
+    const q = (text || '').trim();
+    navigate('/ai-chat', q ? { state: { autoSend: q } } : undefined);
+  };
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, []);
@@ -189,13 +196,21 @@ const DashboardPageGlass = () => {
             </div>
 
             <div style={{ position: 'relative', zIndex: 1, padding: '22px 24px', display: 'flex', flexDirection: 'column', gap: 14, flex: 1 }}>
-              <div style={{ alignSelf: 'flex-end', maxWidth: '78%', background: 'linear-gradient(135deg, #C9A980, #8B7355)', color: '#FFFFFF', padding: '12px 16px', borderRadius: '14px 14px 4px 14px', fontSize: 14, lineHeight: 1.5, boxShadow: '0 4px 14px rgba(0,0,0,0.3)' }}>{t('dashboard.demoQuestion')}</div>
-              <div style={{ alignSelf: 'flex-start', maxWidth: '82%', background: 'rgba(255,255,255,0.09)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.12)', color: '#E6DDCE', padding: '12px 16px', borderRadius: '14px 14px 14px 4px', fontSize: 14, lineHeight: 1.55 }}>{t('dashboard.demoAnswer')}</div>
+              <div style={{ alignSelf: 'flex-start', maxWidth: '82%', background: 'rgba(255,255,255,0.09)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)', border: '1px solid rgba(255,255,255,0.12)', color: '#E6DDCE', padding: '12px 16px', borderRadius: '14px 14px 14px 4px', fontSize: 14, lineHeight: 1.55 }}>{t('dashboard.aiGreeting')}</div>
+              <form onSubmit={(e) => { e.preventDefault(); goToChat(qaInput); }} style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
+                <input
+                  value={qaInput}
+                  onChange={(e) => setQaInput(e.target.value)}
+                  placeholder={t('dashboard.aiInputPlaceholder')}
+                  style={{ flex: 1, background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.16)', borderRadius: 12, padding: '11px 14px', color: '#F3EDE2', fontFamily: 'inherit', fontSize: 14, outline: 'none' }}
+                />
+                <button type="submit" aria-label="send" style={{ background: 'linear-gradient(135deg,#C9A980,#8B7355)', border: 'none', borderRadius: 12, padding: '0 18px', color: '#fff', cursor: 'pointer', fontFamily: 'inherit', fontSize: 18, lineHeight: 1 }}>→</button>
+              </form>
             </div>
 
             <div style={{ position: 'relative', zIndex: 1, padding: '16px 24px', borderTop: '1px solid rgba(255,255,255,0.10)', display: 'flex', gap: 8, flexWrap: 'wrap' }}>
               {quickChips.map((c) => (
-                <button key={c} onClick={() => navigate('/ai-chat')} className="ai-chip-dark" style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 20, padding: '8px 14px', fontSize: 13, color: '#D8CDBA', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s ease' }}>{c}</button>
+                <button key={c} onClick={() => goToChat(c)} className="ai-chip-dark" style={{ background: 'rgba(255,255,255,0.08)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)', border: '1px solid rgba(255,255,255,0.14)', borderRadius: 20, padding: '8px 14px', fontSize: 13, color: '#D8CDBA', cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s ease' }}>{c}</button>
               ))}
             </div>
           </div>

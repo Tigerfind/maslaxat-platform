@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useMediaQuery } from '@mui/material';
 import { toast } from 'react-toastify';
 import {
@@ -72,6 +72,8 @@ const initialsOf = (name = '') =>
 
 const AIChatPageGlass = () => {
   const navigate = useNavigate();
+  const location = useLocation();
+  const autoSentRef = useRef(false);
   const { t, language } = useTranslation();
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
@@ -112,6 +114,18 @@ const AIChatPageGlass = () => {
 
   useEffect(() => {
     loadConversations();
+  }, []);
+
+  // Авто-отправка вопроса, пришедшего с дашборда (QuickAIChat). Один раз за монтирование;
+  // чистим history-state, чтобы обновление страницы не отправляло повторно.
+  useEffect(() => {
+    const auto = location.state?.autoSend;
+    if (auto && typeof auto === 'string' && auto.trim() && !autoSentRef.current) {
+      autoSentRef.current = true;
+      window.history.replaceState({}, '');
+      handleSendMessage(auto);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -210,11 +224,14 @@ const AIChatPageGlass = () => {
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  const handleSendMessage = async () => {
-    if ((!inputMessage.trim() && attachedFiles.length === 0) || isLoading) return;
+  // overrideText — для авто-отправки вопроса с дашборда (QuickAIChat). Существующие
+  // вызовы передают event (onClick) или ничего — не строка → берём inputMessage.
+  const handleSendMessage = async (overrideText) => {
+    const baseText = typeof overrideText === 'string' ? overrideText : inputMessage;
+    if ((!baseText.trim() && attachedFiles.length === 0) || isLoading) return;
 
     const fileNames = attachedFiles.map((f) => f.name);
-    const msgText = inputMessage.trim() + (fileNames.length > 0 ? `\n\n📎 ${t('ai.attached')}: ${fileNames.join(', ')}` : '');
+    const msgText = baseText.trim() + (fileNames.length > 0 ? `\n\n📎 ${t('ai.attached')}: ${fileNames.join(', ')}` : '');
 
     const userMessage = {
       text: msgText,
@@ -224,7 +241,7 @@ const AIChatPageGlass = () => {
     };
 
     setMessages((prev) => [...prev, userMessage]);
-    const sentMessage = inputMessage;
+    const sentMessage = baseText;
     const filesToSend = [...attachedFiles];
     setInputMessage('');
     setAttachedFiles([]);
