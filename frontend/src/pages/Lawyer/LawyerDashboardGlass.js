@@ -84,6 +84,8 @@ const LawyerDashboardGlass = () => {
       ]);
 
       setStats(statsData);
+      // Пилюля статуса отражает реальный isAvailable (раньше всегда «онлайн» после загрузки)
+      if (statsData && typeof statsData.isAvailable === 'boolean') setStatusOnline(statsData.isAvailable);
       setConsultations(Array.isArray(consultationsData) ? consultationsData : []);
       setConsultationRequests(Array.isArray(requestsData) ? requestsData : []);
       setReviews(Array.isArray(reviewsData) ? reviewsData : []);
@@ -164,6 +166,15 @@ const LawyerDashboardGlass = () => {
     ? stats.weeklyActivity
     : [0, 0, 0, 0, 0, 0, 0];
   const maxWeekly = Math.max(...weeklyData, 1);
+
+  // Подписи столбцов соответствуют РЕАЛЬНЫМ дням: бэкенд шлёт активность за
+  // [сегодня-6 … сегодня], а раньше подписи были статичные Пн…Вс (сдвиг). DAYS[0]=Пн…
+  // DAYS[6]=Вс; JS getDay(): 0=Вс..6=Сб → индекс (getDay()+6)%7.
+  const weekDayLabels = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() - (6 - i));
+    return DAYS[(d.getDay() + 6) % 7];
+  });
 
   const typeChip = (isVideo) => ({
     color: isVideo ? 'var(--accent)' : 'var(--info)',
@@ -256,7 +267,7 @@ const LawyerDashboardGlass = () => {
             <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('lawyerPanel.weeklyActivity')}</div>
             <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 24 }}>{t('lawyerPanel.consultationsDone')}</div>
             <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 10, minHeight: 150 }}>
-              {DAYS.map((day, i) => {
+              {weekDayLabels.map((day, i) => {
                 const val = weeklyData[i] || 0;
                 const isMax = val === maxWeekly && val > 0;
                 const heightPct = Math.max((val / maxWeekly) * 100, 4);

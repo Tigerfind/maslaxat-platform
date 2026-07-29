@@ -279,8 +279,39 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
+  // Реальный .ics: генерируем событие и скачиваем файл (раньше был фейковый тост).
   const addToCalendar = () => {
-    toast.info(t('booking.toastCalendar'));
+    const date = formData.preferredDate; // YYYY-MM-DD
+    const time = formData.preferredTime; // HH:mm
+    if (!date || !time) { toast.info(t('booking.toastCalendar')); return; }
+    const [y, mo, d] = date.split('-').map(Number);
+    const [hh, mm] = time.split(':').map(Number);
+    const start = new Date(y, mo - 1, d, hh, mm);
+    const end = new Date(start.getTime() + duration * 60000);
+    const pad = (n) => String(n).padStart(2, '0');
+    // Плавающее локальное время (без TZID) — показывается в местном времени пользователя.
+    const fmt = (dt) => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+    const esc = (s) => String(s).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+    const ics = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MaslaXat//RU', 'CALSCALE:GREGORIAN',
+      'BEGIN:VEVENT',
+      `UID:maslaxat-${start.getTime()}@maslaxat.uz`,
+      `DTSTART:${fmt(start)}`,
+      `DTEND:${fmt(end)}`,
+      `SUMMARY:${esc(`${t('booking.calTitle')} — ${profName}`)}`,
+      `DESCRIPTION:${esc(t('booking.calDesc'))}`,
+      'END:VEVENT', 'END:VCALENDAR',
+    ].join('\r\n');
+    const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'maslaxat-consultation.ics';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    toast.success(t('booking.toastCalendar'));
   };
 
   const bookDone = () => {

@@ -130,6 +130,9 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       // профиля и НЕ трогает переключатель онлайн/офлайн — в отличие от isAvailable).
       // Нужен фронту, чтобы показывать мастер онбординга только пока профиль не заполнен.
       profileComplete: !!(profile && profile.description && String(profile.description).trim()),
+      // Реальный онлайн/офлайн — чтобы пилюля статуса отражала состояние после загрузки,
+      // а не всегда «онлайн».
+      isAvailable: profile ? Boolean(profile.isAvailable) : false,
     });
   } catch (err) {
     next(err);
