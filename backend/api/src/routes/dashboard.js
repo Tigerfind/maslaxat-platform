@@ -250,18 +250,29 @@ router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, 
 // GET /api/dashboard/admin/stats
 router.get('/admin/stats', authenticate, authorize('admin'), async (req, res, next) => {
   try {
-    const [totalUsers, totalLawyers, totalConsultations, totalActive] = await Promise.all([
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+    const [totalUsers, totalClients, totalLawyers, totalConsultations, totalActive, totalRevenue, monthlyRevenue] = await Promise.all([
+      User.count(), // все пользователи (раньше карточка «Всего» считала только клиентов)
       User.count({ where: { role: 'client' } }),
       User.count({ where: { role: 'lawyer' } }),
       Consultation.count(),
       Consultation.count({ where: { status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } } }),
+      // Доход = сумма ОПЛАЧЕННЫХ платежей (как в /reports), скаляром для KPI-карточек,
+      // которые раньше читали несуществующие поля → всегда 0.
+      Payment.sum('amount', { where: { status: 'paid' } }),
+      Payment.sum('amount', { where: { status: 'paid', createdAt: { [Op.gte]: startOfMonth } } }),
     ]);
 
     res.json({
       totalUsers,
+      totalClients,
       totalLawyers,
       totalConsultations,
       activeConsultations: totalActive,
+      totalRevenue: totalRevenue || 0,
+      monthlyRevenue: monthlyRevenue || 0,
     });
   } catch (err) {
     next(err);
