@@ -15,6 +15,7 @@ import {
 import clientService from '../../services/clientService';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import AILimitUpsell from '../../components/AILimitUpsell';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -88,6 +89,7 @@ const DashboardPageGlass = () => {
   const [stats, setStats] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [sub, setSub] = useState(null);
+  const [upsellOpen, setUpsellOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => { load(); }, []);
@@ -227,7 +229,7 @@ const DashboardPageGlass = () => {
               <div style={{ background: 'linear-gradient(150deg,#1A1A1A,#2D2D2D)', borderRadius: 'var(--radius)', padding: 24, color: '#FFFFFF' }}>
                 <div style={{ fontSize: 12, letterSpacing: '0.14em', textTransform: 'uppercase', color: '#C9A980', marginBottom: 10 }}>{t('dashboard.tariffFree')}</div>
                 <div style={{ fontSize: 15, lineHeight: 1.5, color: '#E8DFD5', marginBottom: 18 }}>{t('dashboard.freeLeft', { left: aiLeft, limit: aiLimit })}</div>
-                <button onClick={() => navigate('/settings')} style={{ background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.upgradeBasic')}</button>
+                <button onClick={() => setUpsellOpen(true)} style={{ background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.upgradeBasic')}</button>
               </div>
             )}
           </div>
@@ -294,6 +296,14 @@ const DashboardPageGlass = () => {
         .qa-mini{ transition: transform .18s ease, border-color .18s ease; }
         .qa-mini:hover{ transform: translateY(-2px); border-color: var(--accent); }
       `}</style>
+
+      {/* Апселл подписки: тот же модал, что на лимите AI (раньше кнопка вела в /settings,
+          где нет выбора плана — тупик). onUpgraded обновляет тариф на дашборде. */}
+      <AILimitUpsell
+        open={upsellOpen}
+        onClose={() => setUpsellOpen(false)}
+        onUpgraded={() => { setUpsellOpen(false); load(); }}
+      />
     </GlassShell>
   );
 };
