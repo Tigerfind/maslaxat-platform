@@ -21,13 +21,20 @@ const AdminUsersPage = () => {
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(null);
+  const [search, setSearch] = useState('');
 
-  useEffect(() => { load(); }, []);
+  // Дебаунс-поиск по имени/email (бэкенд GET /admin/users?search=… уже поддерживает).
+  // Первый прогон (search='') на монтировании грузит всех.
+  useEffect(() => {
+    const id = setTimeout(() => load(search), 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search]);
 
-  const load = async () => {
+  const load = async (searchTerm = '') => {
     try {
       setLoading(true);
-      const data = await adminUserService.getUsers();
+      const data = await adminUserService.getUsers(searchTerm ? { search: searchTerm } : {});
       setUsers(Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : []));
     } catch (e) {
       toast.error(t('adminManage.loadError'));
@@ -42,7 +49,7 @@ const AdminUsersPage = () => {
     try {
       await adminUserService.toggleUserStatus(u.id, u.isActive ? 'inactive' : 'active');
       toast.success(u.isActive ? t('adminManage.blocked') : t('adminManage.unblocked'));
-      await load();
+      await load(search);
     } catch (e) {
       toast.error(t('adminManage.actionError'));
     } finally {
@@ -118,6 +125,16 @@ const AdminUsersPage = () => {
             </Grid>
           ))}
         </Grid>
+
+        {/* Поиск по имени/email */}
+        <Box sx={{ mb: 2 }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('adminManage.searchPlaceholder')}
+            style={{ width: '100%', maxWidth: 360, boxSizing: 'border-box', padding: '11px 14px', borderRadius: 8, border: `1px solid ${axelionColors.borderLight}`, background: axelionColors.bgLight, color: axelionColors.textDark, fontFamily: 'inherit', fontSize: 14, outline: 'none' }}
+          />
+        </Box>
 
         {/* Table */}
         <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', overflow: 'hidden' }}>
