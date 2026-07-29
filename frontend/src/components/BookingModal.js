@@ -471,10 +471,12 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     opacity: loading ? 0.6 : 1,
   };
 
+  // Реально подключён только Payme; Click/Uzcard — «скоро» (не выбираются), чтобы не
+  // предлагать фейковый выбор способа оплаты, который бэкенд всё равно игнорирует.
   const payMethods = [
     { id: 'payme', n: 'Payme', d: t('booking.paymeD') },
-    { id: 'click', n: 'Click', d: t('booking.clickD') },
-    { id: 'uzcard', n: t('booking.cardN'), d: t('booking.cardD') },
+    { id: 'click', n: 'Click', d: t('booking.clickD'), soon: true },
+    { id: 'uzcard', n: t('booking.cardN'), d: t('booking.cardD'), soon: true },
   ];
 
   const notDone = step <= 3;
@@ -917,7 +919,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 return (
                   <div
                     key={m.id}
-                    onClick={() => setPayMethod(m.id)}
+                    onClick={() => { if (!m.soon) setPayMethod(m.id); }}
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -926,7 +928,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                       border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
                       background: active ? 'rgba(184,149,110,0.08)' : 'var(--surface)',
                       borderRadius: 'var(--radius)',
-                      cursor: 'pointer',
+                      cursor: m.soon ? 'default' : 'pointer',
+                      opacity: m.soon ? 0.5 : 1,
                     }}
                   >
                     <span
@@ -944,6 +947,11 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                       <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{m.n}</div>
                       <div style={{ fontSize: 12, color: 'var(--text3)' }}>{m.d}</div>
                     </div>
+                    {m.soon && (
+                      <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 20, padding: '3px 9px', flexShrink: 0 }}>
+                        {t('booking.soon')}
+                      </span>
+                    )}
                   </div>
                 );
               })}
