@@ -5,6 +5,7 @@ import {
   AccountBalanceWalletOutlined,
   TrendingUpOutlined,
 } from '@mui/icons-material';
+import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
@@ -30,20 +31,48 @@ const LawyerAnalyticsPage = () => {
   const { t, language } = useTranslation();
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [withdrawOpen, setWithdrawOpen] = useState(false);
+  const [withdrawAmount, setWithdrawAmount] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      try {
-        const res = await lawyerService.dashboard.getAnalytics();
-        setData(res);
-      } catch (e) {
-        setData(null);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await lawyerService.dashboard.getAnalytics();
+      setData(res);
+    } catch (e) {
+      setData(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openWithdraw = () => {
+    setWithdrawAmount(String(Math.floor(Number(data?.balance) || 0)));
+    setWithdrawOpen(true);
+  };
+
+  const submitWithdraw = async () => {
+    const amt = Number(withdrawAmount);
+    const bal = Number(data?.balance) || 0;
+    if (!Number.isFinite(amt) || amt <= 0 || amt > bal) {
+      toast.error(t('analytics.withdrawInvalid'));
+      return;
+    }
+    setWithdrawing(true);
+    try {
+      const res = await lawyerService.payments.withdraw(amt);
+      toast.success(res?.message || t('analytics.withdrawOk'));
+      setWithdrawOpen(false);
+      await load(); // обновить баланс
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('analytics.withdrawErr'));
+    } finally {
+      setWithdrawing(false);
+    }
+  };
 
   const monthLabel = (key) => {
     const m = parseInt(String(key).split('-')[1], 10) - 1;
@@ -83,6 +112,27 @@ const LawyerAnalyticsPage = () => {
               {kpi(<PaymentsOutlined sx={{ fontSize: 20 }} />, t('analytics.totalIncome'), `${fmtMoney(data.totalIncome)}`, t('analytics.sum6mo'), { bg: 'rgba(122,154,107,0.14)', fg: '#7A9A6B' })}
               {kpi(<StarOutlineRounded sx={{ fontSize: 21 }} />, t('analytics.avgRating'), data.avgRating || '—', `${data.totalReviews} ${t('analytics.reviews')}`, { bg: 'rgba(196,163,90,0.16)', fg: '#C4A35A' })}
               {kpi(<AccountBalanceWalletOutlined sx={{ fontSize: 20 }} />, t('analytics.balance'), `${fmtMoney(data.balance)}`, `${t('analytics.pending')}: ${fmtMoney(data.pendingBalance)}`, { bg: 'rgba(184,149,110,0.16)', fg: 'var(--accent)' })}
+            </div>
+
+            {/* Вывод средств */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+              <span style={{ fontSize: 13, color: 'var(--text3)' }}>
+                {t('analytics.withdrawHint')}
+              </span>
+              <button
+                onClick={openWithdraw}
+                disabled={(Number(data.balance) || 0) <= 0}
+                style={{
+                  background: (Number(data.balance) || 0) > 0 ? 'var(--accent)' : 'var(--canvas)',
+                  color: (Number(data.balance) || 0) > 0 ? '#fff' : 'var(--text3)',
+                  border: `1px solid ${(Number(data.balance) || 0) > 0 ? 'var(--accent)' : 'var(--border)'}`,
+                  fontSize: 13, fontWeight: 600, letterSpacing: '0.02em',
+                  padding: '11px 22px', borderRadius: 'var(--radius)', fontFamily: 'inherit',
+                  cursor: (Number(data.balance) || 0) > 0 ? 'pointer' : 'default',
+                }}
+              >
+                {t('analytics.withdraw')}
+              </button>
             </div>
 
             {/* Monthly income chart */}
@@ -159,6 +209,37 @@ const LawyerAnalyticsPage = () => {
           </div>
         )}
       </div>
+
+      {/* Модалка вывода средств */}
+      {withdrawOpen && (
+        <div
+          onClick={() => !withdrawing && setWithdrawOpen(false)}
+          style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
+        >
+          <div onClick={(e) => e.stopPropagation()} style={{ ...glassCard, background: 'var(--canvas)', padding: 26, width: 'min(420px, 92vw)' }}>
+            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>{t('analytics.withdrawTitle')}</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 18 }}>
+              {t('analytics.withdrawAvailable')}: {fmtMoney(data?.balance)} {t('analytics.sumShort')}
+            </div>
+            <input
+              type="number"
+              min={1}
+              max={Math.floor(Number(data?.balance) || 0)}
+              value={withdrawAmount}
+              onChange={(e) => setWithdrawAmount(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 15 }}
+            />
+            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
+              <button onClick={() => setWithdrawOpen(false)} disabled={withdrawing} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>
+                {t('analytics.cancel')}
+              </button>
+              <button onClick={submitWithdraw} disabled={withdrawing} style={{ background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: withdrawing ? 'default' : 'pointer', fontFamily: 'inherit', opacity: withdrawing ? 0.7 : 1 }}>
+                {withdrawing ? t('analytics.withdrawing') : t('analytics.withdrawSubmit')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </GlassShell>
   );
 };

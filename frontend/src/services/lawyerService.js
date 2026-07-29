@@ -133,10 +133,27 @@ export const lawyerNotificationService = {
   },
 };
 
+// Lawyer Payments — баланс и заявки на вывод (эндпоинты под /api/payments)
+export const lawyerPaymentService = {
+  getBalance: async () => {
+    const response = await api.get('/payments/balance');
+    return response.data;
+  },
+  withdraw: async (amount) => {
+    const response = await api.post('/payments/withdraw', { amount });
+    return response.data;
+  },
+  getWithdrawals: async () => {
+    const response = await api.get('/payments/withdrawals');
+    return response.data;
+  },
+};
+
 export default {
   schedule: lawyerScheduleService,
   reviews: lawyerReviewsService,
   dashboard: lawyerDashboardService,
   consultation: lawyerConsultationService,
   notification: lawyerNotificationService,
+  payments: lawyerPaymentService,
 };
