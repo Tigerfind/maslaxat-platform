@@ -526,11 +526,11 @@ const LawyersPageGlass = () => {
         key={lawyer.id}
         style={{
           ...glassCard,
-          padding: '24px 20px 20px',
-          textAlign: 'center',
+          padding: 20,
           position: 'relative',
           display: 'flex',
-          flexDirection: 'column',
+          gap: 16,
+          alignItems: 'flex-start',
           transition: 'all .25s cubic-bezier(.4,0,.2,1)',
           animation: `cardRise 0.4s ease ${index * 0.05}s both`,
         }}
@@ -543,115 +543,111 @@ const LawyersPageGlass = () => {
           e.currentTarget.style.boxShadow = 'var(--card-shadow)';
         }}
       >
-        {/* favorite */}
-        <button
-          onClick={(e) => handleToggleFavorite(e, lawyer.id)}
-          style={{ position: 'absolute', top: 16, right: 16, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 2, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
-        >
-          {isFav ? <FavoriteRounded sx={{ fontSize: 22 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 22 }} />}
-        </button>
-
-        {/* compare */}
-        <button
-          onClick={(e) => handleToggleCompare(e, lawyer.id)}
-          title={t('compare.toggle')}
-          style={{ position: 'absolute', top: 16, left: 16, background: inCompare ? 'var(--accent)' : 'transparent', border: inCompare ? 'none' : '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', padding: 4, color: inCompare ? '#FFFFFF' : 'var(--text3)', transition: 'all .15s ease' }}
-        >
-          <CompareArrowsOutlined sx={{ fontSize: 18 }} />
-        </button>
+        {/* top-right actions: compare + favorite */}
+        <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 4 }}>
+          <button
+            onClick={(e) => handleToggleCompare(e, lawyer.id)}
+            title={t('compare.toggle')}
+            style={{ background: inCompare ? 'var(--accent)' : 'transparent', border: inCompare ? 'none' : '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', padding: 4, color: inCompare ? '#FFFFFF' : 'var(--text3)', transition: 'all .15s ease' }}
+          >
+            <CompareArrowsOutlined sx={{ fontSize: 17 }} />
+          </button>
+          <button
+            onClick={(e) => handleToggleFavorite(e, lawyer.id)}
+            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 3, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
+          >
+            {isFav ? <FavoriteRounded sx={{ fontSize: 21 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 21 }} />}
+          </button>
+        </div>
 
         {/* avatar */}
         <div
           onClick={() => handleViewProfile(lawyer.id)}
           style={{
-            width: 66, height: 66, borderRadius: '50%', margin: '0 auto 12px', cursor: 'pointer', position: 'relative',
+            width: 60, height: 60, borderRadius: 16, flexShrink: 0, cursor: 'pointer', position: 'relative',
             background: lawyer.avatar ? `center/cover url(${lawyer.avatar})` : grad,
-            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 21, fontWeight: 600,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 19, fontWeight: 600,
             boxShadow: '0 6px 16px rgba(26,26,26,0.14)',
           }}
         >
           {!lawyer.avatar && initialsOf(lawyer.name)}
           {lawyer.isVerified && (
             <span style={{
-              position: 'absolute', bottom: 0, right: 2, width: 20, height: 20, borderRadius: '50%',
+              position: 'absolute', bottom: -2, right: -2, width: 19, height: 19, borderRadius: '50%',
               background: '#5AA06A', border: '3px solid var(--surface)', display: 'flex',
               alignItems: 'center', justifyContent: 'center', color: '#FFFFFF',
             }}>
-              <CheckRounded sx={{ fontSize: 11 }} />
+              <CheckRounded sx={{ fontSize: 10 }} />
             </span>
           )}
         </div>
 
-        {/* name */}
-        <div
-          onClick={() => handleViewProfile(lawyer.id)}
-          style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', marginBottom: 6, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
-          {lawyer.name}
-        </div>
-
-        {/* online now */}
-        {lawyer.isAvailable && (
-          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 8, fontSize: 12, color: '#5AA06A', fontWeight: 500 }}>
-            <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
-            {t('lawyers.onlineNow')}
-          </div>
-        )}
-
-        {/* stars + rating */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6, marginBottom: 14, fontSize: 13, color: 'var(--text3)' }}>
-          <span style={{ display: 'flex', gap: 1 }}>
-            {[1, 2, 3, 4, 5].map((n) => (
-              <StarRounded key={n} sx={{ fontSize: 16, color: n <= roundedRating ? '#C9A36E' : 'var(--border)' }} />
-            ))}
-          </span>
-          <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{lawyer.rating || 0}</strong>
-          <span>· {reviews} {t('lawyers.reviews')}</span>
-        </div>
-
-        {/* specialization */}
-        {tags.length > 0 && (
-          <div style={{ marginBottom: 16 }}>
-            <span style={{ background: 'rgba(184,149,110,0.14)', color: 'var(--accent-dark)', fontSize: 12, padding: '5px 12px', borderRadius: 20 }}>
-              {tags[0]}
+        {/* body */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {/* name + online */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5, paddingRight: 52 }}>
+            <span
+              onClick={() => handleViewProfile(lawyer.id)}
+              style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            >
+              {lawyer.name}
             </span>
+            {lawyer.isAvailable && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontSize: 11.5, color: '#5AA06A', fontWeight: 500 }}>
+                <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
+                {t('lawyers.onlineNow')}
+              </span>
+            )}
           </div>
-        )}
 
-        {/* meta line: опыт | цена */}
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 30, padding: '14px 0', marginBottom: 18, borderTop: '1px solid var(--border)', borderBottom: '1px solid var(--border)' }}>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.expPrefix')}</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>{lawyer.experience || 0} {t('lawyers.years')}</div>
+          {/* rating + meta */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 12, fontSize: 12.5, color: 'var(--text3)' }}>
+            <span style={{ display: 'flex', gap: 1 }}>
+              {[1, 2, 3, 4, 5].map((n) => (
+                <StarRounded key={n} sx={{ fontSize: 15, color: n <= roundedRating ? '#C9A36E' : 'var(--border)' }} />
+              ))}
+            </span>
+            <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{lawyer.rating || 0}</strong>
+            <span>· {reviews} {t('lawyers.reviews')} · {lawyer.experience || 0} {t('lawyers.years')} · {lawyer.completedConsultations || 0} {t('lawyers.solved').toLowerCase()}</span>
           </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.from')}</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>
-              {(lawyer.priceFrom || 0).toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)' }}>{t('lawyers.sum')}</span>
+
+          {/* specializations */}
+          {tags.length > 0 && (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 14 }}>
+              {tags.slice(0, 3).map((tg, ti) => (
+                <span
+                  key={ti}
+                  style={ti === 0
+                    ? { background: 'rgba(184,149,110,0.14)', color: 'var(--accent-dark)', fontSize: 11.5, padding: '4px 11px', borderRadius: 20 }
+                    : { border: '1px solid var(--border-strong)', color: 'var(--text2)', fontSize: 11.5, padding: '4px 11px', borderRadius: 20 }}
+                >
+                  {tg}
+                </span>
+              ))}
             </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.solved')}</div>
-            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>{lawyer.completedConsultations || 0}</div>
+          )}
+
+          {/* footer: price + CTA */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12, color: 'var(--text3)' }}>
+              {t('lawyers.from')} <strong style={{ fontSize: 17, color: 'var(--text)', fontWeight: 600 }}>{(lawyer.priceFrom || 0).toLocaleString()}</strong> {t('lawyers.sum')}
+            </div>
+            <button
+              onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
+              style={{
+                flexShrink: 0,
+                background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+                color: '#FFFFFF', border: 'none', fontSize: 12.5, fontWeight: 600,
+                padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                boxShadow: '0 4px 12px rgba(184,149,110,0.3)', transition: 'transform 0.15s ease, box-shadow 0.15s ease',
+              }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(184,149,110,0.42)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(184,149,110,0.3)'; }}
+            >
+              {t('lawyers.bookConsultation')}
+            </button>
           </div>
         </div>
-
-        {/* CTA (прижат к низу) */}
-        <button
-          onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
-          style={{
-            marginTop: 'auto', width: '100%',
-            background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
-            color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 600,
-            letterSpacing: '0.06em', textTransform: 'uppercase', padding: '13px 20px',
-            borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit',
-            boxShadow: '0 4px 14px rgba(184,149,110,0.35)', transition: 'transform 0.15s ease, box-shadow 0.15s ease',
-          }}
-          onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 18px rgba(184,149,110,0.45)'; }}
-          onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(184,149,110,0.35)'; }}
-        >
-          {t('lawyers.bookConsultation')} →
-        </button>
       </div>
     );
   };
@@ -833,12 +829,12 @@ const LawyersPageGlass = () => {
 
           {/* results */}
           {loading ? (
-            <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
+            <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
               {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
             </div>
           ) : visibleLawyers.length > 0 ? (
             <>
-              <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 20 }}>
+              <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
                 {visibleLawyers.map((lawyer, index) => renderCard(lawyer, index))}
               </div>
 
