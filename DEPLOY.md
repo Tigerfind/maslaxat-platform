@@ -13,6 +13,7 @@
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | AI работает в фолбэк-режиме (шаблонные ответы по законам РУз), не реальный Claude |
 | `PAYME_KEY` + `PAYME_MERCHANT_ID` | merchant.payme.uz (регистрация мерчанта) | Реальная оплата отключена; в dev доступен тест-платёж (`/payments/simulate`) |
 | `SMTP_HOST/PORT/USER/PASSWORD/FROM` | Любой SMTP: Gmail App Password, SendGrid, Mailgun, Yandex 360 | Письма (сброс пароля, верификация) уходят только в тестовый Ethereal (dev), реальные юзеры их не получают |
+| `SMS_PROVIDER` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) | Eskiz.uz (регистрация → API-пароль) или Play Mobile | Вход/регистрация по телефону: в dev код возвращается в ответе (`devCode`), в проде `phone/request` вернёт ошибку — реальная SMS не уходит |
 | `JWT_SECRET` | Сгенерировать: `openssl rand -base64 48` | Слабый секрет = взлом токенов. **Обязательно заменить** |
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |
 | `TURN_URL/USERNAME/CREDENTIAL` | Свой coturn-сервер или платный TURN (Twilio, Metered) | Видео нестабильно за реальными NAT (сейчас публичный демо-TURN) |
@@ -55,6 +56,9 @@ cp .env.example .env
   реальный Payme-webhook. В проде `/payments/simulate` и бесплатная активация подписок
   заблокированы (fail-closed).
 - **Почта**: при заданном `SMTP_*` письма идут реальным провайдером вместо Ethereal.
+- **SMS**: при `SMS_PROVIDER=eskiz` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) коды
+  входа по телефону уходят реальной SMS; логин-токен Eskiz кэшируется и сам обновляется при 401.
+  Без ключей — `devCode` в dev, ошибка в проде (код не «отправляется» вслепую).
 - **Масштаб сокетов**: `SOCKET_REDIS=1` включает Redis-адаптер (уведомления/чат между инстансами).
 - **Web-push**: при заданных `VAPID_*` появляется тумблер «Push на это устройство» и уведомления
   доставляются даже при закрытой вкладке (иначе фича просто скрыта, ничего не ломается).

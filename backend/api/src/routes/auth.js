@@ -113,7 +113,13 @@ router.post('/phone/request', emailLimiter, async (req, res, next) => {
     if (existing) await existing.update({ code, expiresAt, attempts: 0 });
     else await PhoneOtp.create({ phone, code, expiresAt, attempts: 0 });
 
-    await smsService.sendSms(phone, `MaslaXat: код подтверждения ${code}. Действует 5 минут.`);
+    const result = await smsService.sendSms(phone, `MaslaXat: код подтверждения ${code}. Действует 5 минут.`);
+
+    // Если провайдер подключён, но отправка не удалась — не врём «отправлено».
+    // Пусть клиент повторит (код уже сохранён; повтор перезапишет его).
+    if (smsService.isConfigured() && !result.sent) {
+      return res.status(502).json({ error: 'Не удалось отправить SMS. Попробуйте ещё раз через минуту.' });
+    }
 
     // В dev без реального SMS-провайдера возвращаем код, чтобы можно было тестировать.
     // В проде код НИКОГДА не возвращается — только реальная SMS.
