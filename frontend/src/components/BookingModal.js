@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import { useSelector } from 'react-redux';
 import { Dialog } from '@mui/material';
 import { CalendarTodayOutlined, MailOutline, CardGiftcardOutlined } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
@@ -24,6 +25,7 @@ const STEPS = [1, 2, 3];
 
 const emptyForm = {
   problems: [''], // мультизапрос: список проблем клиента (минимум одна)
+  specialization: '', // категория права всей записи (id из справочника)
   description: '',
   preferredDate: '',
   preferredTime: '',
@@ -33,6 +35,8 @@ const emptyForm = {
 const BookingModal = ({ open, onClose, lawyer }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { specializations } = useSelector((state) => state.specializations);
+  const activeSpecs = useMemo(() => specializations.filter((s) => s.active), [specializations]);
   const MONTHS = t('booking.months');
   const DOWS = t('booking.dows');
   const [loading, setLoading] = useState(false);
@@ -65,6 +69,11 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
     // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
     setSchedule(lawyer?.profile?.schedule || null);
+    // Префилл категории права из специализации юриста (если совпадает со справочником)
+    const lawyerSpec = lawyer?.specializations?.[0] || lawyer?.profile?.specialization || '';
+    if (lawyerSpec && activeSpecs.some((s) => s.id === lawyerSpec)) {
+      setFormData((prev) => (prev.specialization ? prev : { ...prev, specialization: lawyerSpec }));
+    }
     (async () => {
       try {
         const r = await api.get(`/lawyers/${lawyer.id}`);
@@ -210,6 +219,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
   const goNext = () => {
     if (step === 1) {
+      if (!formData.specialization) {
+        toast.error(t('booking.toastCategory'));
+        return;
+      }
       if (!formData.problems.some((p) => p.trim())) {
         toast.error(t('booking.toastQuestion'));
         return;
@@ -652,6 +665,18 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 </div>
               ))}
             </div>
+
+            <div style={label}>{t('booking.category')} <span style={{ color: 'var(--accent-dark)' }}>*</span></div>
+            <select
+              value={formData.specialization}
+              onChange={(e) => handleChange('specialization', e.target.value)}
+              style={{ ...inputBase, marginBottom: 20, cursor: 'pointer', appearance: 'auto' }}
+            >
+              <option value="">{t('booking.categoryPlaceholder')}</option>
+              {activeSpecs.map((sp) => (
+                <option key={sp.id} value={sp.id}>{sp.name}</option>
+              ))}
+            </select>
 
             <div style={label}>{t('booking.problems')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>

@@ -197,6 +197,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       type: req.body.consultationType || 'video',
       question: problems[0],
       problems,
+      specialization: (typeof req.body.specialization === 'string' ? req.body.specialization.trim().slice(0, 50) : '') || null,
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,

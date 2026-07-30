@@ -209,6 +209,11 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.JSONB,
     defaultValue: [],
   },
+  // Категория права (специализация) всей записи — id из справочника специализаций
+  // (civil/family/…). Помогает юристу/фильтрам понять область. Необязательное.
+  specialization: {
+    type: DataTypes.STRING,
+  },
   description: {
     type: DataTypes.TEXT,
   },

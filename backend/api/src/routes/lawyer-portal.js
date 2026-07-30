@@ -87,6 +87,7 @@ router.get('/consultation-requests', async (req, res, next) => {
       } : { id: null, name: 'Клиент', avatar: null },
       question: c.question,
       problems: Array.isArray(c.problems) && c.problems.length ? c.problems : [c.question],
+      specialization: c.specialization || null,
       description: c.description,
       consultationType: c.type,
       preferredDate: c.preferredDate,
