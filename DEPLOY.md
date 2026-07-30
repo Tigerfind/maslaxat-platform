@@ -97,11 +97,43 @@ npm run db:migrate:undo     # откатить последнюю
 
 ## 5. Деплой
 
-### Вариант A — Railway (проще всего, конфиг уже есть)
-- `backend/api/railway.toml` — сборка NIXPACKS, healthcheck `/api/health`.
-- Создать проект Railway, добавить PostgreSQL и Redis плагины.
-- Внести переменные из `.env` в Railway Variables.
-- Задеплоить backend (папка `backend/api`) и frontend (build → статика/Nginx).
+### Вариант A — Railway (проще всего, конфиги уже в репозитории)
+
+Готово в репозитории: `backend/api/railway.json` (NIXPACKS, `npm start`, healthcheck
+`/api/health`) и `frontend/railway.json` (`CI=false npm run build` → `serve -s build -l $PORT`).
+БД читает `DATABASE_URL` (плагин Railway), Redis — `REDIS_URL`. `engines.node >=18` в обоих
+`package.json`. На первом старте прод создаёт схему через `sync()` — отдельная миграция не нужна.
+
+Пошагово (аккаунт на railway.app + этот GitHub-репозиторий подключён):
+
+1. **New Project → Deploy from GitHub repo** → выбрать `maslaxat-platform`.
+2. **Плагины:** в проекте → *New* → **Database → PostgreSQL**; ещё раз → **Database → Redis**.
+   Railway сам заводит переменные `DATABASE_URL` и `REDIS_URL`.
+3. **Сервис Backend:** созданный из репозитория сервис → *Settings*:
+   - **Root Directory:** `backend/api`
+   - Railway подхватит `railway.json` (start `npm start`, healthcheck `/api/health`).
+   - **Variables** (вкладка Variables у backend-сервиса):
+     - `DATABASE_URL` → *Reference* на переменную из Postgres-плагина
+     - `REDIS_URL` → *Reference* на Redis-плагин
+     - `DB_SSL=1` (если Postgres-плагин требует TLS — обычно для внешнего подключения; для
+       приватной сети Railway можно не ставить)
+     - `NODE_ENV=production`
+     - `JWT_SECRET` = сгенерировать (`openssl rand -base64 48`)
+     - `CORS_ORIGINS` и `FRONTEND_URL` = публичный URL фронта (заполнить после шага 4)
+     - ключи по мере готовности: `ANTHROPIC_API_KEY`, `PAYME_*`, `SMTP_*`, `SMS_PROVIDER`+`ESKIZ_*`, `TURN_*`
+4. **Сервис Frontend:** в проекте → *New* → **GitHub Repo** (тот же репозиторий) → *Settings*:
+   - **Root Directory:** `frontend`
+   - Railway подхватит `frontend/railway.json` (build + `serve`).
+   - **Variables:** `REACT_APP_API_URL` = `https://<домен backend-сервиса>/api`
+     (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
+     нажать *Generate Domain*).
+5. **Сгенерировать домены** обоим сервисам (*Settings → Networking → Generate Domain*), затем
+   вернуться в backend и вписать в `CORS_ORIGINS`/`FRONTEND_URL` публичный домен фронта.
+6. **Redeploy** обоих сервисов (кнопка *Deploy* или пуш в `main` — Railway деплоит автоматически).
+
+> Порядок первого запуска: сначала поднимется Postgres/Redis, затем backend (создаст схему через
+> `sync()` и пройдёт healthcheck `/api/health`), затем frontend. Если backend не проходит
+> healthcheck — почти всегда не проброшен `DATABASE_URL`/`REDIS_URL` или отсутствует `JWT_SECRET`.
 
 ### Вариант B — Docker Compose (есть `docker-compose.yml` + Dockerfiles)
 ```bash

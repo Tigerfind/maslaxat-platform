@@ -2,6 +2,9 @@
 // NODE_ENV выбирает окружение: development / test / production.
 require('dotenv').config();
 
+const needSsl = process.env.DB_SSL === '1' || /sslmode=require/.test(process.env.DATABASE_URL || '');
+const sslOpt = needSsl ? { dialectOptions: { ssl: { require: true, rejectUnauthorized: false } } } : {};
+
 const base = {
   username: process.env.DB_USER || 'macbook',
   password: process.env.DB_PASSWORD || null,
@@ -10,10 +13,17 @@ const base = {
   dialect: 'postgres',
   logging: false,
   define: { underscored: true },
+  ...sslOpt,
 };
+
+// Управляемые хостинги отдают DATABASE_URL — sequelize-cli поддерживает `url`.
+// Если она есть, используем её (иначе отдельные DB_*).
+const prod = process.env.DATABASE_URL
+  ? { url: process.env.DATABASE_URL, dialect: 'postgres', logging: false, define: { underscored: true }, ...sslOpt }
+  : { ...base, database: process.env.DB_NAME };
 
 module.exports = {
   development: { ...base, database: process.env.DB_NAME || 'emaslaxat' },
   test: { ...base, database: 'emaslaxat_test' },
-  production: { ...base, database: process.env.DB_NAME },
+  production: prod,
 };

@@ -494,8 +494,8 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 
 ### BACKLOG (техдолг, отдельными решениями):
 - (Опц.) baseline-миграция для полностью чистого прод-деплоя без sync().
-- **Сделать `POST /lawyers/:id/review` идемпотентным** (один отзыв на консультацию): сейчас
-  `Review.create` без проверки → повторная оценка создаёт дубликат Review (найдено: 1 дубль в
-  dev-данных, консультация 2c660517 x2). Из-за этого `hasOne`-include может задвоить строку
-  консультации — на фронте временно защищено дедупликацией по id. Правильный фикс — findOrCreate/
-  update по (consultationId, clientId) + чистка существующих дублей. Отдельное решение.
+- [x] **`POST /lawyers/:id/review` идемпотентен** (один отзыв на консультацию): `Review.findOrCreate`
+  по `consultationId` + unique-индекс `reviews_consultation_id_unique` → повтор/гонка = 409, не 500.
+  Миграции `20260808000000-dedupe-duplicate-reviews` (чистка дублей) +
+  `20260808000001-add-reviews-consultation-unique` (индекс). Покрыто review-session.test.js
+  (параллель 201+409, повтор 409) и reviews.test.js. Дублей в dev-БД: 0.
