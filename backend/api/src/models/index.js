@@ -203,6 +203,12 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.TEXT,
     allowNull: false,
   },
+  // Список проблем клиента в одной записи (мультизапрос). question = первая проблема
+  // (краткое резюме) для совместимости со списками/уведомлениями/напоминаниями.
+  problems: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+  },
   description: {
     type: DataTypes.TEXT,
   },
@@ -513,6 +519,34 @@ const Payment = sequelize.define('Payment', {
   },
 });
 
+// ─── PHONE OTP MODEL ────────────────────────────────────────
+// Одноразовые коды подтверждения для входа/регистрации по номеру телефона.
+// Один активный код на номер (phone уникален) — перезаписывается при повторном запросе.
+const PhoneOtp = sequelize.define('PhoneOtp', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  phone: {
+    type: DataTypes.STRING,
+    allowNull: false,
+    unique: true,
+  },
+  code: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+  },
+  attempts: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+  },
+});
+
 // ─── SUPPORT TICKET MODEL ───────────────────────────────────
 const SupportTicket = sequelize.define('SupportTicket', {
   id: {
@@ -530,6 +564,13 @@ const SupportTicket = sequelize.define('SupportTicket', {
   status: {
     type: DataTypes.ENUM('open', 'in_progress', 'closed'),
     defaultValue: 'open',
+  },
+  // Ответ администратора автору обращения (+ когда ответили)
+  response: {
+    type: DataTypes.TEXT,
+  },
+  respondedAt: {
+    type: DataTypes.DATE,
   },
 });
 
@@ -715,4 +756,5 @@ module.exports = {
   Promo,
   Withdrawal,
   PushSubscription,
+  PhoneOtp,
 };

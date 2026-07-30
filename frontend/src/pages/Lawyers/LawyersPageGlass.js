@@ -626,6 +626,10 @@ const LawyersPageGlass = () => {
               {(lawyer.priceFrom || 0).toLocaleString()} <span style={{ fontSize: 11, fontWeight: 400, color: 'var(--text3)' }}>{t('lawyers.sum')}</span>
             </div>
           </div>
+          <div>
+            <div style={{ fontSize: 11, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('lawyers.solved')}</div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginTop: 3 }}>{lawyer.completedConsultations || 0}</div>
+          </div>
         </div>
 
         {/* CTA (прижат к низу) */}

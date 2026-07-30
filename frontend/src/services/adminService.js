@@ -278,6 +278,10 @@ export const adminSupportService = {
     const response = await api.patch(`/admin/support/${id}`, { status });
     return response.data;
   },
+  reply: async (id, responseText) => {
+    const response = await api.patch(`/admin/support/${id}`, { response: responseText });
+    return response.data;
+  },
 };
 
 // Admin Promo Codes

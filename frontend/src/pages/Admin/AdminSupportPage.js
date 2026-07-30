@@ -4,8 +4,9 @@ import { toast } from 'react-toastify';
 import {
   Box, Container, Typography, IconButton, CircularProgress, Chip,
   Table, TableBody, TableCell, TableHead, TableRow, Paper, Select, MenuItem,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Tooltip,
 } from '@mui/material';
-import { ArrowBack } from '@mui/icons-material';
+import { ArrowBack, ReplyOutlined } from '@mui/icons-material';
 import adminService from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -21,6 +22,9 @@ const AdminSupportPage = () => {
   const { t } = useTranslation();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [replyTicket, setReplyTicket] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [sending, setSending] = useState(false);
 
   const load = async () => {
     setLoading(true);
@@ -35,6 +39,25 @@ const AdminSupportPage = () => {
       setTickets((prev) => prev.map((x) => (x.id === ticket.id ? { ...x, status } : x)));
       toast.success(t('adminSupport.statusChanged'));
     } catch (e) { toast.error(t('common.error')); }
+  };
+
+  const openReply = (ticket) => {
+    setReplyTicket(ticket);
+    setReplyText(ticket.response || '');
+  };
+
+  const sendReply = async () => {
+    if (!replyText.trim()) { toast.error(t('adminSupport.needReply')); return; }
+    setSending(true);
+    try {
+      const res = await adminService.support.reply(replyTicket.id, replyText.trim());
+      const updated = res?.ticket || { ...replyTicket, response: replyText.trim(), status: 'closed' };
+      setTickets((prev) => prev.map((x) => (x.id === replyTicket.id ? { ...x, response: updated.response, respondedAt: updated.respondedAt, status: updated.status } : x)));
+      toast.success(t('adminSupport.replySent'));
+      setReplyTicket(null);
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('common.error'));
+    } finally { setSending(false); }
   };
 
   const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
@@ -67,11 +90,12 @@ const AdminSupportPage = () => {
                   <TableCell>{t('adminSupport.message')}</TableCell>
                   <TableCell>{t('adminSupport.date')}</TableCell>
                   <TableCell>{t('adminSupport.status')}</TableCell>
+                  <TableCell>{t('adminSupport.response')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {tickets.length === 0 ? (
-                  <TableRow><TableCell colSpan={5} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminSupport.empty')}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={6} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminSupport.empty')}</TableCell></TableRow>
                 ) : tickets.map((ticket) => {
                   const sc = STATUS_COLOR[ticket.status] || STATUS_COLOR.open;
                   return (
@@ -95,6 +119,20 @@ const AdminSupportPage = () => {
                           <MenuItem value="closed">{t('adminSupport.stClosed')}</MenuItem>
                         </Select>
                       </TableCell>
+                      <TableCell sx={{ maxWidth: 260 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          {ticket.response ? (
+                            <Typography sx={{ fontSize: 12.5, color: axelionColors.textSecondary, flex: 1, whiteSpace: 'pre-wrap' }}>{ticket.response}</Typography>
+                          ) : (
+                            <Typography sx={{ fontSize: 12.5, color: axelionColors.textMuted, flex: 1 }}>{t('adminSupport.noReply')}</Typography>
+                          )}
+                          <Tooltip title={ticket.response ? t('adminSupport.editReply') : t('adminSupport.reply')}>
+                            <IconButton size="small" onClick={() => openReply(ticket)} sx={{ color: axelionColors.gold }}>
+                              <ReplyOutlined fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                        </Box>
+                      </TableCell>
                     </TableRow>
                   );
                 })}
@@ -103,6 +141,36 @@ const AdminSupportPage = () => {
           </Paper>
         )}
       </Container>
+
+      {/* Диалог ответа автору обращения */}
+      <Dialog open={!!replyTicket} onClose={() => !sending && setReplyTicket(null)} maxWidth="sm" fullWidth>
+        <DialogTitle>{t('adminSupport.replyTitle')}</DialogTitle>
+        <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
+          {replyTicket && (
+            <Box sx={{ bgcolor: axelionColors.bgCream, borderRadius: 2, p: 1.5 }}>
+              <Typography sx={{ fontSize: 12, color: axelionColors.textMuted, mb: 0.5 }}>
+                {replyTicket.user?.name} · {replyTicket.subject}
+              </Typography>
+              <Typography sx={{ fontSize: 13.5, color: axelionColors.textDark, whiteSpace: 'pre-wrap' }}>{replyTicket.message}</Typography>
+            </Box>
+          )}
+          <TextField
+            label={t('adminSupport.replyLabel')}
+            value={replyText}
+            onChange={(e) => setReplyText(e.target.value)}
+            fullWidth
+            multiline
+            minRows={4}
+            placeholder={t('adminSupport.replyPlaceholder')}
+          />
+        </DialogContent>
+        <DialogActions sx={{ px: 3, pb: 2 }}>
+          <Button onClick={() => setReplyTicket(null)} disabled={sending} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>{t('common.cancel')}</Button>
+          <Button onClick={sendReply} disabled={sending} variant="contained" sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark } }}>
+            {sending ? t('adminSupport.sending') : t('adminSupport.sendReply')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

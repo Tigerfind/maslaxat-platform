@@ -355,17 +355,41 @@ router.get('/support', async (req, res, next) => {
   }
 });
 
-// PATCH /admin/support/:id — сменить статус обращения
+// PATCH /admin/support/:id — сменить статус и/или ответить автору обращения
 router.patch('/support/:id', async (req, res, next) => {
   try {
-    const { status } = req.body;
-    if (!['open', 'in_progress', 'closed'].includes(status)) {
+    const { status, response } = req.body;
+    if (status !== undefined && !['open', 'in_progress', 'closed'].includes(status)) {
       return res.status(400).json({ error: 'Недопустимый статус' });
+    }
+    if (status === undefined && !(typeof response === 'string' && response.trim())) {
+      return res.status(400).json({ error: 'Укажите статус или ответ' });
     }
     const ticket = await SupportTicket.findByPk(req.params.id);
     if (!ticket) return res.status(404).json({ error: 'Обращение не найдено' });
-    ticket.status = status;
+
+    let responded = false;
+    if (typeof response === 'string' && response.trim()) {
+      ticket.response = response.trim();
+      ticket.respondedAt = new Date();
+      if (status === undefined) ticket.status = 'closed'; // ответ по умолчанию закрывает тикет
+      responded = true;
+    }
+    if (status !== undefined) ticket.status = status;
     await ticket.save();
+
+    // Уведомляем автора обращения, что поддержка ответила (in-app + web-push)
+    if (responded && ticket.userId) {
+      const notificationService = require('../services/notificationService');
+      notificationService.createNotification(
+        ticket.userId,
+        'support_reply',
+        'Ответ поддержки',
+        ticket.response.slice(0, 140),
+        { ticketId: ticket.id }
+      ).catch(() => {});
+    }
+
     res.json({ success: true, ticket });
   } catch (err) {
     next(err);

@@ -23,7 +23,7 @@ const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay
 const STEPS = [1, 2, 3];
 
 const emptyForm = {
-  question: '',
+  problems: [''], // мультизапрос: список проблем клиента (минимум одна)
   description: '',
   preferredDate: '',
   preferredTime: '',
@@ -203,9 +203,14 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
+  // ---- Мультизапрос: список проблем ----
+  const setProblem = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? val : p)) }));
+  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, ''] }));
+  const removeProblem = (i) => setFormData((prev) => ({ ...prev, problems: prev.problems.length > 1 ? prev.problems.filter((_, idx) => idx !== i) : prev.problems }));
+
   const goNext = () => {
     if (step === 1) {
-      if (!formData.question.trim()) {
+      if (!formData.problems.some((p) => p.trim())) {
         toast.error(t('booking.toastQuestion'));
         return;
       }
@@ -648,13 +653,36 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               ))}
             </div>
 
-            <div style={label}>{t('booking.question')}</div>
-            <textarea
-              value={formData.question}
-              onChange={(e) => handleChange('question', e.target.value)}
-              placeholder={t('booking.questionPlaceholder')}
-              style={{ ...inputBase, minHeight: 92, resize: 'none', marginBottom: 22 }}
-            />
+            <div style={label}>{t('booking.problems')}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+              {formData.problems.map((p, i) => (
+                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <textarea
+                    value={p}
+                    onChange={(e) => setProblem(i, e.target.value)}
+                    placeholder={`${t('booking.problemN')} ${i + 1}`}
+                    style={{ ...inputBase, minHeight: 64, resize: 'none', flex: 1 }}
+                  />
+                  {formData.problems.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeProblem(i)}
+                      aria-label="remove"
+                      style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', fontSize: 18, fontFamily: 'inherit', lineHeight: 1 }}
+                    >×</button>
+                  )}
+                </div>
+              ))}
+            </div>
+            {formData.problems.length < 10 && (
+              <button
+                type="button"
+                onClick={addProblem}
+                style={{ background: 'transparent', border: '1px dashed var(--border-strong)', color: 'var(--accent-dark)', borderRadius: 10, padding: '9px 14px', fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', marginBottom: 22 }}
+              >
+                + {t('booking.addProblem')}
+              </button>
+            )}
           </>
         )}
 

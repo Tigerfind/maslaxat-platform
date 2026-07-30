@@ -239,7 +239,13 @@ const LawyerDashboardGlass = () => {
                             <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{name}</div>
                             <span style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: chip.color, background: chip.bg, padding: '3px 9px', borderRadius: 'var(--radius)' }}>{chip.label}</span>
                           </div>
-                          <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>«{r.question}»</p>
+                          {Array.isArray(r.problems) && r.problems.length > 1 ? (
+                            <ol style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5, margin: '8px 0', paddingLeft: 20 }}>
+                              {r.problems.map((p, i) => <li key={i} style={{ marginBottom: 3 }}>{p}</li>)}
+                            </ol>
+                          ) : (
+                            <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>«{r.question}»</p>
+                          )}
                           <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} {t('lawyerPanel.sum')}</span></div>
                         </div>
                       </div>

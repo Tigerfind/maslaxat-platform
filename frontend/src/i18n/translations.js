@@ -452,6 +452,12 @@ const translations = {
     },
   },
 
+  phoneAuth: {
+    ru: { usePhone: 'Войти по номеру телефона', useEmail: 'Войти по email', phonePlaceholder: 'Номер телефона (+998…)', getCode: 'Получить код', sending: 'Отправка…', sentTo: 'Код отправлен на', devCode: 'Код (dev)', codePlaceholder: 'Код из SMS', namePlaceholder: 'Ваше имя', verify: 'Войти', checking: 'Проверка…', changeNumber: 'Изменить номер', needName: 'Новый номер — укажите имя для регистрации', requestErr: 'Не удалось отправить код', verifyErr: 'Не удалось подтвердить код' },
+    uz: { usePhone: 'Телефон рақами орқали кириш', useEmail: 'Email орқали кириш', phonePlaceholder: 'Телефон рақами (+998…)', getCode: 'Код олиш', sending: 'Юборилмоқда…', sentTo: 'Код юборилди:', devCode: 'Код (dev)', codePlaceholder: 'SMS коди', namePlaceholder: 'Исмингиз', verify: 'Кириш', checking: 'Текширилмоқда…', changeNumber: 'Рақамни ўзгартириш', needName: 'Янги рақам — рўйхатдан ўтиш учун исм киритинг', requestErr: 'Код юборилмади', verifyErr: 'Кодни тасдиқлаб бўлмади' },
+    en: { usePhone: 'Sign in with phone number', useEmail: 'Sign in with email', phonePlaceholder: 'Phone number (+998…)', getCode: 'Get code', sending: 'Sending…', sentTo: 'Code sent to', devCode: 'Code (dev)', codePlaceholder: 'SMS code', namePlaceholder: 'Your name', verify: 'Sign in', checking: 'Checking…', changeNumber: 'Change number', needName: 'New number — enter your name to register', requestErr: 'Could not send the code', verifyErr: 'Could not verify the code' },
+  },
+
   // ==================== ЮРИСТЫ ====================
   register: {
     ru: {
@@ -585,7 +591,7 @@ const translations = {
   booking: {
     ru: {
       title: 'Запись на консультацию', sum: 'сум', typeLabel: 'Тип консультации', video: 'Видео', chat: 'Чат',
-      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…',
+      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…', problems: 'Ваши проблемы', problemN: 'Проблема', addProblem: 'Добавить проблему',
       date: 'Дата', time: 'Время', dateTime: 'Дата и время', cost: 'Стоимость', free: 'Бесплатно', noSlots: 'На этот день нет свободных часов', pickDateFirst: 'Сначала выберите дату',
       promo: 'Промокод', total: 'Итого', freeTotal: '0 сум · Бесплатно',
       firstFree: 'Первая консультация — бесплатно', firstFreeSub: 'Приветственный бонус применён — оплата не требуется.', subFree: 'Бесплатно по вашей подписке', subFreeSub: 'Консультация включена в тариф. Осталось в этом месяце: {n}.',
@@ -601,7 +607,7 @@ const translations = {
     },
     uz: {
       title: 'Консультацияга ёзилиш', sum: 'сўм', typeLabel: 'Консультация тури', video: 'Видео', chat: 'Чат',
-      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…',
+      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…', problems: 'Муаммоларингиз', problemN: 'Муаммо', addProblem: 'Муаммо қўшиш',
       date: 'Сана', time: 'Вақт', dateTime: 'Сана ва вақт', cost: 'Нархи', free: 'Бепул', noSlots: 'Бу кунда бўш вақт йўқ', pickDateFirst: 'Аввал санани танланг',
       promo: 'Промокод', total: 'Жами', freeTotal: '0 сўм · Бепул',
       firstFree: 'Биринчи консультация — бепул', firstFreeSub: 'Хуш келибсиз бонуси қўлланилди — тўлов талаб қилинмайди.', subFree: 'Обунангиз бўйича бепул', subFreeSub: 'Консультация тарифга киритилган. Шу ойда қолди: {n}.',
@@ -617,7 +623,7 @@ const translations = {
     },
     en: {
       title: 'Book a consultation', sum: 'UZS', typeLabel: 'Consultation type', video: 'Video', chat: 'Chat',
-      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…',
+      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…', problems: 'Your problems', problemN: 'Problem', addProblem: 'Add a problem',
       date: 'Date', time: 'Time', dateTime: 'Date and time', cost: 'Cost', free: 'Free', noSlots: 'No open hours on this day', pickDateFirst: 'Select a date first',
       promo: 'Promo code', total: 'Total', freeTotal: '0 UZS · Free',
       firstFree: 'First consultation — free', firstFreeSub: 'Welcome bonus applied — no payment required.', subFree: 'Free with your subscription', subFreeSub: 'Included in your plan. Left this month: {n}.',
@@ -946,9 +952,9 @@ const translations = {
   },
 
   adminSupport: {
-    ru: { title: 'Обращения в поддержку', user: 'Пользователь', subject: 'Тема', message: 'Сообщение', date: 'Дата', status: 'Статус', empty: 'Обращений пока нет', statusChanged: 'Статус обновлён', stOpen: 'Открыто', stProgress: 'В работе', stClosed: 'Закрыто' },
-    uz: { title: 'Ёрдам мурожаатлари', user: 'Фойдаланувчи', subject: 'Мавзу', message: 'Хабар', date: 'Сана', status: 'Ҳолат', empty: 'Ҳали мурожаатлар йўқ', statusChanged: 'Ҳолат янгиланди', stOpen: 'Очиқ', stProgress: 'Жараёнда', stClosed: 'Ёпилган' },
-    en: { title: 'Support tickets', user: 'User', subject: 'Subject', message: 'Message', date: 'Date', status: 'Status', empty: 'No tickets yet', statusChanged: 'Status updated', stOpen: 'Open', stProgress: 'In progress', stClosed: 'Closed' },
+    ru: { title: 'Обращения в поддержку', user: 'Пользователь', subject: 'Тема', message: 'Сообщение', date: 'Дата', status: 'Статус', empty: 'Обращений пока нет', statusChanged: 'Статус обновлён', stOpen: 'Открыто', stProgress: 'В работе', stClosed: 'Закрыто', response: 'Ответ', noReply: 'Нет ответа', reply: 'Ответить', editReply: 'Изменить ответ', replyTitle: 'Ответ пользователю', replyLabel: 'Ваш ответ', replyPlaceholder: 'Напишите ответ автору обращения…', sending: 'Отправка…', sendReply: 'Отправить', replySent: 'Ответ отправлен', needReply: 'Введите ответ' },
+    uz: { title: 'Ёрдам мурожаатлари', user: 'Фойдаланувчи', subject: 'Мавзу', message: 'Хабар', date: 'Сана', status: 'Ҳолат', empty: 'Ҳали мурожаатлар йўқ', statusChanged: 'Ҳолат янгиланди', stOpen: 'Очиқ', stProgress: 'Жараёнда', stClosed: 'Ёпилган', response: 'Жавоб', noReply: 'Жавоб йўқ', reply: 'Жавоб бериш', editReply: 'Жавобни таҳрирлаш', replyTitle: 'Фойдаланувчига жавоб', replyLabel: 'Жавобингиз', replyPlaceholder: 'Мурожаат муаллифига жавоб ёзинг…', sending: 'Юборилмоқда…', sendReply: 'Юбориш', replySent: 'Жавоб юборилди', needReply: 'Жавобни киритинг' },
+    en: { title: 'Support tickets', user: 'User', subject: 'Subject', message: 'Message', date: 'Date', status: 'Status', empty: 'No tickets yet', statusChanged: 'Status updated', stOpen: 'Open', stProgress: 'In progress', stClosed: 'Closed', response: 'Response', noReply: 'No reply', reply: 'Reply', editReply: 'Edit reply', replyTitle: 'Reply to user', replyLabel: 'Your reply', replyPlaceholder: 'Write a reply to the ticket author…', sending: 'Sending…', sendReply: 'Send', replySent: 'Reply sent', needReply: 'Enter a reply' },
   },
 
   adminReviews: {
@@ -1180,7 +1186,7 @@ const translations = {
       minRating: 'Рейтинг',
       any: 'Любой',
       priceSum: 'Цена, сум',
-      expPrefix: 'Опыт',
+      expPrefix: 'Опыт', solved: 'Решено дел',
       successPrefix: 'Успех',
       sum: 'сум',
       sortRating: 'По рейтингу',
@@ -1231,7 +1237,7 @@ const translations = {
       minRating: 'Рейтинг',
       any: 'Исталган',
       priceSum: 'Нархи, сўм',
-      expPrefix: 'Тажриба',
+      expPrefix: 'Тажриба', solved: 'Ҳал қилинган',
       successPrefix: 'Муваффақият',
       sum: 'сўм',
       sortRating: 'Рейтинг бўйича',
@@ -1282,7 +1288,7 @@ const translations = {
       minRating: 'Rating',
       any: 'Any',
       priceSum: 'Price, UZS',
-      expPrefix: 'Experience',
+      expPrefix: 'Experience', solved: 'Cases solved',
       successPrefix: 'Success',
       sum: 'UZS',
       sortRating: 'By rating',

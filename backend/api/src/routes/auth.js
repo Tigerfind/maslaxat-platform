@@ -5,8 +5,9 @@ const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const { Op } = require('sequelize');
 const rateLimit = require('express-rate-limit');
-const { User, LawyerProfile } = require('../models');
+const { User, LawyerProfile, PhoneOtp } = require('../models');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
+const smsService = require('../services/smsService');
 
 // Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
 // (считаем все попытки, не только неудачные).
@@ -91,6 +92,73 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       token,
       role: user.role,
     });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── ВХОД/РЕГИСТРАЦИЯ ПО ТЕЛЕФОНУ (SMS-код) ──────────────────
+
+// POST /api/auth/phone/request — запросить одноразовый код на номер
+router.post('/phone/request', emailLimiter, async (req, res, next) => {
+  try {
+    const phone = smsService.normalizePhone(req.body.phone);
+    if (!phone) return res.status(400).json({ error: 'Неверный формат номера (пример: +998901234567)' });
+
+    const code = String(crypto.randomInt(100000, 1000000)); // 6-значный, крипто-стойкий
+    const expiresAt = new Date(Date.now() + 5 * 60 * 1000);  // 5 минут
+
+    // Один активный код на номер: перезаписываем предыдущий.
+    const existing = await PhoneOtp.findOne({ where: { phone } });
+    if (existing) await existing.update({ code, expiresAt, attempts: 0 });
+    else await PhoneOtp.create({ phone, code, expiresAt, attempts: 0 });
+
+    await smsService.sendSms(phone, `MaslaXat: код подтверждения ${code}. Действует 5 минут.`);
+
+    // В dev без реального SMS-провайдера возвращаем код, чтобы можно было тестировать.
+    // В проде код НИКОГДА не возвращается — только реальная SMS.
+    const devReturn = process.env.NODE_ENV !== 'production' && !smsService.isConfigured();
+    res.json({ success: true, message: 'Код отправлен', ...(devReturn ? { devCode: code } : {}) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/auth/phone/verify — проверить код: вход (номер есть) или регистрация клиента
+router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
+  try {
+    const phone = smsService.normalizePhone(req.body.phone);
+    const code = String(req.body.code || '').trim();
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
+    if (!phone || !code) return res.status(400).json({ error: 'Укажите номер и код' });
+
+    const otp = await PhoneOtp.findOne({ where: { phone } });
+    if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
+    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
+    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
+    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
+
+    // Код верный. Новому номеру нужно имя — просим его, НЕ сжигая код (повторим verify).
+    let user = await User.findOne({ where: { phone } });
+    if (!user && name.length < 2) {
+      return res.status(400).json({ error: 'Укажите имя для регистрации', needName: true });
+    }
+
+    await otp.destroy(); // код использован
+
+    let created = false;
+    if (!user) {
+      // Регистрация клиента по телефону: пароль случайный (вход по коду), телефон
+      // подтверждён (isVerified). email обязателен и уникален в модели — генерируем
+      // плейсхолдер по номеру; реальный email клиент сможет добавить в профиле.
+      const randomPassword = crypto.randomBytes(16).toString('hex');
+      const genEmail = `${phone.replace(/\D/g, '')}@phone.maslaxat.uz`;
+      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true });
+      created = true;
+    }
+
+    const token = signToken(user);
+    res.status(created ? 201 : 200).json({ user: user.toJSON(), token, role: user.role, created });
   } catch (err) {
     next(err);
   }

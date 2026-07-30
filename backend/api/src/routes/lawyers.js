@@ -168,6 +168,20 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       }
     }
 
+    // Мультизапрос: список проблем клиента в одной записи. Принимаем problems[]
+    // (или старое одиночное question). Каждая проблема — непустая строка; question =
+    // первая (краткое резюме для списков/уведомлений). Лимит 10 — разумный предел.
+    const rawProblems = Array.isArray(req.body.problems)
+      ? req.body.problems
+      : (req.body.question ? [req.body.question] : []);
+    const problems = rawProblems
+      .map((p) => (typeof p === 'string' ? p.trim() : ''))
+      .filter(Boolean)
+      .slice(0, 10);
+    if (problems.length === 0) {
+      return res.status(400).json({ error: 'Опишите хотя бы одну проблему' });
+    }
+
     // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
     // не доверяем). Базовая (платная) цена — по длительности.
     const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
@@ -175,7 +189,8 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       clientId: req.userId,
       lawyerId: lawyer.id,
       type: req.body.consultationType || 'video',
-      question: req.body.question,
+      question: problems[0],
+      problems,
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,

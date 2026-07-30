@@ -33,6 +33,7 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import SocialLogin from '../../components/Auth/SocialLogin';
+import PhoneAuth from '../../components/Auth/PhoneAuth';
 
 /**
  * MaslaXat Unified Login Page
@@ -55,6 +56,7 @@ const LoginPage = () => {
   const [rememberMe, setRememberMe] = useState(Boolean(localStorage.getItem('rememberedEmail')));
   const [touched, setTouched] = useState({ email: false, password: false });
   const [twoFA, setTwoFA] = useState({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
+  const [phoneMode, setPhoneMode] = useState(false); // вход по номеру телефона
 
   const userTypes = [
     { label: t('login.client'), icon: <Person sx={{ fontSize: 20 }} />, role: 'client', dashboard: '/dashboard', demoEmail: 'client@maslaxat.uz', demoPassword: 'client123' },
@@ -347,7 +349,7 @@ const LoginPage = () => {
           )}
 
           {/* Login Form */}
-          {!twoFA.required && (
+          {!twoFA.required && !phoneMode && (
           <form onSubmit={handleSubmit}>
             <TextField
               fullWidth
@@ -454,8 +456,26 @@ const LoginPage = () => {
           </form>
           )}
 
-          {/* Соц-вход (кнопки видны только если провайдер включён на сервере) */}
+          {/* Вход/регистрация по телефону (номер → код) */}
           {!twoFA.required && (
+            <Box sx={{ mt: 2 }}>
+              {phoneMode ? (
+                <>
+                  <PhoneAuth onSuccess={(data) => finishLogin(data, data.user?.email || '')} />
+                  <Button fullWidth onClick={() => setPhoneMode(false)} sx={{ mt: 1, textTransform: 'none', color: axelionColors.textMuted }}>
+                    {t('phoneAuth.useEmail')}
+                  </Button>
+                </>
+              ) : (
+                <Button fullWidth variant="outlined" onClick={() => setPhoneMode(true)} sx={{ textTransform: 'none', borderColor: axelionColors.borderLight, color: axelionColors.textDark, py: 1.3, borderRadius: '8px' }}>
+                  {t('phoneAuth.usePhone')}
+                </Button>
+              )}
+            </Box>
+          )}
+
+          {/* Соц-вход (кнопки видны только если провайдер включён на сервере) */}
+          {!twoFA.required && !phoneMode && (
             <SocialLogin
               onSuccess={(data) => finishLogin(data, data.user?.email)}
               onError={(err) => dispatch(loginFailure(err.response?.data?.error || t('login.loginError')))}
@@ -463,7 +483,7 @@ const LoginPage = () => {
           )}
 
           {/* Demo Section — только в dev, не попадает в прод-сборку */}
-          {isDev && !twoFA.required && (
+          {isDev && !twoFA.required && !phoneMode && (
             <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
               <Typography
                 sx={{
