@@ -1,9 +1,13 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
+const { Op } = require('sequelize');
 const { User } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const { sendVerificationEmail } = require('../services/emailService');
+const logger = require('../config/logger');
 
 // Avatar upload config
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -97,6 +101,42 @@ router.put('/password', authenticate, async (req, res, next) => {
     );
 
     res.json({ success: true, message: 'Пароль успешно изменён', token });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/users/email — привязать/сменить настоящий email (в т.ч. для телефон-аккаунтов
+// с плейсхолдером @phone.maslaxat.uz). Проверяем формат + уникальность; новый email
+// требует подтверждения (isVerified→false + письмо).
+router.put('/email', authenticate, async (req, res, next) => {
+  try {
+    const email = String(req.body.email || '').trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) {
+      return res.status(400).json({ error: 'Неверный формат email' });
+    }
+    const user = await User.findByPk(req.userId);
+    if (!user) return res.status(404).json({ error: 'Пользователь не найден' });
+    if (email === user.email) {
+      return res.json({ success: true, user: user.toJSON() });
+    }
+    const exists = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } });
+    if (exists) return res.status(409).json({ error: 'Этот email уже используется' });
+
+    user.email = email;
+    // Новый email нужно подтвердить — не блокируем аккаунт, но шлём письмо.
+    const verificationToken = crypto.randomBytes(32).toString('hex');
+    user.verificationToken = verificationToken;
+    user.isVerified = false;
+    await user.save();
+
+    try {
+      await sendVerificationEmail(email, verificationToken);
+    } catch (e) {
+      logger.error('Failed to send verification email (email change):', e.message);
+    }
+
+    res.json({ success: true, user: user.toJSON(), message: 'Email обновлён. Подтвердите по ссылке в письме.' });
   } catch (err) {
     next(err);
   }

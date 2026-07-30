@@ -115,6 +115,11 @@ const ProfilePageGlass = () => {
   const [stats, setStats] = useState(null);
   const [activity, setActivity] = useState([]);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [emailInput, setEmailInput] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+
+  // Телефон-аккаунт с email-плейсхолдером → предлагаем привязать настоящий email.
+  const isPhoneAccount = (user?.email || '').endsWith('@phone.maslaxat.uz');
 
   // Personal info — seeded from real user, empty fallback (no placeholder mock)
   const [formData, setFormData] = useState({
@@ -263,6 +268,20 @@ const ProfilePageGlass = () => {
     }
   };
 
+  const handleSaveEmail = async () => {
+    const email = emailInput.trim().toLowerCase();
+    if (!/^\S+@\S+\.\S+$/.test(email)) { toast.error(t('profile.emailInvalid')); return; }
+    setEmailSaving(true);
+    try {
+      const res = await api.put('/client/users/email', { email });
+      if (res.data?.user) dispatch(updateProfile(res.data.user));
+      setEmailInput('');
+      toast.success(res.data?.message || t('profile.emailUpdated'));
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('profile.emailError'));
+    } finally { setEmailSaving(false); }
+  };
+
   const fields = [
     { label: t('profile.fullName'), name: 'name', value: formData.name, type: 'text' },
     { label: t('profile.email'), name: 'email', value: formData.email, type: 'email', readOnly: true },
@@ -382,6 +401,29 @@ const ProfilePageGlass = () => {
                   {isEditMode ? t('profile.cancel') : t('profile.edit')}
                 </button>
               </div>
+
+              {isPhoneAccount && (
+                <div style={{ background: 'rgba(184,149,110,0.08)', border: '1px solid rgba(184,149,110,0.25)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{t('profile.attachEmailTitle')}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 12 }}>{t('profile.attachEmailHint')}</div>
+                  <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                    <input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder={t('profile.attachEmailPlaceholder')}
+                      style={{ ...inputStyle, flex: 1, minWidth: 200, opacity: 1, cursor: 'text' }}
+                    />
+                    <button
+                      onClick={handleSaveEmail}
+                      disabled={emailSaving || !emailInput.trim()}
+                      style={{ background: 'var(--accent)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: emailSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: emailSaving ? 0.7 : 1 }}
+                    >
+                      {emailSaving ? t('profile.saving') : t('profile.attachEmailSave')}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }} className="prof-grid">
                 {fields.map((f) => (
