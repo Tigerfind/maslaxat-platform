@@ -667,16 +667,35 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </div>
 
             <div style={label}>{t('booking.category')} <span style={{ color: 'var(--accent-dark)' }}>*</span></div>
-            <select
-              value={formData.specialization}
-              onChange={(e) => handleChange('specialization', e.target.value)}
-              style={{ ...inputBase, marginBottom: 20, cursor: 'pointer', appearance: 'auto' }}
-            >
-              <option value="">{t('booking.categoryPlaceholder')}</option>
-              {activeSpecs.map((sp) => (
-                <option key={sp.id} value={sp.id}>{sp.name}</option>
-              ))}
-            </select>
+            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 20 }}>
+              {activeSpecs.map((sp) => {
+                const on = formData.specialization === sp.id;
+                return (
+                  <div
+                    key={sp.id}
+                    onClick={() => handleChange('specialization', sp.id)}
+                    onMouseEnter={(e) => { if (!on) e.currentTarget.style.color = 'var(--text)'; }}
+                    onMouseLeave={(e) => { if (!on) e.currentTarget.style.color = 'var(--text2)'; }}
+                    style={{
+                      position: 'relative',
+                      padding: '11px 14px',
+                      cursor: 'pointer',
+                      fontSize: 14,
+                      borderRadius: 8,
+                      color: on ? 'var(--text)' : 'var(--text2)',
+                      fontWeight: on ? 600 : 400,
+                      background: on ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
+                      transition: 'color 0.15s ease, background 0.15s ease',
+                    }}
+                  >
+                    {on && (
+                      <span style={{ position: 'absolute', left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: 'linear-gradient(180deg, var(--accent), var(--accent-dark))' }} />
+                    )}
+                    {sp.name}
+                  </div>
+                );
+              })}
+            </div>
 
             <div style={label}>{t('booking.problems')}</div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
