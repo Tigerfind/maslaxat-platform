@@ -38,7 +38,16 @@ export const clientLawyerService = {
   // Search lawyers
   searchLawyers: async (filters) => {
     try {
-      const response = await api.get('/client/lawyers', { params: filters });
+      // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Границы 0 / +∞
+      // не шлём, чтобы не сужать выборку без нужды (0 и максимум = «любая цена»).
+      const { priceRange, ...rest } = filters || {};
+      const params = { ...rest };
+      if (Array.isArray(priceRange)) {
+        const [min, max] = priceRange;
+        if (Number(min) > 0) params.minPrice = min;
+        if (Number(max) > 0 && Number(max) < 2000000) params.maxPrice = max;
+      }
+      const response = await api.get('/client/lawyers', { params });
       const data = response.data;
       const rawLawyers = data.lawyers || data || [];
       const lawyers = rawLawyers.map((l) => ({

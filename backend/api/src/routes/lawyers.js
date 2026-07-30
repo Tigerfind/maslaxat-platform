@@ -8,12 +8,18 @@ const { recomputeLawyerRating } = require('../services/ratingService');
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
     if (specialization) profileWhere.specialization = specialization;
     if (location) profileWhere.location = location;
+    // Фильтр по цене консультации (profile.price). Границы приходят только когда реально
+    // заданы (см. clientService): minPrice>0 и/или maxPrice<потолка.
+    const priceFilter = {};
+    if (minPrice !== undefined && !Number.isNaN(Number(minPrice))) priceFilter[Op.gte] = Number(minPrice);
+    if (maxPrice !== undefined && !Number.isNaN(Number(maxPrice))) priceFilter[Op.lte] = Number(maxPrice);
+    if (Object.getOwnPropertySymbols(priceFilter).length) profileWhere.price = priceFilter;
     // languages — JSONB-массив; фильтруем по вхождению языка (Postgres @>)
     if (language) profileWhere.languages = { [Op.contains]: [language] };
     // Фильтр по звёздам: показываем юристов, чей рейтинг округляется до выбранной звезды

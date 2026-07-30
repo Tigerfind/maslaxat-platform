@@ -100,6 +100,10 @@ const specIcon = (name = '', id) => {
   return <BalanceOutlined sx={s} />;
 };
 
+// Потолок фильтра цены (сум). Разовая консультация у топ-юриста реально доходит до ~1–1,5 млн;
+// 2 млн даёт запас, не растягивая шкалу впустую. Дефолт диапазона = [0, MAX_PRICE] (показывать всех).
+const MAX_PRICE = 2000000;
+
 // Опции сортировки с иконками
 const SORT_OPTS = [
   { v: 'rating', k: 'sortRating', icon: <StarRounded sx={{ fontSize: 18 }} /> },
@@ -173,7 +177,7 @@ const LawyersPageGlass = () => {
   const [filters, setFilters] = useState({
     specialization: '',
     minRating: 0,
-    priceRange: [0, 500000],
+    priceRange: [0, MAX_PRICE],
     experience: '',
     sortBy: 'rating',
     onlineOnly: false,
@@ -231,7 +235,7 @@ const LawyersPageGlass = () => {
     setFilters({
       specialization: '',
       minRating: 0,
-      priceRange: [0, 500000],
+      priceRange: [0, MAX_PRICE],
       experience: '',
       sortBy: 'rating',
       onlineOnly: false,
@@ -369,8 +373,8 @@ const LawyersPageGlass = () => {
           valueLabelDisplay="on"
           valueLabelFormat={(v) => `${v.toLocaleString()} ${t('lawyers.sum')}`}
           min={0}
-          max={500000}
-          step={1000}
+          max={MAX_PRICE}
+          step={25000}
           sx={{
             height: 6,
             color: 'var(--accent)',
@@ -403,7 +407,7 @@ const LawyersPageGlass = () => {
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4, marginBottom: 24 }}>
         <span>0</span>
-        <span>{(500000).toLocaleString()}</span>
+        <span>{MAX_PRICE.toLocaleString()}</span>
       </div>
 
       {/* Experience — пилюли */}

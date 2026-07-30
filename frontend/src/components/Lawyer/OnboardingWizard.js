@@ -190,13 +190,13 @@ const StepPrice = ({ data, onChange, t }) => (
         <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>{t('onboarding.perConsultation')}</div>
       </div>
       <input
-        type="range" min={50000} max={500000} step={10000}
+        type="range" min={50000} max={2000000} step={25000}
         value={data.price}
         onChange={(e) => onChange('price', Number(e.target.value))}
         style={{ width: '100%', accentColor: 'var(--accent)' }}
       />
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10 }}>
-        <span>50 000 {t('onboarding.sum')}</span><span>500 000 {t('onboarding.sum')}</span>
+        <span>50 000 {t('onboarding.sum')}</span><span>2 000 000 {t('onboarding.sum')}</span>
       </div>
     </div>
 
