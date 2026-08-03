@@ -38,13 +38,11 @@ import {
   ArrowUpwardRounded,
   ArrowDownwardRounded,
   AccessTimeRounded,
-  CompareArrowsOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import BookingModal from '../../components/BookingModal';
-import CompareModal from '../../components/Lawyers/CompareModal';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { SkeletonCard } from '../../components/UI/Skeleton';
@@ -163,9 +161,6 @@ const LawyersPageGlass = () => {
   const [selectedLawyer, setSelectedLawyer] = useState(null);
   const [favoriteLawyers, setFavoriteLawyers] = useState(new Set());
   const [firstFree, setFirstFree] = useState(false);
-  const [compareIds, setCompareIds] = useState([]); // порядок важен → массив (макс 3)
-  const [compareOpen, setCompareOpen] = useState(false);
-  const MAX_COMPARE = 3;
 
   // Акция «первая консультация бесплатно» — показываем объявление, если доступна
   useEffect(() => {
@@ -280,23 +275,6 @@ const LawyersPageGlass = () => {
       toast.error(t('lawyers.favError'));
     }
   };
-
-  const handleToggleCompare = (e, lawyerId) => {
-    e.stopPropagation();
-    setCompareIds((prev) => {
-      if (prev.includes(lawyerId)) return prev.filter((id) => id !== lawyerId);
-      if (prev.length >= MAX_COMPARE) {
-        toast.info(t('compare.max').replace('{n}', MAX_COMPARE));
-        return prev;
-      }
-      return [...prev, lawyerId];
-    });
-  };
-
-  // Полные объекты выбранных для сравнения (в порядке выбора)
-  const compareLawyers = compareIds
-    .map((id) => lawyers.find((l) => l.id === id))
-    .filter(Boolean);
 
   const activeSpecs = specializations.filter((s) => s.active);
 
@@ -516,7 +494,6 @@ const LawyersPageGlass = () => {
   // ---- Lawyer card ----
   const renderCard = (lawyer, index) => {
     const isFav = favoriteLawyers.has(lawyer.id);
-    const inCompare = compareIds.includes(lawyer.id);
     const reviews = lawyer.reviewsCount ?? 0;
     const tags = lawyer.specializations || [];
     const grad = AV_BG[index % AV_BG.length];
@@ -543,22 +520,13 @@ const LawyersPageGlass = () => {
           e.currentTarget.style.boxShadow = 'var(--card-shadow)';
         }}
       >
-        {/* top-right actions: compare + favorite */}
-        <div style={{ position: 'absolute', top: 12, right: 12, display: 'flex', gap: 4 }}>
-          <button
-            onClick={(e) => handleToggleCompare(e, lawyer.id)}
-            title={t('compare.toggle')}
-            style={{ background: inCompare ? 'var(--accent)' : 'transparent', border: inCompare ? 'none' : '1px solid var(--border)', borderRadius: 8, cursor: 'pointer', display: 'flex', padding: 4, color: inCompare ? '#FFFFFF' : 'var(--text3)', transition: 'all .15s ease' }}
-          >
-            <CompareArrowsOutlined sx={{ fontSize: 17 }} />
-          </button>
-          <button
-            onClick={(e) => handleToggleFavorite(e, lawyer.id)}
-            style={{ background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 3, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
-          >
-            {isFav ? <FavoriteRounded sx={{ fontSize: 21 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 21 }} />}
-          </button>
-        </div>
+        {/* favorite */}
+        <button
+          onClick={(e) => handleToggleFavorite(e, lawyer.id)}
+          style={{ position: 'absolute', top: 14, right: 14, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 3, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
+        >
+          {isFav ? <FavoriteRounded sx={{ fontSize: 21 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 21 }} />}
+        </button>
 
         {/* avatar */}
         <div
@@ -880,46 +848,6 @@ const LawyersPageGlass = () => {
           )}
         </div>
       </div>
-
-      {/* ─── Плавающая панель сравнения ─── */}
-      {compareIds.length > 0 && (
-        <div
-          style={{
-            position: 'fixed', left: '50%', transform: 'translateX(-50%)', bottom: 24, zIndex: 1200,
-            display: 'flex', alignItems: 'center', gap: 14, padding: '12px 16px 12px 20px',
-            borderRadius: 16, background: 'var(--surface)', border: '1px solid var(--card-brd)',
-            boxShadow: '0 12px 34px rgba(26,26,26,0.22)', maxWidth: 'calc(100vw - 32px)',
-          }}
-        >
-          <CompareArrowsOutlined sx={{ fontSize: 22, color: 'var(--accent)' }} />
-          <span style={{ fontSize: 14, color: 'var(--text)', fontWeight: 500 }}>
-            {t('compare.selected').replace('{n}', compareIds.length)}
-          </span>
-          <button
-            onClick={() => setCompareOpen(true)}
-            disabled={compareIds.length < 2}
-            style={{
-              background: compareIds.length < 2 ? 'var(--border)' : 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
-              color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase',
-              padding: '10px 18px', borderRadius: 10, cursor: compareIds.length < 2 ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            {t('compare.open')}
-          </button>
-          <IconButton size="small" onClick={() => setCompareIds([])} title={t('compare.clear')}>
-            <Close sx={{ fontSize: 18, color: 'var(--text3)' }} />
-          </IconButton>
-        </div>
-      )}
-
-      <CompareModal
-        open={compareOpen}
-        onClose={() => setCompareOpen(false)}
-        lawyers={compareLawyers}
-        onBook={handleBookConsultation}
-        onViewProfile={handleViewProfile}
-        t={t}
-      />
 
       <BookingModal open={bookingModalOpen} onClose={handleCloseBookingModal} lawyer={selectedLawyer} />
 
