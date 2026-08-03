@@ -591,7 +591,7 @@ const translations = {
   booking: {
     ru: {
       title: 'Запись на консультацию', sum: 'сум', typeLabel: 'Тип консультации', video: 'Видео', chat: 'Чат',
-      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…', category: 'Категория права', categoryPlaceholder: 'Выберите категорию', problems: 'Ваши проблемы', problemN: 'Проблема', addProblem: 'Добавить проблему',
+      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…', category: 'Категория права', categoryPlaceholder: 'Выберите категорию', categoriesHint: 'Категории (можно несколько)', problems: 'Ваши проблемы', problemN: 'Проблема', addProblem: 'Добавить проблему',
       date: 'Дата', time: 'Время', dateTime: 'Дата и время', cost: 'Стоимость', free: 'Бесплатно', noSlots: 'На этот день нет свободных часов', pickDateFirst: 'Сначала выберите дату',
       promo: 'Промокод', total: 'Итого', freeTotal: '0 сум · Бесплатно',
       firstFree: 'Первая консультация — бесплатно', firstFreeSub: 'Приветственный бонус применён — оплата не требуется.', subFree: 'Бесплатно по вашей подписке', subFreeSub: 'Консультация включена в тариф. Осталось в этом месяце: {n}.',
@@ -607,7 +607,7 @@ const translations = {
     },
     uz: {
       title: 'Консультацияга ёзилиш', sum: 'сўм', typeLabel: 'Консультация тури', video: 'Видео', chat: 'Чат',
-      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…', category: 'Ҳуқуқ соҳаси', categoryPlaceholder: 'Соҳани танланг', problems: 'Муаммоларингиз', problemN: 'Муаммо', addProblem: 'Муаммо қўшиш',
+      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…', category: 'Ҳуқуқ соҳаси', categoryPlaceholder: 'Соҳани танланг', categoriesHint: 'Соҳалар (бир нечта мумкин)', problems: 'Муаммоларингиз', problemN: 'Муаммо', addProblem: 'Муаммо қўшиш',
       date: 'Сана', time: 'Вақт', dateTime: 'Сана ва вақт', cost: 'Нархи', free: 'Бепул', noSlots: 'Бу кунда бўш вақт йўқ', pickDateFirst: 'Аввал санани танланг',
       promo: 'Промокод', total: 'Жами', freeTotal: '0 сўм · Бепул',
       firstFree: 'Биринчи консультация — бепул', firstFreeSub: 'Хуш келибсиз бонуси қўлланилди — тўлов талаб қилинмайди.', subFree: 'Обунангиз бўйича бепул', subFreeSub: 'Консультация тарифга киритилган. Шу ойда қолди: {n}.',
@@ -623,7 +623,7 @@ const translations = {
     },
     en: {
       title: 'Book a consultation', sum: 'UZS', typeLabel: 'Consultation type', video: 'Video', chat: 'Chat',
-      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…', category: 'Area of law', categoryPlaceholder: 'Select a category', problems: 'Your problems', problemN: 'Problem', addProblem: 'Add a problem',
+      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…', category: 'Area of law', categoryPlaceholder: 'Select a category', categoriesHint: 'Categories (choose several)', problems: 'Your problems', problemN: 'Problem', addProblem: 'Add a problem',
       date: 'Date', time: 'Time', dateTime: 'Date and time', cost: 'Cost', free: 'Free', noSlots: 'No open hours on this day', pickDateFirst: 'Select a date first',
       promo: 'Promo code', total: 'Total', freeTotal: '0 UZS · Free',
       firstFree: 'First consultation — free', firstFreeSub: 'Welcome bonus applied — no payment required.', subFree: 'Free with your subscription', subFreeSub: 'Included in your plan. Left this month: {n}.',

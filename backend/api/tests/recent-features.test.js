@@ -49,53 +49,74 @@ describe('фильтр цены каталога (GET /lawyers)', () => {
   });
 });
 
-describe('категория права per-проблема в брони', () => {
-  test('каждая проблема хранит {text, category}; question = текст первой; specialization = категория первой', async () => {
+describe('несколько категорий права на проблему в брони', () => {
+  test('каждая проблема хранит {text, categories[]}; question = текст первой; specialization = 1-я категория первой', async () => {
     const client = await makeClient('sp-c@test.uz');
     const { user: lawyer } = await makeLawyer('sp-l@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
       .send({
         problems: [
-          { text: 'Развод', category: 'family' },
-          { text: 'Раздел имущества', category: 'civil' },
+          { text: 'Развод', categories: ['family', 'civil'] },
+          { text: 'Налоги бизнеса', categories: ['tax', 'corporate'] },
         ],
         consultationType: 'video', duration: 60,
       });
     expect(res.status).toBe(201);
-    expect(res.body.consultation.specialization).toBe('family'); // = категория первой
+    expect(res.body.consultation.specialization).toBe('family'); // 1-я категория первой проблемы
     expect(res.body.consultation.question).toBe('Развод');
 
     const c = await Consultation.findByPk(res.body.consultation.id);
     expect(c.specialization).toBe('family');
     expect(c.problems).toEqual([
-      { text: 'Развод', category: 'family' },
-      { text: 'Раздел имущества', category: 'civil' },
+      { text: 'Развод', categories: ['family', 'civil'] },
+      { text: 'Налоги бизнеса', categories: ['tax', 'corporate'] },
     ]);
   });
 
-  test('проблема без категории → category null, specialization null', async () => {
+  test('дубли категорий схлопываются', async () => {
+    const client = await makeClient('sp-cd@test.uz');
+    const { user: lawyer } = await makeLawyer('sp-ld@test.uz');
+    const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .send({ problems: [{ text: 'Вопрос', categories: ['civil', 'civil', 'family'] }], consultationType: 'video' });
+    expect(res.status).toBe(201);
+    const c = await Consultation.findByPk(res.body.consultation.id);
+    expect(c.problems).toEqual([{ text: 'Вопрос', categories: ['civil', 'family'] }]);
+  });
+
+  test('проблема без категорий → categories [], specialization null', async () => {
     const client = await makeClient('sp-c2@test.uz');
     const { user: lawyer } = await makeLawyer('sp-l2@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ problems: [{ text: 'Вопрос', category: '' }], consultationType: 'video' });
+      .send({ problems: [{ text: 'Вопрос', categories: [] }], consultationType: 'video' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.specialization == null).toBe(true);
     const c = await Consultation.findByPk(res.body.consultation.id);
-    expect(c.problems).toEqual([{ text: 'Вопрос', category: null }]);
+    expect(c.problems).toEqual([{ text: 'Вопрос', categories: [] }]);
   });
 
-  test('legacy: строковые проблемы всё ещё принимаются (обратная совместимость)', async () => {
+  test('legacy: строковые проблемы и старый одиночный category ещё принимаются', async () => {
     const client = await makeClient('sp-c3@test.uz');
     const { user: lawyer } = await makeLawyer('sp-l3@test.uz');
-    const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
+    // строка
+    const r1 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
       .send({ question: 'Просто вопрос', consultationType: 'video' });
-    expect(res.status).toBe(201);
-    expect(res.body.consultation.question).toBe('Просто вопрос');
-    const c = await Consultation.findByPk(res.body.consultation.id);
-    expect(c.problems).toEqual([{ text: 'Просто вопрос', category: null }]);
+    expect(r1.status).toBe(201);
+    const c1 = await Consultation.findByPk(r1.body.consultation.id);
+    expect(c1.problems).toEqual([{ text: 'Просто вопрос', categories: [] }]);
+
+    // старый одиночный { text, category }
+    const client2 = await makeClient('sp-c4@test.uz');
+    const r2 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
+      .set('Authorization', `Bearer ${tokenFor(client2)}`)
+      .send({ problems: [{ text: 'Аренда', category: 'real-estate' }], consultationType: 'video' });
+    expect(r2.status).toBe(201);
+    const c2 = await Consultation.findByPk(r2.body.consultation.id);
+    expect(c2.problems).toEqual([{ text: 'Аренда', categories: ['real-estate'] }]);
+    expect(c2.specialization).toBe('real-estate');
   });
 });
 

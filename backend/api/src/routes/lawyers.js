@@ -180,16 +180,20 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     const rawProblems = Array.isArray(req.body.problems)
       ? req.body.problems
       : (req.body.question ? [req.body.question] : []);
+    const cleanCat = (c) => (typeof c === 'string' && c.trim() ? c.trim().slice(0, 50) : null);
     const problems = rawProblems
       .map((p) => {
-        if (typeof p === 'string') return { text: p.trim(), category: null };
+        if (typeof p === 'string') return { text: p.trim(), categories: [] };
         if (p && typeof p === 'object') {
           const text = String(p.text || '').trim();
-          const category = (typeof p.category === 'string' && p.category.trim())
-            ? p.category.trim().slice(0, 50) : null;
-          return { text, category };
+          // Новый формат: categories[]. Старый: одиночный category. Дедуп + макс 8.
+          const raw = Array.isArray(p.categories)
+            ? p.categories
+            : (p.category != null ? [p.category] : []);
+          const categories = [...new Set(raw.map(cleanCat).filter(Boolean))].slice(0, 8);
+          return { text, categories };
         }
-        return { text: '', category: null };
+        return { text: '', categories: [] };
       })
       .filter((p) => p.text)
       .slice(0, 10);
@@ -206,8 +210,8 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       type: req.body.consultationType || 'video',
       question: problems[0].text,
       problems,
-      // Основная категория записи = категория первой проблемы (для фильтров/списков).
-      specialization: problems[0].category || null,
+      // Основная категория записи = первая категория первой проблемы (для фильтров/списков).
+      specialization: problems[0].categories[0] || null,
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,

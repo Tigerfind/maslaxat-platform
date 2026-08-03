@@ -24,8 +24,8 @@ const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay
 const STEPS = [1, 2, 3];
 
 const emptyForm = {
-  // Мультизапрос: список проблем, у КАЖДОЙ своя категория права ({ text, category }).
-  problems: [{ text: '', category: '' }],
+  // Мультизапрос: список проблем; у КАЖДОЙ несколько категорий права ({ text, categories: [] }).
+  problems: [{ text: '', categories: [] }],
   description: '',
   preferredDate: '',
   preferredTime: '',
@@ -72,7 +72,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     // Префилл категории ПЕРВОЙ проблемы из специализации юриста (если совпадает со справочником)
     const lawyerSpec = lawyer?.specializations?.[0] || lawyer?.profile?.specialization || '';
     if (lawyerSpec && activeSpecs.some((s) => s.id === lawyerSpec)) {
-      setFormData((prev) => (prev.problems[0]?.category ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, category: lawyerSpec } : p)) }));
+      setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [lawyerSpec] } : p)) }));
     }
     (async () => {
       try {
@@ -212,10 +212,17 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
-  // ---- Мультизапрос: у каждой проблемы свой текст и категория ----
+  // ---- Мультизапрос: у каждой проблемы свой текст и НЕСКОЛЬКО категорий ----
   const setProblemText = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? { ...p, text: val } : p)) }));
-  const setProblemCategory = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? { ...p, category: val } : p)) }));
-  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, { text: '', category: '' }] }));
+  const toggleProblemCategory = (i, catId) => setFormData((prev) => ({
+    ...prev,
+    problems: prev.problems.map((p, idx) => {
+      if (idx !== i) return p;
+      const has = p.categories.includes(catId);
+      return { ...p, categories: has ? p.categories.filter((c) => c !== catId) : [...p.categories, catId] };
+    }),
+  }));
+  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, { text: '', categories: [] }] }));
   const removeProblem = (i) => setFormData((prev) => ({ ...prev, problems: prev.problems.length > 1 ? prev.problems.filter((_, idx) => idx !== i) : prev.problems }));
 
   const goNext = () => {
@@ -225,7 +232,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         toast.error(t('booking.toastQuestion'));
         return;
       }
-      if (filled.some((p) => !p.category)) {
+      if (filled.some((p) => !p.categories.length)) {
         toast.error(t('booking.toastCategory'));
         return;
       }
@@ -256,10 +263,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       const bookingData = {
         ...formData,
-        // Только непустые проблемы, каждая с текстом и категорией.
+        // Только непустые проблемы, каждая с текстом и списком категорий.
         problems: formData.problems
           .filter((p) => p.text.trim())
-          .map((p) => ({ text: p.text.trim(), category: p.category || '' })),
+          .map((p) => ({ text: p.text.trim(), categories: p.categories })),
         // captured UI choices (cosmetic until backend consumes them)
         duration,
         amount: total,
@@ -677,25 +684,38 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
               {formData.problems.map((p, i) => (
                 <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--surface)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-                    <select
-                      value={p.category}
-                      onChange={(e) => setProblemCategory(i, e.target.value)}
-                      style={{ ...inputBase, flex: 1, marginBottom: 0, padding: '9px 12px', fontSize: 13.5, cursor: 'pointer', appearance: 'auto' }}
-                    >
-                      <option value="">{t('booking.categoryPlaceholder')}</option>
-                      {activeSpecs.map((sp) => (
-                        <option key={sp.id} value={sp.id}>{sp.name}</option>
-                      ))}
-                    </select>
+                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8, marginBottom: 10 }}>
+                    <div style={{ fontSize: 11.5, color: 'var(--text3)', letterSpacing: '0.03em' }}>{t('booking.categoriesHint')}</div>
                     {formData.problems.length > 1 && (
                       <button
                         type="button"
                         onClick={() => removeProblem(i)}
                         aria-label="remove"
-                        style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', fontSize: 18, fontFamily: 'inherit', lineHeight: 1 }}
+                        style={{ flexShrink: 0, width: 30, height: 30, borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', fontSize: 17, fontFamily: 'inherit', lineHeight: 1 }}
                       >×</button>
                     )}
+                  </div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+                    {activeSpecs.map((sp) => {
+                      const on = p.categories.includes(sp.id);
+                      return (
+                        <button
+                          type="button"
+                          key={sp.id}
+                          onClick={() => toggleProblemCategory(i, sp.id)}
+                          style={{
+                            padding: '6px 12px', borderRadius: 999, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit',
+                            border: on ? '1px solid transparent' : '1px solid var(--border-strong)',
+                            background: on ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
+                            color: on ? '#FFFFFF' : 'var(--text2)',
+                            fontWeight: on ? 600 : 400,
+                            transition: 'all 0.15s ease',
+                          }}
+                        >
+                          {on ? '✓ ' : ''}{sp.name}
+                        </button>
+                      );
+                    })}
                   </div>
                   <textarea
                     value={p.text}

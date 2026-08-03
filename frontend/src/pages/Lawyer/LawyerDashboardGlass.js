@@ -62,9 +62,13 @@ const LawyerDashboardGlass = () => {
   const { specializations } = useSelector((state) => state.specializations);
   // id категории → название (для показа категории каждой проблемы в заявке)
   const specName = (id) => (specializations.find((s) => s.id === id)?.name || null);
-  // Проблема может быть строкой (legacy) или { text, category }
+  // Проблема может быть строкой (legacy), { text, category } (старый) или { text, categories:[] }
   const problemText = (p) => (typeof p === 'string' ? p : (p?.text || ''));
-  const problemCat = (p) => (typeof p === 'object' && p ? specName(p.category) : null);
+  const problemCats = (p) => {
+    if (typeof p !== 'object' || !p) return [];
+    const ids = Array.isArray(p.categories) ? p.categories : (p.category != null ? [p.category] : []);
+    return ids.map(specName).filter(Boolean);
+  };
   const { t } = useTranslation();
   const DAYS = t('lawyerPanel.days');
 
@@ -259,20 +263,20 @@ const LawyerDashboardGlass = () => {
                           {Array.isArray(r.problems) && r.problems.length > 1 ? (
                             <ol style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5, margin: '8px 0', paddingLeft: 20 }}>
                               {r.problems.map((p, i) => (
-                                <li key={i} style={{ marginBottom: 5 }}>
+                                <li key={i} style={{ marginBottom: 6 }}>
                                   {problemText(p)}
-                                  {problemCat(p) && (
-                                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{problemCat(p)}</span>
-                                  )}
+                                  {problemCats(p).map((cn, ci) => (
+                                    <span key={ci} style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', display: 'inline-block', marginTop: 2 }}>{cn}</span>
+                                  ))}
                                 </li>
                               ))}
                             </ol>
                           ) : (
                             <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>
                               «{Array.isArray(r.problems) && r.problems.length ? problemText(r.problems[0]) : r.question}»
-                              {Array.isArray(r.problems) && r.problems.length === 1 && problemCat(r.problems[0]) && (
-                                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{problemCat(r.problems[0])}</span>
-                              )}
+                              {Array.isArray(r.problems) && r.problems.length === 1 && problemCats(r.problems[0]).map((cn, ci) => (
+                                <span key={ci} style={{ marginLeft: 6, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap', display: 'inline-block' }}>{cn}</span>
+                              ))}
                             </p>
                           )}
                           <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} {t('lawyerPanel.sum')}</span></div>
