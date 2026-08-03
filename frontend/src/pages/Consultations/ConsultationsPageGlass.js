@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import {
   Dialog,
   DialogTitle,
@@ -77,9 +77,12 @@ const STATUS = {
 
 const ConsultationsPageGlass = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { t } = useTranslation();
 
-  const [currentTab, setCurrentTab] = useState(0);
+  // Начальная вкладка может прийти из навигации (напр. с карточек дашборда):
+  // navigate('/consultations', { state: { tab: 1 } }). Иначе — «Все» (0).
+  const [currentTab, setCurrentTab] = useState(Number.isInteger(location.state?.tab) ? location.state.tab : 0);
   const [consultations, setConsultations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);

@@ -129,9 +129,9 @@ const DashboardPageGlass = () => {
   };
 
   const statCards = [
-    { icon: <GavelOutlined />, value: stats?.activeConsultations ?? 0, label: t('dashboard.statActive'), bg: 'rgba(184,149,110,0.14)', color: '#B8956E', to: '/consultations' },
+    { icon: <GavelOutlined />, value: stats?.activeConsultations ?? 0, label: t('dashboard.statActive'), bg: 'rgba(184,149,110,0.14)', color: '#B8956E', to: '/consultations', tab: 1 },
     { icon: <DescriptionOutlined />, value: stats?.documents ?? 0, label: t('dashboard.statDocuments'), bg: 'rgba(106,138,154,0.14)', color: '#6A8A9A', to: '/documents' },
-    { icon: <CheckCircleOutline />, value: stats?.completedConsultations ?? 0, label: t('dashboard.statCompleted'), bg: 'rgba(122,154,107,0.14)', color: '#7A9A6B', to: '/consultations' },
+    { icon: <CheckCircleOutline />, value: stats?.completedConsultations ?? 0, label: t('dashboard.statCompleted'), bg: 'rgba(122,154,107,0.14)', color: '#7A9A6B', to: '/consultations', tab: 2 },
     { icon: <ChatBubbleOutline />, value: stats?.aiChats ?? 0, label: t('dashboard.statAiChats'), bg: 'rgba(196,163,90,0.14)', color: '#C4A35A', to: '/ai-chat' },
   ];
 
@@ -154,10 +154,10 @@ const DashboardPageGlass = () => {
             <div
               key={i}
               className="stat-card"
-              onClick={() => navigate(s.to)}
+              onClick={() => navigate(s.to, s.tab !== undefined ? { state: { tab: s.tab } } : undefined)}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') navigate(s.to); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigate(s.to, s.tab !== undefined ? { state: { tab: s.tab } } : undefined); }}
               style={{ ...glassCard, padding: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
             >
               <div style={{ width: 48, height: 48, flexShrink: 0, borderRadius: '50%', background: s.color, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF' }}>{s.icon}</div>
