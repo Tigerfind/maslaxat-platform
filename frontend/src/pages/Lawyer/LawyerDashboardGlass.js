@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import {
   PaymentsOutlined,
@@ -58,6 +59,12 @@ const initialsOf = (name = '') =>
 
 const LawyerDashboardGlass = () => {
   const navigate = useNavigate();
+  const { specializations } = useSelector((state) => state.specializations);
+  // id категории → название (для показа категории каждой проблемы в заявке)
+  const specName = (id) => (specializations.find((s) => s.id === id)?.name || null);
+  // Проблема может быть строкой (legacy) или { text, category }
+  const problemText = (p) => (typeof p === 'string' ? p : (p?.text || ''));
+  const problemCat = (p) => (typeof p === 'object' && p ? specName(p.category) : null);
   const { t } = useTranslation();
   const DAYS = t('lawyerPanel.days');
 
@@ -251,10 +258,22 @@ const LawyerDashboardGlass = () => {
                           </div>
                           {Array.isArray(r.problems) && r.problems.length > 1 ? (
                             <ol style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.5, margin: '8px 0', paddingLeft: 20 }}>
-                              {r.problems.map((p, i) => <li key={i} style={{ marginBottom: 3 }}>{p}</li>)}
+                              {r.problems.map((p, i) => (
+                                <li key={i} style={{ marginBottom: 5 }}>
+                                  {problemText(p)}
+                                  {problemCat(p) && (
+                                    <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{problemCat(p)}</span>
+                                  )}
+                                </li>
+                              ))}
                             </ol>
                           ) : (
-                            <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>«{r.question}»</p>
+                            <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '8px 0' }}>
+                              «{Array.isArray(r.problems) && r.problems.length ? problemText(r.problems[0]) : r.question}»
+                              {Array.isArray(r.problems) && r.problems.length === 1 && problemCat(r.problems[0]) && (
+                                <span style={{ marginLeft: 8, fontSize: 11, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{problemCat(r.problems[0])}</span>
+                              )}
+                            </p>
                           )}
                           <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} {t('lawyerPanel.sum')}</span></div>
                         </div>

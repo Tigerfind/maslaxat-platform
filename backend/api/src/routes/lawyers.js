@@ -174,15 +174,24 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       }
     }
 
-    // Мультизапрос: список проблем клиента в одной записи. Принимаем problems[]
-    // (или старое одиночное question). Каждая проблема — непустая строка; question =
-    // первая (краткое резюме для списков/уведомлений). Лимит 10 — разумный предел.
+    // Мультизапрос: список проблем в одной записи, у КАЖДОЙ своя категория права.
+    // Каждая проблема → { text, category }. Принимаем и объекты (новый фронт), и строки
+    // (legacy / старое одиночное question). question = текст первой (резюме для списков).
     const rawProblems = Array.isArray(req.body.problems)
       ? req.body.problems
       : (req.body.question ? [req.body.question] : []);
     const problems = rawProblems
-      .map((p) => (typeof p === 'string' ? p.trim() : ''))
-      .filter(Boolean)
+      .map((p) => {
+        if (typeof p === 'string') return { text: p.trim(), category: null };
+        if (p && typeof p === 'object') {
+          const text = String(p.text || '').trim();
+          const category = (typeof p.category === 'string' && p.category.trim())
+            ? p.category.trim().slice(0, 50) : null;
+          return { text, category };
+        }
+        return { text: '', category: null };
+      })
+      .filter((p) => p.text)
       .slice(0, 10);
     if (problems.length === 0) {
       return res.status(400).json({ error: 'Опишите хотя бы одну проблему' });
@@ -195,9 +204,10 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       clientId: req.userId,
       lawyerId: lawyer.id,
       type: req.body.consultationType || 'video',
-      question: problems[0],
+      question: problems[0].text,
       problems,
-      specialization: (typeof req.body.specialization === 'string' ? req.body.specialization.trim().slice(0, 50) : '') || null,
+      // Основная категория записи = категория первой проблемы (для фильтров/списков).
+      specialization: problems[0].category || null,
       description: req.body.description,
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,

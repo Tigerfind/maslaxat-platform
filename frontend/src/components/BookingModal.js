@@ -24,8 +24,8 @@ const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay
 const STEPS = [1, 2, 3];
 
 const emptyForm = {
-  problems: [''], // мультизапрос: список проблем клиента (минимум одна)
-  specialization: '', // категория права всей записи (id из справочника)
+  // Мультизапрос: список проблем, у КАЖДОЙ своя категория права ({ text, category }).
+  problems: [{ text: '', category: '' }],
   description: '',
   preferredDate: '',
   preferredTime: '',
@@ -69,10 +69,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
     // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
     setSchedule(lawyer?.profile?.schedule || null);
-    // Префилл категории права из специализации юриста (если совпадает со справочником)
+    // Префилл категории ПЕРВОЙ проблемы из специализации юриста (если совпадает со справочником)
     const lawyerSpec = lawyer?.specializations?.[0] || lawyer?.profile?.specialization || '';
     if (lawyerSpec && activeSpecs.some((s) => s.id === lawyerSpec)) {
-      setFormData((prev) => (prev.specialization ? prev : { ...prev, specialization: lawyerSpec }));
+      setFormData((prev) => (prev.problems[0]?.category ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, category: lawyerSpec } : p)) }));
     }
     (async () => {
       try {
@@ -212,19 +212,21 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
-  // ---- Мультизапрос: список проблем ----
-  const setProblem = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? val : p)) }));
-  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, ''] }));
+  // ---- Мультизапрос: у каждой проблемы свой текст и категория ----
+  const setProblemText = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? { ...p, text: val } : p)) }));
+  const setProblemCategory = (i, val) => setFormData((prev) => ({ ...prev, problems: prev.problems.map((p, idx) => (idx === i ? { ...p, category: val } : p)) }));
+  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, { text: '', category: '' }] }));
   const removeProblem = (i) => setFormData((prev) => ({ ...prev, problems: prev.problems.length > 1 ? prev.problems.filter((_, idx) => idx !== i) : prev.problems }));
 
   const goNext = () => {
     if (step === 1) {
-      if (!formData.specialization) {
-        toast.error(t('booking.toastCategory'));
+      const filled = formData.problems.filter((p) => p.text.trim());
+      if (filled.length === 0) {
+        toast.error(t('booking.toastQuestion'));
         return;
       }
-      if (!formData.problems.some((p) => p.trim())) {
-        toast.error(t('booking.toastQuestion'));
+      if (filled.some((p) => !p.category)) {
+        toast.error(t('booking.toastCategory'));
         return;
       }
       setStep(2);
@@ -254,6 +256,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       const bookingData = {
         ...formData,
+        // Только непустые проблемы, каждая с текстом и категорией.
+        problems: formData.problems
+          .filter((p) => p.text.trim())
+          .map((p) => ({ text: p.text.trim(), category: p.category || '' })),
         // captured UI choices (cosmetic until backend consumes them)
         duration,
         amount: total,
@@ -667,55 +673,36 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               ))}
             </div>
 
-            <div style={label}>{t('booking.category')} <span style={{ color: 'var(--accent-dark)' }}>*</span></div>
-            <div style={{ display: 'flex', flexDirection: 'column', marginBottom: 20 }}>
-              {activeSpecs.map((sp) => {
-                const on = formData.specialization === sp.id;
-                return (
-                  <div
-                    key={sp.id}
-                    onClick={() => handleChange('specialization', sp.id)}
-                    onMouseEnter={(e) => { if (!on) e.currentTarget.style.color = 'var(--text)'; }}
-                    onMouseLeave={(e) => { if (!on) e.currentTarget.style.color = 'var(--text2)'; }}
-                    style={{
-                      position: 'relative',
-                      padding: '11px 14px',
-                      cursor: 'pointer',
-                      fontSize: 14,
-                      borderRadius: 8,
-                      color: on ? 'var(--text)' : 'var(--text2)',
-                      fontWeight: on ? 600 : 400,
-                      background: on ? 'color-mix(in srgb, var(--accent) 6%, transparent)' : 'transparent',
-                      transition: 'color 0.15s ease, background 0.15s ease',
-                    }}
-                  >
-                    {on && (
-                      <span style={{ position: 'absolute', left: 0, top: 9, bottom: 9, width: 3, borderRadius: 3, background: 'linear-gradient(180deg, var(--accent), var(--accent-dark))' }} />
-                    )}
-                    {sp.name}
-                  </div>
-                );
-              })}
-            </div>
-
-            <div style={label}>{t('booking.problems')}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 12 }}>
+            <div style={label}>{t('booking.problems')} <span style={{ color: 'var(--accent-dark)' }}>*</span></div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
               {formData.problems.map((p, i) => (
-                <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <div key={i} style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 12, background: 'var(--surface)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <select
+                      value={p.category}
+                      onChange={(e) => setProblemCategory(i, e.target.value)}
+                      style={{ ...inputBase, flex: 1, marginBottom: 0, padding: '9px 12px', fontSize: 13.5, cursor: 'pointer', appearance: 'auto' }}
+                    >
+                      <option value="">{t('booking.categoryPlaceholder')}</option>
+                      {activeSpecs.map((sp) => (
+                        <option key={sp.id} value={sp.id}>{sp.name}</option>
+                      ))}
+                    </select>
+                    {formData.problems.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => removeProblem(i)}
+                        aria-label="remove"
+                        style={{ flexShrink: 0, width: 36, height: 36, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', fontSize: 18, fontFamily: 'inherit', lineHeight: 1 }}
+                      >×</button>
+                    )}
+                  </div>
                   <textarea
-                    value={p}
-                    onChange={(e) => setProblem(i, e.target.value)}
+                    value={p.text}
+                    onChange={(e) => setProblemText(i, e.target.value)}
                     placeholder={`${t('booking.problemN')} ${i + 1}`}
-                    style={{ ...inputBase, minHeight: 64, resize: 'none', flex: 1 }}
+                    style={{ ...inputBase, minHeight: 60, resize: 'none', width: '100%', marginBottom: 0 }}
                   />
-                  {formData.problems.length > 1 && (
-                    <button
-                      type="button"
-                      onClick={() => removeProblem(i)}
-                      aria-label="remove"
-                      style={{ flexShrink: 0, width: 38, height: 38, borderRadius: 10, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text3)', cursor: 'pointer', fontSize: 18, fontFamily: 'inherit', lineHeight: 1 }}
-                    >×</button>
-                  )}
                 </div>
               ))}
             </div>
