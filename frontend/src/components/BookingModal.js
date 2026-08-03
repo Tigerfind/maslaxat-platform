@@ -489,13 +489,14 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     opacity: loading ? 0.6 : 1,
   };
 
-  // Реально подключён только Payme; Click/Uzcard — «скоро» (не выбираются), чтобы не
-  // предлагать фейковый выбор способа оплаты, который бэкенд всё равно игнорирует.
+  // Реально подключён только Payme. Click/Uzcard оставлены в массиве на будущее
+  // (soon:true), но НЕ показываются — чтобы не висели мёртвые плитки «скоро».
+  // Когда подключим — просто убрать soon:true.
   const payMethods = [
     { id: 'payme', n: 'Payme', d: t('booking.paymeD') },
     { id: 'click', n: 'Click', d: t('booking.clickD'), soon: true },
     { id: 'uzcard', n: t('booking.cardN'), d: t('booking.cardD'), soon: true },
-  ];
+  ].filter((m) => !m.soon);
 
   const notDone = step <= 3;
 
