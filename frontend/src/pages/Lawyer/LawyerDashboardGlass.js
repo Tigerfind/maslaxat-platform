@@ -208,7 +208,17 @@ const LawyerDashboardGlass = () => {
         {/* Stat cards */}
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 20, marginBottom: 24 }}>
           {statCards.map((s, i) => (
-            <div key={i} style={{ ...glassCard, padding: 24 }}>
+            <div
+              key={i}
+              onClick={() => navigate('/lawyer/analytics')}
+              role="button"
+              tabIndex={0}
+              onKeyDown={(e) => { if (e.key === 'Enter') navigate('/lawyer/analytics'); }}
+              title={t('lawyerPanel.viewAnalytics')}
+              style={{ ...glassCard, padding: 24, cursor: 'pointer', transition: 'transform .18s ease, box-shadow .18s ease' }}
+              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 14px 30px rgba(26,26,26,0.12)'; }}
+              onMouseLeave={(e) => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = 'var(--card-shadow)'; }}
+            >
               <div style={{ width: 44, height: 44, borderRadius: 'var(--radius)', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color: s.color, marginBottom: 18 }}>{s.icon}</div>
               <div style={{ fontSize: 26, fontWeight: 300, color: 'var(--text)', letterSpacing: '0.01em' }}>{loading ? '—' : s.value}</div>
               <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase', marginTop: 4 }}>{s.label}</div>
