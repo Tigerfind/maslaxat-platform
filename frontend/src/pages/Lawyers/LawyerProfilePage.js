@@ -193,8 +193,8 @@ const LawyerProfilePage = () => {
         </button>
 
         <div className="lp-grid" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
-          {/* ── LEFT ── */}
-          <div style={{ ...glassCard, padding: 30, textAlign: 'center' }}>
+          {/* ── LEFT ── (закреплена, чтобы цена и «Записаться» были на виду при прокрутке) */}
+          <div className="lp-left" style={{ ...glassCard, padding: 30, textAlign: 'center', position: 'sticky', top: 12, alignSelf: 'start' }}>
             <div style={{ width: 100, height: 100, margin: '0 auto 18px', borderRadius: '50%', background: AV_BG[0], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 34, fontWeight: 300, position: 'relative' }}>
               {initialsOf(lawyer.name)}
               {lawyer.verified && (
@@ -365,6 +365,7 @@ const LawyerProfilePage = () => {
       <style>{`@media (max-width: 900px){
         .lp-grid { grid-template-columns: 1fr !important; }
         .lp-ach, .lp-port { grid-template-columns: 1fr !important; }
+        .lp-left { position: static !important; }
       }`}</style>
     </GlassShell>
   );
