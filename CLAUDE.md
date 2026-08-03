@@ -471,7 +471,10 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   повтор не платит второй раз, статус completed, без оплаты не высвобождает (4 теста).
 - `backend/api/tests/security.test.js` — гейт /payments/simulate (403 при PAYME_KEY, 401 без токена),
   подделка отзывов (403/400), whitelist статусов (400), чужой юрист (403) — 7 тестов.
-- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 2 набора, 11 тестов, зелёные.
+- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 16 наборов, 86 тестов, зелёные.
+- `tests/recent-features.test.js` — фильтр цены каталога (min/maxPrice), категория права в
+  брони (specialization + problems), привязка email (PUT /client/users/email: формат/уникальность/
+  нормализация/verified). Email замокан (без сети).
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
