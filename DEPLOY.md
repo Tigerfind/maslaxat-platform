@@ -135,6 +135,17 @@ npm run db:migrate:undo     # откатить последнюю
 > `sync()` и пройдёт healthcheck `/api/health`), затем frontend. Если backend не проходит
 > healthcheck — почти всегда не проброшен `DATABASE_URL`/`REDIS_URL` или отсутствует `JWT_SECRET`.
 
+**Грабли, которые уже учтены/важно знать:**
+- **Билдер:** в репозитории есть `Dockerfile` (для Docker Compose, Вариант B). `railway.json`
+  форсит `NIXPACKS`, поэтому Railway их игнорирует. Если Railway всё же пытается собрать из
+  Dockerfile — в *Settings → Build* выбери builder **Nixpacks**. (Фронтовый Dockerfile — nginx
+  на :80 — на Railway не подходит; правильный путь — `serve -s build -l $PORT` из `railway.json`.)
+- **Загрузки (аватары/документы) исчезнут при редеплое** — диск Railway эфемерный. Реши так:
+  backend-сервис → *Volumes* → добавь том с Mount path, напр. `/data`, и поставь переменную
+  `UPLOAD_DIR=/data/uploads`. Без этого сайт работает, но загруженные файлы не переживут деплой.
+- **`REACT_APP_API_URL` вшивается при СБОРКЕ фронта** — если поменял его после первого билда,
+  обязательно передеплой фронт (иначе он стучится на localhost).
+
 ### Вариант B — Docker Compose (есть `docker-compose.yml` + Dockerfiles)
 ```bash
 # в корне репозитория
