@@ -11,11 +11,15 @@ import {
   SearchOutlined,
   CalendarMonthOutlined,
   VideocamOutlined,
+  NotificationsNoneOutlined,
+  StarRounded,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
+import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import AILimitUpsell from '../../components/AILimitUpsell';
+import BookingModal from '../../components/BookingModal';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -89,7 +93,11 @@ const DashboardPageGlass = () => {
   const [stats, setStats] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [sub, setSub] = useState(null);
+  const [notifications, setNotifications] = useState([]);
+  const [favorites, setFavorites] = useState([]);
   const [upsellOpen, setUpsellOpen] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [bookingLawyer, setBookingLawyer] = useState(null);
   const [qaInput, setQaInput] = useState('');
 
   // Отправить вопрос в AI-чат: он авто-отправится там (location.state.autoSend).
@@ -104,14 +112,18 @@ const DashboardPageGlass = () => {
   const load = async () => {
     try {
       setLoading(true);
-      const [s, u, sb] = await Promise.all([
+      const [s, u, sb, notif, favs] = await Promise.all([
         clientService.dashboard.getStats(),
         clientService.dashboard.getUpcomingConsultations(),
         clientService.subscription.getMy(),
+        api.get('/notifications?limit=5').then((r) => r.data?.notifications || []).catch(() => []),
+        clientService.favorites.getFavorites().catch(() => []),
       ]);
       setStats(s);
       setUpcoming(Array.isArray(u) ? u : []);
       setSub(sb);
+      setNotifications(Array.isArray(notif) ? notif : []);
+      setFavorites(Array.isArray(favs) ? favs : []);
     } catch (e) {
       toast.error(t('common.error') || 'Ошибка загрузки');
     } finally {
@@ -126,6 +138,38 @@ const DashboardPageGlass = () => {
     } catch {
       toast.error(t('common.error') || 'Ошибка');
     }
+  };
+
+  // Относительное время для ленты событий
+  const relTime = (iso) => {
+    if (!iso) return '';
+    const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+    if (diff < 60) return t('dashboard.tNow');
+    const m = Math.floor(diff / 60);
+    if (m < 60) return t('dashboard.tMinAgo').replace('{n}', m);
+    const h = Math.floor(m / 60);
+    if (h < 24) return t('dashboard.tHourAgo').replace('{n}', h);
+    const d = Math.floor(h / 24);
+    if (d < 7) return t('dashboard.tDayAgo').replace('{n}', d);
+    return new Date(iso).toLocaleDateString('ru-RU');
+  };
+
+  // Клик по уведомлению: пометить прочитанным + перейти к связанной консультации
+  const openNotification = async (n) => {
+    if (!n.isRead) {
+      setNotifications((prev) => prev.map((x) => (x.id === n.id ? { ...x, isRead: true } : x)));
+      api.patch(`/notifications/${n.id}/read`).catch(() => {});
+    }
+    const m = n.metadata || {};
+    if (m.consultationId) {
+      navigate(m.missedCall ? `/consultations/video/${m.consultationId}` : '/consultations');
+    }
+  };
+
+  // Быстрая запись к избранному юристу
+  const rebook = (lawyer) => {
+    setBookingLawyer(lawyer);
+    setBookingOpen(true);
   };
 
   const statCards = [
@@ -250,6 +294,26 @@ const DashboardPageGlass = () => {
           </div>
         </div>
 
+        {/* Favorite lawyers — quick rebook */}
+        {favorites.length > 0 && (
+          <div style={{ ...glassCard, marginTop: 20, padding: '18px 24px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+              <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{t('dashboard.favoritesTitle')}</div>
+              <button onClick={() => navigate('/favorites')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.seeAll')} →</button>
+            </div>
+            <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
+              {favorites.slice(0, 8).map((f, i) => (
+                <div key={f.id} style={{ minWidth: 156, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 14, padding: 14, textAlign: 'center', background: 'var(--surface)' }}>
+                  <div onClick={() => navigate(`/lawyers/${f.id}`)} style={{ cursor: 'pointer', width: 48, height: 48, borderRadius: '50%', margin: '0 auto 8px', background: f.avatar ? `center/cover url(${f.avatar})` : AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 16 }}>{!f.avatar && initialsOf(f.name)}</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
+                  <div style={{ fontSize: 12, color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, margin: '2px 0 10px' }}><StarRounded sx={{ fontSize: 14, color: '#C9A36E' }} />{f.rating || 0}</div>
+                  <button onClick={() => rebook(f)} style={{ width: '100%', background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 11.5, fontWeight: 600, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.rebook')}</button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Upcoming consultations */}
         <div style={{ ...glassCard, marginTop: 20, overflow: 'hidden' }}>
           <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -298,6 +362,30 @@ const DashboardPageGlass = () => {
             })
           )}
         </div>
+
+        {/* Recent activity / notifications feed */}
+        {notifications.length > 0 && (
+          <div style={{ ...glassCard, marginTop: 20, overflow: 'hidden' }}>
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <NotificationsNoneOutlined sx={{ fontSize: 19, color: 'var(--accent)' }} />
+              <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.02em', color: 'var(--text)' }}>{t('dashboard.activityTitle')}</div>
+            </div>
+            {notifications.map((n) => (
+              <div
+                key={n.id}
+                onClick={() => openNotification(n)}
+                style={{ padding: '14px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', background: n.isRead ? 'transparent' : 'rgba(184,149,110,0.06)' }}
+              >
+                <span style={{ marginTop: 6, width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: n.isRead ? 'var(--border-strong)' : 'var(--accent)' }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: n.isRead ? 400 : 600, color: 'var(--text)' }}>{n.title}</div>
+                  {n.message && <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{n.message}</div>}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text3)', flexShrink: 0, whiteSpace: 'nowrap' }}>{relTime(n.createdAt)}</div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <style>{`
@@ -318,6 +406,13 @@ const DashboardPageGlass = () => {
         open={upsellOpen}
         onClose={() => setUpsellOpen(false)}
         onUpgraded={() => { setUpsellOpen(false); load(); }}
+      />
+
+      {/* Быстрая запись к избранному юристу */}
+      <BookingModal
+        open={bookingOpen}
+        onClose={() => { setBookingOpen(false); setBookingLawyer(null); }}
+        lawyer={bookingLawyer}
       />
     </GlassShell>
   );
