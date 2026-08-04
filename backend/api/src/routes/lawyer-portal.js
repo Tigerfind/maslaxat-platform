@@ -2,7 +2,8 @@ const router = require('express').Router();
 const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
-const { Consultation, User, LawyerProfile, Review, Notification, Payment } = require('../models');
+const fs = require('fs');
+const { Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
@@ -53,6 +54,27 @@ const upload = multer({
     else cb(new Error('Поддерживаются только изображения (jpg, png, webp)'));
   },
 });
+
+// Загрузка верификационных документов (диплом/лицензия/удостоверение) — PDF + картинки.
+const docStorage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const uniqueName = `verif-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
+    cb(null, uniqueName);
+  },
+});
+const docUpload = multer({
+  storage: docStorage,
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowedExt = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
+    const allowedMime = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Поддерживаются PDF и изображения (jpg, png, webp)'));
+  },
+});
+const VERIF_DOC_TYPES = ['diploma', 'license', 'id', 'other'];
 
 // All routes require lawyer authentication
 router.use(authenticate, authorize('lawyer'));
@@ -741,6 +763,76 @@ router.put('/availability', async (req, res, next) => {
     profile.schedule = normalizeSchedule(schedule); // единый формат + валидация HH:mm
     await profile.save();
     res.json({ success: true, schedule: profile.schedule });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── ВЕРИФИКАЦИОННЫЕ ДОКУМЕНТЫ (диплом/лицензия/удостоверение) ───
+// Видны только самому юристу и админу. Не публично, не клиентам.
+
+// GET /verification-documents — список своих документов (без пути на диске)
+router.get('/verification-documents', async (req, res, next) => {
+  try {
+    const docs = await LawyerDocument.findAll({
+      where: { userId: req.userId },
+      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+    });
+    res.json({ documents: docs });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /verification-documents — загрузить документ (multipart: file + type)
+router.post('/verification-documents', docUpload.single('file'), async (req, res, next) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
+    const type = VERIF_DOC_TYPES.includes(req.body.type) ? req.body.type : 'other';
+    const doc = await LawyerDocument.create({
+      userId: req.userId,
+      type,
+      name: req.file.originalname,
+      path: req.file.path,
+      mimeType: req.file.mimetype,
+      size: req.file.size,
+    });
+    res.status(201).json({
+      document: { id: doc.id, type: doc.type, name: doc.name, mimeType: doc.mimeType, size: doc.size, createdAt: doc.createdAt },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /verification-documents/:id — удалить свой документ (файл + запись)
+router.delete('/verification-documents/:id', async (req, res, next) => {
+  try {
+    const doc = await LawyerDocument.findOne({ where: { id: req.params.id, userId: req.userId } });
+    if (!doc) return res.status(404).json({ error: 'Документ не найден' });
+    // Удаляем файл с диска (не валим запрос, если файла уже нет)
+    if (doc.path) { try { fs.unlinkSync(doc.path); } catch (e) { /* файл мог быть удалён */ } }
+    await doc.destroy();
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /verification/submit — отправить профиль на проверку (после регистрации/отклонения).
+// Переводит статус в pending. Одобренного не трогаем (нечего пересматривать).
+router.post('/verification/submit', async (req, res, next) => {
+  try {
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
+    if (profile.verificationStatus === 'approved') {
+      return res.status(400).json({ error: 'Профиль уже одобрен' });
+    }
+    profile.verificationStatus = 'pending';
+    profile.rejectionReason = null;
+    await profile.save();
+    res.json({ success: true, verificationStatus: profile.verificationStatus });
   } catch (err) {
     next(err);
   }

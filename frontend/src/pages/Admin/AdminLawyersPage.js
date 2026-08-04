@@ -4,10 +4,12 @@ import { toast } from 'react-toastify';
 import {
   Container, Box, Typography, Grid, IconButton, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Tooltip, Stack, CircularProgress,
-  Card, Button, Avatar,
+  Card, Button, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, List,
+  ListItem, ListItemText,
 } from '@mui/material';
 import {
   ArrowBack, CheckCircle, Block, Gavel, Verified, HourglassEmpty,
+  DescriptionOutlined, DownloadOutlined, FolderOpenOutlined,
 } from '@mui/icons-material';
 import { adminLawyerService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
@@ -21,8 +23,45 @@ const AdminLawyersPage = () => {
   const [lawyers, setLawyers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(null);
+  // Диалог верификационных документов юриста
+  const [docsFor, setDocsFor] = useState(null); // юрист, чьи документы открыты
+  const [docs, setDocs] = useState([]);
+  const [docsLoading, setDocsLoading] = useState(false);
+  const [downloading, setDownloading] = useState(null);
 
   useEffect(() => { load(); }, []);
+
+  const openDocs = async (lawyer) => {
+    setDocsFor(lawyer);
+    setDocs([]);
+    setDocsLoading(true);
+    try {
+      const data = await adminLawyerService.getVerificationDocuments(lawyer.id);
+      setDocs(Array.isArray(data?.documents) ? data.documents : []);
+    } catch {
+      toast.error(t('adminManage.docsError'));
+    } finally {
+      setDocsLoading(false);
+    }
+  };
+
+  const download = async (docId, name) => {
+    setDownloading(docId);
+    try {
+      await adminLawyerService.downloadVerificationDocument(docsFor.id, docId, name);
+    } catch {
+      toast.error(t('adminManage.docsError'));
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  const DOC_TYPE_LABEL = {
+    diploma: t('adminManage.docDiploma'),
+    license: t('adminManage.docLicense'),
+    id: t('adminManage.docId'),
+    other: t('adminManage.docOther'),
+  };
 
   const load = async () => {
     try {
@@ -179,6 +218,11 @@ const AdminLawyersPage = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
+                          <Button size="small" variant="outlined" onClick={() => openDocs(l)}
+                            startIcon={<FolderOpenOutlined sx={{ fontSize: 16 }} />}
+                            sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.bronze, background: axelionColors.bgBeige } }}>
+                            {t('adminManage.docs')}
+                          </Button>
                           {stOf(l) !== 'approved' && (
                             <Button size="small" variant="contained" disabled={acting === l.id} onClick={() => approve(l.id)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
@@ -207,6 +251,50 @@ const AdminLawyersPage = () => {
           )}
         </Card>
       </Container>
+
+      {/* Диалог верификационных документов юриста */}
+      <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+          <DescriptionOutlined sx={{ color: axelionColors.bronze }} />
+          {t('adminManage.docsTitle')}{docsFor ? ` — ${docsFor.name}` : ''}
+        </DialogTitle>
+        <DialogContent dividers>
+          {docsLoading ? (
+            <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={24} /></Box>
+          ) : docs.length === 0 ? (
+            <Typography variant="body2" sx={{ color: axelionColors.textMuted, py: 2 }}>
+              {t('adminManage.docsEmpty')}
+            </Typography>
+          ) : (
+            <List disablePadding>
+              {docs.map((d) => (
+                <ListItem key={d.id} divider
+                  secondaryAction={
+                    <Button size="small" variant="text" disabled={downloading === d.id}
+                      onClick={() => download(d.id, d.name)}
+                      startIcon={downloading === d.id ? <CircularProgress size={14} /> : <DownloadOutlined sx={{ fontSize: 18 }} />}
+                      sx={{ textTransform: 'none', color: axelionColors.bronze }}>
+                      {t('adminManage.docDownload')}
+                    </Button>
+                  }
+                >
+                  <ListItemText
+                    primary={d.name}
+                    secondary={DOC_TYPE_LABEL[d.type] || d.type}
+                    primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }}
+                    secondaryTypographyProps={{ fontSize: 12 }}
+                  />
+                </ListItem>
+              ))}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setDocsFor(null)} sx={{ textTransform: 'none', color: axelionColors.textMuted }}>
+            {t('adminManage.docsClose')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   );
 };

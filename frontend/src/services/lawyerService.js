@@ -149,6 +149,31 @@ export const lawyerPaymentService = {
   },
 };
 
+// Lawyer verification — документы для проверки (диплом/лицензия/удостоверение)
+export const lawyerVerificationService = {
+  getDocuments: async () => {
+    const response = await api.get('/lawyer/verification-documents');
+    return response.data;
+  },
+  uploadDocument: async (file, type) => {
+    const form = new FormData();
+    form.append('file', file);
+    form.append('type', type);
+    const response = await api.post('/lawyer/verification-documents', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+  deleteDocument: async (id) => {
+    const response = await api.delete(`/lawyer/verification-documents/${id}`);
+    return response.data;
+  },
+  submitForReview: async () => {
+    const response = await api.post('/lawyer/verification/submit');
+    return response.data;
+  },
+};
+
 export default {
   schedule: lawyerScheduleService,
   reviews: lawyerReviewsService,
@@ -156,4 +181,5 @@ export default {
   consultation: lawyerConsultationService,
   notification: lawyerNotificationService,
   payments: lawyerPaymentService,
+  verification: lawyerVerificationService,
 };

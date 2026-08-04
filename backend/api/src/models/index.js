@@ -350,6 +350,36 @@ const Document = sequelize.define('Document', {
   },
 });
 
+// ─── LAWYER VERIFICATION DOCUMENT ───────────────────────────
+// Верификационные документы юриста (диплом, лицензия/ордер, удостоверение).
+// Видны ТОЛЬКО самому юристу и админу (не публично, не клиентам).
+const LawyerDocument = sequelize.define('LawyerDocument', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  // Тип документа для проверки админом.
+  type: {
+    type: DataTypes.ENUM('diploma', 'license', 'id', 'other'),
+    defaultValue: 'other',
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  path: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  mimeType: {
+    type: DataTypes.STRING,
+  },
+  size: {
+    type: DataTypes.INTEGER,
+  },
+});
+
 // ─── REVIEW MODEL ───────────────────────────────────────────
 const Review = sequelize.define('Review', {
   id: {
@@ -699,6 +729,10 @@ AIMessage.belongsTo(AIConversation, { foreignKey: 'conversationId' });
 User.hasMany(Document, { foreignKey: 'userId', as: 'documents' });
 Document.belongsTo(User, { foreignKey: 'userId' });
 
+// Lawyer (User) <-> LawyerDocument (верификационные документы)
+User.hasMany(LawyerDocument, { foreignKey: 'userId', as: 'lawyerDocuments' });
+LawyerDocument.belongsTo(User, { foreignKey: 'userId' });
+
 // Client <-> Review (author)
 User.hasMany(Review, { foreignKey: 'clientId', as: 'writtenReviews' });
 Review.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
@@ -762,6 +796,7 @@ module.exports = {
   AIConversation,
   AIMessage,
   Document,
+  LawyerDocument,
   Review,
   Notification,
   Specialization,

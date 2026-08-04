@@ -525,6 +525,36 @@ const translations = {
     },
   },
 
+  verification: {
+    ru: {
+      title: 'Документы для проверки',
+      hint: 'Загрузите диплом, лицензию/ордер адвоката и удостоверение личности. Их видит только администратор — клиентам они не показываются.',
+      typeDiploma: 'Диплом', typeLicense: 'Лицензия / ордер', typeId: 'Удостоверение личности', typeOther: 'Другое',
+      upload: 'Загрузить документ', empty: 'Пока нет загруженных документов', delete: 'Удалить',
+      confirmDelete: 'Удалить этот документ?', uploaded: 'Документ загружен', deleted: 'Документ удалён',
+      needDocs: 'Сначала загрузите хотя бы один документ', submit: 'Отправить на проверку', submitted: 'Отправлено на проверку',
+      approvedNote: 'Профиль подтверждён', error: 'Ошибка. Попробуйте ещё раз',
+    },
+    uz: {
+      title: 'Текширув учун ҳужжатлар',
+      hint: 'Диплом, адвокатлик лицензияси/ордери ва шахсни тасдиқловчи ҳужжатни юкланг. Уларни фақат администратор кўради — мижозларга кўрсатилмайди.',
+      typeDiploma: 'Диплом', typeLicense: 'Лицензия / ордер', typeId: 'Шахсни тасдиқловчи ҳужжат', typeOther: 'Бошқа',
+      upload: 'Ҳужжат юклаш', empty: 'Ҳали ҳужжат юкланмаган', delete: 'Ўчириш',
+      confirmDelete: 'Ушбу ҳужжатни ўчирасизми?', uploaded: 'Ҳужжат юкланди', deleted: 'Ҳужжат ўчирилди',
+      needDocs: 'Аввал камида битта ҳужжат юкланг', submit: 'Текширувга юбориш', submitted: 'Текширувга юборилди',
+      approvedNote: 'Профиль тасдиқланган', error: 'Хатолик. Қайта уриниб кўринг',
+    },
+    en: {
+      title: 'Verification documents',
+      hint: 'Upload your diploma, attorney license/order and ID. Only the administrator can see them — they are never shown to clients.',
+      typeDiploma: 'Diploma', typeLicense: 'License / order', typeId: 'ID document', typeOther: 'Other',
+      upload: 'Upload document', empty: 'No documents uploaded yet', delete: 'Delete',
+      confirmDelete: 'Delete this document?', uploaded: 'Document uploaded', deleted: 'Document deleted',
+      needDocs: 'Upload at least one document first', submit: 'Submit for review', submitted: 'Submitted for review',
+      approvedNote: 'Profile verified', error: 'Error. Please try again',
+    },
+  },
+
   admin: {
     ru: {
       title: 'Панель администратора', adminFallback: 'Администратор', fullAccess: '| Полный доступ', loadError: 'Ошибка загрузки данных', sum: 'сум',
@@ -831,6 +861,8 @@ const translations = {
       colLawyer: 'Юрист', colUser: 'Пользователь', colSpec: 'Специализация', colRole: 'Роль', colStatus: 'Статус', colRegistered: 'Регистрация', colActions: 'Действия',
       stApproved: 'Одобрен', stPending: 'На модерации', stRejected: 'Отклонён', stActive: 'Активен', stBlocked: 'Заблокирован',
       rejectReasonPrompt: 'Причина отклонения (юрист увидит её и сможет исправить). Оставьте пустым, если без причины:',
+      docs: 'Документы', docsTitle: 'Документы юриста', docsEmpty: 'Юрист ещё не загрузил документы', docsClose: 'Закрыть', docsError: 'Не удалось загрузить документы', docDownload: 'Скачать',
+      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docId: 'Удостоверение личности', docOther: 'Другое',
       roleClient: 'Клиент', roleLawyer: 'Юрист', roleAdmin: 'Админ',
       approve: 'Одобрить', reject: 'Отклонить', block: 'Заблокировать', unblock: 'Разблокировать',
       noLawyers: 'Юристов пока нет', noUsers: 'Пользователей пока нет', noSpec: 'Не указана',
@@ -845,6 +877,8 @@ const translations = {
       colLawyer: 'Юрист', colUser: 'Фойдаланувчи', colSpec: 'Ихтисослик', colRole: 'Роль', colStatus: 'Ҳолат', colRegistered: 'Рўйхатдан ўтган', colActions: 'Амаллар',
       stApproved: 'Тасдиқланган', stPending: 'Модерацияда', stRejected: 'Рад этилган', stActive: 'Фаол', stBlocked: 'Блокланган',
       rejectReasonPrompt: 'Рад этиш сабаби (юрист кўради ва тузата олади). Сабабсиз бўлса, бўш қолдиринг:',
+      docs: 'Ҳужжатлар', docsTitle: 'Юрист ҳужжатлари', docsEmpty: 'Юрист ҳали ҳужжат юкламаган', docsClose: 'Ёпиш', docsError: 'Ҳужжатларни юклаб бўлмади', docDownload: 'Юклаб олиш',
+      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docId: 'Шахсни тасдиқловчи ҳужжат', docOther: 'Бошқа',
       roleClient: 'Мижоз', roleLawyer: 'Юрист', roleAdmin: 'Админ',
       approve: 'Тасдиқлаш', reject: 'Рад этиш', block: 'Блоклаш', unblock: 'Блокдан чиқариш',
       noLawyers: 'Ҳали юристлар йўқ', noUsers: 'Ҳали фойдаланувчилар йўқ', noSpec: 'Кўрсатилмаган',
@@ -859,6 +893,8 @@ const translations = {
       colLawyer: 'Lawyer', colUser: 'User', colSpec: 'Specialization', colRole: 'Role', colStatus: 'Status', colRegistered: 'Registered', colActions: 'Actions',
       stApproved: 'Approved', stPending: 'Pending', stRejected: 'Rejected', stActive: 'Active', stBlocked: 'Blocked',
       rejectReasonPrompt: 'Reason for rejection (the lawyer will see it and can fix it). Leave empty for none:',
+      docs: 'Documents', docsTitle: 'Lawyer documents', docsEmpty: 'The lawyer has not uploaded documents yet', docsClose: 'Close', docsError: 'Failed to load documents', docDownload: 'Download',
+      docDiploma: 'Diploma', docLicense: 'License / order', docId: 'ID document', docOther: 'Other',
       roleClient: 'Client', roleLawyer: 'Lawyer', roleAdmin: 'Admin',
       approve: 'Approve', reject: 'Reject', block: 'Block', unblock: 'Unblock',
       noLawyers: 'No lawyers yet', noUsers: 'No users yet', noSpec: 'Not specified',

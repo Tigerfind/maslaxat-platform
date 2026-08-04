@@ -135,6 +135,28 @@ export const adminLawyerService = {
       throw error;
     }
   },
+
+  // Верификационные документы юриста (для проверки перед одобрением)
+  getVerificationDocuments: async (lawyerId) => {
+    const response = await api.get(`/admin/lawyers/${lawyerId}/verification-documents`);
+    return response.data;
+  },
+
+  // Скачать файл документа (через blob — нужен auth-заголовок, поэтому не прямая ссылка)
+  downloadVerificationDocument: async (lawyerId, docId, name) => {
+    const response = await api.get(
+      `/admin/lawyers/${lawyerId}/verification-documents/${docId}/download`,
+      { responseType: 'blob' },
+    );
+    const url = window.URL.createObjectURL(new Blob([response.data]));
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = name || 'document';
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };
 
 // Admin Specializations Management

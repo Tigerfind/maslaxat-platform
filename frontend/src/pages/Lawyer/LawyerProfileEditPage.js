@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { updateProfile } from '../../store/slices/authSlice';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import VerificationDocuments from '../../components/Lawyer/VerificationDocuments';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
 
@@ -92,6 +93,7 @@ const LawyerProfileEditPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const [verificationStatus, setVerificationStatus] = useState('pending');
 
   const [form, setForm] = useState({
     description: '',
@@ -122,6 +124,7 @@ const LawyerProfileEditPage = () => {
           avatarFile: null,
           avatarPreview: res.data.user?.avatar || null,
         });
+        setVerificationStatus(p.verificationStatus || 'pending');
       } catch {
         setError(t('lawyerPanel.loadProfileError'));
       } finally {
@@ -418,6 +421,9 @@ const LawyerProfileEditPage = () => {
             })}
           </div>
         </div>
+
+        {/* Верификационные документы (диплом/лицензия/удостоверение) */}
+        <VerificationDocuments initialStatus={verificationStatus} />
 
         {/* Save */}
         <button

@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo } = require('../models');
+const fs = require('fs');
+const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const notifications = require('../services/notificationService');
@@ -264,6 +265,35 @@ router.post('/lawyers/:id/reject', async (req, res, next) => {
     } catch (e) { /* notification is best-effort */ }
 
     res.json({ success: true, message: 'Юрист отклонён', user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /lawyers/:id/verification-documents — верификационные документы юриста (для проверки)
+router.get('/lawyers/:id/verification-documents', async (req, res, next) => {
+  try {
+    const docs = await LawyerDocument.findAll({
+      where: { userId: req.params.id },
+      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+    });
+    res.json({ documents: docs });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /lawyers/:id/verification-documents/:docId/download — скачать файл документа (только админ)
+router.get('/lawyers/:id/verification-documents/:docId/download', async (req, res, next) => {
+  try {
+    const doc = await LawyerDocument.findOne({
+      where: { id: req.params.docId, userId: req.params.id },
+    });
+    if (!doc || !doc.path || !fs.existsSync(doc.path)) {
+      return res.status(404).json({ error: 'Документ не найден' });
+    }
+    res.download(doc.path, doc.name);
   } catch (err) {
     next(err);
   }
