@@ -21,11 +21,23 @@ export const clientDashboardService = {
     }
   },
 
-  // Get upcoming consultations
+  // Get upcoming consultations. Бэк отдаёт сырые консультации (lawyer.name,
+  // preferredDate/Time, question) — нормализуем в поля, которые ждёт дашборд
+  // (lawyerName / topic / date / time), иначе имя показывалось как «Юрист».
   getUpcomingConsultations: async () => {
     try {
       const response = await api.get('/client/consultations/upcoming');
-      return response.data;
+      const list = Array.isArray(response.data) ? response.data : (response.data?.consultations || []);
+      return list.map((c) => ({
+        id: c.id,
+        type: c.type,
+        status: c.status,
+        lawyerName: c.lawyer?.name || null,
+        avatar: c.lawyer?.avatar || null,
+        topic: c.question || null,
+        date: c.preferredDate || null,
+        time: c.preferredTime || null,
+      }));
     } catch (error) {
       console.error('Error fetching consultations:', error);
       return [];
