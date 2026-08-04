@@ -12,11 +12,13 @@ import {
   ArrowBackOutlined,
   SendOutlined,
   AttachFileOutlined,
+  FolderOpenOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import io from 'socket.io-client';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import CaseDocuments from '../../components/Consultations/CaseDocuments';
 
 // socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
 const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
@@ -32,6 +34,7 @@ const ChatPage = () => {
   const [sending, setSending] = useState(false);
   const [typingUser, setTypingUser] = useState(null);
   const [consultation, setConsultation] = useState(null);
+  const [docsOpen, setDocsOpen] = useState(false);
   const messagesEndRef = useRef(null);
   const socketRef = useRef(null);
   const typingTimeoutRef = useRef(null);
@@ -250,7 +253,22 @@ const ChatPage = () => {
             <Typography sx={{ fontSize: 12, color: '#7A9A6B' }}>{t('chat.typing')}</Typography>
           )}
         </Box>
+        {/* Документы по делу — общая папка юриста и клиента */}
+        <IconButton
+          onClick={() => setDocsOpen(true)}
+          title={t('caseDocs.title')}
+          sx={{ ml: 'auto', color: 'var(--text2)', '&:hover': { color: 'var(--accent)' } }}
+        >
+          <FolderOpenOutlined />
+        </IconButton>
       </Box>
+
+      <CaseDocuments
+        consultationId={consultationId}
+        open={docsOpen}
+        onClose={() => setDocsOpen(false)}
+        currentUserId={user?.id}
+      />
 
       {/* Messages */}
       <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>

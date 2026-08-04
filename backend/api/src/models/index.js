@@ -380,6 +380,31 @@ const LawyerDocument = sequelize.define('LawyerDocument', {
   },
 });
 
+// ─── CASE DOCUMENT (рабочие документы по консультации) ──────
+// Файлы по конкретному делу (договор, черновик иска, справки). Видны ОБОИМ
+// участникам консультации — клиенту и юристу. uploaderId — кто загрузил.
+const CaseDocument = sequelize.define('CaseDocument', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  name: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  path: {
+    type: DataTypes.STRING,
+    allowNull: false,
+  },
+  mimeType: {
+    type: DataTypes.STRING,
+  },
+  size: {
+    type: DataTypes.INTEGER,
+  },
+});
+
 // ─── REVIEW MODEL ───────────────────────────────────────────
 const Review = sequelize.define('Review', {
   id: {
@@ -733,6 +758,12 @@ Document.belongsTo(User, { foreignKey: 'userId' });
 User.hasMany(LawyerDocument, { foreignKey: 'userId', as: 'lawyerDocuments' });
 LawyerDocument.belongsTo(User, { foreignKey: 'userId' });
 
+// Consultation <-> CaseDocument (рабочие документы по делу); uploader — автор загрузки
+Consultation.hasMany(CaseDocument, { foreignKey: 'consultationId', as: 'caseDocuments' });
+CaseDocument.belongsTo(Consultation, { foreignKey: 'consultationId' });
+User.hasMany(CaseDocument, { foreignKey: 'uploaderId', as: 'uploadedCaseDocuments' });
+CaseDocument.belongsTo(User, { foreignKey: 'uploaderId', as: 'uploader' });
+
 // Client <-> Review (author)
 User.hasMany(Review, { foreignKey: 'clientId', as: 'writtenReviews' });
 Review.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
@@ -797,6 +828,7 @@ module.exports = {
   AIMessage,
   Document,
   LawyerDocument,
+  CaseDocument,
   Review,
   Notification,
   Specialization,

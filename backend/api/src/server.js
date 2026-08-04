@@ -99,6 +99,9 @@ app.use('/api/users', require('./routes/users'));
 app.use('/api/client/users', require('./routes/users'));
 app.use('/api/lawyers', require('./routes/lawyers'));
 app.use('/api/consultations', require('./routes/consultations'));
+// Рабочие документы по делу (участник = клиент или юрист консультации). Отдельный
+// роутер: подпути /:id/documents не пересекаются с маршрутами consultations.js.
+app.use('/api/consultations', require('./routes/case-documents'));
 app.use('/api/ai', require('./routes/ai'));
 app.use('/api/dashboard', require('./routes/dashboard'));
 app.use('/api/documents', require('./routes/documents'));

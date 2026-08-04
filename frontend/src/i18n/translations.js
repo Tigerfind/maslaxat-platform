@@ -525,6 +525,30 @@ const translations = {
     },
   },
 
+  caseDocs: {
+    ru: {
+      title: 'Документы по делу',
+      hint: 'Общая папка с юристом: договоры, черновики, справки. Видны обоим участникам. Удалить может только тот, кто загрузил.',
+      upload: 'Загрузить документ', empty: 'Пока нет документов по делу',
+      download: 'Скачать', delete: 'Удалить', mine: 'Мой', close: 'Закрыть',
+      confirmDelete: 'Удалить этот документ?', uploaded: 'Документ добавлен', error: 'Ошибка. Попробуйте ещё раз',
+    },
+    uz: {
+      title: 'Иш бўйича ҳужжатлар',
+      hint: 'Юрист билан умумий папка: шартномалар, лойиҳалар, маълумотномалар. Иккала иштирокчи кўради. Фақат юклаган одам ўчира олади.',
+      upload: 'Ҳужжат юклаш', empty: 'Ҳали иш бўйича ҳужжат йўқ',
+      download: 'Юклаб олиш', delete: 'Ўчириш', mine: 'Меники', close: 'Ёпиш',
+      confirmDelete: 'Ушбу ҳужжатни ўчирасизми?', uploaded: 'Ҳужжат қўшилди', error: 'Хатолик. Қайта уриниб кўринг',
+    },
+    en: {
+      title: 'Case documents',
+      hint: 'Shared folder with the lawyer: contracts, drafts, certificates. Visible to both parties. Only the uploader can delete.',
+      upload: 'Upload document', empty: 'No case documents yet',
+      download: 'Download', delete: 'Delete', mine: 'Mine', close: 'Close',
+      confirmDelete: 'Delete this document?', uploaded: 'Document added', error: 'Error. Please try again',
+    },
+  },
+
   verification: {
     ru: {
       title: 'Документы для проверки',
