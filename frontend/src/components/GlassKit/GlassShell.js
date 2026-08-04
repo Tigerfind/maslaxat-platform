@@ -110,10 +110,9 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
   const navItems = NAV[role] || NAV.client;
   const activeKey = active || location.pathname;
 
-  // «Золотая аврора» — тёплый градиент фона сайдбара (свет/тьма)
-  const auroraBg = dark
-    ? 'linear-gradient(158deg, #2A241C 0%, #211A12 55%, #191309 100%)'
-    : 'linear-gradient(158deg, #F4EEE2 0%, #EAD9C0 55%, #E1C9A8 100%)';
+  // Фон сайдбара = фон страницы (var(--canvas)) — единый цвет с контентом.
+  // Разделение даёт тонкий правый бордер, а не другой цвет.
+  const auroraBg = 'var(--canvas)';
   const sideBorder = dark ? 'rgba(255,255,255,0.08)' : 'rgba(140,110,70,0.18)';
 
   const go = (key) => { navigate(key); setDrawerOpen(false); };
