@@ -3,6 +3,7 @@ const { Op } = require('sequelize');
 const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
+const notifications = require('../services/notificationService');
 
 // All routes require admin authentication
 router.use(authenticate, authorize('admin'));
@@ -170,12 +171,20 @@ router.get('/lawyers', async (req, res, next) => {
     if (search) {
       where.name = { [Op.iLike]: `%${search}%` };
     }
-    if (verified === 'true') where.isVerified = true;
-    if (verified === 'false') where.isVerified = false;
+    // Фильтр по статусу модерации (на профиле). verified=true → одобренные,
+    // verified=false → на проверке (очередь для админа).
+    const profileWhere = {};
+    if (verified === 'true') profileWhere.verificationStatus = 'approved';
+    if (verified === 'false') profileWhere.verificationStatus = 'pending';
 
     const { count, rows } = await User.findAndCountAll({
       where,
-      include: [{ model: LawyerProfile, as: 'profile' }],
+      include: [{
+        model: LawyerProfile,
+        as: 'profile',
+        where: Object.keys(profileWhere).length ? profileWhere : undefined,
+        required: Object.keys(profileWhere).length > 0,
+      }],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset,
@@ -197,14 +206,27 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
   try {
     const user = await User.findOne({
       where: { id: req.params.id, role: 'lawyer' },
+      include: [{ model: LawyerProfile, as: 'profile' }],
     });
-    if (!user) {
+    if (!user || !user.profile) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    user.isVerified = true;
-    user.isActive = true;
-    await user.save();
+    // Модерация — на профиле; user.isActive держим true (isActive = блокировка).
+    user.profile.verificationStatus = 'approved';
+    user.profile.rejectionReason = null;
+    await user.profile.save();
+    if (!user.isActive) { user.isActive = true; await user.save(); }
+
+    // Уведомляем юриста об одобрении (fail-safe: ошибка уведомления не валит запрос)
+    try {
+      await notifications.createNotification(
+        user.id,
+        'verification',
+        'Профиль одобрен',
+        'Поздравляем! Ваш профиль прошёл проверку — теперь вы видны клиентам в каталоге.',
+      );
+    } catch (e) { /* notification is best-effort */ }
 
     res.json({ success: true, message: 'Юрист одобрен', user });
   } catch (err) {
@@ -212,19 +234,34 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
   }
 });
 
-// POST /lawyers/:id/reject — reject lawyer
+// POST /lawyers/:id/reject — reject lawyer (с причиной)
 router.post('/lawyers/:id/reject', async (req, res, next) => {
   try {
+    const reason = (req.body && typeof req.body.reason === 'string') ? req.body.reason.trim().slice(0, 500) : '';
     const user = await User.findOne({
       where: { id: req.params.id, role: 'lawyer' },
+      include: [{ model: LawyerProfile, as: 'profile' }],
     });
-    if (!user) {
+    if (!user || !user.profile) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    user.isVerified = false;
-    user.isActive = false;
-    await user.save();
+    // Отклонение убирает из каталога, но НЕ блокирует аккаунт — юрист может
+    // исправить документы и подать снова (isActive трогаем только при блокировке).
+    user.profile.verificationStatus = 'rejected';
+    user.profile.rejectionReason = reason || null;
+    await user.profile.save();
+
+    try {
+      await notifications.createNotification(
+        user.id,
+        'verification',
+        'Профиль отклонён',
+        reason
+          ? `Профиль не прошёл проверку: ${reason}. Исправьте и подайте снова.`
+          : 'Профиль не прошёл проверку. Проверьте данные и документы и подайте снова.',
+      );
+    } catch (e) { /* notification is best-effort */ }
 
     res.json({ success: true, message: 'Юрист отклонён', user });
   } catch (err) {

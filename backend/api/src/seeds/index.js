@@ -76,6 +76,7 @@ async function seed() {
         languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
         description: `Опытный юрист. Специализация: ${l.spec}`,
         isAvailable: true,
+        verificationStatus: 'approved',
       });
     }
     console.log(`${lawyers.length} lawyers created`);

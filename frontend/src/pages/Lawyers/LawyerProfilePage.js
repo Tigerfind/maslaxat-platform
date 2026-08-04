@@ -103,7 +103,7 @@ const LawyerProfilePage = () => {
           id: l.id,
           name: l.name || t('lawyerProfile.lawyerFallback'),
           avatar: l.avatar,
-          verified: l.isVerified,
+          verified: p.verificationStatus === 'approved',
           rating: p.rating || 0,
           reviewsCount: p.reviewsCount || 0,
           completedConsultations: p.completedCases || 0,

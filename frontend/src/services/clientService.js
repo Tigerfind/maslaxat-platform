@@ -67,6 +67,9 @@ export const clientLawyerService = {
         name: l.name,
         avatar: l.avatar,
         isVerified: l.isVerified,
+        // Статус модерации админом (галочка «Проверенный»). В каталог попадают
+        // только approved, но держим явно — на будущее и для единообразия.
+        verificationStatus: l.profile?.verificationStatus || 'pending',
         rating: l.profile?.rating || 0,
         reviewsCount: l.profile?.reviewsCount || 0,
         completedConsultations: l.profile?.completedCases || 0,

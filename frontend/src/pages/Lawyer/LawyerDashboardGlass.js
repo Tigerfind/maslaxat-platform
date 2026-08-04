@@ -13,6 +13,8 @@ import {
   StarOutlined,
   StarBorderOutlined,
   PowerSettingsNewOutlined,
+  HourglassEmptyOutlined,
+  ErrorOutlineOutlined,
 } from '@mui/icons-material';
 import lawyerService from '../../services/lawyerService';
 import OnboardingWizard from '../../components/Lawyer/OnboardingWizard';
@@ -198,6 +200,37 @@ const LawyerDashboardGlass = () => {
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+        {/* Баннер модерации: на проверке / отклонён. Одобрен — баннера нет. */}
+        {stats?.verificationStatus === 'pending' && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18,
+            padding: '14px 18px', borderRadius: 'var(--radius)',
+            background: 'rgba(196,163,90,0.12)', border: '1px solid rgba(196,163,90,0.32)',
+          }}>
+            <HourglassEmptyOutlined sx={{ fontSize: 22, color: '#C4A35A', mt: '1px' }} />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', marginBottom: 3 }}>{t('lawyerPanel.verifyPendingTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.45 }}>{t('lawyerPanel.verifyPendingText')}</div>
+            </div>
+          </div>
+        )}
+        {stats?.verificationStatus === 'rejected' && (
+          <div style={{
+            display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18,
+            padding: '14px 18px', borderRadius: 'var(--radius)',
+            background: 'rgba(192,73,47,0.10)', border: '1px solid rgba(192,73,47,0.30)',
+          }}>
+            <ErrorOutlineOutlined sx={{ fontSize: 22, color: '#C0492F', mt: '1px' }} />
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', marginBottom: 3 }}>{t('lawyerPanel.verifyRejectedTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.45 }}>
+                {stats?.rejectionReason
+                  ? `${t('lawyerPanel.verifyRejectedText')} ${stats.rejectionReason}`
+                  : t('lawyerPanel.verifyRejectedText')}
+              </div>
+            </div>
+          </div>
+        )}
         {/* Status toggle pill (no home in mockup — kept functional) */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 18 }}>
           <button

@@ -133,6 +133,9 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       // Реальный онлайн/офлайн — чтобы пилюля статуса отражала состояние после загрузки,
       // а не всегда «онлайн».
       isAvailable: profile ? Boolean(profile.isAvailable) : false,
+      // Статус модерации админом — для баннера в кабинете (на проверке/одобрен/отклонён).
+      verificationStatus: profile?.verificationStatus || 'pending',
+      rejectionReason: profile?.rejectionReason || null,
     });
   } catch (err) {
     next(err);

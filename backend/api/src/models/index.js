@@ -182,6 +182,18 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     type: DataTypes.DECIMAL(12, 2),
     defaultValue: 0,
   },
+  // Модерация юриста админом (отдельно от User.isVerified — тот про подтверждение email).
+  // pending → на проверке (в каталоге НЕ виден, бронировать нельзя);
+  // approved → одобрен админом (виден, бронируется, галочка «Проверенный»);
+  // rejected → отклонён (с причиной в rejectionReason), может подать снова.
+  verificationStatus: {
+    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
+    defaultValue: 'pending',
+  },
+  // Причина отклонения — показывается юристу, чтобы он исправил и подал снова.
+  rejectionReason: {
+    type: DataTypes.TEXT,
+  },
 });
 
 // ─── CONSULTATION MODEL ─────────────────────────────────────

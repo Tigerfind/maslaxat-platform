@@ -539,7 +539,7 @@ const LawyersPageGlass = () => {
           }}
         >
           {!lawyer.avatar && initialsOf(lawyer.name)}
-          {lawyer.isVerified && (
+          {lawyer.verificationStatus === 'approved' && (
             <span style={{
               position: 'absolute', bottom: -2, right: -2, width: 19, height: 19, borderRadius: '50%',
               background: '#5AA06A', border: '3px solid var(--surface)', display: 'flex',

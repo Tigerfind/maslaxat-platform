@@ -32,7 +32,9 @@ async function makeClient(email = 'client@test.uz') {
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
   const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
-  const lp = await LawyerProfile.create({ userId: user.id, balance: 0, pendingBalance: 0, price: 100000, specialization: 'Гражданское право', isAvailable: true, ...profile });
+  // verificationStatus по умолчанию 'approved' — большинство тестов ждут, что юрист
+  // сразу виден в каталоге и бронируется. Тест на модерацию передаёт своё значение.
+  const lp = await LawyerProfile.create({ userId: user.id, balance: 0, pendingBalance: 0, price: 100000, specialization: 'Гражданское право', isAvailable: true, verificationStatus: 'approved', ...profile });
   return { user, lp };
 }
 async function makeAdmin(email = 'admin@test.uz') {

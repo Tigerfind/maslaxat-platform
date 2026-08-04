@@ -30,6 +30,10 @@ router.get('/', async (req, res, next) => {
       profileWhere.rating = { [Op.gte]: r - 0.5, [Op.lt]: r + 0.5 };
     }
 
+    // Безопасный режим: в каталоге показываем ТОЛЬКО одобренных админом юристов.
+    // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
+    profileWhere.verificationStatus = 'approved';
+
     const userWhere = { role: 'lawyer', isActive: true };
     if (search) {
       userWhere.name = { [Op.iLike]: `%${search}%` };
@@ -100,7 +104,9 @@ router.get('/:id', async (req, res, next) => {
       ],
     });
 
-    if (!lawyer) {
+    // Безопасный режим: непроверенный/отклонённый профиль публично не показываем
+    // (иначе клиент дошёл бы до него по прямой ссылке минуя каталог).
+    if (!lawyer || !lawyer.profile || lawyer.profile.verificationStatus !== 'approved') {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
@@ -137,7 +143,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(404).json({ error: 'Юрист не найден' });
     }
     // Нельзя бронировать непроверенного или недоступного (offline) юриста
-    if (!lawyer.isVerified) {
+    if (!lawyer.profile || lawyer.profile.verificationStatus !== 'approved') {
       return res.status(400).json({ error: 'Этот юрист ещё не прошёл проверку' });
     }
     if (!lawyer.profile || lawyer.profile.isAvailable === false) {

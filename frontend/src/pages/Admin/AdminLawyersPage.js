@@ -51,10 +51,12 @@ const AdminLawyersPage = () => {
   };
 
   const reject = async (id) => {
-    if (!window.confirm(t('adminManage.confirmReject'))) return;
+    // Причина отклонения — уходит юристу в уведомление, чтобы он исправил и подал снова.
+    const reason = window.prompt(t('adminManage.rejectReasonPrompt'));
+    if (reason === null) return; // отмена
     setActing(id);
     try {
-      await adminLawyerService.rejectLawyer(id);
+      await adminLawyerService.rejectLawyer(id, reason.trim());
       toast.success(t('adminManage.rejected'));
       await load();
     } catch (e) {
@@ -64,8 +66,10 @@ const AdminLawyersPage = () => {
     }
   };
 
-  const verifiedCount = lawyers.filter((l) => l.isVerified).length;
-  const pendingCount = lawyers.length - verifiedCount;
+  // Статус модерации — источник истины на профиле (не User.isVerified, тот про email).
+  const stOf = (l) => l.profile?.verificationStatus || 'pending';
+  const verifiedCount = lawyers.filter((l) => stOf(l) === 'approved').length;
+  const pendingCount = lawyers.filter((l) => stOf(l) === 'pending').length;
 
   const initials = (name = '') =>
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -160,10 +164,14 @@ const AdminLawyersPage = () => {
                         <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>{specOf(l)}</Typography>
                       </TableCell>
                       <TableCell align="center">
-                        {l.isVerified ? (
+                        {stOf(l) === 'approved' && (
                           <Chip size="small" icon={<CheckCircle sx={{ fontSize: 15 }} />} label={t('adminManage.stApproved')} sx={{ background: axelionColors.successLight, color: axelionColors.success, fontWeight: 600, border: `1px solid ${axelionColors.success}`, '& .MuiChip-icon': { color: axelionColors.success } }} />
-                        ) : (
+                        )}
+                        {stOf(l) === 'pending' && (
                           <Chip size="small" icon={<HourglassEmpty sx={{ fontSize: 15 }} />} label={t('adminManage.stPending')} sx={{ background: axelionColors.bgBeige, color: axelionColors.bronze, fontWeight: 600, border: `1px solid ${axelionColors.goldMuted}`, '& .MuiChip-icon': { color: axelionColors.bronze } }} />
+                        )}
+                        {stOf(l) === 'rejected' && (
+                          <Chip size="small" icon={<Block sx={{ fontSize: 15 }} />} label={t('adminManage.stRejected')} sx={{ background: axelionColors.errorLight, color: axelionColors.error, fontWeight: 600, border: `1px solid ${axelionColors.error}`, '& .MuiChip-icon': { color: axelionColors.error } }} />
                         )}
                       </TableCell>
                       <TableCell>
@@ -171,14 +179,14 @@ const AdminLawyersPage = () => {
                       </TableCell>
                       <TableCell align="right">
                         <Stack direction="row" spacing={1} justifyContent="flex-end">
-                          {!l.isVerified && (
+                          {stOf(l) !== 'approved' && (
                             <Button size="small" variant="contained" disabled={acting === l.id} onClick={() => approve(l.id)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
                               sx={{ background: axelionColors.success, color: '#fff', textTransform: 'none', boxShadow: 'none', borderRadius: '8px', '&:hover': { background: '#1F7A4A', boxShadow: 'none' } }}>
                               {t('adminManage.approve')}
                             </Button>
                           )}
-                          {l.isVerified && (
+                          {stOf(l) !== 'rejected' && (
                             <Button size="small" variant="outlined" disabled={acting === l.id} onClick={() => reject(l.id)}
                               startIcon={<Block sx={{ fontSize: 16 }} />}
                               sx={{ color: axelionColors.error, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.error, background: axelionColors.errorLight } }}>
