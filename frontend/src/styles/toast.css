@@ -1,0 +1,47 @@
+/* Тёмный премиум-стиль тост-уведомлений (react-toastify).
+   Бокс задаётся toastStyle в App.js; здесь — иконки, прогресс-бар, кнопка закрытия. */
+
+/* Цвет дефолтных иконок по типу — под золотую палитру сайта */
+:root {
+  --toastify-icon-color-info: #E4C89A;
+  --toastify-icon-color-success: #9FD3AD;
+  --toastify-icon-color-error: #F1A18C;
+  --toastify-icon-color-warning: #E0B15C;
+}
+
+.Toastify__toast-body {
+  color: #F1E7D8;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.35;
+}
+
+.Toastify__toast-icon {
+  width: 26px;
+  height: 26px;
+  margin-inline-end: 12px;
+}
+
+.Toastify__close-button {
+  color: #C7B9A5;
+  opacity: 0.7;
+  align-self: center;
+}
+.Toastify__close-button:hover {
+  opacity: 1;
+}
+
+/* Прогресс-бар — цвет по типу */
+.Toastify__progress-bar--error {
+  background: linear-gradient(90deg, #D8674C, #C0492F) !important;
+}
+.Toastify__progress-bar--success {
+  background: linear-gradient(90deg, #77B487, #5AA06A) !important;
+}
+.Toastify__progress-bar--info,
+.Toastify__progress-bar--default {
+  background: linear-gradient(90deg, #C9A980, #8B7355) !important;
+}
+.Toastify__progress-bar--warning {
+  background: linear-gradient(90deg, #E0B15C, #C99A3A) !important;
+}

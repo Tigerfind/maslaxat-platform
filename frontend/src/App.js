@@ -6,6 +6,7 @@ import { CssBaseline, Box } from '@mui/material';
 import { QueryClient, QueryClientProvider } from 'react-query';
 import { ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import './styles/toast.css';
 
 import store from './store/store';
 import { initializeApp } from './store/slices/appSlice';
@@ -239,13 +240,13 @@ function App() {
               pauseOnFocusLoss
               draggable
               pauseOnHover
-              theme="light"
+              theme="dark"
               toastStyle={{
-                backgroundColor: '#FFFFFF',
-                color: '#2D2D2D',
-                borderRadius: '8px',
-                boxShadow: '0 4px 12px rgba(26, 26, 26, 0.08)',
-                border: '1px solid #E8E4DE',
+                background: 'linear-gradient(150deg, #241F1A, #332B22)',
+                color: '#F1E7D8',
+                borderRadius: '15px',
+                boxShadow: '0 14px 34px rgba(0, 0, 0, 0.34)',
+                border: '1px solid rgba(201, 169, 128, 0.22)',
                 fontFamily: '"Inter", sans-serif',
               }}
             />
