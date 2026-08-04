@@ -42,6 +42,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [loading, setLoading] = useState(false);
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState(emptyForm);
+  const [openCat, setOpenCat] = useState(-1); // индекс проблемы с открытым списком категорий (-1 — закрыто)
   const [duration, setDuration] = useState(60);
   const [dateLabel, setDateLabel] = useState('');
   const [promo, setPromo] = useState('');
@@ -99,6 +100,14 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     })();
     return () => { alive = false; };
   }, [open]);
+
+  // Закрывать выпадающий список категорий по клику вне него
+  useEffect(() => {
+    if (openCat < 0) return undefined;
+    const onDown = (e) => { if (!e.target.closest('.cat-dd')) setOpenCat(-1); };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [openCat]);
 
   const hasSchedule = schedule && typeof schedule === 'object'
     && Object.values(schedule).some((d) => d && d.enabled);
@@ -222,8 +231,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       return { ...p, categories: has ? p.categories.filter((c) => c !== catId) : [...p.categories, catId] };
     }),
   }));
-  const addProblem = () => setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, { text: '', categories: [] }] }));
-  const removeProblem = (i) => setFormData((prev) => ({ ...prev, problems: prev.problems.length > 1 ? prev.problems.filter((_, idx) => idx !== i) : prev.problems }));
+  const addProblem = () => { setOpenCat(-1); setFormData((prev) => (prev.problems.length >= 10 ? prev : { ...prev, problems: [...prev.problems, { text: '', categories: [] }] })); };
+  const removeProblem = (i) => { setOpenCat(-1); setFormData((prev) => ({ ...prev, problems: prev.problems.length > 1 ? prev.problems.filter((_, idx) => idx !== i) : prev.problems })); };
 
   const goNext = () => {
     if (step === 1) {
@@ -695,27 +704,40 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                       >×</button>
                     )}
                   </div>
-                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
-                    {activeSpecs.map((sp) => {
-                      const on = p.categories.includes(sp.id);
-                      return (
-                        <button
-                          type="button"
-                          key={sp.id}
-                          onClick={() => toggleProblemCategory(i, sp.id)}
-                          style={{
-                            padding: '6px 12px', borderRadius: 999, fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit',
-                            border: on ? '1px solid transparent' : '1px solid var(--border-strong)',
-                            background: on ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
-                            color: on ? '#FFFFFF' : 'var(--text2)',
-                            fontWeight: on ? 600 : 400,
-                            transition: 'all 0.15s ease',
-                          }}
-                        >
-                          {on ? '✓ ' : ''}{sp.name}
-                        </button>
-                      );
-                    })}
+                  <div className="cat-dd" style={{ position: 'relative', marginBottom: 10 }}>
+                    <div
+                      onClick={() => setOpenCat(openCat === i ? -1 : i)}
+                      style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minHeight: 44, padding: '8px 12px', borderRadius: 11, border: `1px solid ${openCat === i ? 'var(--accent)' : 'var(--border-strong)'}`, background: 'var(--surface)', cursor: 'pointer' }}
+                    >
+                      {p.categories.length === 0 && <span style={{ color: 'var(--text3)', fontSize: 13.5 }}>{t('booking.categoriesSelect')}</span>}
+                      {p.categories.map((cid) => {
+                        const nm = activeSpecs.find((s) => s.id === cid)?.name || cid;
+                        return (
+                          <span key={cid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999 }}>
+                            {nm}
+                            <span onClick={(e) => { e.stopPropagation(); toggleProblemCategory(i, cid); }} style={{ cursor: 'pointer', opacity: 0.85, fontSize: 13, lineHeight: 1 }}>×</span>
+                          </span>
+                        );
+                      })}
+                      <span style={{ marginLeft: 'auto', color: 'var(--accent)', alignSelf: 'center', transform: openCat === i ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+                    </div>
+                    {openCat === i && (
+                      <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 6, position: 'absolute', left: 0, right: 0, zIndex: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 42px rgba(80,60,40,0.16)', maxHeight: 260, overflow: 'auto' }}>
+                        {activeSpecs.map((sp) => {
+                          const on = p.categories.includes(sp.id);
+                          return (
+                            <li
+                              key={sp.id}
+                              onClick={() => toggleProblemCategory(i, sp.id)}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: on ? 600 : 400 }}
+                            >
+                              <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#FFFFFF', border: on ? '1px solid transparent' : '1px solid var(--border-strong)', background: on ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'transparent' }}>{on ? '✓' : ''}</span>
+                              {sp.name}
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
                   </div>
                   <textarea
                     value={p.text}
