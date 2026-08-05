@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
 
@@ -207,6 +208,53 @@ const StepPrice = ({ data, onChange, t }) => (
   </div>
 );
 
+// ── Step 5: verification documents ────────────────────────────
+const StepDocuments = ({ docs, uploading, onUpload, onRemove, docType, setDocType, t }) => {
+  const DOC_TYPES = [
+    { key: 'diploma', label: t('verification.typeDiploma') },
+    { key: 'license', label: t('verification.typeLicense') },
+    { key: 'id', label: t('verification.typeId') },
+    { key: 'other', label: t('verification.typeOther') },
+  ];
+  const label = { fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 10 };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>{t('verification.hint')}</div>
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        <select value={docType} onChange={(e) => setDocType(e.target.value)}
+          style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontFamily: 'inherit', fontSize: 14, minWidth: 200 }}>
+          {DOC_TYPES.map((d) => <option key={d.key} value={d.key} style={{ color: '#000' }}>{d.label}</option>)}
+        </select>
+        <label style={{
+          display: 'inline-flex', alignItems: 'center', gap: 8, cursor: uploading ? 'default' : 'pointer',
+          padding: '12px 20px', borderRadius: 10, border: '1px solid var(--accent)', color: 'var(--accent)',
+          fontSize: 13, fontWeight: 600, opacity: uploading ? 0.6 : 1,
+        }}>
+          {uploading ? t('onboarding.saving') : t('verification.upload')}
+          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={uploading}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onUpload(f); }}
+            style={{ display: 'none' }} />
+        </label>
+      </div>
+      <div>
+        <div style={label}>{t('onboarding.uploadedDocs')} · {docs.length}</div>
+        {docs.length === 0 ? (
+          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{t('verification.empty')}</div>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {docs.map((d) => (
+              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <span style={{ flex: 1, fontSize: 13.5, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
+                <button onClick={() => onRemove(d.id)} style={{ background: 'transparent', border: 'none', color: '#E0876F', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>✕</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 // ── Main Wizard ───────────────────────────────────────────────
 const OnboardingWizard = ({ onComplete }) => {
   const { t } = useTranslation();
@@ -215,6 +263,10 @@ const OnboardingWizard = ({ onComplete }) => {
   const [step, setStep] = useState(0);
   const [saving, setSaving] = useState(false);
   const [times, setTimes] = useState({ start: '09:00', end: '18:00' });
+  // Верификационные документы (шаг 5) — грузятся сразу (аккаунт уже существует).
+  const [docs, setDocs] = useState([]);
+  const [docType, setDocType] = useState('diploma');
+  const [uploading, setUploading] = useState(false);
   const [data, setData] = useState({
     description: '',
     experience: 3,
@@ -234,11 +286,40 @@ const OnboardingWizard = ({ onComplete }) => {
     }));
   };
 
+  // Подгружаем уже загруженные документы (если юрист вернулся в мастер).
+  useEffect(() => {
+    lawyerService.verification.getDocuments()
+      .then((r) => setDocs(r.documents || []))
+      .catch(() => {});
+  }, []);
+
+  const uploadDoc = async (file) => {
+    setUploading(true);
+    try {
+      const r = await lawyerService.verification.uploadDocument(file, docType);
+      setDocs((prev) => [r.document, ...prev]);
+    } catch (err) {
+      toast.error(err.response?.data?.error || t('verification.error'));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const removeDoc = async (id) => {
+    try {
+      await lawyerService.verification.deleteDocument(id);
+      setDocs((prev) => prev.filter((d) => d.id !== id));
+    } catch {
+      toast.error(t('verification.error'));
+    }
+  };
+
   const canProceed = () => {
     if (step === 0) return data.description.length >= 50;
     if (step === 1) return data.specializations.length >= 1;
     if (step === 2) return Object.values(data.schedule).filter((d) => d?.enabled).length >= 3;
     if (step === 3) return data.price >= 50000;
+    if (step === 4) return docs.length >= 1; // хотя бы один документ на проверку
     return false;
   };
 
@@ -259,9 +340,11 @@ const OnboardingWizard = ({ onComplete }) => {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
 
+      // Документы загружены в мастере → сразу отправляем профиль на проверку админу.
+      try { await lawyerService.verification.submitForReview(); } catch (e) { /* не блокируем финиш */ }
+
       toast.success(t('onboarding.savedToast'));
-      // Мягкая подсказка: следующий шаг — загрузить документы и отправить на проверку.
-      toast.info(t('onboarding.verifyHint'), { autoClose: 7000 });
+      toast.info(t('onboarding.submittedHint'), { autoClose: 7000 });
       onComplete();
     } catch (err) {
       toast.error(err.response?.data?.error || t('onboarding.saveError'));
@@ -323,6 +406,7 @@ const OnboardingWizard = ({ onComplete }) => {
           {step === 1 && <StepSpecializations data={data} onChange={handleChange} t={t} />}
           {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} t={t} />}
           {step === 3 && <StepPrice data={data} onChange={handleChange} t={t} />}
+          {step === 4 && <StepDocuments docs={docs} uploading={uploading} onUpload={uploadDoc} onRemove={removeDoc} docType={docType} setDocType={setDocType} t={t} />}
         </div>
 
         {/* Actions */}
