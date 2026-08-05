@@ -9,12 +9,13 @@ import {
 } from '@mui/material';
 import {
   ArrowBack, CheckCircle, Block, Gavel, Verified, HourglassEmpty,
-  DescriptionOutlined, DownloadOutlined, FolderOpenOutlined,
+  DescriptionOutlined, DownloadOutlined, FolderOpenOutlined, VisibilityOutlined,
 } from '@mui/icons-material';
 import { adminLawyerService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
+import DocumentPreviewDialog from '../../components/UI/DocumentPreviewDialog';
 
 const AdminLawyersPage = () => {
   const navigate = useNavigate();
@@ -28,6 +29,12 @@ const AdminLawyersPage = () => {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [previewDoc, setPreviewDoc] = useState(null); // документ для предпросмотра
+
+  // Blob документа для предпросмотра (тот же эндпоинт, что и скачивание).
+  const previewFetch = React.useCallback(async () => {
+    return adminLawyerService.getVerificationDocumentBlob(docsFor.id, previewDoc.id);
+  }, [docsFor, previewDoc]);
 
   useEffect(() => { load(); }, []);
 
@@ -278,12 +285,17 @@ const AdminLawyersPage = () => {
               {docs.map((d) => (
                 <ListItem key={d.id} divider
                   secondaryAction={
-                    <Button size="small" variant="text" disabled={downloading === d.id}
-                      onClick={() => download(d.id, d.name)}
-                      startIcon={downloading === d.id ? <CircularProgress size={14} /> : <DownloadOutlined sx={{ fontSize: 18 }} />}
-                      sx={{ textTransform: 'none', color: axelionColors.bronze }}>
-                      {t('adminManage.docDownload')}
-                    </Button>
+                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+                      <IconButton size="small" onClick={() => setPreviewDoc(d)} title={t('preview.view')} sx={{ color: axelionColors.bronze }}>
+                        <VisibilityOutlined sx={{ fontSize: 19 }} />
+                      </IconButton>
+                      <Button size="small" variant="text" disabled={downloading === d.id}
+                        onClick={() => download(d.id, d.name)}
+                        startIcon={downloading === d.id ? <CircularProgress size={14} /> : <DownloadOutlined sx={{ fontSize: 18 }} />}
+                        sx={{ textTransform: 'none', color: axelionColors.bronze }}>
+                        {t('adminManage.docDownload')}
+                      </Button>
+                    </Box>
                   }
                 >
                   <ListItemText
@@ -303,6 +315,15 @@ const AdminLawyersPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Предпросмотр документа юриста */}
+      <DocumentPreviewDialog
+        open={Boolean(previewDoc)}
+        onClose={() => setPreviewDoc(null)}
+        name={previewDoc?.name}
+        fetchBlob={previewDoc ? previewFetch : null}
+        onDownload={previewDoc ? () => download(previewDoc.id, previewDoc.name) : null}
+      />
     </Box>
   );
 };

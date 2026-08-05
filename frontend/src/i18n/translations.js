@@ -525,6 +525,12 @@ const translations = {
     },
   },
 
+  preview: {
+    ru: { error: 'Не удалось открыть документ', noInline: 'Предпросмотр для этого формата недоступен', download: 'Скачать', view: 'Просмотр' },
+    uz: { error: 'Ҳужжатни очиб бўлмади', noInline: 'Бу формат учун кўриб чиқиш мавжуд эмас', download: 'Юклаб олиш', view: 'Кўриш' },
+    en: { error: 'Could not open the document', noInline: 'Preview is not available for this format', download: 'Download', view: 'View' },
+  },
+
   caseDocs: {
     ru: {
       title: 'Документы по делу',

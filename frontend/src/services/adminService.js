@@ -142,6 +142,15 @@ export const adminLawyerService = {
     return response.data;
   },
 
+  // Blob документа для предпросмотра (без скачивания на диск)
+  getVerificationDocumentBlob: async (lawyerId, docId) => {
+    const response = await api.get(
+      `/admin/lawyers/${lawyerId}/verification-documents/${docId}/download`,
+      { responseType: 'blob' },
+    );
+    return response.data;
+  },
+
   // Скачать файл документа (через blob — нужен auth-заголовок, поэтому не прямая ссылка)
   downloadVerificationDocument: async (lawyerId, docId, name) => {
     const response = await api.get(

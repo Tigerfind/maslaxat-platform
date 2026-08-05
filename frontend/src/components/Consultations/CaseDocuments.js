@@ -5,11 +5,12 @@ import {
 } from '@mui/material';
 import {
   UploadFileOutlined, DownloadOutlined, DeleteOutline, DescriptionOutlined,
-  FolderOpenOutlined,
+  FolderOpenOutlined, VisibilityOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import DocumentPreviewDialog from '../UI/DocumentPreviewDialog';
 
 const fmtSize = (b) => {
   if (!b) return '';
@@ -26,7 +27,17 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [previewDoc, setPreviewDoc] = useState(null);
   const fileRef = useRef(null);
+
+  // Загрузка файла как blob для предпросмотра (тот же эндпоинт, что и скачивание).
+  const fetchBlob = useCallback(async () => {
+    const res = await api.get(
+      `/consultations/${consultationId}/documents/${previewDoc.id}/download`,
+      { responseType: 'blob' },
+    );
+    return res.data;
+  }, [consultationId, previewDoc]);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -127,6 +138,9 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
                 <ListItem key={d.id} divider
                   secondaryAction={
                     <Box sx={{ display: 'flex', gap: 0.5 }}>
+                      <IconButton size="small" onClick={() => setPreviewDoc(d)} title={t('preview.view')}>
+                        <VisibilityOutlined sx={{ fontSize: 19 }} />
+                      </IconButton>
                       <IconButton size="small" disabled={downloading === d.id} onClick={() => download(d)} title={t('caseDocs.download')}>
                         {downloading === d.id ? <CircularProgress size={16} /> : <DownloadOutlined sx={{ fontSize: 19 }} />}
                       </IconButton>
@@ -159,6 +173,14 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
       <DialogActions>
         <Button onClick={onClose} sx={{ textTransform: 'none', color: 'var(--text2)' }}>{t('caseDocs.close')}</Button>
       </DialogActions>
+
+      <DocumentPreviewDialog
+        open={Boolean(previewDoc)}
+        onClose={() => setPreviewDoc(null)}
+        name={previewDoc?.name}
+        fetchBlob={previewDoc ? fetchBlob : null}
+        onDownload={previewDoc ? () => download(previewDoc) : null}
+      />
     </Dialog>
   );
 };
