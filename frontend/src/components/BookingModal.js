@@ -37,6 +37,21 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const { t } = useTranslation();
   const { specializations } = useSelector((state) => state.specializations);
   const activeSpecs = useMemo(() => specializations.filter((s) => s.active), [specializations]);
+
+  // Умный подбор: области права юриста (имена-строки) → id категорий брони.
+  // Совпадение по имени (specializations хранит имена, категории брони — по id).
+  const lawyerSpecNames = useMemo(() => {
+    if (Array.isArray(lawyer?.specializations) && lawyer.specializations.length) return lawyer.specializations;
+    const single = lawyer?.profile?.specialization;
+    return single ? [single] : [];
+  }, [lawyer]);
+  const lawyerCatIds = useMemo(() => {
+    const names = new Set(lawyerSpecNames);
+    return activeSpecs.filter((s) => names.has(s.name)).map((s) => s.id);
+  }, [activeSpecs, lawyerSpecNames]);
+  const lawyerCatSet = useMemo(() => new Set(lawyerCatIds), [lawyerCatIds]);
+  // Юрист «ведёт» эту категорию?
+  const covers = (cid) => lawyerCatSet.has(cid);
   const MONTHS = t('booking.months');
   const DOWS = t('booking.dows');
   const [loading, setLoading] = useState(false);
@@ -70,10 +85,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
     // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
     setSchedule(lawyer?.profile?.schedule || null);
-    // Префилл категории ПЕРВОЙ проблемы из специализации юриста (если совпадает со справочником)
-    const lawyerSpec = lawyer?.specializations?.[0] || lawyer?.profile?.specialization || '';
-    if (lawyerSpec && activeSpecs.some((s) => s.id === lawyerSpec)) {
-      setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [lawyerSpec] } : p)) }));
+    // Префилл категорий ПЕРВОЙ проблемы областями юриста (маппинг имя→id справочника).
+    // Раньше сравнивали id с именем — не срабатывало никогда.
+    if (lawyerCatIds.length) {
+      setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)) }));
     }
     (async () => {
       try {
@@ -689,6 +704,17 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               ))}
             </div>
 
+            {/* Умный подбор: области, в которых этот юрист работает */}
+            {lawyerCatIds.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14, padding: '10px 12px', borderRadius: 11, background: 'rgba(184,149,110,0.10)', border: '1px solid rgba(184,149,110,0.24)' }}>
+                <span style={{ fontSize: 12, color: 'var(--text2)' }}>{t('booking.lawyerHandles')}</span>
+                {lawyerCatIds.map((cid) => {
+                  const nm = activeSpecs.find((s) => s.id === cid)?.name || cid;
+                  return <span key={cid} style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.16)', padding: '3px 9px', borderRadius: 999 }}>{nm}</span>;
+                })}
+              </div>
+            )}
+
             <div style={label}>{t('booking.problems')} <span style={{ color: 'var(--accent-dark)' }}>*</span></div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 12 }}>
               {formData.problems.map((p, i) => (
@@ -723,16 +749,18 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                     </div>
                     {openCat === i && (
                       <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 6, position: 'absolute', left: 0, right: 0, zIndex: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 42px rgba(80,60,40,0.16)', maxHeight: 260, overflow: 'auto' }}>
-                        {activeSpecs.map((sp) => {
+                        {[...activeSpecs].sort((a, b) => (covers(b.id) ? 1 : 0) - (covers(a.id) ? 1 : 0)).map((sp) => {
                           const on = p.categories.includes(sp.id);
+                          const mine = covers(sp.id); // юрист ведёт эту область
                           return (
                             <li
                               key={sp.id}
                               onClick={() => toggleProblemCategory(i, sp.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: on ? 600 : 400 }}
+                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: on ? 600 : 400, background: mine && !on ? 'rgba(184,149,110,0.07)' : 'transparent' }}
                             >
                               <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#FFFFFF', border: on ? '1px solid transparent' : '1px solid var(--border-strong)', background: on ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'transparent' }}>{on ? '✓' : ''}</span>
-                              {sp.name}
+                              <span style={{ flex: 1 }}>{sp.name}</span>
+                              {mine && <span title={t('booking.lawyerHandles')} style={{ fontSize: 11, color: 'var(--accent-dark)', fontWeight: 600 }}>★</span>}
                             </li>
                           );
                         })}
@@ -748,6 +776,13 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 </div>
               ))}
             </div>
+            {/* Мягкое предупреждение: выбрана область, которую юрист не ведёт */}
+            {lawyerCatIds.length > 0 && formData.problems.some((p) => p.categories.some((cid) => !covers(cid))) && (
+              <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginBottom: 16, padding: '10px 12px', borderRadius: 11, background: 'rgba(196,163,90,0.12)', border: '1px solid rgba(196,163,90,0.3)' }}>
+                <span style={{ fontSize: 15, lineHeight: 1.3 }}>⚠️</span>
+                <span style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.45 }}>{t('booking.categoryMismatch')}</span>
+              </div>
+            )}
             {formData.problems.length < 10 && (
               <button
                 type="button"
