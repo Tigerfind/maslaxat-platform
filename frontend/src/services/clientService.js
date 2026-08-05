@@ -73,7 +73,9 @@ export const clientLawyerService = {
         rating: l.profile?.rating || 0,
         reviewsCount: l.profile?.reviewsCount || 0,
         completedConsultations: l.profile?.completedCases || 0,
-        specializations: l.profile?.specialization ? [l.profile.specialization] : [],
+        specializations: Array.isArray(l.profile?.specializations) && l.profile.specializations.length
+          ? l.profile.specializations
+          : (l.profile?.specialization ? [l.profile.specialization] : []),
         experience: l.profile?.experience || 0,
         priceFrom: l.profile?.price || 0,
         region: l.profile?.location || '',

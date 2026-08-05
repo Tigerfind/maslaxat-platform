@@ -66,6 +66,7 @@ async function seed() {
       await LawyerProfile.create({
         userId: user.id,
         specialization: l.spec,
+        specializations: [l.spec],
         experience: l.exp,
         price: l.price,
         rating: l.rating,

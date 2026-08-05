@@ -107,7 +107,9 @@ const LawyerProfilePage = () => {
           rating: p.rating || 0,
           reviewsCount: p.reviewsCount || 0,
           completedConsultations: p.completedCases || 0,
-          specializations: p.specialization ? [p.specialization] : [],
+          specializations: Array.isArray(p.specializations) && p.specializations.length
+            ? p.specializations
+            : (p.specialization ? [p.specialization] : []),
           experience: p.experience || 0,
           region: p.location || '',
           priceFrom: p.price || 0,

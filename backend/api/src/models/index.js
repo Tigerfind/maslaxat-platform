@@ -120,9 +120,16 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  // Основная специализация (для обратной совместимости: = specializations[0]).
+  // Каталог/карточка исторически читают это поле; держим синхронно с массивом.
   specialization: {
     type: DataTypes.STRING,
     allowNull: false,
+  },
+  // Все специализации юриста (мультивыбор). Источник истины; specialization = первая.
+  specializations: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    defaultValue: [],
   },
   description: {
     type: DataTypes.TEXT,

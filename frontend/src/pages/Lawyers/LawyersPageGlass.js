@@ -592,6 +592,9 @@ const LawyersPageGlass = () => {
                   {tg}
                 </span>
               ))}
+              {tags.length > 3 && (
+                <span style={{ color: 'var(--text3)', fontSize: 11.5, padding: '4px 6px' }}>+{tags.length - 3}</span>
+              )}
             </div>
           )}
 

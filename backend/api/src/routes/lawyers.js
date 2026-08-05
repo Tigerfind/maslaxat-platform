@@ -12,7 +12,9 @@ router.get('/', async (req, res, next) => {
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
-    if (specialization) profileWhere.specialization = specialization;
+    // Фильтр по специализации: юрист подходит, если выбранная область есть среди
+    // ЕГО специализаций (мультивыбор). specializations — ARRAY(STRING), @> проверяет вхождение.
+    if (specialization) profileWhere.specializations = { [Op.contains]: [specialization] };
     if (location) profileWhere.location = location;
     // Фильтр по цене консультации (profile.price). Границы приходят только когда реально
     // заданы (см. clientService): minPrice>0 и/или maxPrice<потолка.

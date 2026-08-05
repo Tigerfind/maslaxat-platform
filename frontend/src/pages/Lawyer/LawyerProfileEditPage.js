@@ -102,6 +102,7 @@ const LawyerProfileEditPage = () => {
     price: 200000,
     location: 'Ташкент',
     specialization: '',
+    specializations: [],
     schedule: {},
     avatarFile: null,
     avatarPreview: null,
@@ -120,6 +121,9 @@ const LawyerProfileEditPage = () => {
           price: p.price || 200000,
           location: p.location || 'Ташкент',
           specialization: p.specialization || '',
+          specializations: Array.isArray(p.specializations) && p.specializations.length
+            ? p.specializations
+            : (p.specialization ? [p.specialization] : []),
           schedule: p.schedule || {},
           avatarFile: null,
           avatarPreview: res.data.user?.avatar || null,
@@ -169,7 +173,7 @@ const LawyerProfileEditPage = () => {
       toast.error(t('lawyerPanel.descMin'));
       return;
     }
-    if (!form.specialization) {
+    if (!form.specializations || form.specializations.length === 0) {
       toast.error(t('lawyerPanel.specRequired'));
       return;
     }
@@ -184,7 +188,7 @@ const LawyerProfileEditPage = () => {
       formData.append('description', form.description);
       formData.append('greeting', form.greeting || '');
       formData.append('experience', String(form.experience));
-      formData.append('specialization', form.specialization);
+      formData.append('specializations', JSON.stringify(form.specializations));
       formData.append('price', String(form.price));
       formData.append('location', form.location);
       formData.append('schedule', JSON.stringify(form.schedule));
@@ -251,7 +255,7 @@ const LawyerProfileEditPage = () => {
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>{user?.name || t('lawyerPanel.lawyerFallback')}</div>
             <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>
-              {[form.specialization, form.location].filter(Boolean).join(' · ') || t('lawyerPanel.fillProfile')}
+              {[(form.specializations || []).map((s) => specLabel(t, s)).join(', '), form.location].filter(Boolean).join(' · ') || t('lawyerPanel.fillProfile')}
             </div>
           </div>
           <label
@@ -353,13 +357,17 @@ const LawyerProfileEditPage = () => {
           <div style={{ ...fieldLabel, marginBottom: 10 }}>{t('lawyerPanel.specialization')}</div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             {SPECIALIZATIONS.map((spec) => {
-              const selected = form.specialization === spec;
+              const selected = (form.specializations || []).includes(spec);
+              const toggleSpec = () => {
+                const cur = form.specializations || [];
+                handleChange('specializations', cur.includes(spec) ? cur.filter((s) => s !== spec) : [...cur, spec]);
+              };
               return (
                 <Chip
                   key={spec}
                   label={specLabel(t, spec)}
                   icon={<GavelOutlined sx={{ fontSize: 14, color: selected ? '#fff !important' : 'var(--accent) !important' }} />}
-                  onClick={() => handleChange('specialization', selected ? '' : spec)}
+                  onClick={toggleSpec}
                   sx={{
                     borderRadius: 'var(--radius)',
                     fontFamily: 'inherit',

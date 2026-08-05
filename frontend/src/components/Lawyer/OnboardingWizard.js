@@ -110,26 +110,33 @@ const StepProfile = ({ data, onChange, t }) => (
   </div>
 );
 
-// ── Step 2: Specialization (одиночный выбор) ──────────────────
-// Бэкенд хранит ОДНУ специализацию (LawyerProfile.specialization — STRING), и по
-// ней же фильтруется каталог. Раньше был мульти-выбор, но сохранялась только [0] —
-// остальные молча терялись. Делаем честный одиночный выбор (радио-поведение).
-const StepSpecializations = ({ data, onChange, t }) => (
-  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-    {SPECIALIZATIONS.map((spec) => {
-      const selected = data.specializations[0] === spec;
-      return (
-        <button
-          key={spec}
-          onClick={() => onChange('specializations', [spec])}
-          style={chipStyle(selected)}
-        >
-          {specLabel(t, spec)}
-        </button>
-      );
-    })}
-  </div>
-);
+// ── Step 2: Specialization (мультивыбор) ──────────────────────
+// Бэкенд хранит массив specializations (TEXT[]); можно выбрать сколько угодно
+// областей права. specialization (основная) = первая в массиве.
+const StepSpecializations = ({ data, onChange, t }) => {
+  const toggle = (spec) => {
+    const cur = data.specializations || [];
+    const next = cur.includes(spec) ? cur.filter((s) => s !== spec) : [...cur, spec];
+    onChange('specializations', next);
+  };
+  return (
+    <div>
+      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginBottom: 14 }}>
+        {t('onboarding.specMultiHint')} {data.specializations.length > 0 && `· ${t('onboarding.selected', { n: data.specializations.length })}`}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
+        {SPECIALIZATIONS.map((spec) => {
+          const selected = (data.specializations || []).includes(spec);
+          return (
+            <button key={spec} onClick={() => toggle(spec)} style={chipStyle(selected)}>
+              {selected && '✓ '}{specLabel(t, spec)}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
 
 // ── Step 3: Schedule ──────────────────────────────────────────
 const StepSchedule = ({ data, onChange, times, setTimes, t }) => {
@@ -329,7 +336,7 @@ const OnboardingWizard = ({ onComplete }) => {
       const formData = new FormData();
       formData.append('description', data.description);
       formData.append('experience', String(data.experience));
-      formData.append('specialization', data.specializations[0]);
+      formData.append('specializations', JSON.stringify(data.specializations));
       formData.append('languages', JSON.stringify(['uz', 'ru']));
       formData.append('schedule', JSON.stringify(data.schedule));
       formData.append('price', String(data.price));

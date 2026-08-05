@@ -650,6 +650,7 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
 
     const {
       specialization,
+      specializations,
       description,
       greeting,
       experience,
@@ -661,8 +662,26 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       schedule,
     } = req.body;
 
-    // Update LawyerProfile fields
-    if (specialization !== undefined) profile.specialization = specialization;
+    // Специализации: принимаем массив (мультивыбор) ИЛИ одиночную строку (legacy).
+    // Нормализуем: обрезаем, дедуп, максимум 12; specialization = первая (совместимость).
+    let specsArr;
+    if (specializations !== undefined) {
+      try { specsArr = typeof specializations === 'string' ? JSON.parse(specializations) : specializations; }
+      catch { specsArr = [specializations]; }
+    } else if (specialization !== undefined) {
+      specsArr = [specialization];
+    }
+    if (specsArr !== undefined) {
+      const clean = [...new Set(
+        (Array.isArray(specsArr) ? specsArr : [specsArr])
+          .map((s) => (typeof s === 'string' ? s.trim() : ''))
+          .filter(Boolean),
+      )].slice(0, 12);
+      if (clean.length) {
+        profile.specializations = clean;
+        profile.specialization = clean[0]; // держим синхронно с массивом
+      }
+    }
     if (description !== undefined) profile.description = description;
     // Автоприветствие: обрезаем до 1000 символов, пустую строку → null
     if (greeting !== undefined) {
