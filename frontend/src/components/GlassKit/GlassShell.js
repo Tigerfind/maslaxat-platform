@@ -12,6 +12,7 @@ import {
   FavoriteBorderOutlined,
   ReceiptLongOutlined,
   InsightsOutlined,
+  ForumOutlined,
   SettingsOutlined,
   HelpOutlineOutlined,
   LogoutOutlined,
@@ -39,6 +40,7 @@ const NAV = {
   ],
   lawyer: [
     { key: '/lawyer/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/consultations', tKey: 'nav.consultations', icon: <ForumOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/schedule', tKey: 'nav.schedule', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/analytics', tKey: 'nav.analytics', icon: <InsightsOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/reviews', tKey: 'nav.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },

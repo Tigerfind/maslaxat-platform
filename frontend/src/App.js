@@ -25,6 +25,7 @@ import RegisterPage from './pages/Auth/RegisterPage';
 import DashboardPageGlass from './pages/Dashboard/DashboardPageGlass';
 import LawyerDashboard from './pages/Lawyer/LawyerDashboardGlass';
 import LawyerSchedulePage from './pages/Lawyer/LawyerSchedulePage';
+import LawyerConsultationsPage from './pages/Lawyer/LawyerConsultationsPage';
 import LawyerAnalyticsPage from './pages/Lawyer/LawyerAnalyticsPage';
 import LawyerReviewsPage from './pages/Lawyer/LawyerReviewsPage';
 import LawyerProfileEditPage from './pages/Lawyer/LawyerProfileEditPage';
@@ -152,6 +153,11 @@ const AppContent = () => {
         <Route path="/lawyer/dashboard" element={
           <ProtectedRoute allowedRoles={['lawyer']}>
             <LawyerDashboard />
+          </ProtectedRoute>
+        } />
+        <Route path="/lawyer/consultations" element={
+          <ProtectedRoute allowedRoles={['lawyer']}>
+            <LawyerConsultationsPage />
           </ProtectedRoute>
         } />
         <Route path="/lawyer/schedule" element={

@@ -525,6 +525,33 @@ const translations = {
     },
   },
 
+  lawyerConsult: {
+    ru: {
+      title: 'Консультации', subtitle: 'Все ваши дела в одном месте',
+      tabAll: 'Все', tabRequests: 'Заявки', tabActive: 'Активные', tabDone: 'Завершённые', tabArchive: 'Архив',
+      empty: 'Здесь пока пусто',
+      stPending: 'Новая заявка', stAccepted: 'Подтверждена', stInProgress: 'Идёт', stCompleted: 'Завершена', stRejected: 'Отклонена', stCancelled: 'Отменена', stPaymentPending: 'Ожидает оплаты',
+      rejectPrompt: 'Причина отклонения (необязательно):',
+      start: 'Начать', openVideo: 'Видеозвонок', openChat: 'Открыть чат', finish: 'Завершить', finishConfirm: 'Завершить консультацию?', finished: 'Консультация завершена', chatHistory: 'История переписки',
+    },
+    uz: {
+      title: 'Консультациялар', subtitle: 'Барча ишларингиз бир жойда',
+      tabAll: 'Барчаси', tabRequests: 'Сўровлар', tabActive: 'Фаол', tabDone: 'Тугалланган', tabArchive: 'Архив',
+      empty: 'Ҳозирча бўш',
+      stPending: 'Янги сўров', stAccepted: 'Тасдиқланган', stInProgress: 'Давом этмоқда', stCompleted: 'Тугалланган', stRejected: 'Рад этилган', stCancelled: 'Бекор қилинган', stPaymentPending: 'Тўлов кутилмоқда',
+      rejectPrompt: 'Рад этиш сабаби (ихтиёрий):',
+      start: 'Бошлаш', openVideo: 'Видеоқўнғироқ', openChat: 'Чатни очиш', finish: 'Тугатиш', finishConfirm: 'Консультацияни тугатасизми?', finished: 'Консультация тугалланди', chatHistory: 'Ёзишмалар тарихи',
+    },
+    en: {
+      title: 'Consultations', subtitle: 'All your cases in one place',
+      tabAll: 'All', tabRequests: 'Requests', tabActive: 'Active', tabDone: 'Completed', tabArchive: 'Archive',
+      empty: 'Nothing here yet',
+      stPending: 'New request', stAccepted: 'Confirmed', stInProgress: 'In progress', stCompleted: 'Completed', stRejected: 'Rejected', stCancelled: 'Cancelled', stPaymentPending: 'Awaiting payment',
+      rejectPrompt: 'Reason for rejection (optional):',
+      start: 'Start', openVideo: 'Video call', openChat: 'Open chat', finish: 'Finish', finishConfirm: 'Finish the consultation?', finished: 'Consultation finished', chatHistory: 'Chat history',
+    },
+  },
+
   preview: {
     ru: { error: 'Не удалось открыть документ', noInline: 'Предпросмотр для этого формата недоступен', download: 'Скачать', view: 'Просмотр' },
     uz: { error: 'Ҳужжатни очиб бўлмади', noInline: 'Бу формат учун кўриб чиқиш мавжуд эмас', download: 'Юклаб олиш', view: 'Кўриш' },
