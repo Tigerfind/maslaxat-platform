@@ -806,6 +806,19 @@ router.post('/verification-documents', docUpload.single('file'), async (req, res
   }
 });
 
+// GET /verification-documents/:id/download — скачать/просмотреть свой документ
+router.get('/verification-documents/:id/download', async (req, res, next) => {
+  try {
+    const doc = await LawyerDocument.findOne({ where: { id: req.params.id, userId: req.userId } });
+    if (!doc || !doc.path || !fs.existsSync(doc.path)) {
+      return res.status(404).json({ error: 'Документ не найден' });
+    }
+    res.download(doc.path, doc.name);
+  } catch (err) {
+    next(err);
+  }
+});
+
 // DELETE /verification-documents/:id — удалить свой документ (файл + запись)
 router.delete('/verification-documents/:id', async (req, res, next) => {
   try {

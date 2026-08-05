@@ -168,6 +168,11 @@ export const lawyerVerificationService = {
     const response = await api.delete(`/lawyer/verification-documents/${id}`);
     return response.data;
   },
+  // Blob документа для предпросмотра/скачивания (свой документ)
+  getDocumentBlob: async (id) => {
+    const response = await api.get(`/lawyer/verification-documents/${id}/download`, { responseType: 'blob' });
+    return response.data;
+  },
   submitForReview: async () => {
     const response = await api.post('/lawyer/verification/submit');
     return response.data;

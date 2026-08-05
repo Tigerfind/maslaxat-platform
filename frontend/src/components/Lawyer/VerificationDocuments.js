@@ -5,10 +5,12 @@ import {
   DeleteOutline,
   DescriptionOutlined,
   VerifiedOutlined,
+  VisibilityOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
+import DocumentPreviewDialog from '../UI/DocumentPreviewDialog';
 
 const glassCard = {
   background: 'var(--card-glass)',
@@ -40,7 +42,13 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
   const [submitting, setSubmitting] = useState(false);
   const [status, setStatus] = useState(initialStatus);
   const [type, setType] = useState('diploma');
+  const [previewDoc, setPreviewDoc] = useState(null);
   const fileRef = useRef(null);
+
+  const previewFetch = React.useCallback(
+    async () => lawyerService.verification.getDocumentBlob(previewDoc.id),
+    [previewDoc],
+  );
 
   const DOC_TYPES = [
     { key: 'diploma', label: t('verification.typeDiploma') },
@@ -160,6 +168,13 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
                 <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>{typeLabel(d.type)}{d.size ? ` · ${fmtSize(d.size)}` : ''}</div>
               </div>
+              <button onClick={() => setPreviewDoc(d)} title={t('preview.view')} style={{
+                width: 34, height: 34, borderRadius: 9, border: '1px solid var(--card-brd)',
+                background: 'transparent', color: 'var(--text2)', cursor: 'pointer',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}>
+                <VisibilityOutlined sx={{ fontSize: 18 }} />
+              </button>
               <button onClick={() => remove(d.id)} title={t('verification.delete')} style={{
                 width: 34, height: 34, borderRadius: 9, border: '1px solid var(--card-brd)',
                 background: 'transparent', color: 'var(--error, #C0492F)', cursor: 'pointer',
@@ -194,6 +209,13 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
           <VerifiedOutlined sx={{ fontSize: 18 }} /> {t('verification.approvedNote')}
         </div>
       )}
+
+      <DocumentPreviewDialog
+        open={Boolean(previewDoc)}
+        onClose={() => setPreviewDoc(null)}
+        name={previewDoc?.name}
+        fetchBlob={previewDoc ? previewFetch : null}
+      />
     </div>
   );
 };

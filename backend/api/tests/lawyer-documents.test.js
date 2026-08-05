@@ -73,6 +73,38 @@ describe('юрист управляет верификационными док�
     expect(res.status).toBeGreaterThanOrEqual(400);
   });
 
+  test('юрист может скачать/просмотреть свой документ', async () => {
+    const { user } = await makeLawyer('doc-l1b@test.uz', { verificationStatus: 'pending' });
+    const token = tokenFor(user);
+    const up = await request(app)
+      .post('/api/lawyer/verification-documents')
+      .set('Authorization', `Bearer ${token}`)
+      .field('type', 'diploma')
+      .attach('file', PDF, 'own.pdf');
+    const docId = up.body.document.id;
+
+    const dl = await request(app)
+      .get(`/api/lawyer/verification-documents/${docId}/download`)
+      .set('Authorization', `Bearer ${token}`);
+    expect(dl.status).toBe(200);
+  });
+
+  test('чужой документ по own-download недоступен (404)', async () => {
+    const a = await makeLawyer('doc-l1c@test.uz');
+    const b = await makeLawyer('doc-l1d@test.uz');
+    const up = await request(app)
+      .post('/api/lawyer/verification-documents')
+      .set('Authorization', `Bearer ${tokenFor(a.user)}`)
+      .field('type', 'diploma')
+      .attach('file', PDF, 'a.pdf');
+    const docId = up.body.document.id;
+
+    const dl = await request(app)
+      .get(`/api/lawyer/verification-documents/${docId}/download`)
+      .set('Authorization', `Bearer ${tokenFor(b.user)}`);
+    expect(dl.status).toBe(404);
+  });
+
   test('submit-for-review переводит статус в pending', async () => {
     const { user, lp } = await makeLawyer('doc-l3@test.uz', { verificationStatus: 'rejected', rejectionReason: 'Нет диплома' });
     const res = await request(app)
