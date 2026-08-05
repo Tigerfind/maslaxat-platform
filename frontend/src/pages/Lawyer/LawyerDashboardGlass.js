@@ -195,7 +195,11 @@ const LawyerDashboardGlass = () => {
     label: isVideo ? t('lawyerPanel.typeVideo') : t('lawyerPanel.typeChat'),
   });
 
-  const subtitle = statusOnline ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline');
+  // Пока профиль не одобрен, НЕ утверждаем «клиенты видят вас в каталоге» —
+  // это противоречит баннеру «на проверке» (юрист ещё не в каталоге).
+  const subtitle = stats?.verificationStatus !== 'approved'
+    ? t('lawyerPanel.subNotApproved')
+    : (statusOnline ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline'));
 
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">

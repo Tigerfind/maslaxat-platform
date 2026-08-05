@@ -4,10 +4,13 @@ import {
   ChatBubbleOutline,
   CheckOutlined,
   CloseOutlined,
+  FolderOpenOutlined,
 } from '@mui/icons-material';
+import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import { useTranslation } from '../../i18n';
 
 /*
@@ -59,6 +62,8 @@ const LawyerSchedulePage = () => {
   });
   const [events, setEvents] = useState({});
   const [loading, setLoading] = useState(true);
+  const [docsFor, setDocsFor] = useState(null); // консультация, чью папку документов открыли
+  const { user } = useSelector((state) => state.auth);
 
   // ── Недельные слоты доступности ──
   const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
@@ -352,6 +357,20 @@ const LawyerSchedulePage = () => {
                         <CheckOutlined sx={{ fontSize: 15 }} /> {t('lawyerPanel.confirmed')}
                       </div>
                     )}
+
+                    {['accepted', 'confirmed', 'in_progress', 'completed'].includes(e.status) && (
+                      <button
+                        onClick={() => setDocsFor(e)}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, marginLeft: 8,
+                          background: 'transparent', color: 'var(--accent-dark)', border: '1px solid var(--card-brd)',
+                          fontSize: 11, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
+                          padding: '7px 12px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
+                        }}
+                      >
+                        <FolderOpenOutlined sx={{ fontSize: 15 }} /> {t('caseDocs.title')}
+                      </button>
+                    )}
                   </div>
                 );
               })
@@ -432,6 +451,14 @@ const LawyerSchedulePage = () => {
           border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; cursor: pointer;
         }
       `}</style>
+
+      {/* Документы по делу — общая папка юриста и клиента */}
+      <CaseDocuments
+        consultationId={docsFor?.id}
+        open={Boolean(docsFor)}
+        onClose={() => setDocsFor(null)}
+        currentUserId={user?.id}
+      />
     </GlassShell>
   );
 };

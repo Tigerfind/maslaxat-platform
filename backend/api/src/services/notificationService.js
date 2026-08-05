@@ -14,6 +14,11 @@ const TYPES = {
   CONSULTATION_REMINDER: 'consultation_reminder',
   NEW_REVIEW: 'new_review',
   DOCUMENT_ANALYZED: 'document_analyzed',
+  // Модерация юриста и документы по делу (используются напрямую в роутах —
+  // здесь для полноты списка типов).
+  VERIFICATION: 'verification',              // результат проверки → юристу
+  VERIFICATION_REQUEST: 'verification_request', // заявка на проверку → админам
+  CASE_DOCUMENT: 'case_document',            // новый документ по делу → другой стороне
 };
 
 async function createNotification(userId, type, title, message, metadata = {}) {
