@@ -211,6 +211,10 @@ const LawyerDashboardGlass = () => {
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--text)', marginBottom: 3 }}>{t('lawyerPanel.verifyPendingTitle')}</div>
               <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.45 }}>{t('lawyerPanel.verifyPendingText')}</div>
+              <button onClick={() => navigate('/lawyer/profile/edit')} style={{
+                marginTop: 10, background: 'rgba(196,163,90,0.18)', color: '#8A6D2E', border: '1px solid rgba(196,163,90,0.4)',
+                borderRadius: 10, padding: '8px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{t('lawyerPanel.verifyCta')}</button>
             </div>
           </div>
         )}
@@ -228,6 +232,10 @@ const LawyerDashboardGlass = () => {
                   ? `${t('lawyerPanel.verifyRejectedText')} ${stats.rejectionReason}`
                   : t('lawyerPanel.verifyRejectedText')}
               </div>
+              <button onClick={() => navigate('/lawyer/profile/edit')} style={{
+                marginTop: 10, background: 'rgba(192,73,47,0.14)', color: '#B23D28', border: '1px solid rgba(192,73,47,0.4)',
+                borderRadius: 10, padding: '8px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
+              }}>{t('lawyerPanel.verifyCtaFix')}</button>
             </div>
           </div>
         )}

@@ -24,6 +24,9 @@ import {
   Close,
   DoneAll,
   AccessTime,
+  VerifiedUser,
+  DescriptionOutlined,
+  FactCheckOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -47,6 +50,11 @@ const NOTIFICATION_ICONS = {
   consultation_rescheduled: <AccessTime sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_review: <Star sx={{ fontSize: 20, color: axelionColors.gold }} />,
   new_message: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Модерация юриста: результат проверки (юристу) и заявка на проверку (админу)
+  verification: <VerifiedUser sx={{ fontSize: 20, color: axelionColors.success }} />,
+  verification_request: <FactCheckOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Новый документ по делу (другой стороне консультации)
+  case_document: <DescriptionOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
 };
 
 const NotificationCenter = ({ sx = {} }) => {
@@ -236,6 +244,10 @@ const NotificationCenter = ({ sx = {} }) => {
                             if (!notif.isRead) handleMarkRead(notif.id);
                             handleClose();
                             const m = notif.metadata || {};
+                            // Тип-специфичная навигация для модерации/документов.
+                            if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
+                            if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
+                            if (notif.type === 'case_document' && m.consultationId) { navigate(`/consultations/chat/${m.consultationId}`); return; }
                             // Пропущенный звонок → открыть звонок (перезвонить);
                             // прочие с консультацией → в «Мои консультации».
                             if (m.consultationId) {

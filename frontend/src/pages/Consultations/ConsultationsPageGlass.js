@@ -23,7 +23,10 @@ import {
   CheckCircleOutlined,
   AutorenewRounded,
   CancelOutlined,
+  FolderOpenOutlined,
 } from '@mui/icons-material';
+import { useSelector } from 'react-redux';
+import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import clientService from '../../services/clientService';
 import { clientLawyerService } from '../../services/clientService';
 import RatingDialog from '../../components/UI/RatingDialog';
@@ -93,6 +96,8 @@ const ConsultationsPageGlass = () => {
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   const [ratingConsultation, setRatingConsultation] = useState(null);
   const [rebookLawyer, setRebookLawyer] = useState(null);
+  const [docsFor, setDocsFor] = useState(null); // консультация, чью папку документов открыли
+  const { user } = useSelector((state) => state.auth);
   const [rescheduleC, setRescheduleC] = useState(null);
   const [rsDate, setRsDate] = useState('');
   const [rsTime, setRsTime] = useState('');
@@ -295,8 +300,10 @@ const ConsultationsPageGlass = () => {
     const canChatHistory = ['completed', 'cancelled', 'rejected'].includes(c.status);
     // Перенос — пока консультация не началась/не завершена
     const canReschedule = ['payment_pending', 'pending', 'accepted'].includes(c.status);
+    // Документы по делу — доступны с момента подтверждения и в архиве (общая папка)
+    const canDocs = ['accepted', 'in_progress', 'completed'].includes(c.status);
 
-    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule;
+    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule || canDocs;
     const StatusIcon = st.icon;
 
     return (
@@ -408,6 +415,12 @@ const ConsultationsPageGlass = () => {
               <button className="cons-foot-btn" onClick={() => navigate(`/consultations/chat/${c.id}`)} style={{ color: 'var(--text2)' }}>
                 <ChatBubbleOutline sx={{ fontSize: 16 }} />
                 {t('consultations.chatHistory')}
+              </button>
+            )}
+            {canDocs && (
+              <button className="cons-foot-btn" onClick={() => setDocsFor(c)} style={{ color: 'var(--accent-dark)' }}>
+                <FolderOpenOutlined sx={{ fontSize: 16 }} />
+                {t('caseDocs.title')}
               </button>
             )}
             {canCancel && (
@@ -639,6 +652,14 @@ const ConsultationsPageGlass = () => {
           </button>
         </DialogActions>
       </Dialog>
+
+      {/* Документы по делу — общая папка юриста и клиента */}
+      <CaseDocuments
+        consultationId={docsFor?.id}
+        open={Boolean(docsFor)}
+        onClose={() => setDocsFor(null)}
+        currentUserId={user?.id}
+      />
     </GlassShell>
   );
 };

@@ -832,6 +832,20 @@ router.post('/verification/submit', async (req, res, next) => {
     profile.verificationStatus = 'pending';
     profile.rejectionReason = null;
     await profile.save();
+
+    // Уведомляем всех админов, что появился юрист на проверке (fail-safe).
+    try {
+      const me = await User.findByPk(req.userId, { attributes: ['name'] });
+      const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+      await Promise.all(admins.map((a) => notificationService.createNotification(
+        a.id,
+        'verification_request',
+        'Юрист на проверке',
+        `${me?.name || 'Юрист'} отправил профиль и документы на проверку.`,
+        { lawyerId: req.userId },
+      )));
+    } catch (e) { /* notification is best-effort */ }
+
     res.json({ success: true, verificationStatus: profile.verificationStatus });
   } catch (err) {
     next(err);

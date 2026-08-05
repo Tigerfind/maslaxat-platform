@@ -110,6 +110,14 @@ const AdminLawyersPage = () => {
   const verifiedCount = lawyers.filter((l) => stOf(l) === 'approved').length;
   const pendingCount = lawyers.filter((l) => stOf(l) === 'pending').length;
 
+  // Очередь проверки: pending → rejected → approved, внутри — новые сверху.
+  const ORDER = { pending: 0, rejected: 1, approved: 2 };
+  const sortedLawyers = [...lawyers].sort((a, b) => {
+    const d = (ORDER[stOf(a)] ?? 3) - (ORDER[stOf(b)] ?? 3);
+    if (d !== 0) return d;
+    return new Date(b.createdAt) - new Date(a.createdAt);
+  });
+
   const initials = (name = '') =>
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const specOf = (l) => l.profile?.specialization || t('adminManage.noSpec');
@@ -118,7 +126,7 @@ const AdminLawyersPage = () => {
   const stats = [
     { icon: <Gavel sx={{ fontSize: 32, color: axelionColors.gold }} />, label: t('adminManage.statTotal'), value: lawyers.length, bg: axelionColors.accentLight },
     { icon: <Verified sx={{ fontSize: 32, color: axelionColors.success }} />, label: t('adminManage.statVerified'), value: verifiedCount, bg: axelionColors.successLight },
-    { icon: <HourglassEmpty sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statPending'), value: pendingCount, bg: axelionColors.bgBeige },
+    { icon: <HourglassEmpty sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statPending'), value: pendingCount, bg: axelionColors.bgBeige, highlight: pendingCount > 0 },
   ];
 
   if (loading) {
@@ -160,7 +168,7 @@ const AdminLawyersPage = () => {
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {stats.map((s, i) => (
             <Grid item xs={12} sm={4} key={i}>
-              <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', p: 3 }}>
+              <Card sx={{ background: axelionColors.bgLight, border: s.highlight ? `1.5px solid ${axelionColors.warning}` : `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: s.highlight ? `0 0 0 3px ${axelionColors.warning}22` : 'none', p: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                   <Box sx={{ width: 56, height: 56, borderRadius: '8px', background: s.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{s.icon}</Box>
                   <Box>
@@ -175,7 +183,7 @@ const AdminLawyersPage = () => {
 
         {/* Table */}
         <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', overflow: 'hidden' }}>
-          {lawyers.length > 0 ? (
+          {sortedLawyers.length > 0 ? (
             <TableContainer>
               <Table>
                 <TableHead>
@@ -188,7 +196,7 @@ const AdminLawyersPage = () => {
                   </TableRow>
                 </TableHead>
                 <TableBody>
-                  {lawyers.map((l) => (
+                  {sortedLawyers.map((l) => (
                     <TableRow key={l.id} sx={{ borderBottom: `1px solid ${axelionColors.borderLight}`, '&:hover': { background: axelionColors.bgWarm } }}>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>

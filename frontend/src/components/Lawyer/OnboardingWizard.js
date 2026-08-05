@@ -260,6 +260,8 @@ const OnboardingWizard = ({ onComplete }) => {
       });
 
       toast.success(t('onboarding.savedToast'));
+      // Мягкая подсказка: следующий шаг — загрузить документы и отправить на проверку.
+      toast.info(t('onboarding.verifyHint'), { autoClose: 7000 });
       onComplete();
     } catch (err) {
       toast.error(err.response?.data?.error || t('onboarding.saveError'));
