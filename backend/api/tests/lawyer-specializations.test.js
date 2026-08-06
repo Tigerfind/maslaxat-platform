@@ -59,4 +59,19 @@ describe('каталог фильтрует по любой из специал�
     // По «Налоговому» этого юриста нет (у него такой области нет)
     expect(byOther.body.lawyers.some((l) => (l.profile?.specializations || []).includes('Трудовое право'))).toBe(false);
   });
+
+  test('мультифильтр (несколько областей через запятую) — совпадение по любой', async () => {
+    await makeLawyer('mf-fam@test.uz', { specialization: 'Семейное право', specializations: ['Семейное право'] });
+    await makeLawyer('mf-tax@test.uz', { specialization: 'Налоговое право', specializations: ['Налоговое право'] });
+
+    const res = await request(app).get(
+      '/api/lawyers?specialization=' + encodeURIComponent('Семейное право,Налоговое право') + '&limit=50',
+    );
+    expect(res.status).toBe(200);
+    const emails = res.body.lawyers.map((l) => l.email).filter(Boolean);
+    // оба найдены (OR-совпадение)
+    const specs = res.body.lawyers.flatMap((l) => l.profile?.specializations || []);
+    expect(specs).toContain('Семейное право');
+    expect(specs).toContain('Налоговое право');
+  });
 });

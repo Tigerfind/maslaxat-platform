@@ -12,9 +12,12 @@ router.get('/', async (req, res, next) => {
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
-    // Фильтр по специализации: юрист подходит, если выбранная область есть среди
-    // ЕГО специализаций (мультивыбор). specializations — ARRAY(STRING), @> проверяет вхождение.
-    if (specialization) profileWhere.specializations = { [Op.contains]: [specialization] };
+    // Фильтр по специализации: клиент может выбрать НЕСКОЛЬКО областей (через запятую).
+    // Юрист подходит, если ведёт ХОТЯ БЫ ОДНУ из выбранных (Op.overlap = массивы пересекаются).
+    if (specialization) {
+      const specs = String(specialization).split(',').map((s) => s.trim()).filter(Boolean);
+      if (specs.length) profileWhere.specializations = { [Op.overlap]: specs };
+    }
     if (location) profileWhere.location = location;
     // Фильтр по цене консультации (profile.price). Границы приходят только когда реально
     // заданы (см. clientService): minPrice>0 и/или maxPrice<потолка.

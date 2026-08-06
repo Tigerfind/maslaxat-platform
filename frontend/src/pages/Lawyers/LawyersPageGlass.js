@@ -170,7 +170,7 @@ const LawyersPageGlass = () => {
   }, []);
 
   const [filters, setFilters] = useState({
-    specialization: '',
+    specializations: [],
     minRating: 0,
     priceRange: [0, MAX_PRICE],
     experience: '',
@@ -204,8 +204,11 @@ const LawyersPageGlass = () => {
   const fetchLawyers = async () => {
     try {
       setLoading(true);
+      const { specializations, ...restFilters } = filters;
       const response = await clientService.lawyers.searchLawyers({
-        ...filters,
+        ...restFilters,
+        // Мультивыбор областей → бэкенду одной строкой через запятую (OR-совпадение).
+        specialization: (specializations || []).join(','),
         search: searchQuery,
         page: currentPage,
         limit: 9,
@@ -228,7 +231,7 @@ const LawyersPageGlass = () => {
 
   const handleClearFilters = () => {
     setFilters({
-      specialization: '',
+      specializations: [],
       minRating: 0,
       priceRange: [0, MAX_PRICE],
       experience: '',
@@ -296,13 +299,19 @@ const LawyersPageGlass = () => {
       <div style={labelStyle}>{t('lawyers.specialization')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 24 }}>
         {[{ id: '', name: t('lawyers.all') }, ...activeSpecs].map((sp) => {
-          // Каталог фильтрует по ИМЕНИ специализации (так хранит бэкенд), не по slug-id.
-          const val = sp.id ? sp.name : '';
-          const checked = filters.specialization === val;
+          // Мультивыбор: храним ИМЕНА (так хранит/фильтрует бэкенд). «Все» = пустой список.
+          const selected = filters.specializations || [];
+          const checked = sp.id ? selected.includes(sp.name) : selected.length === 0;
+          const toggle = () => {
+            if (!sp.id) { handleFilterChange('specializations', []); return; }
+            handleFilterChange('specializations', selected.includes(sp.name)
+              ? selected.filter((n) => n !== sp.name)
+              : [...selected, sp.name]);
+          };
           return (
             <div
               key={sp.id || 'all'}
-              onClick={() => handleFilterChange('specialization', val)}
+              onClick={toggle}
               onMouseEnter={(e) => { if (!checked) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 7%, transparent)'; }}
               onMouseLeave={(e) => { if (!checked) e.currentTarget.style.background = 'transparent'; }}
               style={{
