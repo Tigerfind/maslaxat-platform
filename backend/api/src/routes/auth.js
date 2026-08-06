@@ -48,20 +48,24 @@ router.post('/register', emailLimiter, async (req, res, next) => {
   try {
     const schema = Joi.object({
       email: Joi.string().email().required(),
-      password: Joi.string().min(6).required(),
+      password: Joi.string().min(8).required(),
       name: Joi.string().min(2).required(),
       phone: Joi.string().optional(),
       role: Joi.string().valid('client', 'lawyer').default('client'),
       specialization: Joi.string().optional(),
       specializations: Joi.array().items(Joi.string()).optional(),
     });
+    // Пароль ≥8 — усиление против подбора (было 6).
 
     const { error, value } = schema.validate(req.body);
     if (error) {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    const exists = await User.findOne({ where: { email: value.email } });
+    // Email — канонично в нижнем регистре, чтобы User@x и user@x не стали двумя
+    // аккаунтами. Проверка занятости — регистронезависимая (iLike ловит и старые).
+    value.email = String(value.email).trim().toLowerCase();
+    const exists = await User.findOne({ where: { email: { [Op.iLike]: value.email } } });
     if (exists) {
       return res.status(409).json({ error: 'Email уже зарегистрирован' });
     }
@@ -202,7 +206,8 @@ router.post('/login', async (req, res, next) => {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    const user = await User.findOne({ where: { email: value.email } });
+    // Вход — регистронезависимо по email (iLike), чтобы регистр не мешал входу.
+    const user = await User.findOne({ where: { email: { [Op.iLike]: String(value.email).trim() } } });
     if (!user) {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
@@ -363,7 +368,7 @@ router.post('/forgot-password', emailLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Email обязателен' });
     }
 
-    const user = await User.findOne({ where: { email } });
+    const user = await User.findOne({ where: { email: { [Op.iLike]: String(email).trim() } } });
 
     // Always return success to avoid leaking user existence
     if (!user) {
@@ -393,7 +398,7 @@ router.post('/reset-password', async (req, res, next) => {
   try {
     const schema = Joi.object({
       token: Joi.string().required(),
-      password: Joi.string().min(6).required(),
+      password: Joi.string().min(8).required(),
     });
 
     const { error, value } = schema.validate(req.body);

@@ -48,6 +48,37 @@ describe('дедуп по телефону при регистрации', () =>
   });
 });
 
+describe('усиление регистрации (Фаза 5)', () => {
+  test('короткий пароль (<8) → 400', async () => {
+    const r = await request(app).post('/api/auth/register').send({
+      name: 'Тест', email: 'pd-short@test.uz', password: 'short12', role: 'client',
+    });
+    expect(r.status).toBe(400);
+  });
+
+  test('email регистронезависим: User@x и user@x → второй 409', async () => {
+    const r1 = await request(app).post('/api/auth/register').send({
+      name: 'Тест', email: 'CaseTest@x.uz', password: 'passw0rd', role: 'client',
+    });
+    expect(r1.status).toBe(201);
+    const r2 = await request(app).post('/api/auth/register').send({
+      name: 'Тест', email: 'casetest@x.uz', password: 'passw0rd', role: 'client',
+    });
+    expect(r2.status).toBe(409);
+  });
+
+  test('вход регистронезависим по email', async () => {
+    await request(app).post('/api/auth/register').send({
+      name: 'Тест', email: 'login-case@x.uz', password: 'passw0rd', role: 'client',
+    });
+    const login = await request(app).post('/api/auth/login').send({
+      email: 'LOGIN-CASE@x.uz', password: 'passw0rd',
+    });
+    expect(login.status).toBe(200);
+    expect(login.body.token).toBeTruthy();
+  });
+});
+
 describe('регистрация юриста с несколькими специализациями', () => {
   test('specializations[] сохраняются, primary = первая', async () => {
     const r = await request(app).post('/api/auth/register').send({

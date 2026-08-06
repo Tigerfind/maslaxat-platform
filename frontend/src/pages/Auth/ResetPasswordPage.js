@@ -20,7 +20,7 @@ const ResetPasswordPage = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    if (password.length < 6) {
+    if (password.length < 8) {
       setError(t('authFlow.pwMin'));
       return;
     }

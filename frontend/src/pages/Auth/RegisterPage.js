@@ -61,7 +61,7 @@ const RegisterPage = () => {
     if (key === 'account') {
       if (!formData.name || formData.name.length < 2) { setError(t('register.nameMin')); return false; }
       if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) { setError(t('register.emailInvalid')); return false; }
-      if (!formData.password || formData.password.length < 6) { setError(t('register.passwordMin')); return false; }
+      if (!formData.password || formData.password.length < 8) { setError(t('register.passwordMin')); return false; }
       if (formData.password !== formData.confirmPassword) { setError(t('register.passwordsMismatch')); return false; }
     }
     if (key === 'spec' && formData.specializations.length === 0) { setError(t('register.specRequired')); return false; }
