@@ -81,6 +81,14 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setUseFree(false);
     setUseSubFree(false);
     setSubLeft(0);
+    // Память брони: подставляем последний выбор клиента (тип/длительность/оплата),
+    // чтобы постоянному клиенту не переклиивать одно и то же.
+    try {
+      const prefs = JSON.parse(localStorage.getItem('booking:prefs') || '{}');
+      if (prefs.consultationType) setFormData((prev) => ({ ...prev, consultationType: prefs.consultationType }));
+      if (DURATIONS.includes(prefs.duration)) setDuration(prefs.duration);
+      if (prefs.payMethod) setPayMethod(prefs.payMethod);
+    } catch { /* нет сохранённых предпочтений */ }
     let alive = true;
     // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
     // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
@@ -367,6 +375,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           throw payErr;
         }
       }
+
+      // Запоминаем выбор для следующей брони (тип/длительность/оплата).
+      try { localStorage.setItem('booking:prefs', JSON.stringify({ consultationType: formData.consultationType, duration, payMethod })); } catch { /* ignore */ }
 
       setStep(4);
     } catch (error) {
