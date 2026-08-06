@@ -809,6 +809,28 @@ const LawyersPageGlass = () => {
             </FormControl>
           </div>
 
+          {/* Быстрые фильтры-пресеты — в один тап */}
+          {(() => {
+            const presets = [
+              { k: 'presetOnline', active: filters.onlineOnly, apply: () => handleFilterChange('onlineOnly', !filters.onlineOnly) },
+              { k: 'presetTop', active: filters.sortBy === 'rating', apply: () => handleFilterChange('sortBy', 'rating') },
+              { k: 'presetCheap', active: filters.sortBy === 'price_low', apply: () => handleFilterChange('sortBy', 'price_low') },
+              { k: 'presetExperienced', active: filters.sortBy === 'experience', apply: () => handleFilterChange('sortBy', 'experience') },
+            ];
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
+                {presets.map((p) => (
+                  <button key={p.k} onClick={p.apply} style={{
+                    cursor: 'pointer', padding: '8px 15px', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', fontWeight: p.active ? 600 : 400,
+                    border: `1px solid ${p.active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                    background: p.active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--surface)',
+                    color: p.active ? '#fff' : 'var(--text2)', transition: 'all .15s',
+                  }}>{t('lawyers.' + p.k)}</button>
+                ))}
+              </div>
+            );
+          })()}
+
           {/* results */}
           {loading ? (
             <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
