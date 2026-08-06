@@ -19,6 +19,12 @@ async function resetDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS reviews_consultation_id_unique
     ON reviews (consultation_id)
   `);
+  // Частичный уникальный индекс на телефон (как миграция 20260818000000) —
+  // один номер = один аккаунт (несколько NULL допускаются).
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique
+    ON users (phone) WHERE phone IS NOT NULL
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })

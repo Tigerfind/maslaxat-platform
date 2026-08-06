@@ -65,9 +65,19 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       return res.status(409).json({ error: 'Email уже зарегистрирован' });
     }
 
+    // Дедуп по телефону: один номер — один аккаунт (иначе обход лимитов free/AI).
+    // Нормализуем к единому виду (+998…), проверяем занятость.
+    let phone;
+    if (value.phone) {
+      phone = smsService.normalizePhone(value.phone);
+      if (!phone) return res.status(400).json({ error: 'Неверный формат номера (пример: +998901234567)' });
+      const phoneUsed = await User.findOne({ where: { phone } });
+      if (phoneUsed) return res.status(409).json({ error: 'Этот номер телефона уже используется' });
+    }
+
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const { specialization, ...userData } = value;
-    const user = await User.create({ ...userData, verificationToken });
+    const { specialization, phone: _rawPhone, ...userData } = value;
+    const user = await User.create({ ...userData, phone: phone || null, verificationToken });
 
     if (value.role === 'lawyer') {
       await LawyerProfile.create({
