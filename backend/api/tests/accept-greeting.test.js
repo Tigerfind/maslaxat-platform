@@ -38,6 +38,22 @@ describe('принятие заявки с приветствием', () => {
     expect(msg.text).toMatch(/Помогу/);
   });
 
+  test('repeatCount: список заявок показывает число прошлых консультаций клиента', async () => {
+    const client = await makeClient('ag-repeat@test.uz');
+    const { user: lawyer } = await makeLawyer('ag-lr@test.uz');
+    // 2 завершённые в прошлом + 1 новая заявка (pending)
+    await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'completed', question: 'q1' });
+    await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'completed', question: 'q2' });
+    await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'pending', question: 'q3' });
+
+    const res = await request(app)
+      .get('/api/lawyer/consultation-requests?status=pending')
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+    expect(res.status).toBe(200);
+    const pending = res.body.find((r) => r.question === 'q3');
+    expect(pending.repeatCount).toBe(2);
+  });
+
   test('принятие без сообщения — чат пустой', async () => {
     const client = await makeClient('ag-c2@test.uz');
     const { user: lawyer } = await makeLawyer('ag-l2@test.uz');

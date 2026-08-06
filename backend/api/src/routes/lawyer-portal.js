@@ -1,5 +1,5 @@
 const router = require('express').Router();
-const { Op } = require('sequelize');
+const { Op, fn, col } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -99,6 +99,19 @@ router.get('/consultation-requests', async (req, res, next) => {
       order: [['createdAt', 'DESC']],
     });
 
+    // История клиента: сколько ЗАВЕРШЁННЫХ консультаций у него было с ЭТИМ юристом
+    // (одним запросом, без N+1). Юристу удобно видеть постоянных клиентов.
+    const clientIds = [...new Set(consultations.map((c) => c.clientId).filter(Boolean))];
+    let repeatByClient = {};
+    if (clientIds.length) {
+      const rows = await Consultation.findAll({
+        where: { lawyerId: req.userId, clientId: { [Op.in]: clientIds }, status: 'completed' },
+        attributes: ['clientId', [fn('COUNT', col('id')), 'cnt']],
+        group: ['clientId'], raw: true,
+      });
+      repeatByClient = Object.fromEntries(rows.map((r) => [r.clientId, Number(r.cnt)]));
+    }
+
     // Map to the format the frontend expects
     const requests = consultations.map((c) => ({
       id: c.id,
@@ -117,6 +130,8 @@ router.get('/consultation-requests', async (req, res, next) => {
       status: c.status,
       createdAt: c.createdAt,
       price: c.price,
+      // Сколько завершённых консультаций у этого клиента было с данным юристом (0 = новый).
+      repeatCount: repeatByClient[c.clientId] || 0,
     }));
 
     res.json(requests);

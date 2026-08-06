@@ -187,6 +187,11 @@ const LawyerConsultationsPage = () => {
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
                         <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{c.client?.name || t('lawyerPanel.clientFallback')}</span>
+                        {c.repeatCount > 0 && (
+                          <span title={t('lawyerConsult.repeatClient')} style={{ fontSize: 11, fontWeight: 600, color: '#7A9A6B', background: 'rgba(122,154,107,0.14)', padding: '3px 10px', borderRadius: 999 }}>
+                            ★ {t('lawyerConsult.repeatClient')} · {c.repeatCount}
+                          </span>
+                        )}
                         <span style={{ fontSize: 11, fontWeight: 600, color: sm.c, background: sm.bg, padding: '3px 10px', borderRadius: 999 }}>{sm.label}</span>
                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--text3)' }}>
                           {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}
@@ -270,6 +275,11 @@ const LawyerConsultationsPage = () => {
           <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
             {t('lawyerConsult.acceptHint')}{acceptFor?.client?.name ? ` — ${acceptFor.client.name}` : ''}
           </div>
+          {acceptFor?.repeatCount > 0 && (
+            <div style={{ fontSize: 12.5, color: '#5c7a50', background: 'rgba(122,154,107,0.12)', border: '1px solid rgba(122,154,107,0.3)', borderRadius: 8, padding: '8px 11px', marginBottom: 12 }}>
+              ★ {t('lawyerConsult.repeatClientNote', { n: acceptFor.repeatCount })}
+            </div>
+          )}
           <TextField
             fullWidth multiline minRows={3} value={acceptMsg}
             onChange={(e) => setAcceptMsg(e.target.value)}
