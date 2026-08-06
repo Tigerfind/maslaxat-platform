@@ -75,3 +75,22 @@ describe('каталог фильтрует по любой из специал�
     expect(specs).toContain('Налоговое право');
   });
 });
+
+describe('«Доступен сейчас» — фильтр и сортировка онлайн-первыми', () => {
+  test('onlineOnly=true возвращает только онлайн; по умолчанию онлайн выше', async () => {
+    const on = await makeLawyer('on-online@test.uz', { isAvailable: true, location: 'OnlineCity' });
+    const off = await makeLawyer('on-offline@test.uz', { isAvailable: false, location: 'OnlineCity' });
+
+    // Только онлайн
+    const only = await request(app).get('/api/lawyers?onlineOnly=true&location=OnlineCity&limit=50');
+    expect(only.status).toBe(200);
+    const ids = only.body.lawyers.map((l) => l.id);
+    expect(ids).toContain(on.user.id);
+    expect(ids).not.toContain(off.user.id);
+
+    // Без фильтра — оба, но онлайн выше офлайна
+    const all = await request(app).get('/api/lawyers?location=OnlineCity&limit=50');
+    const order = all.body.lawyers.map((l) => l.id);
+    expect(order.indexOf(on.user.id)).toBeLessThan(order.indexOf(off.user.id));
+  });
+});

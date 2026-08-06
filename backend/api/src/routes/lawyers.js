@@ -8,7 +8,7 @@ const { recomputeLawyerRating } = require('../services/ratingService');
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
@@ -39,16 +39,24 @@ router.get('/', async (req, res, next) => {
     // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
     profileWhere.verificationStatus = 'approved';
 
+    // «Доступен сейчас»: показать только онлайн-юристов (isAvailable=true).
+    // Раньше тумблер был декоративным — бэкенд его не читал.
+    const onlyOnline = onlineOnly === 'true' || onlineOnly === true;
+    if (onlyOnline) profileWhere.isAvailable = true;
+
     const userWhere = { role: 'lawyer', isActive: true };
     if (search) {
       userWhere.name = { [Op.iLike]: `%${search}%` };
     }
 
-    let order = [['createdAt', 'DESC']];
-    if (sortBy === 'rating') order = [[{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
-    if (sortBy === 'price_low') order = [[{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
-    if (sortBy === 'price_high') order = [[{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
-    if (sortBy === 'experience') order = [[{ model: LawyerProfile, as: 'profile' }, 'experience', 'DESC']];
+    // Онлайн-юристы всегда ВЫШЕ — клиенту удобнее видеть тех, с кем можно поговорить
+    // сейчас. Внутри — выбранная сортировка (по умолчанию новизна).
+    const onlineFirst = [{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC'];
+    let order = [onlineFirst, ['createdAt', 'DESC']];
+    if (sortBy === 'rating') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
+    if (sortBy === 'price_low') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
+    if (sortBy === 'price_high') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
+    if (sortBy === 'experience') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'experience', 'DESC']];
 
     // Never expose phone/email of lawyers to public/client searches
     const { count, rows } = await User.findAndCountAll({
