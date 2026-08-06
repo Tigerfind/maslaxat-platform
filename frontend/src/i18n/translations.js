@@ -567,6 +567,8 @@ const translations = {
       rejectPrompt: 'Причина отклонения (необязательно):',
       start: 'Начать', openVideo: 'Видеозвонок', openChat: 'Открыть чат', finish: 'Завершить', finishConfirm: 'Завершить консультацию?', finished: 'Консультация завершена', chatHistory: 'История переписки',
       acceptTitle: 'Принять заявку', acceptHint: 'Приветствие уйдёт клиенту первым сообщением в чат', acceptPlaceholder: 'Здравствуйте! Готов помочь с вашим вопросом…', acceptConfirm: 'Принять и отправить', cancel: 'Отмена',
+      rejectTitle: 'Отклонить заявку', rejectHint: 'Выберите причину или напишите свою — клиент её увидит', rejectPlaceholder: 'Причина (необязательно)', rejectConfirm: 'Отклонить',
+      rr1: 'Занят в это время', rr2: 'Не моя специализация', rr3: 'Нужны дополнительные документы', rr4: 'Недостаточно информации по вопросу',
     },
     uz: {
       title: 'Консультациялар', subtitle: 'Барча ишларингиз бир жойда',
@@ -576,6 +578,8 @@ const translations = {
       rejectPrompt: 'Рад этиш сабаби (ихтиёрий):',
       start: 'Бошлаш', openVideo: 'Видеоқўнғироқ', openChat: 'Чатни очиш', finish: 'Тугатиш', finishConfirm: 'Консультацияни тугатасизми?', finished: 'Консультация тугалланди', chatHistory: 'Ёзишмалар тарихи',
       acceptTitle: 'Сўровни қабул қилиш', acceptHint: 'Саломлашув мижозга биринчи хабар бўлиб боради', acceptPlaceholder: 'Ассалому алайкум! Саволингизда ёрдам бераман…', acceptConfirm: 'Қабул қилиш ва юбориш', cancel: 'Бекор қилиш',
+      rejectTitle: 'Сўровни рад этиш', rejectHint: 'Сабабни танланг ёки ёзинг — мижоз кўради', rejectPlaceholder: 'Сабаб (ихтиёрий)', rejectConfirm: 'Рад этиш',
+      rr1: 'Бу вақтда бандман', rr2: 'Менинг ихтисослигим эмас', rr3: 'Қўшимча ҳужжатлар керак', rr4: 'Савол бўйича маълумот етарли эмас',
     },
     en: {
       title: 'Consultations', subtitle: 'All your cases in one place',
@@ -585,6 +589,8 @@ const translations = {
       rejectPrompt: 'Reason for rejection (optional):',
       start: 'Start', openVideo: 'Video call', openChat: 'Open chat', finish: 'Finish', finishConfirm: 'Finish the consultation?', finished: 'Consultation finished', chatHistory: 'Chat history',
       acceptTitle: 'Accept request', acceptHint: 'Your greeting is sent to the client as the first chat message', acceptPlaceholder: 'Hello! Happy to help with your question…', acceptConfirm: 'Accept and send', cancel: 'Cancel',
+      rejectTitle: 'Decline request', rejectHint: 'Pick a reason or write your own — the client will see it', rejectPlaceholder: 'Reason (optional)', rejectConfirm: 'Decline',
+      rr1: 'Busy at this time', rr2: 'Not my specialization', rr3: 'Additional documents needed', rr4: 'Not enough information about the issue',
     },
   },
 

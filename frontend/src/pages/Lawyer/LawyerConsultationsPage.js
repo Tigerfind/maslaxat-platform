@@ -41,6 +41,8 @@ const LawyerConsultationsPage = () => {
   const [acceptFor, setAcceptFor] = useState(null); // заявка, которую принимаем (диалог)
   const [acceptMsg, setAcceptMsg] = useState('');
   const [greeting, setGreeting] = useState('');
+  const [rejectFor, setRejectFor] = useState(null); // заявка, которую отклоняем (диалог)
+  const [rejectMsg, setRejectMsg] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -107,12 +109,18 @@ const LawyerConsultationsPage = () => {
     } catch { toast.error(t('lawyerPanel.acceptError')); }
     finally { setActing(null); }
   };
-  const reject = async (id) => {
-    const reason = window.prompt(t('lawyerConsult.rejectPrompt'));
-    if (reason === null) return;
-    setActing(id);
-    try { await lawyerService.consultation.rejectConsultationRequest(id, reason.trim()); toast.info(t('lawyerPanel.requestRejected')); await load(); }
-    catch { toast.error(t('lawyerPanel.rejectError')); } finally { setActing(null); }
+  // Отклонение → диалог с готовыми причинами (вместо window.prompt).
+  const openReject = (c) => { setRejectFor(c); setRejectMsg(''); };
+  const confirmReject = async () => {
+    const c = rejectFor; if (!c) return;
+    setActing(c.id);
+    try {
+      await lawyerService.consultation.rejectConsultationRequest(c.id, rejectMsg.trim());
+      toast.info(t('lawyerPanel.requestRejected'));
+      setRejectFor(null); setRejectMsg('');
+      await load();
+    } catch { toast.error(t('lawyerPanel.rejectError')); }
+    finally { setActing(null); }
   };
   const start = async (id) => {
     setActing(id);
@@ -207,7 +215,7 @@ const LawyerConsultationsPage = () => {
                         <button disabled={busy} onClick={() => openAccept(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
                           <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.accept')}
                         </button>
-                        <button disabled={busy} onClick={() => reject(c.id)} style={footBtn('var(--error, #C0492F)')}>
+                        <button disabled={busy} onClick={() => openReject(c)} style={footBtn('var(--error, #C0492F)')}>
                           <CloseOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.reject')}
                         </button>
                       </>
@@ -276,6 +284,44 @@ const LawyerConsultationsPage = () => {
           <Button onClick={confirmAccept} disabled={acting === acceptFor?.id} variant="contained"
             sx={{ textTransform: 'none', background: 'var(--accent)', '&:hover': { background: 'var(--accent-dark)' } }}>
             {acting === acceptFor?.id ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : t('lawyerConsult.acceptConfirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Отклонение заявки: готовые причины + необязательный комментарий */}
+      <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CloseOutlined sx={{ color: 'var(--error, #C0492F)' }} /> {t('lawyerConsult.rejectTitle')}
+        </DialogTitle>
+        <DialogContent dividers>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>{t('lawyerConsult.rejectHint')}</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 14 }}>
+            {[t('lawyerConsult.rr1'), t('lawyerConsult.rr2'), t('lawyerConsult.rr3'), t('lawyerConsult.rr4')].map((r) => {
+              const on = rejectMsg === r;
+              return (
+                <button key={r} onClick={() => setRejectMsg(r)} style={{
+                  cursor: 'pointer', padding: '8px 13px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                  border: `1px solid ${on ? 'var(--accent)' : 'var(--card-brd)'}`,
+                  background: on ? 'rgba(184,149,110,0.14)' : 'transparent',
+                  color: on ? 'var(--accent-dark)' : 'var(--text2)', fontWeight: on ? 600 : 400,
+                }}>{r}</button>
+              );
+            })}
+          </div>
+          <TextField
+            fullWidth multiline minRows={2} value={rejectMsg}
+            onChange={(e) => setRejectMsg(e.target.value)}
+            placeholder={t('lawyerConsult.rejectPlaceholder')}
+            inputProps={{ maxLength: 500 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setRejectFor(null)} sx={{ textTransform: 'none', color: 'var(--text2)' }}>
+            {t('lawyerConsult.cancel')}
+          </Button>
+          <Button onClick={confirmReject} disabled={acting === rejectFor?.id} variant="contained"
+            sx={{ textTransform: 'none', background: 'var(--error, #C0492F)', '&:hover': { background: '#a53d28' } }}>
+            {acting === rejectFor?.id ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : t('lawyerConsult.rejectConfirm')}
           </Button>
         </DialogActions>
       </Dialog>
