@@ -27,6 +27,7 @@ import {
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
 import clientService from '../../services/clientService';
 import { clientLawyerService } from '../../services/clientService';
 import RatingDialog from '../../components/UI/RatingDialog';
@@ -378,6 +379,11 @@ const ConsultationsPageGlass = () => {
               )}
             </div>
           </div>
+        </div>
+
+        {/* Таймлайн статуса — понятно, где бронь и что дальше */}
+        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
+          <ConsultationTimeline status={c.status} role="client" />
         </div>
 
         {hasActions && (

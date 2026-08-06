@@ -534,6 +534,30 @@ const translations = {
     },
   },
 
+  timeline: {
+    ru: {
+      booked: 'Забронирована', confirmed: 'Подтверждена', active: 'Идёт', done: 'Завершена',
+      rejected: 'Консультация отклонена юристом', cancelled: 'Консультация отменена',
+      hintClientWait: 'Ожидаем подтверждения юриста', hintLawyerConfirm: 'Подтвердите или отклоните заявку',
+      hintClientConfirmed: 'Юрист подтвердил — ждите начала в назначенное время', hintLawyerStart: 'Подтверждено — начните в назначенное время',
+      hintActive: 'Консультация идёт', hintDone: 'Консультация завершена',
+    },
+    uz: {
+      booked: 'Банд қилинган', confirmed: 'Тасдиқланган', active: 'Давом этмоқда', done: 'Тугалланган',
+      rejected: 'Консультацияни юрист рад этди', cancelled: 'Консультация бекор қилинди',
+      hintClientWait: 'Юрист тасдиғини кутмоқдамиз', hintLawyerConfirm: 'Сўровни тасдиқланг ёки рад этинг',
+      hintClientConfirmed: 'Юрист тасдиқлади — белгиланган вақтда бошланишини кутинг', hintLawyerStart: 'Тасдиқланди — белгиланган вақтда бошланг',
+      hintActive: 'Консультация давом этмоқда', hintDone: 'Консультация тугалланди',
+    },
+    en: {
+      booked: 'Booked', confirmed: 'Confirmed', active: 'In progress', done: 'Completed',
+      rejected: 'The lawyer declined the consultation', cancelled: 'Consultation cancelled',
+      hintClientWait: 'Waiting for the lawyer to confirm', hintLawyerConfirm: 'Confirm or decline the request',
+      hintClientConfirmed: 'The lawyer confirmed — wait for the start at the set time', hintLawyerStart: 'Confirmed — start at the set time',
+      hintActive: 'Consultation in progress', hintDone: 'Consultation completed',
+    },
+  },
+
   lawyerConsult: {
     ru: {
       title: 'Консультации', subtitle: 'Все ваши дела в одном месте',

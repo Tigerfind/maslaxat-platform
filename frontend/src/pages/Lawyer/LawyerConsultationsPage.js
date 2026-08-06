@@ -10,6 +10,7 @@ import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
 import { useTranslation } from '../../i18n';
 
 /*
@@ -178,8 +179,13 @@ const LawyerConsultationsPage = () => {
                     )}
                   </div>
 
+                  {/* Таймлайн статуса — где сейчас бронь и что дальше */}
+                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <ConsultationTimeline status={c.status} role="lawyer" />
+                  </div>
+
                   {/* Actions */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
                     {c.status === 'pending' && (
                       <>
                         <button disabled={busy} onClick={() => accept(c.id)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
