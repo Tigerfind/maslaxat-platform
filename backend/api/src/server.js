@@ -201,6 +201,8 @@ async function start() {
       });
       // Фоновая задача: напоминания за 1 час до консультации
       require('./services/reminderService').startReminderJob();
+      // Фоновая задача: захват оплаты через 5 минут разговора (модель B)
+      require('./services/billingService').startBillingJob();
     });
   } catch (error) {
     logger.error('Failed to start server', { stack: error.stack });

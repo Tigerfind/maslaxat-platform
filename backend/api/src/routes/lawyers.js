@@ -248,10 +248,13 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     let freeSource = null;
     let consultation;
 
-    // Платная/промо-бронь ждёт оплаты (payment_pending); бесплатная сразу уходит юристу.
+    // Модель B «оплата через 5 минут звонка»: платная бронь НЕ требует предоплаты.
+    // Карта «замораживается» (billingStatus='held'), бронь сразу уходит юристу (pending);
+    // деньги захватываются на 5-й минуте разговора (billingService.captureHold).
     const paidFields = () => ({
       ...baseFields, price, isFree: false, freeSource: null, notes,
-      promoCode: appliedPromo ? appliedPromo.code : null, status: 'payment_pending',
+      promoCode: appliedPromo ? appliedPromo.code : null,
+      status: 'pending', billingStatus: 'held',
     });
 
     if (!wantsFree) {
@@ -307,15 +310,17 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
         where: { [Op.or]: [{ usageLimit: null }, literal('used_count < usage_limit')] },
       });
     }
-    if (isFree) {
+    // Уведомляем юриста о новой брони — теперь и платная сразу уходит ему (pending),
+    // без шага предоплаты (оплата спишется на 5-й минуте звонка).
+    {
       const client = await User.findByPk(req.userId, { attributes: ['name'] });
       notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);
     }
 
     res.status(201).json({
       success: true,
-      message: isFree ? 'Запрос отправлен юристу' : 'Требуется оплата',
-      requiresPayment: !isFree,
+      message: 'Запрос отправлен юристу',
+      requiresPayment: false,
       consultation,
     });
   } catch (err) {

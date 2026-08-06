@@ -111,6 +111,9 @@ const VideoCallPage = () => {
   // Call state
   const [callDuration, setCallDuration] = useState(0);
   const [callStartTime, setCallStartTime] = useState(null);
+  // Биллинг (модель B): когда ОБА в звонке — сервер шлёт billing:call-started с моментом
+  // старта и окном до захвата (5 мин). Ранний выход → billing:call-paused (сброс).
+  const [billing, setBilling] = useState(null); // { startedAt(ms), captureAfterMs } | null
   const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
   const [quality, setQuality] = useState(null); // null|'good'|'ok'|'poor' — качество связи
   const [extendOpen, setExtendOpen] = useState(false);
@@ -685,6 +688,14 @@ const VideoCallPage = () => {
         socket.on('error', ({ message }) => {
           if (!cancelled) setError(message);
         });
+
+        // Биллинг: оба в звонке → пошёл отсчёт до списания; кто-то вышел раньше 5 мин → сброс.
+        socket.on('billing:call-started', ({ at, captureAfterMs }) => {
+          if (!cancelled) setBilling({ startedAt: at || Date.now(), captureAfterMs: captureAfterMs || 300000 });
+        });
+        socket.on('billing:call-paused', () => {
+          if (!cancelled) setBilling(null);
+        });
       } catch (err) {
         if (cancelled) return;
         if (err.name === 'NotAllowedError') {
@@ -1056,6 +1067,10 @@ const VideoCallPage = () => {
     : `${t('videoCall.timeLeft')} ${formatDuration(remaining)}`;
   const timeColor = overtime ? '#D9534F' : remaining <= 300 ? '#C4A35A' : '#C9A980';
 
+  // Биллинг (модель B): отсчёт до списания. Пересчитывается каждый тик callDuration.
+  const billingRemainingMs = billing ? Math.max(0, billing.startedAt + billing.captureAfterMs - Date.now()) : null;
+  const billingCharged = billing && billingRemainingMs === 0;
+
   // Различаем «собеседник вышел» (насовсем) и краткий обрыв («переподключение»)
   const reconnecting = !peerConnected && wasConnectedRef.current && connected && !remoteLeft;
   const statusText = peerConnected
@@ -1262,6 +1277,26 @@ const VideoCallPage = () => {
           >
             {statusText}
           </Typography>
+
+          {/* Биллинг: таймер до списания / факт списания (модель B) */}
+          {billing && (
+            <Box
+              sx={{
+                display: 'inline-flex', alignItems: 'center', gap: 0.7, ml: 0.5,
+                px: 1.1, py: 0.4, borderRadius: '999px', whiteSpace: 'nowrap',
+                bgcolor: billingCharged ? 'rgba(110,154,95,0.18)' : 'rgba(196,163,90,0.18)',
+                border: `1px solid ${billingCharged ? 'rgba(110,154,95,0.5)' : 'rgba(196,163,90,0.5)'}`,
+              }}
+              title={billingCharged ? t('videoCall.billCharged') : t('videoCall.billPending')}
+            >
+              <span style={{ fontSize: 12 }}>{billingCharged ? '✓' : '💳'}</span>
+              <Typography sx={{ fontSize: 12, fontWeight: 600, color: billingCharged ? '#8FBF7F' : '#E0C069', letterSpacing: '0.02em' }}>
+                {billingCharged
+                  ? t('videoCall.billCharged')
+                  : `${t('videoCall.billIn')} ${formatDuration(Math.ceil(billingRemainingMs / 1000))}`}
+              </Typography>
+            </Box>
+          )}
 
           {/* Индикатор качества связи (полоски сигнала) */}
           {peerConnected && quality && (() => {

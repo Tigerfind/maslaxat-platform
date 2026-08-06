@@ -347,8 +347,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       const booking = await clientService.lawyers.bookConsultation(lawyer.id, bookingData);
 
-      // Платная бронь создаётся как payment_pending — проводим тестовую оплату.
-      // Бесплатная (акция) уже в статусе pending, оплата не нужна.
+      // Модель B «оплата через 5 минут звонка»: предоплаты при брони НЕТ
+      // (requiresPayment=false). Деньги спишутся на 5-й минуте разговора.
+      // Блок ниже оставлен для обратной совместимости, если сервер вернёт requiresPayment.
       const consultationId = booking?.consultation?.id;
       if (!freeBooking && booking?.requiresPayment && consultationId) {
         try {

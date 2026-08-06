@@ -61,6 +61,11 @@ async function completeConsultation(consultationId, notes, actualDuration) {
         released = true;
       }
     }
+    // Биллинг (модель B): эскроу отдан юристу → помечаем released (только когда деньги
+    // реально двинулись). Аддитивно, на денежную логику не влияет.
+    if (released) {
+      await Consultation.update({ billingStatus: 'released' }, { where: { id: consultationId }, transaction: t });
+    }
 
     // completedCases растёт ровно при ПЕРВОМ переходе в completed (statusAffected===1),
     // включая бесплатные консультации (у них нет Payment). При повторном завершении

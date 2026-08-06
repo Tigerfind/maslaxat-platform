@@ -277,6 +277,26 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  // ─── Биллинг «оплата через 5 минут звонка» (модель B: холд → захват) ───
+  // Момент, когда ОБА участника оказались в видеозвонке (детект по socket-комнате).
+  // От него отсчитываются 5 минут до захвата оплаты. null — оба ещё не встретились.
+  callStartedAt: {
+    type: DataTypes.DATE,
+  },
+  // Момент захвата оплаты (списания с карты клиента) — на 5-й минуте разговора.
+  chargedAt: {
+    type: DataTypes.DATE,
+  },
+  // Статус биллинга:
+  //  none     — бесплатная/не требует оплаты
+  //  held     — карта авторизована при брони (деньги заморожены, не списаны)
+  //  charged  — захвачено на 5-й минуте (деньги в эскроу/pendingBalance)
+  //  released — эскроу отдан юристу при завершении
+  //  failed   — захват не прошёл (нет холда/денег) — решает юрист/админ
+  billingStatus: {
+    type: DataTypes.ENUM('none', 'held', 'charged', 'released', 'failed'),
+    defaultValue: 'none',
+  },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.

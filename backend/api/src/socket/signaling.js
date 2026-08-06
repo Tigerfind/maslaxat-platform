@@ -87,6 +87,26 @@ function initSignaling(io) {
           userAvatar: socket.userAvatar,
         });
 
+        // Биллинг (модель B): засекаем момент, когда ОБА участника в звонке — от него
+        // пойдут 5 минут до захвата оплаты. Ставим один раз (атомарно, идемпотентно).
+        try {
+          const present = new Set(roomSockets.map((s) => s.userId));
+          const bothHere = present.has(consultation.clientId) && present.has(consultation.lawyerId);
+          if (bothHere && !consultation.callStartedAt) {
+            const [aff] = await Consultation.update(
+              { callStartedAt: new Date() },
+              { where: { id: consultationId, callStartedAt: null } }
+            );
+            if (aff) {
+              io.in(roomId).emit('billing:call-started', {
+                consultationId, at: Date.now(), captureAfterMs: 5 * 60 * 1000,
+              });
+            }
+          }
+        } catch (e) {
+          logger.error('[Socket] billing call-start error', { error: e.message });
+        }
+
         logger.debug(`[Socket] ${socket.userName} joined room ${roomId} (${roomSockets.length} users)`);
       } catch (err) {
         logger.error('[Socket] join-room error', { error: err.message });
@@ -303,6 +323,26 @@ function initSignaling(io) {
       });
     });
 
+    // Биллинг (модель B): участник вышел РАНЬШЕ 5 минут → сбрасываем таймер, чтобы
+    // списания не было. Оплата спишется, только если оба пробудут в звонке 5 минут подряд.
+    async function billingOnLeave() {
+      const cid = socket.consultationId;
+      const room = socket.roomId;
+      if (!cid) return;
+      try {
+        const c = await Consultation.findByPk(cid);
+        if (!c || !c.callStartedAt) return;
+        if (['charged', 'released'].includes(c.billingStatus)) return; // уже списано — поздно
+        const elapsed = Date.now() - new Date(c.callStartedAt).getTime();
+        if (elapsed < 5 * 60 * 1000) {
+          await Consultation.update({ callStartedAt: null }, { where: { id: cid } });
+          if (room) io.in(room).emit('billing:call-paused', { consultationId: cid });
+        }
+      } catch (e) {
+        logger.error('[Socket] billing leave error', { error: e.message });
+      }
+    }
+
     // Handle disconnection
     socket.on('disconnect', () => {
       if (socket.roomId) {
@@ -313,6 +353,7 @@ function initSignaling(io) {
         });
         logger.debug(`[Socket] ${socket.userName} left room ${socket.roomId}`);
       }
+      billingOnLeave();
     });
 
     // End call (explicit)
@@ -322,6 +363,7 @@ function initSignaling(io) {
           userId: socket.userId,
           userName: socket.userName,
         });
+        billingOnLeave();
         socket.leave(socket.roomId);
       }
     });

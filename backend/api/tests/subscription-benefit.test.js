@@ -38,12 +38,15 @@ describe('подписочная льгота: N бесплатных консу
     const my2 = await request(app).get('/api/subscriptions/my').set('Authorization', `Bearer ${token}`);
     expect(my2.body.consultationsLeft).toBe(0);
 
-    // вторая попытка «по подписке» → уже платная (лимит исчерпан)
+    // вторая попытка «по подписке» → уже платная (лимит исчерпан).
+    // Модель B: платная бронь сразу уходит юристу (pending) с холдом карты
+    // (billingStatus='held'), без шага предоплаты.
     const b2 = await book(token, lawyer.id, { useSubscriptionFree: true });
     expect(b2.status).toBe(201);
     expect(b2.body.consultation.isFree).toBe(false);
     expect(b2.body.consultation.price).toBe(200000);
-    expect(b2.body.consultation.status).toBe('payment_pending');
+    expect(b2.body.consultation.status).toBe('pending');
+    expect(b2.body.consultation.billingStatus).toBe('held');
   });
 
   test('без подписки (free) льготы нет — бронь платная', async () => {
