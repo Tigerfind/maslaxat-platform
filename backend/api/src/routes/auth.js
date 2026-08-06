@@ -53,6 +53,7 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       phone: Joi.string().optional(),
       role: Joi.string().valid('client', 'lawyer').default('client'),
       specialization: Joi.string().optional(),
+      specializations: Joi.array().items(Joi.string()).optional(),
     });
 
     const { error, value } = schema.validate(req.body);
@@ -76,13 +77,21 @@ router.post('/register', emailLimiter, async (req, res, next) => {
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const { specialization, phone: _rawPhone, ...userData } = value;
+    const { specialization, specializations, phone: _rawPhone, ...userData } = value;
     const user = await User.create({ ...userData, phone: phone || null, verificationToken });
 
     if (value.role === 'lawyer') {
+      // Мультиспециализация: принимаем массив ИЛИ одиночную строку (legacy). Дедуп,
+      // максимум 12; основная specialization = первая (совместимость каталога/карточки).
+      const raw = Array.isArray(specializations) && specializations.length
+        ? specializations
+        : (specialization ? [specialization] : []);
+      const specs = [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))].slice(0, 12);
+      const primary = specs[0] || 'Общее право';
       await LawyerProfile.create({
         userId: user.id,
-        specialization: specialization || 'Общее право',
+        specialization: primary,
+        specializations: specs.length ? specs : [primary],
         price: 200000,
         isAvailable: false, // скрыт до завершения онбординга
       });

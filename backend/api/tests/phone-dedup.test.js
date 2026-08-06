@@ -17,7 +17,9 @@ jest.mock('../src/services/smsService', () => ({
 
 const request = require('supertest');
 const app = require('../src/server');
-const { resetDb } = require('./helpers');
+const { resetDb, models } = require('./helpers');
+
+const { User, LawyerProfile } = models;
 
 beforeAll(async () => { await resetDb(); });
 
@@ -43,5 +45,19 @@ describe('дедуп по телефону при регистрации', () =>
   test('без телефона регистрация проходит', async () => {
     const r = await reg('pd-d@test.uz', undefined);
     expect(r.status).toBe(201);
+  });
+});
+
+describe('регистрация юриста с несколькими специализациями', () => {
+  test('specializations[] сохраняются, primary = первая', async () => {
+    const r = await request(app).post('/api/auth/register').send({
+      name: 'Юрист', email: 'pd-lawyer@test.uz', password: 'passw0rd', role: 'lawyer',
+      specializations: ['Семейное право', 'Налоговое право', 'Семейное право'],
+    });
+    expect(r.status).toBe(201);
+    const user = await User.findOne({ where: { email: 'pd-lawyer@test.uz' } });
+    const lp = await LawyerProfile.findOne({ where: { userId: user.id } });
+    expect(lp.specializations).toEqual(['Семейное право', 'Налоговое право']); // дедуп
+    expect(lp.specialization).toBe('Семейное право'); // primary
   });
 });

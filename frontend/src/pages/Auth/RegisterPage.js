@@ -39,7 +39,7 @@ const RegisterPage = () => {
   const [role, setRole] = useState(roleFromUrl === 'lawyer' ? 'lawyer' : 'client');
   const [step, setStep] = useState(0);
   const [formData, setFormData] = useState({
-    name: '', email: '', phone: '', password: '', confirmPassword: '', specialization: '',
+    name: '', email: '', phone: '', password: '', confirmPassword: '', specializations: [],
   });
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
@@ -64,7 +64,7 @@ const RegisterPage = () => {
       if (!formData.password || formData.password.length < 6) { setError(t('register.passwordMin')); return false; }
       if (formData.password !== formData.confirmPassword) { setError(t('register.passwordsMismatch')); return false; }
     }
-    if (key === 'spec' && !formData.specialization) { setError(t('register.specRequired')); return false; }
+    if (key === 'spec' && formData.specializations.length === 0) { setError(t('register.specRequired')); return false; }
     return true;
   };
 
@@ -86,7 +86,7 @@ const RegisterPage = () => {
         password: formData.password,
         phone: formData.phone || undefined,
         role,
-        ...(role === 'lawyer' && formData.specialization ? { specialization: formData.specialization } : {}),
+        ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
       const { user, token } = response.data;
@@ -206,9 +206,18 @@ const RegisterPage = () => {
         <Typography sx={stepSubSx}>{t('register.stepSpecSub')}</Typography>
         <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, mt: 2 }}>
           {SPECIALIZATION_NAMES.map((sp) => {
-            const on = formData.specialization === sp;
+            const on = formData.specializations.includes(sp);
+            const toggle = () => {
+              setError('');
+              setFormData((f) => ({
+                ...f,
+                specializations: f.specializations.includes(sp)
+                  ? f.specializations.filter((x) => x !== sp)
+                  : [...f.specializations, sp],
+              }));
+            };
             return (
-              <Box key={sp} onClick={() => { setFormData((f) => ({ ...f, specialization: sp })); setError(''); }}
+              <Box key={sp} onClick={toggle}
                 sx={{
                   cursor: 'pointer', px: 1.6, py: 0.9, borderRadius: '10px', fontSize: '0.83rem', fontWeight: on ? 600 : 400,
                   border: `1px solid ${on ? axelionColors.gold : axelionColors.borderLight}`,
@@ -216,7 +225,7 @@ const RegisterPage = () => {
                   color: on ? '#fff' : axelionColors.textSecondary, transition: 'all .15s',
                   '&:hover': { borderColor: axelionColors.gold },
                 }}>
-                {specLabel(t, sp)}
+                {on && '✓ '}{specLabel(t, sp)}
               </Box>
             );
           })}
