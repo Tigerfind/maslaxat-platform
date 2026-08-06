@@ -370,6 +370,13 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       setStep(4);
     } catch (error) {
+      // Гейт верификации: нужен подтверждённый контакт — ведём в профиль подтвердить.
+      if (error.response?.data?.code === 'CONTACT_UNVERIFIED') {
+        toast.info(t('booking.verifyContact'), { autoClose: 6000 });
+        onClose?.();
+        navigate('/profile');
+        return;
+      }
       toast.error(error.response?.data?.error || t('booking.toastError'));
     } finally {
       setLoading(false);

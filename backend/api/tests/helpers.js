@@ -27,8 +27,10 @@ function tokenFor(user) {
 }
 
 // Быстрые фабрики тестовых записей
-async function makeClient(email = 'client@test.uz') {
-  return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true });
+async function makeClient(email = 'client@test.uz', overrides = {}) {
+  // isVerified:true по умолчанию — тестовый клиент «с подтверждённым контактом»
+  // (гейт бронирования требует верификацию). Тест на гейт передаёт isVerified:false.
+  return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true, isVerified: true, ...overrides });
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
   const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });

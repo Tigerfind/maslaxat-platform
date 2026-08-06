@@ -139,6 +139,14 @@ router.get('/:id/reviews', async (req, res, next) => {
 // POST /api/lawyers/:id/book — бронирование консультации
 router.post('/:id/book', authenticate, authorize('client'), async (req, res, next) => {
   try {
+    // Анти-фрод: бронировать может только клиент с подтверждённым контактом
+    // (email подтверждён ИЛИ регистрация по телефону-OTP → isVerified=true).
+    // Отсекает фейковые аккаунты и пустые брони под модель оплаты B.
+    const client = await User.findByPk(req.userId, { attributes: ['id', 'isVerified'] });
+    if (!client || !client.isVerified) {
+      return res.status(403).json({ error: 'Подтвердите email или телефон, чтобы бронировать', code: 'CONTACT_UNVERIFIED' });
+    }
+
     const lawyer = await User.findOne({
       where: { id: req.params.id, role: 'lawyer' },
       include: [{ model: LawyerProfile, as: 'profile' }],

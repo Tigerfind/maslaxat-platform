@@ -60,6 +60,17 @@ describe('бронирование гейтится модерацией (POST /
     expect(res.body.error).toMatch(/проверку/i);
   });
 
+  test('клиент без подтверждённого контакта не может бронировать (403)', async () => {
+    const client = await makeClient('vs-unverified@test.uz', { isVerified: false });
+    const { user: approved } = await makeLawyer('vs-a3b@test.uz', { verificationStatus: 'approved' });
+    const res = await request(app)
+      .post(`/api/lawyers/${approved.id}/book`)
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .send({ type: 'video', duration: 60, problems: [{ text: 'Q', categories: ['civil'] }] });
+    expect(res.status).toBe(403);
+    expect(res.body.code).toBe('CONTACT_UNVERIFIED');
+  });
+
   test('можно бронировать approved-юриста', async () => {
     const client = await makeClient('vs-client2@test.uz');
     const { user: approved } = await makeLawyer('vs-a3@test.uz', { verificationStatus: 'approved' });
