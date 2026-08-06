@@ -14,6 +14,7 @@ import GlassShell from '../../components/GlassKit/GlassShell';
 import VerificationDocuments from '../../components/Lawyer/VerificationDocuments';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
+import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -54,12 +55,8 @@ const fieldLabel = {
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-const SPECIALIZATIONS = [
-  'Гражданское право', 'Семейное право', 'Трудовое право',
-  'Уголовное право', 'Коммерческое право', 'Налоговое право',
-  'Административное право', 'Земельное право', 'Корпоративное право',
-  'Интеллектуальная собственность', 'Жилищное право', 'Страховое право',
-];
+// Единый справочник специализаций (тот же, что в брони и онбординге).
+const SPECIALIZATIONS = SPECIALIZATION_NAMES;
 
 const inputSx = {
   '& .MuiOutlinedInput-root': {

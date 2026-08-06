@@ -296,11 +296,13 @@ const LawyersPageGlass = () => {
       <div style={labelStyle}>{t('lawyers.specialization')}</div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 24 }}>
         {[{ id: '', name: t('lawyers.all') }, ...activeSpecs].map((sp) => {
-          const checked = filters.specialization === sp.id;
+          // Каталог фильтрует по ИМЕНИ специализации (так хранит бэкенд), не по slug-id.
+          const val = sp.id ? sp.name : '';
+          const checked = filters.specialization === val;
           return (
             <div
               key={sp.id || 'all'}
-              onClick={() => handleFilterChange('specialization', sp.id)}
+              onClick={() => handleFilterChange('specialization', val)}
               onMouseEnter={(e) => { if (!checked) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 7%, transparent)'; }}
               onMouseLeave={(e) => { if (!checked) e.currentTarget.style.background = 'transparent'; }}
               style={{

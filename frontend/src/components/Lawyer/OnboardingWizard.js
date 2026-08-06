@@ -4,6 +4,7 @@ import api from '../../services/api';
 import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
+import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -19,12 +20,8 @@ import { specLabel } from '../../utils/specLabel';
 
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
-const SPECIALIZATIONS = [
-  'Гражданское право', 'Семейное право', 'Трудовое право',
-  'Уголовное право', 'Коммерческое право', 'Налоговое право',
-  'Административное право', 'Земельное право', 'Корпоративное право',
-  'Интеллектуальная собственность',
-];
+// Единый справочник специализаций (тот же, что в брони и редакторе профиля).
+const SPECIALIZATIONS = SPECIALIZATION_NAMES;
 
 // ── shared dark-overlay styles ────────────────────────────────
 const label = {
