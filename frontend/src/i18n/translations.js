@@ -566,6 +566,7 @@ const translations = {
       stPending: 'Новая заявка', stAccepted: 'Подтверждена', stInProgress: 'Идёт', stCompleted: 'Завершена', stRejected: 'Отклонена', stCancelled: 'Отменена', stPaymentPending: 'Ожидает оплаты',
       rejectPrompt: 'Причина отклонения (необязательно):',
       start: 'Начать', openVideo: 'Видеозвонок', openChat: 'Открыть чат', finish: 'Завершить', finishConfirm: 'Завершить консультацию?', finished: 'Консультация завершена', chatHistory: 'История переписки',
+      acceptTitle: 'Принять заявку', acceptHint: 'Приветствие уйдёт клиенту первым сообщением в чат', acceptPlaceholder: 'Здравствуйте! Готов помочь с вашим вопросом…', acceptConfirm: 'Принять и отправить', cancel: 'Отмена',
     },
     uz: {
       title: 'Консультациялар', subtitle: 'Барча ишларингиз бир жойда',
@@ -574,6 +575,7 @@ const translations = {
       stPending: 'Янги сўров', stAccepted: 'Тасдиқланган', stInProgress: 'Давом этмоқда', stCompleted: 'Тугалланган', stRejected: 'Рад этилган', stCancelled: 'Бекор қилинган', stPaymentPending: 'Тўлов кутилмоқда',
       rejectPrompt: 'Рад этиш сабаби (ихтиёрий):',
       start: 'Бошлаш', openVideo: 'Видеоқўнғироқ', openChat: 'Чатни очиш', finish: 'Тугатиш', finishConfirm: 'Консультацияни тугатасизми?', finished: 'Консультация тугалланди', chatHistory: 'Ёзишмалар тарихи',
+      acceptTitle: 'Сўровни қабул қилиш', acceptHint: 'Саломлашув мижозга биринчи хабар бўлиб боради', acceptPlaceholder: 'Ассалому алайкум! Саволингизда ёрдам бераман…', acceptConfirm: 'Қабул қилиш ва юбориш', cancel: 'Бекор қилиш',
     },
     en: {
       title: 'Consultations', subtitle: 'All your cases in one place',
@@ -582,6 +584,7 @@ const translations = {
       stPending: 'New request', stAccepted: 'Confirmed', stInProgress: 'In progress', stCompleted: 'Completed', stRejected: 'Rejected', stCancelled: 'Cancelled', stPaymentPending: 'Awaiting payment',
       rejectPrompt: 'Reason for rejection (optional):',
       start: 'Start', openVideo: 'Video call', openChat: 'Open chat', finish: 'Finish', finishConfirm: 'Finish the consultation?', finished: 'Consultation finished', chatHistory: 'Chat history',
+      acceptTitle: 'Accept request', acceptHint: 'Your greeting is sent to the client as the first chat message', acceptPlaceholder: 'Hello! Happy to help with your question…', acceptConfirm: 'Accept and send', cancel: 'Cancel',
     },
   },
 

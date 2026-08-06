@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
-import { CircularProgress } from '@mui/material';
+import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button } from '@mui/material';
 import {
   VideocamOutlined, ChatBubbleOutline, CheckOutlined, CloseOutlined,
   FolderOpenOutlined, PlayArrowOutlined, PersonOutline,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
+import api from '../../services/api';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
@@ -37,6 +38,9 @@ const LawyerConsultationsPage = () => {
   const [tab, setTab] = useState('all');
   const [acting, setActing] = useState(null);
   const [docsFor, setDocsFor] = useState(null);
+  const [acceptFor, setAcceptFor] = useState(null); // заявка, которую принимаем (диалог)
+  const [acceptMsg, setAcceptMsg] = useState('');
+  const [greeting, setGreeting] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -51,6 +55,10 @@ const LawyerConsultationsPage = () => {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+  // Подтягиваем автоприветствие юриста — им пред-заполним сообщение при принятии.
+  useEffect(() => {
+    api.get('/lawyer/profile').then((r) => setGreeting(r.data?.profile?.greeting || '')).catch(() => {});
+  }, []);
 
   const TABS = [
     { key: 'all', label: t('lawyerConsult.tabAll') },
@@ -86,10 +94,18 @@ const LawyerConsultationsPage = () => {
     payment_pending: { label: t('lawyerConsult.stPaymentPending'), c: '#A79E93', bg: 'rgba(140,130,120,0.12)' },
   };
 
-  const accept = async (id) => {
-    setActing(id);
-    try { await lawyerService.consultation.acceptConsultationRequest(id); toast.success(t('lawyerPanel.requestAccepted')); await load(); }
-    catch { toast.error(t('lawyerPanel.acceptError')); } finally { setActing(null); }
+  // Принятие → диалог с приветствием (пред-заполнено автоприветствием юриста).
+  const openAccept = (c) => { setAcceptFor(c); setAcceptMsg(greeting || ''); };
+  const confirmAccept = async () => {
+    const c = acceptFor; if (!c) return;
+    setActing(c.id);
+    try {
+      await lawyerService.consultation.acceptConsultationRequest(c.id, acceptMsg.trim());
+      toast.success(t('lawyerPanel.requestAccepted'));
+      setAcceptFor(null); setAcceptMsg('');
+      await load();
+    } catch { toast.error(t('lawyerPanel.acceptError')); }
+    finally { setActing(null); }
   };
   const reject = async (id) => {
     const reason = window.prompt(t('lawyerConsult.rejectPrompt'));
@@ -188,7 +204,7 @@ const LawyerConsultationsPage = () => {
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
                     {c.status === 'pending' && (
                       <>
-                        <button disabled={busy} onClick={() => accept(c.id)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
+                        <button disabled={busy} onClick={() => openAccept(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
                           <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.accept')}
                         </button>
                         <button disabled={busy} onClick={() => reject(c.id)} style={footBtn('var(--error, #C0492F)')}>
@@ -236,6 +252,33 @@ const LawyerConsultationsPage = () => {
         onClose={() => setDocsFor(null)}
         currentUserId={user?.id}
       />
+
+      {/* Принятие заявки + приветствие клиенту */}
+      <Dialog open={Boolean(acceptFor)} onClose={() => setAcceptFor(null)} maxWidth="sm" fullWidth>
+        <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CheckOutlined sx={{ color: 'var(--accent)' }} /> {t('lawyerConsult.acceptTitle')}
+        </DialogTitle>
+        <DialogContent dividers>
+          <div style={{ fontSize: 13, color: 'var(--text2)', marginBottom: 12 }}>
+            {t('lawyerConsult.acceptHint')}{acceptFor?.client?.name ? ` — ${acceptFor.client.name}` : ''}
+          </div>
+          <TextField
+            fullWidth multiline minRows={3} value={acceptMsg}
+            onChange={(e) => setAcceptMsg(e.target.value)}
+            placeholder={t('lawyerConsult.acceptPlaceholder')}
+            inputProps={{ maxLength: 2000 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2 }}>
+          <Button onClick={() => setAcceptFor(null)} sx={{ textTransform: 'none', color: 'var(--text2)' }}>
+            {t('lawyerConsult.cancel')}
+          </Button>
+          <Button onClick={confirmAccept} disabled={acting === acceptFor?.id} variant="contained"
+            sx={{ textTransform: 'none', background: 'var(--accent)', '&:hover': { background: 'var(--accent-dark)' } }}>
+            {acting === acceptFor?.id ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : t('lawyerConsult.acceptConfirm')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </GlassShell>
   );
 };

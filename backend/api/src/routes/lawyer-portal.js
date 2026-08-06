@@ -3,7 +3,7 @@ const { Op } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument } = require('../models');
+const { Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument, Message } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
@@ -144,10 +144,18 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
     const wasAlreadyAccepted = consultation.status === 'accepted';
 
     consultation.status = 'accepted';
-    if (req.body.responseMessage) {
-      consultation.notes = req.body.responseMessage;
-    }
     await consultation.save();
+
+    // Приветствие юриста при принятии → уходит клиенту первым сообщением в чат
+    // (НЕ перезаписываем notes клиента). Маскируем контакты (anti-churn, как в чате).
+    if (!wasAlreadyAccepted && req.body.responseMessage && String(req.body.responseMessage).trim()) {
+      const welcome = String(req.body.responseMessage).trim().slice(0, 2000)
+        .replace(/(\+?998[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2})/g, '***')
+        .replace(/(\+?\d{10,13})/g, '***')
+        .replace(/([\w.+-]+@[\w-]+\.[\w.-]+)/g, '***');
+      try { await Message.create({ consultationId: consultation.id, senderId: req.userId, text: welcome }); }
+      catch (e) { /* сообщение best-effort, не валим принятие */ }
+    }
 
     // Уведомляем только при реальном переходе pending → accepted (не при повторе)
     if (!wasAlreadyAccepted) {
