@@ -105,8 +105,14 @@ describe('юрист управляет верификационными док�
     expect(dl.status).toBe(404);
   });
 
-  test('submit-for-review переводит статус в pending', async () => {
+  test('submit-for-review переводит статус в pending (профиль полный)', async () => {
     const { user, lp } = await makeLawyer('doc-l3@test.uz', { verificationStatus: 'rejected', rejectionReason: 'Нет диплома' });
+    // Гейт полноты: нужен ≥1 документ (описание/расписание/цена/спец уже в makeLawyer).
+    await request(app)
+      .post('/api/lawyer/verification-documents')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .field('type', 'diploma').attach('file', PDF, 'd.pdf');
+
     const res = await request(app)
       .post('/api/lawyer/verification/submit')
       .set('Authorization', `Bearer ${tokenFor(user)}`);
@@ -115,6 +121,16 @@ describe('юрист управляет верификационными док�
     await lp.reload();
     expect(lp.verificationStatus).toBe('pending');
     expect(lp.rejectionReason).toBeNull();
+  });
+
+  test('гейт полноты: неполный профиль → submit 400 + missing', async () => {
+    // Профиль без документа (описание/расписание есть по умолчанию) → не хватает documents.
+    const { user } = await makeLawyer('doc-l3b@test.uz', { verificationStatus: 'pending' });
+    const res = await request(app)
+      .post('/api/lawyer/verification/submit')
+      .set('Authorization', `Bearer ${tokenFor(user)}`);
+    expect(res.status).toBe(400);
+    expect(res.body.missing).toContain('documents');
   });
 
   test('одобренного submit не трогает (400)', async () => {

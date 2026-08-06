@@ -600,6 +600,9 @@ const translations = {
       confirmDelete: 'Удалить этот документ?', uploaded: 'Документ загружен', deleted: 'Документ удалён',
       needDocs: 'Сначала загрузите хотя бы один документ', submit: 'Отправить на проверку', submitted: 'Отправлено на проверку',
       approvedNote: 'Профиль подтверждён', error: 'Ошибка. Попробуйте ещё раз',
+      incomplete: 'Заполните профиль полностью перед отправкой',
+      chkTitle: 'Что нужно заполнить перед проверкой:', chkReady: 'Профиль готов к отправке ✓',
+      chkPhoto: 'Фото профиля', chkDescription: 'Описание (от 50 символов)', chkSpecialization: 'Специализация', chkPrice: 'Цена консультации', chkSchedule: 'Часы приёма', chkDocuments: 'Документ для проверки',
     },
     uz: {
       title: 'Текширув учун ҳужжатлар',
@@ -609,6 +612,9 @@ const translations = {
       confirmDelete: 'Ушбу ҳужжатни ўчирасизми?', uploaded: 'Ҳужжат юкланди', deleted: 'Ҳужжат ўчирилди',
       needDocs: 'Аввал камида битта ҳужжат юкланг', submit: 'Текширувга юбориш', submitted: 'Текширувга юборилди',
       approvedNote: 'Профиль тасдиқланган', error: 'Хатолик. Қайта уриниб кўринг',
+      incomplete: 'Юборишдан олдин профилни тўлиқ тўлдиринг',
+      chkTitle: 'Текширувдан олдин тўлдириш керак:', chkReady: 'Профиль юборишга тайёр ✓',
+      chkPhoto: 'Профиль фотоси', chkDescription: 'Тавсиф (50 белгидан)', chkSpecialization: 'Ихтисослик', chkPrice: 'Консультация нархи', chkSchedule: 'Қабул соатлари', chkDocuments: 'Текширув учун ҳужжат',
     },
     en: {
       title: 'Verification documents',
@@ -618,6 +624,9 @@ const translations = {
       confirmDelete: 'Delete this document?', uploaded: 'Document uploaded', deleted: 'Document deleted',
       needDocs: 'Upload at least one document first', submit: 'Submit for review', submitted: 'Submitted for review',
       approvedNote: 'Profile verified', error: 'Error. Please try again',
+      incomplete: 'Complete your profile before submitting',
+      chkTitle: 'Complete before review:', chkReady: 'Profile is ready to submit ✓',
+      chkPhoto: 'Profile photo', chkDescription: 'Description (50+ characters)', chkSpecialization: 'Specialization', chkPrice: 'Consultation price', chkSchedule: 'Working hours', chkDocuments: 'Verification document',
     },
   },
 

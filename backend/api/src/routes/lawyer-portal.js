@@ -852,14 +852,52 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
   }
 });
 
+// Полнота профиля юриста для отправки на проверку. Возвращает список того, чего не хватает
+// (стабильные слаги — фронт мапит в подписи). Пустой список = профиль готов к проверке.
+async function computeProfileCompleteness(userId) {
+  const [profile, docCount] = await Promise.all([
+    LawyerProfile.findOne({ where: { userId } }),
+    LawyerDocument.count({ where: { userId } }),
+  ]);
+  const missing = [];
+  // Фото — желательно, но не блокирует (клиент видит инициалы; онбординг не требует фото).
+  if (!profile || !profile.description || String(profile.description).trim().length < 50) missing.push('description');
+  if (!profile || !(Number(profile.price) >= 50000)) missing.push('price');
+  const specs = (Array.isArray(profile?.specializations) && profile.specializations.length)
+    ? profile.specializations
+    : (profile?.specialization ? [profile.specialization] : []);
+  if (specs.length === 0) missing.push('specialization');
+  const sched = profile && profile.schedule;
+  const hasDay = sched && typeof sched === 'object' && Object.values(sched).some((d) => d && d.enabled);
+  if (!hasDay) missing.push('schedule');
+  if (docCount < 1) missing.push('documents');
+  return { complete: missing.length === 0, missing };
+}
+
+// GET /verification/checklist — что осталось заполнить перед отправкой на проверку.
+router.get('/verification/checklist', async (req, res, next) => {
+  try {
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['verificationStatus'] });
+    const { complete, missing } = await computeProfileCompleteness(req.userId);
+    res.json({ complete, missing, verificationStatus: profile ? profile.verificationStatus : 'pending' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /verification/submit — отправить профиль на проверку (после регистрации/отклонения).
 // Переводит статус в pending. Одобренного не трогаем (нечего пересматривать).
+// ГЕЙТ ПОЛНОТЫ: нельзя отправить неполный профиль — админ получает только готовые заявки.
 router.post('/verification/submit', async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
     if (profile.verificationStatus === 'approved') {
       return res.status(400).json({ error: 'Профиль уже одобрен' });
+    }
+    const { complete, missing } = await computeProfileCompleteness(req.userId);
+    if (!complete) {
+      return res.status(400).json({ error: 'Профиль заполнен не полностью', missing });
     }
     profile.verificationStatus = 'pending';
     profile.rejectionReason = null;

@@ -177,6 +177,10 @@ export const lawyerVerificationService = {
     const response = await api.post('/lawyer/verification/submit');
     return response.data;
   },
+  getChecklist: async () => {
+    const response = await api.get('/lawyer/verification/checklist');
+    return response.data;
+  },
 };
 
 export default {

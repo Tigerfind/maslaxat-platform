@@ -43,7 +43,22 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
   const [status, setStatus] = useState(initialStatus);
   const [type, setType] = useState('diploma');
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [checklist, setChecklist] = useState(null); // { complete, missing: [slug] }
   const fileRef = useRef(null);
+
+  // Пункты полноты профиля — порядок и подписи. Слаги совпадают с бэкендом.
+  const CHECK_ITEMS = [
+    { key: 'description', label: t('verification.chkDescription') },
+    { key: 'specialization', label: t('verification.chkSpecialization') },
+    { key: 'price', label: t('verification.chkPrice') },
+    { key: 'schedule', label: t('verification.chkSchedule') },
+    { key: 'documents', label: t('verification.chkDocuments') },
+  ];
+
+  const loadChecklist = async () => {
+    try { setChecklist(await lawyerService.verification.getChecklist()); }
+    catch { /* оставим как есть */ }
+  };
 
   const previewFetch = React.useCallback(
     async () => lawyerService.verification.getDocumentBlob(previewDoc.id),
@@ -69,7 +84,7 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadChecklist(); }, []);
   useEffect(() => { setStatus(initialStatus); }, [initialStatus]);
 
   const onPick = () => fileRef.current && fileRef.current.click();
@@ -83,6 +98,7 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
       await lawyerService.verification.uploadDocument(file, type);
       toast.success(t('verification.uploaded'));
       await load();
+      await loadChecklist();
     } catch (err) {
       toast.error(err.response?.data?.error || t('verification.error'));
     } finally {
@@ -95,20 +111,27 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
     try {
       await lawyerService.verification.deleteDocument(id);
       setDocs((prev) => prev.filter((d) => d.id !== id));
+      await loadChecklist();
     } catch {
       toast.error(t('verification.error'));
     }
   };
 
   const submit = async () => {
-    if (docs.length === 0) { toast.error(t('verification.needDocs')); return; }
     setSubmitting(true);
     try {
       await lawyerService.verification.submitForReview();
       setStatus('pending');
       toast.success(t('verification.submitted'));
+      await loadChecklist();
     } catch (err) {
-      toast.error(err.response?.data?.error || t('verification.error'));
+      // Бэкенд вернул список незаполненного — обновляем чек-лист и подсказываем.
+      if (err.response?.data?.missing) {
+        setChecklist({ complete: false, missing: err.response.data.missing });
+        toast.error(t('verification.incomplete'));
+      } else {
+        toast.error(err.response?.data?.error || t('verification.error'));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -187,23 +210,51 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
         </div>
       )}
 
-      {/* Отправить на проверку — если не одобрен */}
-      {status !== 'approved' && (
-        <button
-          onClick={submit}
-          disabled={submitting}
-          style={{
-            marginTop: 18, display: 'inline-flex', alignItems: 'center', gap: 9,
-            background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF',
-            border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase',
-            padding: '13px 26px', borderRadius: 'var(--radius)', fontFamily: 'inherit',
-            cursor: submitting ? 'default' : 'pointer', opacity: submitting ? 0.7 : 1,
-          }}
-        >
-          {submitting ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <VerifiedOutlined sx={{ fontSize: 18 }} />}
-          {t('verification.submit')}
-        </button>
+      {/* Чек-лист полноты профиля — что нужно, чтобы отправить на проверку */}
+      {status !== 'approved' && checklist && (
+        <div style={{ marginTop: 20, padding: 16, borderRadius: 12, background: 'var(--surface)', border: '1px solid var(--card-brd)' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text)', marginBottom: 12, letterSpacing: '0.03em' }}>
+            {checklist.complete ? t('verification.chkReady') : t('verification.chkTitle')}
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            {CHECK_ITEMS.map((it) => {
+              const done = !(checklist.missing || []).includes(it.key);
+              return (
+                <div key={it.key} style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: done ? 'var(--text2)' : 'var(--text)' }}>
+                  <span style={{
+                    width: 18, height: 18, borderRadius: '50%', flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    fontSize: 11, color: '#fff', background: done ? '#5AA06A' : 'var(--border-strong)',
+                  }}>{done ? '✓' : ''}</span>
+                  <span style={{ textDecoration: done ? 'none' : 'none', fontWeight: done ? 400 : 600 }}>{it.label}</span>
+                </div>
+              );
+            })}
+          </div>
+        </div>
       )}
+
+      {/* Отправить на проверку — если не одобрен; заблокировано пока профиль неполный */}
+      {status !== 'approved' && (() => {
+        const blocked = checklist ? !checklist.complete : false;
+        const disabled = submitting || blocked;
+        return (
+          <button
+            onClick={submit}
+            disabled={disabled}
+            title={blocked ? t('verification.incomplete') : ''}
+            style={{
+              marginTop: 16, display: 'inline-flex', alignItems: 'center', gap: 9,
+              background: blocked ? 'var(--border-strong)' : 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+              color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase',
+              padding: '13px 26px', borderRadius: 'var(--radius)', fontFamily: 'inherit',
+              cursor: disabled ? 'default' : 'pointer', opacity: submitting ? 0.7 : 1,
+            }}
+          >
+            {submitting ? <CircularProgress size={15} sx={{ color: '#fff' }} /> : <VerifiedOutlined sx={{ fontSize: 18 }} />}
+            {t('verification.submit')}
+          </button>
+        );
+      })()}
       {status === 'approved' && (
         <div style={{ marginTop: 18, display: 'inline-flex', alignItems: 'center', gap: 8, color: '#5AA06A', fontSize: 13, fontWeight: 600 }}>
           <VerifiedOutlined sx={{ fontSize: 18 }} /> {t('verification.approvedNote')}
