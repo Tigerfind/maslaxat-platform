@@ -225,57 +225,64 @@ const LawyerConsultationsPage = () => {
               const isVideo = c.consultationType === 'video';
               const sm = STATUS_META[c.status] || { label: c.status, c: 'var(--text3)', bg: 'var(--border)' };
               const busy = acting === c.id;
+              const secLabel = { fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10 };
+              const sec = { padding: '16px 20px', borderTop: '1px solid var(--border)' };
               return (
-                <div key={c.id} style={{ ...glassCard, padding: 20 }}>
-                  <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14 }}>
+                <div key={c.id} style={{ ...glassCard, padding: 0, overflow: 'hidden' }}>
+                  {/* ── Хедер: клиент · статус · тип/дата · цена ── */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', background: 'linear-gradient(180deg, rgba(184,149,110,0.09), transparent)' }}>
                     <div style={{ width: 46, height: 46, flexShrink: 0, borderRadius: '50%', background: c.client?.avatar ? `center/cover url(${c.client.avatar})` : 'linear-gradient(135deg,#B8956E,#8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15, fontWeight: 600 }}>
                       {!c.client?.avatar && initials(c.client?.name)}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
-                        <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{c.client?.name || t('lawyerPanel.clientFallback')}</span>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 9, flexWrap: 'wrap' }}>
+                        <span style={{ fontSize: 15.5, fontWeight: 650, color: 'var(--text)' }}>{c.client?.name || t('lawyerPanel.clientFallback')}</span>
                         {c.repeatCount > 0 && (
                           <span title={t('lawyerConsult.repeatClient')} style={{ fontSize: 11, fontWeight: 600, color: '#7A9A6B', background: 'rgba(122,154,107,0.14)', padding: '3px 10px', borderRadius: 999 }}>
                             ★ {t('lawyerConsult.repeatClient')} · {c.repeatCount}
                           </span>
                         )}
                         <span style={{ fontSize: 11, fontWeight: 600, color: sm.c, background: sm.bg, padding: '3px 10px', borderRadius: 999 }}>{sm.label}</span>
-                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, color: 'var(--text3)' }}>
-                          {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}
-                          {isVideo ? t('lawyerPanel.typeVideo') : t('lawyerPanel.typeChat')}
-                        </span>
                       </div>
-                      {(c.preferredDate || c.preferredTime) && (
-                        <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>{c.preferredDate} {c.preferredTime}</div>
-                      )}
-                      {/* Полные детали дела: все проблемы клиента + категории права */}
-                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
-                        {problemsOf(c).map((p, pi) => (
-                          <div key={pi} style={{ fontSize: 13.5, color: 'var(--text2)', lineHeight: 1.45 }}>
-                            <span>{problemsOf(c).length > 1 ? `${pi + 1}. ` : ''}{p.text}</span>
-                            {p.categories.length > 0 && (
-                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 5, marginLeft: 6, verticalAlign: 'middle' }}>
-                                {p.categories.map((cid) => (
-                                  <span key={cid} style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 999 }}>{catLabel(cid)}</span>
-                                ))}
-                              </span>
-                            )}
-                          </div>
-                        ))}
+                      <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>
+                        {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}
+                        {isVideo ? t('lawyerPanel.typeVideo') : t('lawyerPanel.typeChat')}
+                        {(c.preferredDate || c.preferredTime) && <span>· {c.preferredDate} {c.preferredTime}</span>}
                       </div>
                     </div>
                     {c.price != null && (
-                      <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>{(c.price || 0).toLocaleString()} {t('lawyerPanel.sum')}</div>
+                      <div style={{ fontSize: 16, fontWeight: 650, color: 'var(--text)', whiteSpace: 'nowrap' }}>{(c.price || 0).toLocaleString()} <span style={{ fontSize: 12, color: 'var(--text3)', fontWeight: 400 }}>{t('lawyerPanel.sum')}</span></div>
                     )}
                   </div>
 
-                  {/* Таймлайн статуса — где сейчас бронь и что дальше */}
-                  <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                  {/* ── Секция: Дело ── */}
+                  <div style={sec}>
+                    <div style={secLabel}>{t('lawyerConsult.secCase')}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {problemsOf(c).map((p, pi) => (
+                        <div key={pi} style={{ fontSize: 13.5, color: 'var(--text)', lineHeight: 1.5 }}>
+                          <span>{problemsOf(c).length > 1 ? `${pi + 1}. ` : ''}{p.text}</span>
+                          {p.categories.length > 0 && (
+                            <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 5, marginLeft: 6, verticalAlign: 'middle' }}>
+                              {p.categories.map((cid) => (
+                                <span key={cid} style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 999 }}>{catLabel(cid)}</span>
+                              ))}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* ── Секция: Статус ── */}
+                  <div style={sec}>
+                    <div style={secLabel}>{t('lawyerConsult.secStatus')}</div>
                     <ConsultationTimeline status={c.status} role="lawyer" />
                   </div>
 
-                  {/* Приватная заметка юриста по делу */}
-                  <div style={{ marginTop: 14 }}>
+                  {/* ── Секция: Заметка по делу ── */}
+                  <div style={sec}>
+                    <div style={secLabel}>📝 {t('lawyerConsult.noteAdd')}</div>
                     {noteFor === c.id ? (
                       <div>
                         <textarea
@@ -283,9 +290,10 @@ const LawyerConsultationsPage = () => {
                           onChange={(e) => setNoteText(e.target.value)}
                           placeholder={t('lawyerConsult.notePlaceholder')}
                           rows={3}
-                          style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, padding: 11, resize: 'vertical' }}
+                          autoFocus
+                          style={{ width: '100%', boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, padding: 12, resize: 'vertical' }}
                         />
-                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
                           <button onClick={saveNote} disabled={noteSaving} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
                             {noteSaving ? '…' : t('lawyerConsult.noteSave')}
                           </button>
@@ -293,19 +301,21 @@ const LawyerConsultationsPage = () => {
                         </div>
                       </div>
                     ) : c.lawyerNote ? (
-                      <div onClick={() => openNote(c)} title={t('lawyerConsult.noteEdit')} style={{ cursor: 'pointer', display: 'flex', gap: 9, alignItems: 'flex-start', background: 'rgba(196,163,90,0.08)', border: '1px solid rgba(196,163,90,0.25)', borderRadius: 10, padding: '10px 12px' }}>
-                        <EditNoteOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)', mt: '1px' }} />
-                        <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.lawyerNote}</div>
+                      <div onClick={() => openNote(c)} title={t('lawyerConsult.noteEdit')} style={{ cursor: 'text', display: 'flex', gap: 11, alignItems: 'flex-start', background: 'var(--surface)', border: '1px solid var(--card-brd)', borderRadius: 12, padding: '13px 15px' }}>
+                        <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 9, background: 'rgba(184,149,110,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <EditNoteOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)' }} />
+                        </span>
+                        <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55, whiteSpace: 'pre-wrap', paddingTop: 4 }}>{c.lawyerNote}</div>
                       </div>
                     ) : (
-                      <button onClick={() => openNote(c)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: '1px dashed var(--border-strong)', color: 'var(--text3)', borderRadius: 10, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
-                        <EditNoteOutlined sx={{ fontSize: 17 }} /> {t('lawyerConsult.noteAdd')}
+                      <button onClick={() => openNote(c)} style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'var(--surface)', border: '1px dashed var(--border-strong)', color: 'var(--text3)', borderRadius: 12, padding: '12px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <EditNoteOutlined sx={{ fontSize: 18 }} /> {t('lawyerConsult.noteAddPrompt')}
                       </button>
                     )}
                   </div>
 
-                  {/* Actions */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginTop: 14 }}>
+                  {/* ── Действия ── */}
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '16px 20px', borderTop: '1px solid var(--border)', background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
                     {c.status === 'pending' && (
                       <>
                         <button disabled={busy} onClick={() => openAccept(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
