@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useDispatch, useSelector } from 'react-redux';
+import { useDispatch } from 'react-redux';
 import {
   Container, Box, Typography, TextField, Button, Alert, CircularProgress,
   InputAdornment, IconButton, Card,
@@ -10,7 +10,7 @@ import {
   ArrowForward, CheckCircle,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
+import { loginSuccess } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -31,13 +31,15 @@ const getPasswordScore = (pw) => {
 const RegisterPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { loading } = useSelector((state) => state.auth);
   const { t } = useTranslation();
 
   const [searchParams] = useSearchParams();
   const roleFromUrl = searchParams.get('role');
   const [role, setRole] = useState(roleFromUrl === 'lawyer' ? 'lawyer' : 'client');
   const [step, setStep] = useState(0);
+  // Локальный сабмит-лоадер (НЕ глобальный auth.loading — тот разбирает роутер и ломает
+  // navigate после регистрации; login полагается на редирект маршрута, а мы — на navigate).
+  const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
     name: '', email: '', phone: '', password: '', confirmPassword: '', specializations: [],
   });
@@ -77,7 +79,7 @@ const RegisterPage = () => {
   const back = () => { setError(''); if (step === 0) navigate('/login'); else setStep((s) => s - 1); };
 
   const handleSubmit = async () => {
-    dispatch(loginStart());
+    setSubmitting(true);
     setError('');
     try {
       const payload = {
@@ -91,11 +93,12 @@ const RegisterPage = () => {
       const response = await api.post('/auth/register', payload);
       const { user, token } = response.data;
       dispatch(loginSuccess({ user, token, role: user.role }));
-      navigate(user.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard');
+      navigate(user.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
     } catch (err) {
       const message = err.response?.data?.error || t('register.regError');
-      dispatch(loginFailure(message));
       setError(message);
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -279,8 +282,8 @@ const RegisterPage = () => {
               sx={{ color: axelionColors.textMuted, textTransform: 'none', flexShrink: 0, '&:hover': { color: axelionColors.gold } }}>
               {step === 0 ? t('register.backToLogin') : t('register.back')}
             </Button>
-            <Button fullWidth onClick={next} disabled={loading}
-              endIcon={!isLast && !loading ? <ArrowForward /> : null}
+            <Button fullWidth onClick={next} disabled={submitting}
+              endIcon={!isLast && !submitting ? <ArrowForward /> : null}
               sx={{
                 background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
                 color: '#FFFFFF', py: 1.4, borderRadius: '8px', textTransform: 'uppercase', letterSpacing: '0.08em',
@@ -288,7 +291,7 @@ const RegisterPage = () => {
                 '&:hover': { background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)` },
                 '&.Mui-disabled': { backgroundColor: axelionColors.bgBeige, color: axelionColors.textMuted },
               }}>
-              {loading ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} />
+              {submitting ? <CircularProgress size={22} sx={{ color: '#FFFFFF' }} />
                 : isLast ? (role === 'lawyer' ? t('register.submitLawyer') : t('register.submit')) : t('register.next')}
             </Button>
           </Box>
