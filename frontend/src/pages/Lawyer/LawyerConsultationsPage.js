@@ -5,6 +5,7 @@ import { CircularProgress, Dialog, DialogTitle, DialogContent, DialogActions, Te
 import {
   VideocamOutlined, ChatBubbleOutline, CheckOutlined, CloseOutlined,
   FolderOpenOutlined, PlayArrowOutlined, PersonOutline,
+  SearchOutlined, EditNoteOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
@@ -43,6 +44,10 @@ const LawyerConsultationsPage = () => {
   const [greeting, setGreeting] = useState('');
   const [rejectFor, setRejectFor] = useState(null); // заявка, которую отклоняем (диалог)
   const [rejectMsg, setRejectMsg] = useState('');
+  const [search, setSearch] = useState('');
+  const [noteFor, setNoteFor] = useState(null); // id консультации с открытым редактором заметки
+  const [noteText, setNoteText] = useState('');
+  const [noteSaving, setNoteSaving] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -140,7 +145,38 @@ const LawyerConsultationsPage = () => {
     fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   });
 
-  const visible = items.filter(inTab);
+  // Поиск по имени клиента и тексту вопроса/проблем.
+  const q = search.trim().toLowerCase();
+  const matchesSearch = (c) => {
+    if (!q) return true;
+    const hay = [c.client?.name, c.question, ...(Array.isArray(c.problems) ? c.problems.map((p) => (typeof p === 'string' ? p : p?.text)) : [])]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  };
+  const visible = items.filter(inTab).filter(matchesSearch);
+
+  // Проблемы дела: [{text, categories}] | строки (legacy). Категории — id справочника.
+  const problemsOf = (c) => {
+    const raw = Array.isArray(c.problems) && c.problems.length ? c.problems : (c.question ? [c.question] : []);
+    return raw.map((p) => (typeof p === 'string'
+      ? { text: p, categories: [] }
+      : { text: p?.text || '', categories: Array.isArray(p?.categories) ? p.categories : (p?.category ? [p.category] : []) }))
+      .filter((p) => p.text);
+  };
+  const catLabel = (id) => { const v = t('specNames.' + id); return (!v || v === 'specNames.' + id) ? id : v; };
+
+  const openNote = (c) => { setNoteFor(c.id); setNoteText(c.lawyerNote || ''); };
+  const saveNote = async () => {
+    const id = noteFor; if (!id) return;
+    setNoteSaving(true);
+    try {
+      await lawyerService.consultation.saveNote(id, noteText);
+      setItems((prev) => prev.map((c) => (c.id === id ? { ...c, lawyerNote: noteText } : c)));
+      setNoteFor(null);
+      toast.success(t('lawyerConsult.noteSaved'));
+    } catch { toast.error(t('lawyerPanel.genericError')); }
+    finally { setNoteSaving(false); }
+  };
 
   return (
     <GlassShell active="/lawyer/consultations" title={t('lawyerConsult.title')} subtitle={t('lawyerConsult.subtitle')} role="lawyer">
@@ -163,6 +199,17 @@ const LawyerConsultationsPage = () => {
               </button>
             );
           })}
+        </div>
+
+        {/* Поиск по клиенту/вопросу */}
+        <div style={{ position: 'relative', marginBottom: 18 }}>
+          <SearchOutlined sx={{ position: 'absolute', left: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 19, color: 'var(--text3)' }} />
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('lawyerConsult.searchPlaceholder')}
+            style={{ width: '100%', padding: '11px 14px 11px 42px', borderRadius: 12, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14, boxSizing: 'border-box' }}
+          />
         </div>
 
         {loading ? (
@@ -201,7 +248,21 @@ const LawyerConsultationsPage = () => {
                       {(c.preferredDate || c.preferredTime) && (
                         <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 4 }}>{c.preferredDate} {c.preferredTime}</div>
                       )}
-                      {c.question && <div style={{ fontSize: 13.5, color: 'var(--text2)', marginTop: 8, lineHeight: 1.45 }}>{c.question}</div>}
+                      {/* Полные детали дела: все проблемы клиента + категории права */}
+                      <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 7 }}>
+                        {problemsOf(c).map((p, pi) => (
+                          <div key={pi} style={{ fontSize: 13.5, color: 'var(--text2)', lineHeight: 1.45 }}>
+                            <span>{problemsOf(c).length > 1 ? `${pi + 1}. ` : ''}{p.text}</span>
+                            {p.categories.length > 0 && (
+                              <span style={{ display: 'inline-flex', flexWrap: 'wrap', gap: 5, marginLeft: 6, verticalAlign: 'middle' }}>
+                                {p.categories.map((cid) => (
+                                  <span key={cid} style={{ fontSize: 10.5, fontWeight: 600, color: 'var(--accent-dark)', background: 'rgba(184,149,110,0.14)', padding: '2px 8px', borderRadius: 999 }}>{catLabel(cid)}</span>
+                                ))}
+                              </span>
+                            )}
+                          </div>
+                        ))}
+                      </div>
                     </div>
                     {c.price != null && (
                       <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap' }}>{(c.price || 0).toLocaleString()} {t('lawyerPanel.sum')}</div>
@@ -211,6 +272,36 @@ const LawyerConsultationsPage = () => {
                   {/* Таймлайн статуса — где сейчас бронь и что дальше */}
                   <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
                     <ConsultationTimeline status={c.status} role="lawyer" />
+                  </div>
+
+                  {/* Приватная заметка юриста по делу */}
+                  <div style={{ marginTop: 14 }}>
+                    {noteFor === c.id ? (
+                      <div>
+                        <textarea
+                          value={noteText}
+                          onChange={(e) => setNoteText(e.target.value)}
+                          placeholder={t('lawyerConsult.notePlaceholder')}
+                          rows={3}
+                          style={{ width: '100%', boxSizing: 'border-box', borderRadius: 10, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, padding: 11, resize: 'vertical' }}
+                        />
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                          <button onClick={saveNote} disabled={noteSaving} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
+                            {noteSaving ? '…' : t('lawyerConsult.noteSave')}
+                          </button>
+                          <button onClick={() => setNoteFor(null)} style={footBtn('var(--text3)')}>{t('lawyerConsult.cancel')}</button>
+                        </div>
+                      </div>
+                    ) : c.lawyerNote ? (
+                      <div onClick={() => openNote(c)} title={t('lawyerConsult.noteEdit')} style={{ cursor: 'pointer', display: 'flex', gap: 9, alignItems: 'flex-start', background: 'rgba(196,163,90,0.08)', border: '1px solid rgba(196,163,90,0.25)', borderRadius: 10, padding: '10px 12px' }}>
+                        <EditNoteOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)', mt: '1px' }} />
+                        <div style={{ fontSize: 12.5, color: 'var(--text2)', lineHeight: 1.5, whiteSpace: 'pre-wrap' }}>{c.lawyerNote}</div>
+                      </div>
+                    ) : (
+                      <button onClick={() => openNote(c)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent', border: '1px dashed var(--border-strong)', color: 'var(--text3)', borderRadius: 10, padding: '8px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
+                        <EditNoteOutlined sx={{ fontSize: 17 }} /> {t('lawyerConsult.noteAdd')}
+                      </button>
+                    )}
                   </div>
 
                   {/* Actions */}

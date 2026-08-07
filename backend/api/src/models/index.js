@@ -272,6 +272,11 @@ const Consultation = sequelize.define('Consultation', {
   notes: {
     type: DataTypes.TEXT,
   },
+  // Приватная заметка ЮРИСТА по делу (подготовка, что спросить, фоллоу-ап).
+  // Видна только юристу; клиенту НЕ показывается.
+  lawyerNote: {
+    type: DataTypes.TEXT,
+  },
   // Напоминание за 1 час отправлено (чтобы не слать повторно)
   reminderSent: {
     type: DataTypes.BOOLEAN,

@@ -54,6 +54,37 @@ describe('принятие заявки с приветствием', () => {
     expect(pending.repeatCount).toBe(2);
   });
 
+  test('приватная заметка юриста: сохраняется и возвращается в списке', async () => {
+    const client = await makeClient('note-c@test.uz');
+    const { user: lawyer } = await makeLawyer('note-l@test.uz');
+    const c = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'accepted', question: 'q' });
+
+    const put = await request(app)
+      .put(`/api/lawyer/consultations/${c.id}/note`)
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .send({ note: 'Подготовить договор аренды' });
+    expect(put.status).toBe(200);
+    expect(put.body.lawyerNote).toBe('Подготовить договор аренды');
+
+    const list = await request(app)
+      .get('/api/lawyer/consultation-requests?status=all')
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+    const found = list.body.find((r) => r.id === c.id);
+    expect(found.lawyerNote).toBe('Подготовить договор аренды');
+  });
+
+  test('чужую консультацию заметкой не тронуть (404)', async () => {
+    const client = await makeClient('note-c2@test.uz');
+    const a = await makeLawyer('note-la@test.uz');
+    const b = await makeLawyer('note-lb@test.uz');
+    const c = await Consultation.create({ clientId: client.id, lawyerId: a.user.id, type: 'video', status: 'accepted', question: 'q' });
+    const put = await request(app)
+      .put(`/api/lawyer/consultations/${c.id}/note`)
+      .set('Authorization', `Bearer ${tokenFor(b.user)}`)
+      .send({ note: 'хак' });
+    expect(put.status).toBe(404);
+  });
+
   test('принятие без сообщения — чат пустой', async () => {
     const client = await makeClient('ag-c2@test.uz');
     const { user: lawyer } = await makeLawyer('ag-l2@test.uz');

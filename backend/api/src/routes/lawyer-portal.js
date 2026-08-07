@@ -132,6 +132,8 @@ router.get('/consultation-requests', async (req, res, next) => {
       price: c.price,
       // Сколько завершённых консультаций у этого клиента было с данным юристом (0 = новый).
       repeatCount: repeatByClient[c.clientId] || 0,
+      // Приватная заметка юриста по делу.
+      lawyerNote: c.lawyerNote || '',
     }));
 
     res.json(requests);
@@ -400,6 +402,20 @@ router.get('/consultations/:id', async (req, res, next) => {
     }
 
     res.json(consultation);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /consultations/:id/note — приватная заметка юриста по делу (только своя консультация).
+router.put('/consultations/:id/note', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findOne({ where: { id: req.params.id, lawyerId: req.userId } });
+    if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+    const note = typeof req.body.note === 'string' ? req.body.note.slice(0, 5000) : '';
+    consultation.lawyerNote = note || null;
+    await consultation.save();
+    res.json({ success: true, lawyerNote: consultation.lawyerNote || '' });
   } catch (err) {
     next(err);
   }

@@ -109,6 +109,11 @@ export const lawyerConsultationService = {
     const response = await api.get(`/lawyer/consultations/${consultationId}`);
     return response.data;
   },
+  // Приватная заметка юриста по делу
+  saveNote: async (consultationId, note) => {
+    const response = await api.put(`/lawyer/consultations/${consultationId}/note`, { note });
+    return response.data;
+  },
 };
 
 // Lawyer Notifications
