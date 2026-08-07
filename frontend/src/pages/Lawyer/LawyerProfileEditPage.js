@@ -6,6 +6,7 @@ import {
   PhotoCameraOutlined,
   GavelOutlined,
   SaveOutlined,
+  CheckRounded,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
@@ -91,6 +92,7 @@ const LawyerProfileEditPage = () => {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [verificationStatus, setVerificationStatus] = useState('pending');
+  const [meta, setMeta] = useState({ rating: 0, cases: 0 }); // для мини-статистики шапки
 
   const [form, setForm] = useState({
     description: '',
@@ -126,6 +128,7 @@ const LawyerProfileEditPage = () => {
           avatarPreview: res.data.user?.avatar || null,
         });
         setVerificationStatus(p.verificationStatus || 'pending');
+        setMeta({ rating: p.rating || 0, cases: p.completedCases || 0 });
       } catch {
         setError(t('lawyerPanel.loadProfileError'));
       } finally {
@@ -230,52 +233,60 @@ const LawyerProfileEditPage = () => {
           </div>
         )}
 
-        {/* Photo */}
-        <div style={{ ...glassCard, padding: 26, display: 'flex', alignItems: 'center', gap: 22 }}>
-          <div
-            style={{
-              width: 84,
-              height: 84,
-              borderRadius: '50%',
-              background: form.avatarPreview ? `center/cover no-repeat url(${form.avatarPreview})` : 'linear-gradient(135deg, #B8956E, #8B7355)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              color: '#FFFFFF',
-              fontSize: 30,
-              fontWeight: 300,
-              flexShrink: 0,
-            }}
-          >
-            {!form.avatarPreview && initialsOf(user?.name)}
+        {/* Photo — «Аврора-обложка» (вариант C) */}
+        <div style={{ ...glassCard, padding: 0, overflow: 'hidden' }}>
+          {/* Обложка: меш-градиент (аврора) + стеклянная кнопка «Сменить фото» */}
+          <div style={{
+            height: 120, position: 'relative',
+            background: 'radial-gradient(60% 120% at 15% 20%, rgba(216,196,166,0.9), transparent 60%), radial-gradient(50% 120% at 85% 10%, rgba(122,154,107,0.5), transparent 60%), radial-gradient(80% 140% at 60% 120%, rgba(139,115,85,0.95), transparent 60%), linear-gradient(120deg, #B8956E, #8B7355)',
+          }}>
+            <label style={{
+              position: 'absolute', right: 16, top: 16, display: 'inline-flex', alignItems: 'center', gap: 6,
+              background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
+              border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 12, padding: '9px 14px',
+              fontSize: 12, fontWeight: 600, letterSpacing: '0.03em', cursor: 'pointer', fontFamily: 'inherit',
+            }}>
+              <PhotoCameraOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.changePhoto')}
+              <input hidden type="file" accept="image/*" onChange={handleAvatarChange} />
+            </label>
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)' }}>{user?.name || t('lawyerPanel.lawyerFallback')}</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2 }}>
-              {[(form.specializations || []).map((s) => specLabel(t, s)).join(', '), form.location].filter(Boolean).join(' · ') || t('lawyerPanel.fillProfile')}
+          {/* Тело: квадратный аватар с наложением + имя + специализации + мини-статы */}
+          <div style={{ padding: '0 26px 24px', marginTop: -46, position: 'relative' }}>
+            <div style={{ position: 'relative', width: 96, height: 96 }}>
+              <div style={{
+                width: 96, height: 96, borderRadius: 26, border: '4px solid var(--surface)',
+                background: form.avatarPreview ? `center/cover no-repeat url(${form.avatarPreview})` : 'linear-gradient(135deg, #B8956E, #8B7355)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 30, fontWeight: 300,
+                boxShadow: '0 12px 26px rgba(0,0,0,0.22)',
+              }}>
+                {!form.avatarPreview && initialsOf(user?.name)}
+              </div>
+              {verificationStatus === 'approved' && (
+                <div title={t('verification.approvedNote')} style={{ position: 'absolute', right: -6, bottom: -6, width: 30, height: 30, borderRadius: '50%', background: '#6E9A5F', border: '3px solid var(--surface)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15 }}>
+                  <CheckRounded sx={{ fontSize: 16 }} />
+                </div>
+              )}
+            </div>
+            <div style={{ fontSize: 21, fontWeight: 650, color: 'var(--text)', marginTop: 14, letterSpacing: '-0.01em' }}>{user?.name || t('lawyerPanel.lawyerFallback')}</div>
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 3 }}>
+              {(form.specializations || []).map((s) => specLabel(t, s)).join(' · ') || t('lawyerPanel.fillProfile')}
+            </div>
+            {/* Мини-статистика */}
+            <div style={{ display: 'flex', gap: 24, marginTop: 16, flexWrap: 'wrap' }}>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 650, color: 'var(--text)', lineHeight: 1 }}>{Number(meta.rating) > 0 ? `${Number(meta.rating).toFixed(1)}★` : '—'}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>{t('lawyerPanel.rating')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 650, color: 'var(--text)', lineHeight: 1 }}>{meta.cases || 0}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>{t('lawyerPanel.consultationsDone')}</div>
+              </div>
+              <div>
+                <div style={{ fontSize: 16, fontWeight: 650, color: 'var(--text)', lineHeight: 1 }}>{form.location || '—'}</div>
+                <div style={{ fontSize: 10.5, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: 4 }}>{t('lawyerPanel.city')}</div>
+              </div>
             </div>
           </div>
-          <label
-            style={{
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 8,
-              background: 'transparent',
-              border: '1px solid var(--accent)',
-              color: 'var(--text)',
-              fontSize: 12,
-              fontWeight: 500,
-              letterSpacing: '0.05em',
-              textTransform: 'uppercase',
-              padding: '11px 20px',
-              borderRadius: 'var(--radius)',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
-          >
-            <PhotoCameraOutlined sx={{ fontSize: 17 }} /> {t('lawyerPanel.changePhoto')}
-            <input hidden type="file" accept="image/*" onChange={handleAvatarChange} />
-          </label>
         </div>
 
         {/* Main info */}
