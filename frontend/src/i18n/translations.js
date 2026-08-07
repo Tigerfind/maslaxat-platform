@@ -2112,6 +2112,7 @@ const translations = {
       changesCancelled: 'Изменения отменены', fileTooBig: 'Размер файла не должен превышать 5MB', photoSelected: 'Фото выбрано. Нажмите «Сохранить» для обновления',
       nameEmpty: 'Имя не может быть пустым', emailInvalid: 'Введите корректный email', profileSaved: 'Профиль успешно обновлён!', profileError: 'Ошибка обновления профиля',
       attachEmailTitle: 'Привяжите настоящий email', attachEmailHint: 'Вы вошли по номеру телефона. Добавьте email — для восстановления доступа и уведомлений.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Привязать', saving: 'Сохранение…', emailUpdated: 'Email обновлён — подтвердите по ссылке в письме', emailError: 'Не удалось обновить email',
+      verifyPhoneTitle: 'Подтвердите телефон', verifyPhoneHint: 'Нужно, чтобы бронировать консультации. Пришлём код по SMS.', otpRequest: 'Отправить код', otpPlaceholder: 'Код из SMS', otpConfirm: 'Подтвердить', otpChangeNumber: 'Изменить номер', otpSent: 'Код отправлен', otpDevCode: 'Код (dev-режим)', otpError: 'Не удалось. Проверьте номер и код', phoneVerified: 'Телефон подтверждён!',
       enterCurrentPassword: 'Введите текущий пароль', enterNewPassword: 'Введите новый пароль', passwordTooShort: 'Пароль должен содержать минимум 6 символов', passwordsMismatch: 'Пароли не совпадают', passwordChanged: 'Пароль успешно изменён!', passwordError: 'Ошибка изменения пароля',
     },
     uz: {
@@ -2142,6 +2143,7 @@ const translations = {
       changesCancelled: 'Ўзгаришлар бекор қилинди', fileTooBig: 'Файл ҳажми 5MB дан ошмаслиги керак', photoSelected: 'Фото танланди. Янгилаш учун «Сақлаш» тугмасини босинг',
       nameEmpty: 'Исм бўш бўлиши мумкин эмас', emailInvalid: 'Тўғри email киритинг', profileSaved: 'Профил муваффақиятли янгиланди!', profileError: 'Профилни янгилашда хатолик',
       attachEmailTitle: 'Ҳақиқий email’ни боғланг', attachEmailHint: 'Сиз телефон рақами орқали кирдингиз. Кириш ва хабарномалар учун email қўшинг.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Боғлаш', saving: 'Сақланмоқда…', emailUpdated: 'Email янгиланди — хатдаги ҳавола орқали тасдиқланг', emailError: 'Email’ни янгилаб бўлмади',
+      verifyPhoneTitle: 'Телефонни тасдиқланг', verifyPhoneHint: 'Консультация бронь қилиш учун керак. SMS орқали код юборамиз.', otpRequest: 'Код юбориш', otpPlaceholder: 'SMS коди', otpConfirm: 'Тасдиқлаш', otpChangeNumber: 'Рақамни ўзгартириш', otpSent: 'Код юборилди', otpDevCode: 'Код (dev-режим)', otpError: 'Бўлмади. Рақам ва кодни текширинг', phoneVerified: 'Телефон тасдиқланди!',
       enterCurrentPassword: 'Жорий паролни киритинг', enterNewPassword: 'Янги паролни киритинг', passwordTooShort: 'Парол камида 6 белгидан иборат бўлиши керак', passwordsMismatch: 'Пароллар мос келмайди', passwordChanged: 'Парол муваффақиятли ўзгартирилди!', passwordError: 'Паролни ўзгартиришда хатолик',
     },
     en: {
@@ -2172,6 +2174,7 @@ const translations = {
       changesCancelled: 'Changes cancelled', fileTooBig: 'File size must not exceed 5MB', photoSelected: 'Photo selected. Click "Save" to update',
       nameEmpty: 'Name cannot be empty', emailInvalid: 'Enter a valid email', profileSaved: 'Profile updated successfully!', profileError: 'Error updating profile',
       attachEmailTitle: 'Attach a real email', attachEmailHint: 'You signed in with a phone number. Add an email for account recovery and notifications.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Attach', saving: 'Saving…', emailUpdated: 'Email updated — confirm via the link we sent', emailError: 'Could not update email',
+      verifyPhoneTitle: 'Verify your phone', verifyPhoneHint: 'Required to book consultations. We will send a code by SMS.', otpRequest: 'Send code', otpPlaceholder: 'SMS code', otpConfirm: 'Confirm', otpChangeNumber: 'Change number', otpSent: 'Code sent', otpDevCode: 'Code (dev mode)', otpError: 'Failed. Check the number and code', phoneVerified: 'Phone verified!',
       enterCurrentPassword: 'Enter your current password', enterNewPassword: 'Enter a new password', passwordTooShort: 'Password must be at least 6 characters', passwordsMismatch: 'Passwords do not match', passwordChanged: 'Password changed successfully!', passwordError: 'Error changing password',
     },
   },

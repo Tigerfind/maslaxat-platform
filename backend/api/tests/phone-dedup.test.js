@@ -17,7 +17,7 @@ jest.mock('../src/services/smsService', () => ({
 
 const request = require('supertest');
 const app = require('../src/server');
-const { resetDb, models } = require('./helpers');
+const { resetDb, models, tokenFor, makeClient } = require('./helpers');
 
 const { User, LawyerProfile } = models;
 
@@ -90,5 +90,48 @@ describe('регистрация юриста с несколькими спец
     const lp = await LawyerProfile.findOne({ where: { userId: user.id } });
     expect(lp.specializations).toEqual(['Семейное право', 'Налоговое право']); // дедуп
     expect(lp.specialization).toBe('Семейное право'); // primary
+  });
+});
+
+describe('подтверждение телефона залогиненным клиентом (/auth/phone/confirm)', () => {
+  test('код верный → phone привязан, isVerified=true', async () => {
+    const client = await makeClient('confirm-c@test.uz', { isVerified: false });
+    const phone = '+998901112255';
+    const reqRes = await request(app).post('/api/auth/phone/request').send({ phone });
+    expect(reqRes.status).toBe(200);
+    const code = reqRes.body.devCode;
+    expect(code).toBeTruthy();
+
+    const conf = await request(app)
+      .post('/api/auth/phone/confirm')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .send({ phone, code });
+    expect(conf.status).toBe(200);
+
+    await client.reload();
+    expect(client.phone).toBe(phone);
+    expect(client.isVerified).toBe(true);
+  });
+
+  test('неверный код → 400', async () => {
+    const client = await makeClient('confirm-c2@test.uz', { isVerified: false });
+    const phone = '+998901112266';
+    await request(app).post('/api/auth/phone/request').send({ phone });
+    const conf = await request(app)
+      .post('/api/auth/phone/confirm')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .send({ phone, code: '000000' });
+    expect(conf.status).toBe(400);
+  });
+
+  test('номер занят другим → 409', async () => {
+    await makeClient('confirm-owner@test.uz', { phone: '+998901112277', isVerified: true });
+    const other = await makeClient('confirm-other@test.uz', { isVerified: false });
+    const reqRes = await request(app).post('/api/auth/phone/request').send({ phone: '+998901112277' });
+    const conf = await request(app)
+      .post('/api/auth/phone/confirm')
+      .set('Authorization', `Bearer ${tokenFor(other)}`)
+      .send({ phone: '+998901112277', code: reqRes.body.devCode });
+    expect(conf.status).toBe(409);
   });
 });

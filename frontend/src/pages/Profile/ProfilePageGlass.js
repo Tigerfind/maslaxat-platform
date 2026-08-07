@@ -118,8 +118,41 @@ const ProfilePageGlass = () => {
   const [emailInput, setEmailInput] = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
 
+  // Подтверждение телефона (SMS-код) для залогиненного клиента.
+  const [phoneInput, setPhoneInput] = useState(user?.phone || '');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [otpConfirming, setOtpConfirming] = useState(false);
+  const [devCode, setDevCode] = useState('');
+
   // Телефон-аккаунт с email-плейсхолдером → предлагаем привязать настоящий email.
   const isPhoneAccount = (user?.email || '').endsWith('@phone.maslaxat.uz');
+  // Клиент без подтверждённого контакта — предлагаем подтвердить телефон (нужно для брони).
+  const needsVerify = user?.role === 'client' && !user?.isVerified;
+
+  const requestOtp = async () => {
+    setOtpSending(true); setDevCode('');
+    try {
+      const res = await api.post('/auth/phone/request', { phone: phoneInput });
+      setOtpSent(true);
+      if (res.data?.devCode) setDevCode(res.data.devCode); // dev без Eskiz — код виден
+      toast.success(t('profile.otpSent'));
+    } catch (err) {
+      toast.error(err.response?.data?.error || t('profile.otpError'));
+    } finally { setOtpSending(false); }
+  };
+  const confirmOtp = async () => {
+    setOtpConfirming(true);
+    try {
+      const res = await api.post('/auth/phone/confirm', { phone: phoneInput, code: otpCode.trim() });
+      if (res.data?.user) dispatch(updateProfile(res.data.user));
+      setOtpSent(false); setOtpCode(''); setDevCode('');
+      toast.success(t('profile.phoneVerified'));
+    } catch (err) {
+      toast.error(err.response?.data?.error || t('profile.otpError'));
+    } finally { setOtpConfirming(false); }
+  };
 
   // Personal info — seeded from real user, empty fallback (no placeholder mock)
   const [formData, setFormData] = useState({
@@ -422,6 +455,41 @@ const ProfilePageGlass = () => {
                       {emailSaving ? t('profile.saving') : t('profile.attachEmailSave')}
                     </button>
                   </div>
+                </div>
+              )}
+
+              {needsVerify && (
+                <div style={{ background: 'rgba(196,163,90,0.10)', border: '1px solid rgba(196,163,90,0.35)', borderRadius: 'var(--radius)', padding: 16, marginBottom: 20 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', marginBottom: 4 }}>{t('profile.verifyPhoneTitle')}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--text3)', marginBottom: 12 }}>{t('profile.verifyPhoneHint')}</div>
+                  {!otpSent ? (
+                    <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                      <input value={phoneInput} onChange={(e) => setPhoneInput(e.target.value)} placeholder="+998 90 123 45 67"
+                        style={{ ...inputStyle, flex: 1, minWidth: 200, opacity: 1, cursor: 'text' }} />
+                      <button onClick={requestOtp} disabled={otpSending || !phoneInput.trim()}
+                        style={{ background: 'var(--accent)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: otpSending ? 'default' : 'pointer', fontFamily: 'inherit', opacity: otpSending ? 0.7 : 1 }}>
+                        {otpSending ? t('profile.saving') : t('profile.otpRequest')}
+                      </button>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                        <input value={otpCode} onChange={(e) => setOtpCode(e.target.value)} placeholder={t('profile.otpPlaceholder')} inputMode="numeric" maxLength={6}
+                          style={{ ...inputStyle, flex: 1, minWidth: 160, opacity: 1, cursor: 'text', letterSpacing: '0.3em' }} />
+                        <button onClick={confirmOtp} disabled={otpConfirming || otpCode.trim().length < 4}
+                          style={{ background: 'var(--accent)', color: '#fff', border: 'none', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: otpConfirming ? 'default' : 'pointer', fontFamily: 'inherit', opacity: otpConfirming ? 0.7 : 1 }}>
+                          {otpConfirming ? t('profile.saving') : t('profile.otpConfirm')}
+                        </button>
+                        <button onClick={() => { setOtpSent(false); setOtpCode(''); setDevCode(''); }}
+                          style={{ background: 'transparent', color: 'var(--text3)', border: 'none', fontSize: 12.5, cursor: 'pointer', fontFamily: 'inherit' }}>
+                          {t('profile.otpChangeNumber')}
+                        </button>
+                      </div>
+                      {devCode && (
+                        <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 8 }}>{t('profile.otpDevCode')}: <b style={{ color: 'var(--accent-dark)' }}>{devCode}</b></div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
 

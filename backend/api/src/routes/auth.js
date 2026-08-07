@@ -360,6 +360,39 @@ router.get('/me', authenticate, async (req, res, next) => {
   }
 });
 
+// POST /api/auth/phone/confirm — подтвердить телефон ЗАЛОГИНЕННОМУ пользователю
+// (в отличие от /phone/verify, который логинит/регистрирует). Привязывает номер к
+// текущему аккаунту и ставит isVerified=true. Дедуп: номер не должен быть у другого.
+router.post('/phone/confirm', authenticate, async (req, res, next) => {
+  try {
+    const phone = smsService.normalizePhone(req.body.phone);
+    const code = String(req.body.code || '').trim();
+    if (!phone || !code) return res.status(400).json({ error: 'Укажите номер и код' });
+
+    const otp = await PhoneOtp.findOne({ where: { phone } });
+    if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
+    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
+    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
+    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
+
+    // Дедуп: номер занят другим аккаунтом → нельзя привязать.
+    const taken = await User.findOne({ where: { phone } });
+    if (taken && taken.id !== req.userId) {
+      return res.status(409).json({ error: 'Этот номер уже используется другим аккаунтом' });
+    }
+
+    await otp.destroy(); // код использован
+    const user = await User.findByPk(req.userId);
+    user.phone = phone;
+    user.isVerified = true; // подтверждённый контакт → можно бронировать
+    await user.save();
+
+    res.json({ success: true, user: user.toJSON() });
+  } catch (err) {
+    next(err);
+  }
+});
+
 // POST /api/auth/forgot-password
 router.post('/forgot-password', emailLimiter, async (req, res, next) => {
   try {
