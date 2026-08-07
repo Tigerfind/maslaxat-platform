@@ -18,6 +18,7 @@ import {
 } from '@mui/icons-material';
 import lawyerService from '../../services/lawyerService';
 import OnboardingWizard from '../../components/Lawyer/OnboardingWizard';
+import DashboardExtras from '../../components/Lawyer/DashboardExtras';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
 
@@ -281,6 +282,9 @@ const LawyerDashboardGlass = () => {
             </div>
           ))}
         </div>
+
+        {/* Финансы · Сила профиля · Поделиться профилем */}
+        <DashboardExtras />
 
         {/* Row: incoming requests + weekly activity */}
         <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1.4fr) minmax(0,1fr)', gap: 20 }} className="ld-row">

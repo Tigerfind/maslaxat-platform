@@ -534,6 +534,33 @@ const translations = {
     },
   },
 
+  dashExtra: {
+    ru: {
+      financeTitle: 'Финансы', available: 'Доступно к выводу', inEscrow: 'В эскроу', withdraw: 'Вывести средства', history: 'История выплат',
+      strengthTitle: 'Сила профиля', strengthSub: 'Чем полнее профиль — тем выше в каталоге и больше клиентов', strengthFull: 'профиль заполнен', improve: 'Улучшить профиль',
+      sPhoto: 'Добавьте фото профиля', sDescription: 'Заполните описание', sSpecialization: 'Укажите специализацию', sPrice: 'Укажите цену', sSchedule: 'Настройте расписание', sDocuments: 'Загрузите документ',
+      shareTitle: 'Поделиться профилем', shareSub: 'Приводите своих клиентов — отправьте ссылку', copy: 'Копировать ссылку', copied: 'Скопировано ✓', shareAfterApprove: 'Ссылка заработает после одобрения профиля админом.',
+      withdrawTitle: 'Вывод средств', wdPlaceholder: 'Сумма, сум', wdNote: 'Заявка обрабатывается 1–3 рабочих дня.', wdConfirm: 'Вывести', cancel: 'Отмена',
+      wdInvalid: 'Укажите корректную сумму', wdTooMuch: 'Сумма больше доступного баланса', wdOk: 'Заявка на вывод принята', wdError: 'Не удалось вывести средства',
+    },
+    uz: {
+      financeTitle: 'Молия', available: 'Ечиб олиш мумкин', inEscrow: 'Эскроуда', withdraw: 'Маблағ ечиш', history: 'Тўловлар тарихи',
+      strengthTitle: 'Профиль кучи', strengthSub: 'Профиль тўлиқроқ бўлса — каталогда юқорида ва мижоз кўп', strengthFull: 'профиль тўлдирилган', improve: 'Профилни яхшилаш',
+      sPhoto: 'Профиль фотосини қўшинг', sDescription: 'Тавсифни тўлдиринг', sSpecialization: 'Ихтисосликни кўрсатинг', sPrice: 'Нархни кўрсатинг', sSchedule: 'Жадвални созланг', sDocuments: 'Ҳужжат юкланг',
+      shareTitle: 'Профилни улашиш', shareSub: 'Ўз мижозларингизни олиб келинг — ҳаволани юборинг', copy: 'Ҳаволани нусхалаш', copied: 'Нусхаланди ✓', shareAfterApprove: 'Ҳавола профиль тасдиқлангач ишлайди.',
+      withdrawTitle: 'Маблағ ечиш', wdPlaceholder: 'Сумма, сўм', wdNote: 'Сўров 1–3 иш куни ичида кўриб чиқилади.', wdConfirm: 'Ечиш', cancel: 'Бекор қилиш',
+      wdInvalid: 'Тўғри сумма киритинг', wdTooMuch: 'Сумма мавжуд баланcдан кўп', wdOk: 'Ечиш сўрови қабул қилинди', wdError: 'Маблағ ечиб бўлмади',
+    },
+    en: {
+      financeTitle: 'Finances', available: 'Available to withdraw', inEscrow: 'In escrow', withdraw: 'Withdraw funds', history: 'Payout history',
+      strengthTitle: 'Profile strength', strengthSub: 'A fuller profile ranks higher and attracts more clients', strengthFull: 'profile complete', improve: 'Improve profile',
+      sPhoto: 'Add a profile photo', sDescription: 'Fill in your description', sSpecialization: 'Set your specialization', sPrice: 'Set your price', sSchedule: 'Set up your schedule', sDocuments: 'Upload a document',
+      shareTitle: 'Share your profile', shareSub: 'Bring your own clients — send the link', copy: 'Copy link', copied: 'Copied ✓', shareAfterApprove: 'The link works once an admin approves your profile.',
+      withdrawTitle: 'Withdraw funds', wdPlaceholder: 'Amount, UZS', wdNote: 'Requests are processed within 1–3 business days.', wdConfirm: 'Withdraw', cancel: 'Cancel',
+      wdInvalid: 'Enter a valid amount', wdTooMuch: 'Amount exceeds your available balance', wdOk: 'Withdrawal request accepted', wdError: 'Could not withdraw funds',
+    },
+  },
+
   timeline: {
     ru: {
       booked: 'Забронирована', confirmed: 'Подтверждена', active: 'Идёт', done: 'Завершена',
