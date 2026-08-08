@@ -195,6 +195,19 @@ async function start() {
     }
     logger.info('Models synced');
 
+    // Одноразовый прод-сид демо-данными по флагу RUN_SEED=1. Идемпотентен
+    // (findOrCreate — существующие записи не трогает, схему не меняет). После
+    // первого запуска флаг можно снять. Ошибка сида не мешает старту сервера.
+    if (process.env.RUN_SEED === '1') {
+      try {
+        const { runProdSeed } = require('./seeds/prod-seed');
+        const res = await runProdSeed();
+        logger.info('Prod seed applied', res);
+      } catch (e) {
+        logger.error('Prod seed failed', { message: e.message });
+      }
+    }
+
     await connectRedis();
 
     // Redis-адаптер для Socket.io (масштаб на >1 инстанс) — по флагу SOCKET_REDIS=1
