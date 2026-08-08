@@ -59,9 +59,10 @@ if (isDev) {
   }));
 }
 
-// В проде (или если файловые логи недоступны) — JSON в stdout, чтобы платформа
-// собрала логи и приложение не осталось совсем без транспорта.
-if (!isDev && !isTest && !fileLoggingEnabled) {
+// В проде ВСЕГДА пишем JSON в stdout — контейнерная платформа (Railway/Docker)
+// собирает именно stdout, и логи должны быть видны в её дашборде независимо от
+// того, доступна ли запись файлов. (В dev stdout уже покрыт цветным Console выше.)
+if (!isDev && !isTest) {
   logger.add(new transports.Console({
     format: format.combine(
       format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),

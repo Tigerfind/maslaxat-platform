@@ -208,6 +208,19 @@ async function start() {
       }
     }
 
+    // Прод: досоздаём индексы, которых нет в моделях (частичные/условные unique
+    // из миграций — sync() их не создаёт). Идемпотентно и дёшево (2 проверки
+    // pg_indexes), безопасно на каждом старте. Ошибка не мешает старту.
+    if (process.env.NODE_ENV === 'production') {
+      try {
+        const { ensureProdIndexes } = require('./db/ensure-prod-indexes');
+        const res = await ensureProdIndexes();
+        logger.info('Prod indexes ensured', res);
+      } catch (e) {
+        logger.error('ensureProdIndexes failed', { message: e.message });
+      }
+    }
+
     await connectRedis();
 
     // Redis-адаптер для Socket.io (масштаб на >1 инстанс) — по флагу SOCKET_REDIS=1
