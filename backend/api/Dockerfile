@@ -9,6 +9,9 @@ COPY src/ ./src/
 
 EXPOSE 3001
 
-USER node
+# Папка под загрузки. В проде поверх /data монтируется persistent volume Railway;
+# контейнер работает как root, чтобы иметь права на запись в этот том
+# (том монтируется с владельцем root). UPLOAD_DIR=/data/uploads в env сервиса.
+RUN mkdir -p /data/uploads
 
 CMD ["node", "src/server.js"]

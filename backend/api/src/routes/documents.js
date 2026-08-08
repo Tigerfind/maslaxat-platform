@@ -30,10 +30,15 @@ try {
   logger.warn('Anthropic SDK not available for document analysis');
 }
 
-// Ensure uploads directory exists
+// Ensure uploads directory exists (не крашим старт, если ФС read-only —
+// в проде путь задаётся UPLOAD_DIR и указывает на записываемый volume).
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+} catch (e) {
+  console.error(`[documents] не удалось создать uploadDir "${uploadDir}": ${e.message}`);
 }
 
 // Multer config

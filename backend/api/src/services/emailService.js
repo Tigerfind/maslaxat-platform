@@ -36,6 +36,12 @@ const getTransporter = async () => {
 };
 
 const sendMail = async ({ to, subject, html }) => {
+  // В проде без настроенного SMTP не пытаемся слать через Ethereal (внешний
+  // сетевой вызов, которого в проде быть не должно) — тихо пропускаем.
+  if (process.env.NODE_ENV === 'production' && !process.env.SMTP_HOST) {
+    logger.warn(`Email не отправлен (SMTP не настроен): "${subject}" → ${to}`);
+    return { skipped: true };
+  }
   const t = await getTransporter();
   const from = process.env.SMTP_FROM || '"MaslaXat" <noreply@maslaxat.uz>';
 

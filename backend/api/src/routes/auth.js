@@ -101,12 +101,12 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       });
     }
 
-    // Отправляем письмо верификации (не блокируем регистрацию при ошибке)
-    try {
-      await sendVerificationEmail(user.email, verificationToken);
-    } catch (emailErr) {
-      logger.error('Failed to send verification email:', emailErr.message);
-    }
+    // Отправляем письмо верификации в фоне — НЕ блокируем ответ регистрации.
+    // Без SMTP (или при медленном/недоступном почтовом сервере) ответ клиенту
+    // не должен ждать сеть: письмо уходит асинхронно, ошибки только логируем.
+    Promise.resolve()
+      .then(() => sendVerificationEmail(user.email, verificationToken))
+      .catch((emailErr) => logger.error('Failed to send verification email:', emailErr.message));
 
     const token = signToken(user);
 

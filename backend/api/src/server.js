@@ -16,6 +16,12 @@ const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3001;
 
+// За реверс-прокси (Railway/облако) доверяем ОДНОМУ хопу прокси, чтобы
+// req.ip и express-rate-limit корректно читали X-Forwarded-For и не падали с
+// ERR_ERL_UNEXPECTED_X_FORWARDED_FOR. Точное число хопов (1), а не true —
+// иначе express-rate-limit ругается на слишком доверчивую настройку.
+app.set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
+
 // Socket.io for WebRTC signaling
 const corsOrigins = process.env.CORS_ORIGINS
   ? process.env.CORS_ORIGINS.split(',').map(o => o.trim())

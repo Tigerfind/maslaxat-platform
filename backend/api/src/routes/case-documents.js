@@ -10,7 +10,11 @@ const notificationService = require('../services/notificationService');
 // (клиент + юрист). Роль не важна — важно, что ты участник этой консультации.
 
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
-if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+try {
+  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
+} catch (e) {
+  console.error(`[case-documents] не удалось создать uploadDir "${uploadDir}": ${e.message}`);
+}
 
 const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),

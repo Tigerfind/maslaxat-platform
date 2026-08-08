@@ -7,9 +7,13 @@ const { authenticate } = require('../middleware/auth');
 const { AIConversation, AIMessage, Subscription } = require('../models');
 const { getRedis } = require('../config/redis');
 
-// File upload for AI chat
+// File upload for AI chat. В проде UPLOAD_DIR указывает на записываемый volume
+// (напр. /data/uploads); в dev — относительная папка внутри проекта.
+const aiUploadDir = process.env.UPLOAD_DIR
+  ? path.join(process.env.UPLOAD_DIR, 'ai-chat')
+  : path.join(__dirname, '../../uploads/ai-chat');
 const upload = multer({
-  dest: path.join(__dirname, '../../uploads/ai-chat/'),
+  dest: aiUploadDir,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
   fileFilter: (req, file, cb) => {
     const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
