@@ -1,10 +1,12 @@
 # Dependencies
 node_modules/
 */node_modules/
-# Lock бэкенда держим в репозитории: его Dockerfile собирает через `npm ci`,
-# которому package-lock.json обязателен. Lock фронтенда НЕ коммитим: nixpacks
-# при его наличии переключается на `npm ci`, а npm 10 на билдере Railway
-# отвергает наш файл (Missing: yaml) — сборка идёт через `npm install`.
+# Lock-файлы по умолчанию не коммитим, и в загрузку Railway они тоже не идут.
+# Исключение — бэкенд: его Dockerfile собирает через `npm ci`, которому
+# package-lock.json обязателен. Фронтенду lock отдавать нельзя: с ним nixpacks
+# переключается на `npm ci`, а npm 10 на билдере Railway отвергает наш файл
+# (Missing: yaml) — там сборка должна идти через `npm install`.
+package-lock.json
 !backend/api/package-lock.json
 yarn.lock
 .pnp
