@@ -11,24 +11,14 @@ export const adminDashboardService = {
 
   // Get recent activity
   getRecentActivity: async (limit = 10) => {
-    try {
-      const response = await api.get('/admin/activity/recent', { params: { limit } });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching activity:', error);
-      return [];
-    }
+    const response = await api.get('/admin/activity/recent', { params: { limit } });
+    return response.data;
   },
 
   // Реальные отчёты: выручка, консультации по статусам, рост юзеров, топ юристов
   getReports: async () => {
-    try {
-      const response = await api.get('/admin/dashboard/reports');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching reports:', error);
-      return null;
-    }
+    const response = await api.get('/admin/dashboard/reports');
+    return response.data;
   },
 };
 
@@ -36,13 +26,8 @@ export const adminDashboardService = {
 export const adminUserService = {
   // Get all users
   getUsers: async (filters = {}) => {
-    try {
-      const response = await api.get('/admin/users', { params: filters });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching users:', error);
-      return [];
-    }
+    const response = await api.get('/admin/users', { params: filters });
+    return response.data;
   },
 
   // Get user details
@@ -52,28 +37,6 @@ export const adminUserService = {
       return response.data;
     } catch (error) {
       console.error('Error fetching user details:', error);
-      throw error;
-    }
-  },
-
-  // Update user
-  updateUser: async (userId, userData) => {
-    try {
-      const response = await api.put(`/admin/users/${userId}`, userData);
-      return response.data;
-    } catch (error) {
-      console.error('Error updating user:', error);
-      throw error;
-    }
-  },
-
-  // Delete user
-  deleteUser: async (userId) => {
-    try {
-      const response = await api.delete(`/admin/users/${userId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error deleting user:', error);
       throw error;
     }
   },
@@ -94,13 +57,8 @@ export const adminUserService = {
 export const adminLawyerService = {
   // Get all lawyers
   getLawyers: async (filters = {}) => {
-    try {
-      const response = await api.get('/admin/lawyers', { params: filters });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching lawyers:', error);
-      return [];
-    }
+    const response = await api.get('/admin/lawyers', { params: filters });
+    return response.data;
   },
 
   // Approve lawyer
@@ -121,17 +79,6 @@ export const adminLawyerService = {
       return response.data;
     } catch (error) {
       console.error('Error rejecting lawyer:', error);
-      throw error;
-    }
-  },
-
-  // Verify lawyer credentials
-  verifyCredentials: async (lawyerId, credentials) => {
-    try {
-      const response = await api.post(`/admin/lawyers/${lawyerId}/verify`, credentials);
-      return response.data;
-    } catch (error) {
-      console.error('Error verifying credentials:', error);
       throw error;
     }
   },
@@ -172,13 +119,8 @@ export const adminLawyerService = {
 export const adminSpecializationService = {
   // Get all specializations
   getSpecializations: async () => {
-    try {
-      const response = await api.get('/admin/specializations');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching specializations:', error);
-      return [];
-    }
+    const response = await api.get('/admin/specializations');
+    return response.data;
   },
 
   // Create specialization
@@ -219,91 +161,17 @@ export const adminSpecializationService = {
 export const adminConsultationService = {
   // Get all consultations
   getConsultations: async (filters = {}) => {
-    try {
-      const response = await api.get('/admin/consultations', { params: filters });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching consultations:', error);
-      return [];
-    }
+    const response = await api.get('/admin/consultations', { params: filters });
+    return response.data;
   },
 
-  // Get consultation details
-  getConsultationDetails: async (consultationId) => {
-    try {
-      const response = await api.get(`/admin/consultations/${consultationId}`);
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching consultation details:', error);
-      throw error;
-    }
-  },
-
-  // Cancel consultation (admin override)
-  cancelConsultation: async (consultationId, reason) => {
-    try {
-      const response = await api.post(`/admin/consultations/${consultationId}/cancel`, { reason });
-      return response.data;
-    } catch (error) {
-      console.error('Error canceling consultation:', error);
-      throw error;
-    }
-  },
-};
-
-// Admin Reports Service
-export const adminReportService = {
-  // Get revenue report
-  getRevenueReport: async (startDate, endDate) => {
-    try {
-      const response = await api.get('/admin/reports/revenue', {
-        params: { startDate, endDate },
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching revenue report:', error);
-      return {};
-    }
-  },
-
-  // Get consultations report
-  getConsultationsReport: async (startDate, endDate) => {
-    try {
-      const response = await api.get('/admin/reports/consultations', {
-        params: { startDate, endDate },
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching consultations report:', error);
-      return {};
-    }
-  },
-
-  // Export report
-  exportReport: async (reportType, format = 'pdf') => {
-    try {
-      const response = await api.get(`/admin/reports/export/${reportType}`, {
-        params: { format },
-        responseType: 'blob',
-      });
-      return response.data;
-    } catch (error) {
-      console.error('Error exporting report:', error);
-      throw error;
-    }
-  },
 };
 
 // Admin Support Tickets
 export const adminSupportService = {
-  getTickets: async () => {
-    try {
-      const response = await api.get('/admin/support');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching tickets:', error);
-      return [];
-    }
+  getTickets: async (params = {}) => {
+    const response = await api.get('/admin/support', { params });
+    return response.data;
   },
   updateStatus: async (id, status) => {
     const response = await api.patch(`/admin/support/${id}`, { status });
@@ -318,13 +186,8 @@ export const adminSupportService = {
 // Admin Promo Codes
 export const adminPromoService = {
   getPromos: async () => {
-    try {
-      const response = await api.get('/admin/promos');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching promos:', error);
-      return [];
-    }
+    const response = await api.get('/admin/promos');
+    return response.data;
   },
   create: async (data) => {
     const response = await api.post('/admin/promos', data);
@@ -340,16 +203,28 @@ export const adminPromoService = {
   },
 };
 
+// Финансы: заявки на вывод и журнал платежей
+export const adminFinanceService = {
+  getWithdrawals: async (params = {}) => {
+    const response = await api.get('/admin/withdrawals', { params });
+    return response.data;
+  },
+  // status: 'paid' | 'cancelled' | 'failed'. Отказ возвращает сумму юристу.
+  processWithdrawal: async (id, status, note) => {
+    const response = await api.patch(`/admin/withdrawals/${id}`, { status, note });
+    return response.data;
+  },
+  getPayments: async (params = {}) => {
+    const response = await api.get('/admin/payments', { params });
+    return response.data;
+  },
+};
+
 // Модерация отзывов
 export const adminReviewService = {
-  getReviews: async () => {
-    try {
-      const response = await api.get('/admin/reviews');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching reviews:', error);
-      return [];
-    }
+  getReviews: async (params = {}) => {
+    const response = await api.get('/admin/reviews', { params });
+    return response.data;
   },
   setHidden: async (id, isHidden) => {
     const response = await api.patch(`/admin/reviews/${id}`, { isHidden });
@@ -363,8 +238,8 @@ export default {
   lawyers: adminLawyerService,
   specializations: adminSpecializationService,
   consultations: adminConsultationService,
-  reports: adminReportService,
   support: adminSupportService,
   promos: adminPromoService,
   reviews: adminReviewService,
+  finance: adminFinanceService,
 };

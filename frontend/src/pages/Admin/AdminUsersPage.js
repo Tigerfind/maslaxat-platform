@@ -1,114 +1,132 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import {
-  Container, Box, Typography, Grid, IconButton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip, Tooltip, Stack, CircularProgress,
-  Card, Button, Avatar,
+  Container, Box, Typography, Grid, Table, TableBody, TableCell,
+  TableContainer, TableHead, TableRow, Chip, CircularProgress,
+  Card, Button, Avatar, Pagination,
 } from '@mui/material';
 import {
-  ArrowBack, People, Gavel, Person, Block, LockOpen,
+  People, Gavel, Person, Block, LockOpen,
 } from '@mui/icons-material';
 import { adminUserService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
-import LanguageSwitcher from '../../components/LanguageSwitcher';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import ErrorState from '../../components/UI/ErrorState';
+import ConfirmDialog from '../../components/UI/ConfirmDialog';
+
+const PAGE_SIZE = 25;
 
 const AdminUsersPage = () => {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [users, setUsers] = useState([]);
+  // loading — только первая загрузка (заменяет страницу спиннером).
+  // refreshing — поиск/смена страницы: таблица остаётся смонтированной, иначе
+  // input размонтируется на каждом дебаунс-тике и теряет фокус.
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [acting, setActing] = useState(null);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState(null);
+  const loadedOnce = useRef(false);
+  const [confirmToggle, setConfirmToggle] = useState(null);
 
   // Дебаунс-поиск по имени/email (бэкенд GET /admin/users?search=… уже поддерживает).
-  // Первый прогон (search='') на монтировании грузит всех.
+  // Первый прогон (search='') на монтировании грузит всех. Новый поиск сбрасывает
+  // страницу на первую — иначе «page=3 + новый запрос» даёт пустой результат.
   useEffect(() => {
-    const id = setTimeout(() => load(search), 350);
+    const id = setTimeout(() => { setPage(1); load(search, 1); }, 350);
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [search]);
 
-  const load = async (searchTerm = '') => {
+  const load = async (searchTerm = '', pageNum = 1) => {
+    // Первая загрузка — полноэкранный спиннер; последующие — мягкое обновление.
+    // Признак «первая» — loadedOnce, а не пустой список: поиск без результатов
+    // тоже даёт пустой список и снова разбирал бы страницу.
+    if (!loadedOnce.current) setLoading(true);
+    else setRefreshing(true);
     try {
-      setLoading(true);
-      const data = await adminUserService.getUsers(searchTerm ? { search: searchTerm } : {});
+      const data = await adminUserService.getUsers({
+        page: pageNum,
+        limit: PAGE_SIZE,
+        ...(searchTerm ? { search: searchTerm } : {}),
+      });
       setUsers(Array.isArray(data?.users) ? data.users : (Array.isArray(data) ? data : []));
+      setTotalPages(data?.totalPages || 1);
+      setCounts(data?.counts || null);
+      setError(null);
     } catch (e) {
-      toast.error(t('adminManage.loadError'));
+      // Сервис больше не глотает ошибку: показываем состояние ошибки, а не «нет данных».
+      setError(e);
       setUsers([]);
+      setCounts(null);
+      toast.error(t('adminManage.loadError'));
     } finally {
+      loadedOnce.current = true;
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const toggleStatus = async (u) => {
+  const goToPage = (p) => { setPage(p); load(search, p); };
+
+  // Блокировка отрезает пользователю доступ к платформе — раньше срабатывала
+  // с одного клика без подтверждения.
+  const toggleStatus = async () => {
+    const u = confirmToggle;
     setActing(u.id);
     try {
       await adminUserService.toggleUserStatus(u.id, u.isActive ? 'inactive' : 'active');
       toast.success(u.isActive ? t('adminManage.blocked') : t('adminManage.unblocked'));
-      await load(search);
+      setConfirmToggle(null);
+      await load(search, page);
     } catch (e) {
-      toast.error(t('adminManage.actionError'));
+      toast.error(e.response?.data?.error || t('adminManage.actionError'));
     } finally {
       setActing(null);
     }
   };
 
-  const clientsCount = users.filter((u) => u.role === 'client').length;
-  const lawyersCount = users.filter((u) => u.role === 'lawyer').length;
-  const blockedCount = users.filter((u) => !u.isActive).length;
-
   const initials = (name = '') =>
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('ru-RU') : '—');
+  // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
+  // и в узбекской/английской версии даты оставались русскими.
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(dateLocale) : '—');
   const roleLabel = (r) => (r === 'lawyer' ? t('adminManage.roleLawyer') : r === 'admin' ? t('adminManage.roleAdmin') : t('adminManage.roleClient'));
   const roleColor = (r) => (r === 'lawyer' ? axelionColors.warning : r === 'admin' ? axelionColors.textDark : axelionColors.bronze);
 
+  // Значения — с сервера по всей таблице. При ошибке загрузки показываем «—»,
+  // а не 0: ноль здесь читался бы как факт «пользователей нет».
+  const kpi = (v) => (counts ? v : '—');
   const stats = [
-    { icon: <People sx={{ fontSize: 32, color: axelionColors.gold }} />, label: t('adminManage.statTotal'), value: users.length, bg: axelionColors.accentLight },
-    { icon: <Person sx={{ fontSize: 32, color: axelionColors.bronze }} />, label: t('adminManage.statClients'), value: clientsCount, bg: axelionColors.bgBeige },
-    { icon: <Gavel sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statLawyers'), value: lawyersCount, bg: axelionColors.bgBeige },
-    { icon: <Block sx={{ fontSize: 32, color: axelionColors.error }} />, label: t('adminManage.statBlocked'), value: blockedCount, bg: axelionColors.errorLight },
+    { icon: <People sx={{ fontSize: 32, color: axelionColors.gold }} />, label: t('adminManage.statTotal'), value: kpi(counts?.all), bg: axelionColors.accentLight },
+    { icon: <Person sx={{ fontSize: 32, color: axelionColors.bronze }} />, label: t('adminManage.statClients'), value: kpi(counts?.clients), bg: axelionColors.bgBeige },
+    { icon: <Gavel sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statLawyers'), value: kpi(counts?.lawyers), bg: axelionColors.bgBeige },
+    { icon: <Block sx={{ fontSize: 32, color: axelionColors.error }} />, label: t('adminManage.statBlocked'), value: kpi(counts?.blocked), bg: axelionColors.errorLight },
   ];
 
+  // Заголовок, переключатель языка, уведомления и выход теперь даёт GlassShell —
+  // собственная шапка страницы больше не нужна. Спиннер тоже внутри оболочки,
+  // чтобы меню не пропадало на время загрузки.
   if (loading) {
     return (
-      <Box sx={{ minHeight: '100vh', background: axelionColors.bgCream, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <CircularProgress sx={{ color: axelionColors.gold }} size={56} />
-      </Box>
+      <GlassShell active="/admin/users" title={t('adminManage.usersTitle')} subtitle={t('adminManage.usersSub')} role="admin">
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress sx={{ color: axelionColors.gold }} size={56} />
+        </Box>
+      </GlassShell>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', background: axelionColors.bgCream, pb: 4 }}>
-      {/* Header */}
-      <Box sx={{ background: axelionColors.bgLight, borderBottom: `1px solid ${axelionColors.borderLight}`, py: 3, px: 2 }}>
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Tooltip title={t('adminManage.back')}>
-                <IconButton onClick={() => navigate('/admin/dashboard')} sx={{ background: axelionColors.bgCream, color: axelionColors.textDark, border: `1px solid ${axelionColors.borderLight}`, '&:hover': { background: axelionColors.bgBeige, borderColor: axelionColors.gold } }}>
-                  <ArrowBack />
-                </IconButton>
-              </Tooltip>
-              <Box>
-                <Typography variant="h5" sx={{ fontWeight: 300, color: axelionColors.textDark, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  {t('adminManage.usersTitle')}
-                </Typography>
-                <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
-                  {t('adminManage.usersSub')}
-                </Typography>
-              </Box>
-            </Box>
-            <LanguageSwitcher variant="dropdown" sx={{ color: axelionColors.textDark, bgcolor: axelionColors.bgCream, '&:hover': { bgcolor: axelionColors.bgBeige } }} />
-          </Box>
-        </Container>
-      </Box>
-
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
+    <GlassShell active="/admin/users" title={t('adminManage.usersTitle')} subtitle={t('adminManage.usersSub')} role="admin">
+      <Container maxWidth="xl" disableGutters>
         {/* Stats */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {stats.map((s, i) => (
@@ -126,14 +144,16 @@ const AdminUsersPage = () => {
           ))}
         </Grid>
 
-        {/* Поиск по имени/email */}
-        <Box sx={{ mb: 2 }}>
+        {/* Поиск по имени/email. Индикатор — рядом с полем, а не вместо страницы:
+            полноэкранный спиннер размонтировал input и сбрасывал фокус на каждом тике. */}
+        <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('adminManage.searchPlaceholder')}
             style={{ width: '100%', maxWidth: 360, boxSizing: 'border-box', padding: '11px 14px', borderRadius: 8, border: `1px solid ${axelionColors.borderLight}`, background: axelionColors.bgLight, color: axelionColors.textDark, fontFamily: 'inherit', fontSize: 14, outline: 'none' }}
           />
+          {refreshing && <CircularProgress size={18} sx={{ color: axelionColors.gold }} />}
         </Box>
 
         {/* Table */}
@@ -171,13 +191,18 @@ const AdminUsersPage = () => {
                         ) : (
                           <Chip size="small" label={t('adminManage.stBlocked')} sx={{ background: axelionColors.errorLight, color: axelionColors.error, fontWeight: 600, border: `1px solid ${axelionColors.error}` }} />
                         )}
+                        {/* isVerified приходил с бэкенда и не выводился: админ не мог
+                            отличить подтверждённый контакт от неподтверждённого. */}
+                        {!u.isVerified && (
+                          <Chip size="small" label={t('adminManage.stUnverified')} sx={{ ml: 0.5, background: axelionColors.bgBeige, color: axelionColors.bronze, fontWeight: 600 }} />
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>{fmtDate(u.createdAt)}</Typography>
                       </TableCell>
                       <TableCell align="right">
                         {u.role !== 'admin' && (
-                          <Button size="small" variant="outlined" disabled={acting === u.id} onClick={() => toggleStatus(u)}
+                          <Button size="small" variant="outlined" disabled={acting === u.id} onClick={() => setConfirmToggle(u)}
                             startIcon={u.isActive ? <Block sx={{ fontSize: 16 }} /> : <LockOpen sx={{ fontSize: 16 }} />}
                             sx={{
                               color: u.isActive ? axelionColors.error : axelionColors.success,
@@ -193,14 +218,41 @@ const AdminUsersPage = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+          ) : error ? (
+            <ErrorState error={error} onRetry={() => load(search, page)} />
           ) : (
             <Box sx={{ textAlign: 'center', py: 6 }}>
               <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>{t('adminManage.noUsers')}</Typography>
             </Box>
           )}
         </Card>
+
+        {/* Пагинация: без неё бэкенд отдавал только первые 50 записей, а остальные
+            для админа просто не существовали. */}
+        {!error && totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Pagination
+              count={totalPages}
+              page={page}
+              onChange={(e, p) => goToPage(p)}
+              disabled={refreshing}
+              shape="rounded"
+            />
+          </Box>
+        )}
       </Container>
-    </Box>
+
+      <ConfirmDialog
+        open={Boolean(confirmToggle)}
+        title={confirmToggle?.isActive ? t('adminManage.confirmBlockTitle') : t('adminManage.confirmUnblockTitle')}
+        message={`${confirmToggle?.name || ''} — ${confirmToggle?.isActive ? t('adminManage.confirmBlockMsg') : t('adminManage.confirmUnblockMsg')}`}
+        confirmLabel={confirmToggle?.isActive ? t('adminManage.block') : t('adminManage.unblock')}
+        danger={Boolean(confirmToggle?.isActive)}
+        busy={acting === confirmToggle?.id}
+        onConfirm={toggleStatus}
+        onClose={() => setConfirmToggle(null)}
+      />
+    </GlassShell>
   );
 };
 

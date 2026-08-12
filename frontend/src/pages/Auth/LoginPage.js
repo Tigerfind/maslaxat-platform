@@ -58,10 +58,19 @@ const LoginPage = () => {
   const [twoFA, setTwoFA] = useState({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
   const [phoneMode, setPhoneMode] = useState(false); // вход по номеру телефона
 
+  // Демо-креды нужны только для локальной разработки. Раньше они были вшиты в
+  // объект безусловно и попадали в прод-бандл вместе с паролями, а demoEmail ещё
+  // и показывался всем как placeholder поля — то есть публиковал рабочий логин.
+  const DEMO = isDev ? {
+    client: { email: 'client@maslaxat.uz', password: 'client123' },
+    lawyer: { email: 'ivanov@maslaxat.uz', password: 'lawyer123' },
+    admin: { email: 'admin@maslaxat.uz', password: 'admin123' },
+  } : {};
+
   const userTypes = [
-    { label: t('login.client'), icon: <Person sx={{ fontSize: 20 }} />, role: 'client', dashboard: '/dashboard', demoEmail: 'client@maslaxat.uz', demoPassword: 'client123' },
-    { label: t('login.lawyer'), icon: <Gavel sx={{ fontSize: 20 }} />, role: 'lawyer', dashboard: '/lawyer/dashboard', demoEmail: 'ivanov@maslaxat.uz', demoPassword: 'lawyer123' },
-    { label: t('login.admin'), icon: <AdminPanelSettings sx={{ fontSize: 20 }} />, role: 'admin', dashboard: '/admin/dashboard', demoEmail: 'admin@maslaxat.uz', demoPassword: 'admin123' },
+    { label: t('login.client'), icon: <Person sx={{ fontSize: 20 }} />, role: 'client', dashboard: '/dashboard' },
+    { label: t('login.lawyer'), icon: <Gavel sx={{ fontSize: 20 }} />, role: 'lawyer', dashboard: '/lawyer/dashboard' },
+    { label: t('login.admin'), icon: <AdminPanelSettings sx={{ fontSize: 20 }} />, role: 'admin', dashboard: '/admin/dashboard' },
   ];
 
   const currentUserType = userTypes[activeTab];
@@ -124,7 +133,8 @@ const LoginPage = () => {
   const cancel2FA = () => setTwoFA({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
 
   const handleDemoLogin = () => {
-    performLogin(currentUserType.demoEmail, currentUserType.demoPassword);
+    const demo = DEMO[currentUserType.role];
+    if (demo) performLogin(demo.email, demo.password);
   };
 
   const handleSubmit = (e) => {
@@ -361,7 +371,7 @@ const LoginPage = () => {
               onBlur={handleBlur}
               error={Boolean(emailError)}
               helperText={emailError}
-              placeholder={currentUserType.demoEmail}
+              placeholder={DEMO[currentUserType.role]?.email || 'email@example.com'}
               sx={{ mb: emailError ? 1.5 : 2.5, ...inputStyles }}
               InputProps={{
                 startAdornment: (

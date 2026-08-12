@@ -1,9 +1,10 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
 const fs = require('fs');
-const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument } = require('../models');
+const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument, Withdrawal, Payment } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
+const { withLawyerCounts } = require('../services/specializationStats');
 const notifications = require('../services/notificationService');
 
 // All routes require admin authentication
@@ -26,39 +27,25 @@ router.get('/activity/recent', async (req, res, next) => {
       limit: parseInt(limit),
     });
 
-    const activity = recentConsultations.map((c) => {
-      let type = 'consultation_completed';
-      let description = '';
+    // Текст и дату собирает фронт по текущему языку: раньше бэкенд отдавал готовые
+    // русские строки и дату 'ru-RU', и админ с UZ/EN интерфейсом всё равно видел
+    // «Новый юрист: …» и «12 авг.». Отсюда — только данные.
+    const STATUS_TO_TYPE = {
+      pending: 'consultation_pending',
+      accepted: 'consultation_accepted',
+      completed: 'consultation_completed',
+      cancelled: 'consultation_cancelled',
+    };
 
-      if (c.status === 'pending') {
-        type = 'consultation_pending';
-        description = `Новый запрос на консультацию от ${c.client?.name || 'клиента'}`;
-      } else if (c.status === 'accepted') {
-        type = 'consultation_accepted';
-        description = `Консультация принята юристом ${c.lawyer?.name || ''}`;
-      } else if (c.status === 'completed') {
-        type = 'consultation_completed';
-        description = `Консультация завершена: ${c.client?.name || 'клиент'} — ${c.lawyer?.name || 'юрист'}`;
-      } else if (c.status === 'cancelled') {
-        type = 'consultation_cancelled';
-        description = `Консультация отменена`;
-      } else {
-        description = `Консультация: ${c.client?.name || 'клиент'} — ${c.lawyer?.name || 'юрист'} (${c.status})`;
-      }
-
-      return {
-        type,
-        description,
-        userName: c.client?.name || 'Пользователь',
-        ts: new Date(c.createdAt).getTime(), // сырой timestamp для сортировки
-        date: new Date(c.createdAt).toLocaleDateString('ru-RU', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-    });
+    const activity = recentConsultations.map((c) => ({
+      type: STATUS_TO_TYPE[c.status] || 'consultation_other',
+      status: c.status,
+      clientName: c.client?.name || null,
+      lawyerName: c.lawyer?.name || null,
+      userName: c.client?.name || null,
+      createdAt: c.createdAt,
+      ts: new Date(c.createdAt).getTime(), // сырой timestamp для сортировки
+    }));
 
     // Also add recent user registrations
     const recentUsers = await User.findAll({
@@ -70,15 +57,10 @@ router.get('/activity/recent', async (req, res, next) => {
     recentUsers.forEach((u) => {
       activity.push({
         type: 'user_registration',
-        description: `Новый ${u.role === 'lawyer' ? 'юрист' : 'клиент'}: ${u.name}`,
+        role: u.role,
         userName: u.name,
+        createdAt: u.createdAt,
         ts: new Date(u.createdAt).getTime(),
-        date: new Date(u.createdAt).toLocaleDateString('ru-RU', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
       });
     });
 
@@ -109,19 +91,28 @@ router.get('/users', async (req, res, next) => {
       ];
     }
 
-    const { count, rows } = await User.findAndCountAll({
-      where,
-      attributes: ['id', 'name', 'email', 'role', 'isActive', 'isVerified', 'createdAt'],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset,
-    });
+    // Счётчики считаем по ВСЕЙ таблице, а не по выданной странице: KPI-карточки
+    // на фронте раньше брались из users.length и при limit=50 показывали «Всего: 50».
+    const [{ count, rows }, all, clients, lawyers, blocked] = await Promise.all([
+      User.findAndCountAll({
+        where,
+        attributes: ['id', 'name', 'email', 'role', 'isActive', 'isVerified', 'createdAt'],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      User.count(),
+      User.count({ where: { role: 'client' } }),
+      User.count({ where: { role: 'lawyer' } }),
+      User.count({ where: { isActive: false } }),
+    ]);
 
     res.json({
       users: rows,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
+      counts: { all, clients, lawyers, blocked },
     });
   } catch (err) {
     next(err);
@@ -165,37 +156,53 @@ router.put('/users/:id/status', async (req, res, next) => {
 // GET /lawyers — list all lawyers with profiles
 router.get('/lawyers', async (req, res, next) => {
   try {
-    const { verified, search, page = 1, limit = 50 } = req.query;
+    const { verified, status, search, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
     const where = { role: 'lawyer' };
     if (search) {
-      where.name = { [Op.iLike]: `%${search}%` };
+      where[Op.or] = [
+        { name: { [Op.iLike]: `%${search}%` } },
+        { email: { [Op.iLike]: `%${search}%` } },
+      ];
     }
-    // Фильтр по статусу модерации (на профиле). verified=true → одобренные,
-    // verified=false → на проверке (очередь для админа).
+    // Фильтр по статусу модерации (на профиле). status — основной параметр
+    // (pending/approved/rejected); verified=true/false оставлен для совместимости.
     const profileWhere = {};
-    if (verified === 'true') profileWhere.verificationStatus = 'approved';
-    if (verified === 'false') profileWhere.verificationStatus = 'pending';
+    if (['pending', 'approved', 'rejected'].includes(status)) {
+      profileWhere.verificationStatus = status;
+    } else if (verified === 'true') {
+      profileWhere.verificationStatus = 'approved';
+    } else if (verified === 'false') {
+      profileWhere.verificationStatus = 'pending';
+    }
 
-    const { count, rows } = await User.findAndCountAll({
-      where,
-      include: [{
-        model: LawyerProfile,
-        as: 'profile',
-        where: Object.keys(profileWhere).length ? profileWhere : undefined,
-        required: Object.keys(profileWhere).length > 0,
-      }],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset,
-    });
+    // Счётчики очереди модерации — по всей таблице, а не по текущей странице.
+    const [{ count, rows }, all, approved, pending, rejected] = await Promise.all([
+      User.findAndCountAll({
+        where,
+        include: [{
+          model: LawyerProfile,
+          as: 'profile',
+          where: Object.keys(profileWhere).length ? profileWhere : undefined,
+          required: Object.keys(profileWhere).length > 0,
+        }],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      User.count({ where: { role: 'lawyer' } }),
+      LawyerProfile.count({ where: { verificationStatus: 'approved' } }),
+      LawyerProfile.count({ where: { verificationStatus: 'pending' } }),
+      LawyerProfile.count({ where: { verificationStatus: 'rejected' } }),
+    ]);
 
     res.json({
       lawyers: rows,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
+      counts: { all, approved, pending, rejected },
     });
   } catch (err) {
     next(err);
@@ -307,7 +314,9 @@ router.get('/specializations', async (req, res, next) => {
     const specializations = await Specialization.findAll({
       order: [['name', 'ASC']],
     });
-    res.json(specializations);
+    // lawyerCount из колонки — стухший литерал из сида (у всех «1»). Считаем реально,
+    // тем же способом, что и публичный каталог.
+    res.json(await withLawyerCounts(specializations));
   } catch (err) {
     next(err);
   }
@@ -341,20 +350,49 @@ router.put('/specializations/:id', async (req, res, next) => {
     }
 
     const { name, nameUz, nameEn, icon, isActive } = req.body;
+    const oldName = specialization.name;
+    const renaming = name !== undefined && name !== oldName;
+
     if (name !== undefined) specialization.name = name;
     if (nameUz !== undefined) specialization.nameUz = nameUz;
     if (nameEn !== undefined) specialization.nameEn = nameEn;
     if (icon !== undefined) specialization.icon = icon;
     if (isActive !== undefined) specialization.isActive = isActive;
-    await specialization.save();
 
-    res.json(specialization);
+    // Специализации хранятся у юристов строками без FK: простое переименование
+    // молча осиротило бы все профили со старым названием (юрист выпадал из
+    // фильтра каталога). Переносим их в одной транзакции с самим переименованием.
+    let migratedProfiles = 0;
+    await Specialization.sequelize.transaction(async (t) => {
+      await specialization.save({ transaction: t });
+      if (renaming) {
+        const [affected] = await LawyerProfile.update(
+          { specialization: name },
+          { where: { specialization: oldName }, transaction: t }
+        );
+        migratedProfiles = affected;
+        // Массив specializations — тот же перенос по элементу массива
+        await LawyerProfile.sequelize.query(
+          `UPDATE lawyer_profiles
+             SET specializations = array_replace(specializations, :oldName, :newName)
+           WHERE :oldName = ANY(specializations)`,
+          { replacements: { oldName, newName: name }, transaction: t }
+        );
+      }
+    });
+
+    res.json({ ...specialization.toJSON(), migratedProfiles });
   } catch (err) {
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Специализация с таким названием уже существует' });
+    }
     next(err);
   }
 });
 
 // DELETE /specializations/:id — delete
+// Удаление используемой специализации осиротило бы профили юристов (FK нет),
+// поэтому по умолчанию блокируем и сообщаем, скольких это затронет.
 router.delete('/specializations/:id', async (req, res, next) => {
   try {
     const specialization = await Specialization.findByPk(req.params.id);
@@ -362,8 +400,16 @@ router.delete('/specializations/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Специализация не найдена' });
     }
 
+    const inUse = await LawyerProfile.count({ where: { specialization: specialization.name } });
+    if (inUse > 0 && req.query.force !== 'true') {
+      return res.status(409).json({
+        error: `Специализация используется у ${inUse} юрист(ов). Переименуйте её или отключите вместо удаления.`,
+        inUse,
+      });
+    }
+
     await specialization.destroy();
-    res.json({ success: true, message: 'Специализация удалена' });
+    res.json({ success: true, message: 'Специализация удалена', inUse });
   } catch (err) {
     next(err);
   }
@@ -411,12 +457,35 @@ router.get('/consultations', async (req, res, next) => {
 // GET /admin/support — список обращений
 router.get('/support', async (req, res, next) => {
   try {
-    const tickets = await SupportTicket.findAll({
-      include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
-      order: [['createdAt', 'DESC']],
-      limit: 100,
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Раньше отдавались первые 100 без пагинации и фильтра: открытые обращения
+    // тонули среди закрытых, а всё после 100-го было недостижимо.
+    const where = {};
+    if (['open', 'in_progress', 'closed'].includes(status)) where.status = status;
+
+    const [{ count, rows }, all, open, inProgress, closed] = await Promise.all([
+      SupportTicket.findAndCountAll({
+        where,
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      SupportTicket.count(),
+      SupportTicket.count({ where: { status: 'open' } }),
+      SupportTicket.count({ where: { status: 'in_progress' } }),
+      SupportTicket.count({ where: { status: 'closed' } }),
+    ]);
+
+    res.json({
+      tickets: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, open, in_progress: inProgress, closed },
     });
-    res.json(tickets);
   } catch (err) {
     next(err);
   }
@@ -467,15 +536,36 @@ router.patch('/support/:id', async (req, res, next) => {
 // GET /admin/reviews — все отзывы (с автором и юристом)
 router.get('/reviews', async (req, res, next) => {
   try {
-    const reviews = await Review.findAll({
-      include: [
-        { model: User, as: 'client', attributes: ['id', 'name'] },
-        { model: User, as: 'lawyer', attributes: ['id', 'name'] },
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: 100,
+    const { visibility, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Пагинация вместо жёсткого limit=100: после сотого отзыва модерация была слепа.
+    const where = {};
+    if (visibility === 'hidden') where.isHidden = true;
+    if (visibility === 'visible') where.isHidden = false;
+
+    const [{ count, rows }, all, hidden] = await Promise.all([
+      Review.findAndCountAll({
+        where,
+        include: [
+          { model: User, as: 'client', attributes: ['id', 'name'] },
+          { model: User, as: 'lawyer', attributes: ['id', 'name'] },
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      Review.count(),
+      Review.count({ where: { isHidden: true } }),
+    ]);
+
+    res.json({
+      reviews: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, hidden, visible: all - hidden },
     });
-    res.json(reviews);
   } catch (err) {
     next(err);
   }
@@ -516,6 +606,16 @@ router.post('/promos', async (req, res, next) => {
     if (!Number.isInteger(pct) || pct < 1 || pct > 100) {
       return res.status(400).json({ error: 'Скидка должна быть от 1 до 100%' });
     }
+    // Дата в прошлом молча создавала мёртвый код: promoService всегда отклонял бы его.
+    if (expiresAt && new Date(expiresAt) < new Date(new Date().toDateString())) {
+      return res.status(400).json({ error: 'Дата окончания не может быть в прошлом' });
+    }
+    if (minAmount != null && Number(minAmount) < 0) {
+      return res.status(400).json({ error: 'Минимальная сумма не может быть отрицательной' });
+    }
+    if (usageLimit != null && usageLimit !== '' && Number(usageLimit) < 1) {
+      return res.status(400).json({ error: 'Лимит использований должен быть не меньше 1' });
+    }
     const [promo, created] = await Promo.findOrCreate({
       where: { code: String(code).trim().toUpperCase() },
       defaults: {
@@ -547,9 +647,24 @@ router.patch('/promos/:id', async (req, res, next) => {
       }
       promo.discountPercent = pct;
     }
-    if (minAmount != null) promo.minAmount = Number(minAmount) || 0;
-    if (usageLimit !== undefined) promo.usageLimit = usageLimit === '' || usageLimit === null ? null : Number(usageLimit);
-    if (expiresAt !== undefined) promo.expiresAt = expiresAt || null;
+    if (minAmount != null) {
+      if (Number(minAmount) < 0) return res.status(400).json({ error: 'Минимальная сумма не может быть отрицательной' });
+      promo.minAmount = Number(minAmount) || 0;
+    }
+    if (usageLimit !== undefined) {
+      const lim = usageLimit === '' || usageLimit === null ? null : Number(usageLimit);
+      // Лимит ниже уже использованного количества сделал бы код мёртвым «задним числом».
+      if (lim != null && lim < (promo.usedCount || 0)) {
+        return res.status(400).json({ error: `Лимит нельзя опустить ниже уже использованных (${promo.usedCount})` });
+      }
+      promo.usageLimit = lim;
+    }
+    if (expiresAt !== undefined) {
+      if (expiresAt && new Date(expiresAt) < new Date(new Date().toDateString())) {
+        return res.status(400).json({ error: 'Дата окончания не может быть в прошлом' });
+      }
+      promo.expiresAt = expiresAt || null;
+    }
     if (isActive != null) promo.isActive = Boolean(isActive);
     await promo.save();
     res.json(promo);
@@ -565,6 +680,158 @@ router.delete('/promos/:id', async (req, res, next) => {
     if (!promo) return res.status(404).json({ error: 'Промокод не найден' });
     await promo.destroy();
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─── ФИНАНСЫ: ЗАЯВКИ НА ВЫВОД ───────────────────────────────
+//
+// POST /payments/withdraw уже списывал баланс юриста и создавал Withdrawal со
+// статусом pending, но обработать заявку было некому: ни эндпоинта, ни UI не
+// существовало. Деньги списаны, заявка висит вечно. Ниже — недостающая половина.
+
+// GET /admin/withdrawals — очередь выплат (фильтр по статусу, пагинация)
+router.get('/withdrawals', async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (['pending', 'paid', 'failed', 'cancelled'].includes(status)) where.status = status;
+
+    const [{ count, rows }, all, pending, paid, pendingSum] = await Promise.all([
+      Withdrawal.findAndCountAll({
+        where,
+        include: [{
+          model: User,
+          as: 'lawyer',
+          attributes: ['id', 'name', 'email'],
+          include: [{ model: LawyerProfile, as: 'profile', attributes: ['balance', 'pendingBalance'] }],
+        }],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      Withdrawal.count(),
+      Withdrawal.count({ where: { status: 'pending' } }),
+      Withdrawal.count({ where: { status: 'paid' } }),
+      // Сколько денег сейчас «заморожено» в необработанных заявках — главная
+      // цифра для админа: столько он должен перевести.
+      Withdrawal.sum('amount', { where: { status: 'pending' } }),
+    ]);
+
+    res.json({
+      withdrawals: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, pending, paid, pendingAmount: Number(pendingSum) || 0 },
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PATCH /admin/withdrawals/:id — обработать заявку
+//   paid                → деньги переведены вручную, баланс НЕ трогаем (он уже списан)
+//   cancelled / failed  → возвращаем сумму на баланс юриста
+router.patch('/withdrawals/:id', async (req, res, next) => {
+  try {
+    const { status, note } = req.body;
+    if (!['paid', 'cancelled', 'failed'].includes(status)) {
+      return res.status(400).json({ error: 'Недопустимый статус заявки' });
+    }
+
+    const withdrawal = await Withdrawal.findByPk(req.params.id);
+    if (!withdrawal) return res.status(404).json({ error: 'Заявка не найдена' });
+    if (withdrawal.status !== 'pending') {
+      // Идемпотентность: обработанную заявку нельзя обработать повторно, иначе
+      // отказ дважды вернул бы деньги на баланс.
+      return res.status(409).json({ error: `Заявка уже обработана (${withdrawal.status})` });
+    }
+
+    const amount = Number(withdrawal.amount) || 0;
+    const refund = status !== 'paid';
+
+    await Withdrawal.sequelize.transaction(async (t) => {
+      // Условный UPDATE по status='pending' — защита от гонки двух админов:
+      // второй получит affected=0 и не выполнит второй возврат.
+      const [affected] = await Withdrawal.update(
+        { status, note: note ? String(note).slice(0, 500) : withdrawal.note },
+        { where: { id: withdrawal.id, status: 'pending' }, transaction: t }
+      );
+      if (affected === 0) {
+        const err = new Error('ALREADY_PROCESSED');
+        err.code = 'ALREADY_PROCESSED';
+        throw err;
+      }
+      if (refund) {
+        await LawyerProfile.update(
+          { balance: LawyerProfile.sequelize.literal(`balance + ${amount}`) },
+          { where: { userId: withdrawal.lawyerId }, transaction: t }
+        );
+      }
+    }).catch((e) => {
+      if (e.code === 'ALREADY_PROCESSED') {
+        const err = new Error('Заявка уже обработана');
+        err.status = 409;
+        throw err;
+      }
+      throw e;
+    });
+
+    // Уведомляем юриста об исходе (best-effort — сбой уведомления не должен
+    // откатывать уже проведённую операцию с деньгами).
+    try {
+      await notifications.createNotification(
+        withdrawal.lawyerId,
+        'withdrawal',
+        status === 'paid' ? 'Выплата отправлена' : 'Заявка на вывод отклонена',
+        status === 'paid'
+          ? `Выплата ${amount.toLocaleString('ru-RU')} сум отправлена.`
+          : `Заявка на ${amount.toLocaleString('ru-RU')} сум отклонена, сумма возвращена на баланс.${note ? ` Причина: ${note}` : ''}`,
+        { withdrawalId: withdrawal.id, status },
+      );
+    } catch (e) { /* уведомление — не критично */ }
+
+    const updated = await Withdrawal.findByPk(withdrawal.id);
+    res.json({ success: true, withdrawal: updated, refunded: refund });
+  } catch (err) {
+    if (err.status === 409) return res.status(409).json({ error: err.message });
+    next(err);
+  }
+});
+
+// GET /admin/payments — журнал платежей (админ видел только сумму выручки)
+router.get('/payments', async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const where = {};
+    if (['pending', 'paid', 'failed', 'refunded'].includes(status)) where.status = status;
+
+    const [{ count, rows }, all, paidCount, paidSum] = await Promise.all([
+      Payment.findAndCountAll({
+        where,
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      Payment.count(),
+      Payment.count({ where: { status: 'paid' } }),
+      Payment.sum('amount', { where: { status: 'paid' } }),
+    ]);
+
+    res.json({
+      payments: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, paid: paidCount, paidAmount: Number(paidSum) || 0 },
+    });
   } catch (err) {
     next(err);
   }

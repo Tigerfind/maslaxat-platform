@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Container,
@@ -25,13 +24,11 @@ import {
   CircularProgress,
   Card,
   Button,
-  Paper,
 } from '@mui/material';
 import {
   Add,
   Edit,
   Delete,
-  ArrowBack,
   Visibility,
   VisibilityOff,
   CheckCircle,
@@ -40,13 +37,15 @@ import {
 import { adminSpecializationService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import ErrorState from '../../components/UI/ErrorState';
 
 const SpecializationsPageGlass = () => {
-  const navigate = useNavigate();
   const { t } = useTranslation();
 
   const [specializations, setSpecializations] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [openDialog, setOpenDialog] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [editMode, setEditMode] = useState(false);
@@ -68,8 +67,10 @@ const SpecializationsPageGlass = () => {
       setLoading(true);
       const data = await adminSpecializationService.getSpecializations();
       setSpecializations(Array.isArray(data) ? data : []);
+      setLoadError(null);
     } catch (error) {
-      console.error('Error loading specializations:', error);
+      // Сервис больше не возвращает [] при сбое — этот catch наконец достижим.
+      setLoadError(error);
       toast.error(t('specPage.loadError'));
       setSpecializations([]);
     } finally {
@@ -126,8 +127,8 @@ const SpecializationsPageGlass = () => {
       handleCloseDialog();
       loadSpecializations();
     } catch (error) {
-      console.error('Error saving specialization:', error);
-      toast.error(t('specPage.saveError'));
+      // Бэкенд объясняет причину («имя занято»), а не общий «ошибка сохранения».
+      toast.error(error.response?.data?.error || t('specPage.saveError'));
     }
   };
 
@@ -135,6 +136,9 @@ const SpecializationsPageGlass = () => {
     setSelectedSpecId(id);
     setDeleteConfirm(true);
   };
+
+  // Сколько юристов затронет удаление — берём из уже посчитанного lawyerCount.
+  const selectedSpec = specializations.find((s) => s.id === selectedSpecId);
 
   const handleConfirmDelete = async () => {
     try {
@@ -144,8 +148,8 @@ const SpecializationsPageGlass = () => {
       setSelectedSpecId(null);
       loadSpecializations();
     } catch (error) {
-      console.error('Error deleting specialization:', error);
-      toast.error(t('specPage.deleteError'));
+      // 409 = специализация используется юристами: удаление осиротило бы их профили.
+      toast.error(error.response?.data?.error || t('specPage.deleteError'));
     }
   };
 
@@ -163,8 +167,7 @@ const SpecializationsPageGlass = () => {
         loadSpecializations();
       }
     } catch (error) {
-      console.error('Error toggling specialization:', error);
-      toast.error(t('specPage.statusError'));
+      toast.error(error.response?.data?.error || t('specPage.statusError'));
     }
   };
 
@@ -174,103 +177,46 @@ const SpecializationsPageGlass = () => {
     0
   );
 
+  // Шапку и меню даёт GlassShell — спиннер показываем внутри оболочки.
   if (loading) {
     return (
-      <Box
-        sx={{
-          minHeight: '100vh',
-          background: axelionColors.bgCream,
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-      >
-        <CircularProgress sx={{ color: axelionColors.gold }} size={60} />
-      </Box>
+      <GlassShell active="/admin/specializations" title={t('specPage.title')} subtitle={t('specPage.subtitle')} role="admin">
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress sx={{ color: axelionColors.gold }} size={60} />
+        </Box>
+      </GlassShell>
     );
   }
 
   return (
-    <Box
-      sx={{
-        minHeight: '100vh',
-        background: axelionColors.bgCream,
-        pb: 4,
-      }}
-    >
-      {/* Header */}
-      <Box
-        sx={{
-          background: axelionColors.bgLight,
-          borderBottom: `1px solid ${axelionColors.borderLight}`,
-          py: 3,
-          px: 2,
-        }}
-      >
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Tooltip title={t('specPage.back')}>
-                <IconButton
-                  onClick={() => navigate('/admin/dashboard')}
-                  sx={{
-                    background: axelionColors.bgCream,
-                    color: axelionColors.textDark,
-                    border: `1px solid ${axelionColors.borderLight}`,
-                    '&:hover': {
-                      background: axelionColors.bgBeige,
-                      borderColor: axelionColors.gold,
-                    },
-                  }}
-                >
-                  <ArrowBack />
-                </IconButton>
-              </Tooltip>
-              <Box>
-                <Typography
-                  variant="h5"
-                  sx={{
-                    fontWeight: 300,
-                    color: axelionColors.textDark,
-                    letterSpacing: '0.1em',
-                    textTransform: 'uppercase',
-                  }}
-                >
-                  {t('specPage.title')}
-                </Typography>
-                <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
-                  {t('specPage.subtitle')}
-                </Typography>
-              </Box>
-            </Box>
+    <GlassShell active="/admin/specializations" title={t('specPage.title')} subtitle={t('specPage.subtitle')} role="admin">
+      <Container maxWidth="xl" disableGutters>
+        {/* Кнопка добавления переехала из собственной шапки страницы в контент. */}
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
+          <Button
+            variant="contained"
+            startIcon={<Add />}
+            onClick={() => handleOpenDialog()}
+            sx={{
+              background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
+              color: '#FFFFFF',
+              fontWeight: 500,
+              px: 3,
+              py: 1.5,
+              borderRadius: '8px',
+              textTransform: 'none',
+              letterSpacing: '0.05em',
+              boxShadow: '0 2px 6px rgba(184, 149, 110, 0.25)',
+              '&:hover': {
+                background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)`,
+                boxShadow: '0 4px 12px rgba(184, 149, 110, 0.35)',
+              },
+            }}
+          >
+            {t('specPage.addSpec')}
+          </Button>
+        </Box>
 
-            <Button
-              variant="contained"
-              startIcon={<Add />}
-              onClick={() => handleOpenDialog()}
-              sx={{
-                background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,
-                color: '#FFFFFF',
-                fontWeight: 500,
-                px: 3,
-                py: 1.5,
-                borderRadius: '8px',
-                textTransform: 'none',
-                letterSpacing: '0.05em',
-                boxShadow: '0 2px 6px rgba(184, 149, 110, 0.25)',
-                '&:hover': {
-                  background: `linear-gradient(135deg, ${axelionColors.goldDark} 0%, ${axelionColors.bronze} 100%)`,
-                  boxShadow: '0 4px 12px rgba(184, 149, 110, 0.35)',
-                },
-              }}
-            >
-              {t('specPage.addSpec')}
-            </Button>
-          </Box>
-        </Container>
-      </Box>
-
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
         {/* Stats Cards */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {[
@@ -522,6 +468,8 @@ const SpecializationsPageGlass = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+          ) : loadError ? (
+            <ErrorState error={loadError} onRetry={loadSpecializations} />
           ) : (
             <Box sx={{ textAlign: 'center', py: 6 }}>
               <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
@@ -702,6 +650,14 @@ const SpecializationsPageGlass = () => {
           <Typography sx={{ color: axelionColors.textMuted }}>
             {t('specPage.deleteConfirmText')}
           </Typography>
+          {/* Специализации у юристов хранятся строками без внешнего ключа, поэтому
+              удаление используемой осиротило бы профили. Показываем счётчик заранее;
+              сам бэкенд такое удаление отклонит (409). */}
+          {selectedSpec?.lawyerCount > 0 && (
+            <Typography sx={{ mt: 2, color: axelionColors.error, fontWeight: 500 }}>
+              {t('specPage.inUseWarn').replace('{n}', selectedSpec.lawyerCount)}
+            </Typography>
+          )}
         </DialogContent>
         <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
           <Button
@@ -743,7 +699,7 @@ const SpecializationsPageGlass = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </GlassShell>
   );
 };
 

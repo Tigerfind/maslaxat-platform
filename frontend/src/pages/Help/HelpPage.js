@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
@@ -67,13 +67,18 @@ const SUP_CATS = [{ k: 'catGeneral' }, { k: 'catPayment' }, { k: 'catTech' }, { 
 const HelpPage = () => {
   const navigate = useNavigate();
   const { role } = useSelector((s) => s.auth);
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
 
   const [faqOpen, setFaqOpen] = useState(null);
   const [supCat, setSupCat] = useState('catGeneral');
   const [supSubject, setSupSubject] = useState('');
   const [supMsg, setSupMsg] = useState('');
   const [sending, setSending] = useState(false);
+  // Мои обращения: GET /api/support/my существовал, но его не вызывал никто —
+  // ответ поддержки доходил до клиента только первыми 140 символами в уведомлении.
+  const [tickets, setTickets] = useState([]);
+  const [ticketsError, setTicketsError] = useState(null);
 
   const supChannels = [
     {
@@ -107,6 +112,17 @@ const HelpPage = () => {
 
   const disabled = !supSubject.trim() && !supMsg.trim();
 
+  const loadTickets = async () => {
+    try {
+      const { data } = await api.get('/support/my');
+      setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+      setTicketsError(null);
+    } catch (e) {
+      setTicketsError(e);
+    }
+  };
+  useEffect(() => { loadTickets(); }, []);
+
   const handleSubmit = async () => {
     if (!supMsg.trim()) {
       toast.error(t('help.fillRequired'));
@@ -119,6 +135,7 @@ const HelpPage = () => {
       toast.success(t('help.sent'));
       setSupSubject('');
       setSupMsg('');
+      loadTickets();
     } catch (e) {
       toast.error(e.response?.data?.error || t('help.sendError'));
     } finally {
@@ -220,6 +237,42 @@ const HelpPage = () => {
             >
               {sending ? t('help.sending') : t('help.submit')}
             </button>
+          </div>
+        </div>
+
+        {/* МОИ ОБРАЩЕНИЯ — полный текст ответа, а не 140 символов из уведомления */}
+        <div>
+          <div style={sectionLabel}>{t('help.myTickets')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {ticketsError ? (
+              <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.ticketsError')}</div>
+            ) : tickets.length === 0 ? (
+              <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.noTickets')}</div>
+            ) : tickets.map((tk) => (
+              <div key={tk.id} style={{ ...glassCard, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{tk.subject}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>{new Date(tk.createdAt).toLocaleDateString(dateLocale)}</span>
+                    <span style={{ fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                      {tk.status === 'closed' ? t('help.ticketStClosed') : tk.status === 'in_progress' ? t('help.ticketStProgress') : t('help.ticketStOpen')}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.7, color: 'var(--text2)', whiteSpace: 'pre-wrap' }}>{tk.message}</div>
+                {tk.response ? (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>{t('help.ticketAnswer')}</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{tk.response}</div>
+                    {tk.respondedAt && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text3)' }}>{new Date(tk.respondedAt).toLocaleString(dateLocale)}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text3)' }}>{t('help.ticketNoAnswer')}</div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

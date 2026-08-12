@@ -1,15 +1,19 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   Box, Container, Typography, IconButton, CircularProgress, Chip,
   Table, TableBody, TableCell, TableHead, TableRow, Paper, Select, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Tooltip,
+  Pagination, Alert,
 } from '@mui/material';
-import { ArrowBack, ReplyOutlined } from '@mui/icons-material';
+import { ReplyOutlined } from '@mui/icons-material';
 import adminService from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import ErrorState from '../../components/UI/ErrorState';
+
+const PAGE_SIZE = 25;
 
 const STATUS_COLOR = {
   open: { c: axelionColors.warning, bg: 'rgba(196,163,90,0.16)' },
@@ -18,20 +22,41 @@ const STATUS_COLOR = {
 };
 
 const AdminSupportPage = () => {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState(null);
   const [replyTicket, setReplyTicket] = useState(null);
   const [replyText, setReplyText] = useState('');
   const [sending, setSending] = useState(false);
 
-  const load = async () => {
+  const load = async (pageNum = 1, status = statusFilter) => {
     setLoading(true);
-    setTickets(await adminService.support.getTickets());
-    setLoading(false);
+    try {
+      const data = await adminService.support.getTickets({
+        page: pageNum,
+        limit: PAGE_SIZE,
+        ...(status !== 'all' ? { status } : {}),
+      });
+      // Новый формат — объект с пагинацией; массив оставлен для совместимости.
+      setTickets(Array.isArray(data?.tickets) ? data.tickets : (Array.isArray(data) ? data : []));
+      setTotalPages(data?.totalPages || 1);
+      setCounts(data?.counts || null);
+      setError(null);
+    } catch (e) {
+      setError(e);
+      setTickets([]);
+      setCounts(null);
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { load(1, statusFilter); }, [statusFilter]);
 
   const changeStatus = async (ticket, status) => {
     try {
@@ -60,26 +85,42 @@ const AdminSupportPage = () => {
     } finally { setSending(false); }
   };
 
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
+  // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
+  // и в узбекской/английской версии даты оставались русскими.
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : '');
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: axelionColors.bgCream, pb: 6 }}>
-      <Box sx={{ bgcolor: axelionColors.bgLight, borderBottom: `1px solid ${axelionColors.borderLight}`, py: { xs: 2, md: 3 } }}>
-        <Container maxWidth="lg">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={() => navigate('/admin/dashboard')} sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px' }}>
-              <ArrowBack sx={{ color: axelionColors.textDark }} />
-            </IconButton>
-            <Typography sx={{ fontWeight: 300, fontSize: { xs: '1.25rem', md: '1.6rem' }, letterSpacing: '0.08em', textTransform: 'uppercase', color: axelionColors.textDark }}>
-              {t('adminSupport.title')}
-            </Typography>
-          </Box>
-        </Container>
-      </Box>
+    <GlassShell active="/admin/support" title={t('adminSupport.title')} role="admin">
+      <Container maxWidth="lg" disableGutters>
+        {/* Фильтр по статусу: открытые обращения раньше тонули среди закрытых. */}
+        <Box sx={{ mb: 2, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+          {[
+            { key: 'all', label: t('common.all'), count: counts?.all },
+            { key: 'open', label: t('adminSupport.stOpen'), count: counts?.open },
+            { key: 'in_progress', label: t('adminSupport.stProgress'), count: counts?.in_progress },
+            { key: 'closed', label: t('adminSupport.stClosed'), count: counts?.closed },
+          ].map((f) => (
+            <Chip
+              key={f.key}
+              label={f.count != null ? `${f.label} (${f.count})` : f.label}
+              onClick={() => { setPage(1); setStatusFilter(f.key); }}
+              variant={statusFilter === f.key ? 'filled' : 'outlined'}
+              sx={{
+                cursor: 'pointer',
+                background: statusFilter === f.key ? axelionColors.accentLight : 'transparent',
+                borderColor: axelionColors.borderLight,
+                color: axelionColors.textDark,
+                fontWeight: statusFilter === f.key ? 600 : 400,
+              }}
+            />
+          ))}
+        </Box>
 
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress sx={{ color: axelionColors.gold }} /></Box>
+        ) : error ? (
+          <ErrorState error={error} onRetry={() => load(page, statusFilter)} />
         ) : (
           <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
             <Table>
@@ -140,6 +181,12 @@ const AdminSupportPage = () => {
             </Table>
           </Paper>
         )}
+
+        {!loading && !error && totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Pagination count={totalPages} page={page} onChange={(e, p) => { setPage(p); load(p, statusFilter); }} shape="rounded" />
+          </Box>
+        )}
       </Container>
 
       {/* Диалог ответа автору обращения */}
@@ -153,6 +200,11 @@ const AdminSupportPage = () => {
               </Typography>
               <Typography sx={{ fontSize: 13.5, color: axelionColors.textDark, whiteSpace: 'pre-wrap' }}>{replyTicket.message}</Typography>
             </Box>
+          )}
+          {/* Ответ хранится в одной колонке: повторная отправка затирает прежний
+              текст без следа — предупреждаем до нажатия. */}
+          {replyTicket?.response && (
+            <Alert severity="warning" sx={{ py: 0.5 }}>{t('adminSupport.overwriteWarn')}</Alert>
           )}
           <TextField
             label={t('adminSupport.replyLabel')}
@@ -171,7 +223,7 @@ const AdminSupportPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
-    </Box>
+    </GlassShell>
   );
 };
 

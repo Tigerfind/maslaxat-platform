@@ -18,6 +18,7 @@ const monthKey = (date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 const { authenticate, authorize } = require('../middleware/auth');
+const { withLawyerCounts } = require('../services/specializationStats');
 
 // GET /api/dashboard/client/stats
 router.get('/client/stats', authenticate, authorize('client'), async (req, res, next) => {
@@ -319,17 +320,9 @@ router.get('/specializations', async (req, res, next) => {
       where: { isActive: true },
       order: [['name', 'ASC']],
     });
-    // Реальное число юристов по каждой специализации (раньше lawyerCount всегда был 1 из сида)
-    const counts = await LawyerProfile.findAll({
-      attributes: ['specialization', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
-      group: ['specialization'],
-      raw: true,
-    });
-    const countMap = {};
-    counts.forEach((c) => { countMap[c.specialization] = parseInt(c.cnt, 10) || 0; });
-
-    const result = specializations.map((s) => ({ ...s.toJSON(), lawyerCount: countMap[s.name] || 0 }));
-    res.json(result);
+    // Реальное число юристов по каждой специализации (раньше lawyerCount всегда был 1 из сида).
+    // Общий хелпер — тот же, что использует админка, чтобы цифры не расходились.
+    res.json(await withLawyerCounts(specializations));
   } catch (err) {
     next(err);
   }

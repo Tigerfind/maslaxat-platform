@@ -27,6 +27,8 @@ import {
   VerifiedUser,
   DescriptionOutlined,
   FactCheckOutlined,
+  AccountBalanceWalletOutlined,
+  SupportAgentOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -55,6 +57,11 @@ const NOTIFICATION_ICONS = {
   verification_request: <FactCheckOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
   // Новый документ по делу (другой стороне консультации)
   case_document: <DescriptionOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Итог обработки заявки на вывод (юристу)
+  withdrawal: <AccountBalanceWalletOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Поддержка: ответ админа (клиенту) и новое обращение (админу)
+  support_reply: <SupportAgentOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  support_ticket: <SupportAgentOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
 };
 
 const NotificationCenter = ({ sx = {} }) => {
@@ -246,6 +253,12 @@ const NotificationCenter = ({ sx = {} }) => {
                             const m = notif.metadata || {};
                             // Тип-специфичная навигация для модерации/документов.
                             if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
+            // Баланс и вывод средств живут на странице аналитики юриста
+            if (notif.type === 'withdrawal') { navigate('/lawyer/analytics'); return; }
+            // Ответ поддержки: ведём на «Мои обращения», где виден ПОЛНЫЙ текст,
+            // а не обрезанные 140 символов из самого уведомления.
+            if (notif.type === 'support_reply') { navigate('/help'); return; }
+            if (notif.type === 'support_ticket') { navigate('/admin/support'); return; }
                             if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
                             if (notif.type === 'case_document' && m.consultationId) { navigate(`/consultations/chat/${m.consultationId}`); return; }
                             // Пропущенный звонок → открыть звонок (перезвонить);

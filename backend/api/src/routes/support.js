@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { SupportTicket, User } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
+const notifications = require('../services/notificationService');
 
 // POST /api/support — создать обращение в поддержку
 router.post('/', authenticate, async (req, res, next) => {
@@ -16,6 +17,21 @@ router.post('/', authenticate, async (req, res, next) => {
       message: message.trim(),
       status: 'open',
     });
+
+    // Уведомляем админов: раньше новое обращение не сигналило никому, и админ
+    // узнавал о нём, только если сам заходил на страницу поддержки (fail-safe).
+    try {
+      const author = await User.findByPk(req.userId, { attributes: ['name'] });
+      const admins = await User.findAll({ where: { role: 'admin' }, attributes: ['id'] });
+      await Promise.all(admins.map((a) => notifications.createNotification(
+        a.id,
+        'support_ticket',
+        'Новое обращение в поддержку',
+        `${author?.name || 'Пользователь'}: ${ticket.subject}`,
+        { ticketId: ticket.id },
+      )));
+    } catch (e) { /* уведомление — best-effort, тикет уже создан */ }
+
     res.status(201).json({ success: true, message: 'Обращение отправлено', ticket });
   } catch (err) {
     next(err);
