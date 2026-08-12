@@ -1,7 +1,11 @@
 # Dependencies
 node_modules/
 */node_modules/
-package-lock.json
+# Lock-файлы приложений держим в репозитории: Dockerfile бэкенда собирает
+# через `npm ci`, которому нужен package-lock.json, а воспроизводимость сборки
+# на проде важнее «чистоты» диффа.
+!backend/api/package-lock.json
+!frontend/package-lock.json
 yarn.lock
 .pnp
 .pnp.js
