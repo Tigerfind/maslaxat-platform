@@ -4,6 +4,7 @@ const { User, LawyerProfile, Review, Consultation } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
 const { recomputeLawyerRating } = require('../services/ratingService');
+const tiers = require('../services/lawyerTiers');
 
 // Пороги быстрых фильтров каталога. Держим в одном месте, чтобы подпись чипа
 // («Опытные») и условие выборки не разъезжались.
@@ -53,19 +54,41 @@ async function catalogFacets(baseUserWhere) {
     budgetThreshold ? User.count(withProfile({ price: { [Op.lte]: budgetThreshold } })) : 0,
   ]);
 
+  // Подбор «по карману» и «по статусу»: клиенту нужно видеть не только названия
+  // сегментов, но и границы цен и сколько юристов в каждом — иначе выбор вслепую.
+  const bands = await tiers.priceBands();
+  const priceSegments = bands ? await Promise.all(
+    ['economy', 'standard', 'premium'].map(async (key) => ({
+      key,
+      from: key === 'economy' ? null : (key === 'standard' ? bands.p33 : bands.p66),
+      to: key === 'premium' ? null : (key === 'economy' ? bands.p33 : bands.p66),
+      count: await User.count(withProfile(tiers.priceWhere(key, bands))),
+    })),
+  ) : [];
+
+  const statusSegments = await Promise.all(
+    ['top', 'expert', 'practitioner'].map(async (key) => ({
+      key,
+      count: await User.count(withProfile(tiers.STATUS_WHERE[key])),
+    })),
+  );
+
   return {
     total,
     online,
     highRating: { from: HIGH_RATING_FROM, count: highRating },
     experienced: { from: EXPERIENCED_FROM, count: experienced },
     budget: { maxPrice: budgetThreshold, count: budget },
+    priceSegments,
+    statusSegments,
+    statusRules: tiers.thresholds,
   };
 }
 
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, experience, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, experience, budget, status, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
@@ -100,6 +123,15 @@ router.get('/', async (req, res, next) => {
     // вообще — пилюли «Опыт» в сайдбаре были декоративными.
     const expRange = parseExperienceRange(experience);
     if (expRange) profileWhere.experience = expRange;
+
+    // Подбор «по карману»: сегмент цены считается от терцилей реальных цен
+    // каталога, а не от константы.
+    const bands = await tiers.priceBands();
+    const bandWhere = tiers.priceWhere(budget, bands);
+    if (bandWhere) Object.assign(profileWhere, bandWhere);
+
+    // Подбор «по статусу»: ступень юриста (топ / эксперт / практик).
+    if (tiers.STATUS_WHERE[status]) Object.assign(profileWhere, tiers.STATUS_WHERE[status]);
 
     // Безопасный режим: в каталоге показываем ТОЛЬКО одобренных админом юристов.
     // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
@@ -143,8 +175,21 @@ router.get('/', async (req, res, next) => {
     // пустые и взять порог «недорого» из реальных цен, а не из константы.
     const facets = await catalogFacets({ role: 'lawyer', isActive: true });
 
+    // Ступень считаем тем же правилом, что и фильтр: карточка и фильтр не должны
+    // расходиться в том, кто «топ».
+    const lawyers = rows.map((u) => {
+      // User.toJSON копирует поля поверхностно, поэтому profile остаётся моделью
+      // Sequelize: дописанное в неё поле терялось бы при сериализации ответа.
+      const plain = u.toJSON();
+      const profile = plain.profile && typeof plain.profile.toJSON === 'function'
+        ? plain.profile.toJSON()
+        : plain.profile;
+      if (profile) plain.profile = { ...profile, status: tiers.statusOf(profile) };
+      return plain;
+    });
+
     res.json({
-      lawyers: rows,
+      lawyers,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),

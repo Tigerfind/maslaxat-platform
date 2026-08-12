@@ -183,6 +183,10 @@ const LawyersPageGlass = () => {
     onlineOnly: false,
     location: '',
     language: '',
+    // Подбор «под себя»: ценовой сегмент и ступень юриста. Сортировка отвечает
+    // на «в каком порядке», эти два — на «кто мне вообще подходит».
+    budget: '',
+    status: '',
   });
   const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
   // Фасеты каталога: счётчики для чипов и порог «недорого» из реальных цен.
@@ -250,6 +254,8 @@ const LawyersPageGlass = () => {
       onlineOnly: false,
       location: '',
       language: '',
+      budget: '',
+      status: '',
     });
     setSearchQuery('');
     setCurrentPage(1);
@@ -588,6 +594,19 @@ const LawyersPageGlass = () => {
                 {t('lawyers.onlineNow')}
               </span>
             )}
+            {/* Ступень юриста — тем же правилом, что и фильтр «По статусу»:
+                выбрал «Топ-юристы» — на карточках должен стоять «Топ». */}
+            {lawyer.status && lawyer.status !== 'practitioner' && (
+              <span style={{
+                flexShrink: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em',
+                textTransform: 'uppercase', padding: '3px 8px', borderRadius: 999,
+                border: `1px solid ${lawyer.status === 'top' ? 'var(--accent)' : 'var(--border-strong)'}`,
+                background: lawyer.status === 'top' ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'transparent',
+                color: lawyer.status === 'top' ? '#fff' : 'var(--text3)',
+              }}>
+                {lawyer.status === 'top' ? t('lawyers.badgeTop') : t('lawyers.badgeExpert')}
+              </span>
+            )}
           </div>
 
           {/* rating + meta */}
@@ -672,6 +691,16 @@ const LawyersPageGlass = () => {
     });
     if (filters.experience) chips.push({
       key: 'exp', label: fmt('fltExperience', filters.experience), clear: () => handleFilterChange('experience', ''),
+    });
+    if (filters.budget) chips.push({
+      key: 'budget',
+      label: t('lawyers.seg' + filters.budget.charAt(0).toUpperCase() + filters.budget.slice(1)),
+      clear: () => handleFilterChange('budget', ''),
+    });
+    if (filters.status) chips.push({
+      key: 'status',
+      label: t('lawyers.' + { top: 'stTop', expert: 'stExpert', practitioner: 'stPractitioner' }[filters.status]),
+      clear: () => handleFilterChange('status', ''),
     });
     if (filters.priceRange[0] > 0) chips.push({
       key: 'priceFrom',
@@ -944,6 +973,93 @@ const LawyersPageGlass = () => {
               </div>
             );
           })()}
+
+          {/* ПОДБОР ПОД СЕБЯ.
+              Сортировка отвечает только на «в каком порядке показать» — список
+              при этом остаётся тем же. Здесь клиент сужает каталог до тех, кто
+              ему подходит: по бюджету и по уровню юриста. Границы цен и критерии
+              ступеней приходят с сервера и показаны прямо на кнопках, чтобы выбор
+              не был вслепую. */}
+          {(facets?.priceSegments?.length > 0 || facets?.statusSegments?.length > 0) && (
+            <div style={{ ...glassCard, padding: 18, marginBottom: 18 }}>
+              <div style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 14 }}>
+                {t('lawyers.pickTitle')}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+                {[
+                  {
+                    field: 'budget',
+                    label: t('lawyers.pickBudget'),
+                    options: (facets.priceSegments || []).map((seg) => ({
+                      v: seg.key,
+                      count: seg.count,
+                      title: t('lawyers.seg' + seg.key.charAt(0).toUpperCase() + seg.key.slice(1)),
+                      hint: seg.key === 'economy'
+                        ? t('lawyers.segEconomyHint').replace('{n}', Number(seg.to || 0).toLocaleString())
+                        : seg.key === 'premium'
+                          ? t('lawyers.segPremiumHint').replace('{n}', Number(seg.from || 0).toLocaleString())
+                          : t('lawyers.segStandardHint')
+                            .replace('{a}', Number(seg.from || 0).toLocaleString())
+                            .replace('{b}', Number(seg.to || 0).toLocaleString()),
+                    })),
+                  },
+                  {
+                    field: 'status',
+                    label: t('lawyers.pickStatus'),
+                    options: (facets.statusSegments || []).map((seg) => {
+                      const r = facets.statusRules || {};
+                      const titleKey = { top: 'stTop', expert: 'stExpert', practitioner: 'stPractitioner' }[seg.key];
+                      const hint = seg.key === 'top'
+                        ? t('lawyers.stTopHint').replace('{r}', r.TOP_RATING ?? 4.8).replace('{n}', r.TOP_REVIEWS ?? 30)
+                        : seg.key === 'expert'
+                          ? t('lawyers.stExpertHint').replace('{y}', r.EXPERT_EXPERIENCE ?? 10).replace('{n}', r.EXPERT_REVIEWS ?? 20)
+                          : t('lawyers.stPractitionerHint');
+                      return { v: seg.key, count: seg.count, title: t('lawyers.' + titleKey), hint };
+                    }),
+                  },
+                ].map((group) => (
+                  <div key={group.field}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 9 }}>{group.label}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {group.options.map((o) => {
+                        const active = filters[group.field] === o.v;
+                        // Пустой сегмент выбирать незачем — он гарантированно
+                        // приведёт на экран «никого не найдено».
+                        const empty = o.count === 0;
+                        return (
+                          <button
+                            key={o.v}
+                            disabled={empty}
+                            aria-pressed={active}
+                            onClick={() => handleFilterChange(group.field, active ? '' : o.v)}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                              textAlign: 'left', width: '100%', padding: '10px 13px', borderRadius: 12,
+                              cursor: empty ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                              border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                              background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                              opacity: empty ? 0.45 : 1, transition: 'all .15s',
+                            }}
+                          >
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 13.5, fontWeight: active ? 600 : 500, color: 'var(--text)' }}>{o.title}</span>
+                              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>{o.hint}</span>
+                            </span>
+                            <span style={{
+                              flexShrink: 0, fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                              background: active ? 'var(--accent)' : 'var(--border)',
+                              color: active ? '#fff' : 'var(--text3)',
+                            }}>{o.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           {/* Активные фильтры: видно, что именно сужает выдачу, и каждый снимается
               по отдельности — раньше был только «сбросить всё». */}

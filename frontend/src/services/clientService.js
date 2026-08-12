@@ -71,6 +71,9 @@ export const clientLawyerService = {
         // только approved, но держим явно — на будущее и для единообразия.
         verificationStatus: l.profile?.verificationStatus || 'pending',
         rating: l.profile?.rating || 0,
+        // Ступень юриста (топ/эксперт/практик) считает сервер — тем же правилом,
+        // что и фильтр подбора, чтобы бейдж и выборка не расходились.
+        status: l.profile?.status || null,
         reviewsCount: l.profile?.reviewsCount || 0,
         completedConsultations: l.profile?.completedCases || 0,
         specializations: Array.isArray(l.profile?.specializations) && l.profile.specializations.length
