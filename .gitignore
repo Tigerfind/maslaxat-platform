@@ -1,11 +1,11 @@
 # Dependencies
 node_modules/
 */node_modules/
-# Lock-файлы приложений держим в репозитории: Dockerfile бэкенда собирает
-# через `npm ci`, которому нужен package-lock.json, а воспроизводимость сборки
-# на проде важнее «чистоты» диффа.
+# Lock бэкенда держим в репозитории: его Dockerfile собирает через `npm ci`,
+# которому package-lock.json обязателен. Lock фронтенда НЕ коммитим: nixpacks
+# при его наличии переключается на `npm ci`, а npm 10 на билдере Railway
+# отвергает наш файл (Missing: yaml) — сборка идёт через `npm install`.
 !backend/api/package-lock.json
-!frontend/package-lock.json
 yarn.lock
 .pnp
 .pnp.js
