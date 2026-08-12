@@ -20,11 +20,17 @@ ENV DISABLE_ESLINT_PLUGIN=true
 ENV CI=false
 RUN npm run build
 
-FROM nginx:alpine
+# Финальный слой — node, а не nginx: railway.json задаёт startCommand
+# `npx serve -s build -l $PORT`, и он подменяет CMD образа. В nginx-образе нет
+# ни node, ни /app/build, поэтому контейнер падал сразу после успешной сборки.
+# nginx.conf оставлен в репозитории для docker-compose (локальный стек).
+FROM node:18-alpine
 
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/build /usr/share/nginx/html
+WORKDIR /app
+COPY --from=build /app/build ./build
+RUN npm install -g serve
 
-EXPOSE 80
+EXPOSE 3000
 
-CMD ["nginx", "-g", "daemon off;"]
+# $PORT приходит от Railway; локально по умолчанию 3000.
+CMD ["sh", "-c", "serve -s build -l ${PORT:-3000}"]
