@@ -5,10 +5,67 @@ const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
 const { recomputeLawyerRating } = require('../services/ratingService');
 
+// Пороги быстрых фильтров каталога. Держим в одном месте, чтобы подпись чипа
+// («Опытные») и условие выборки не разъезжались.
+const HIGH_RATING_FROM = 4.5;
+const EXPERIENCED_FROM = 10;
+
+/**
+ * Разбирает фильтр опыта: '0-5' | '5-10' | '10-15' | '15+' | '10+'.
+ * @returns {Object|null} условие Sequelize для profile.experience
+ */
+function parseExperienceRange(value) {
+  if (!value || typeof value !== 'string') return null;
+  const openEnded = value.match(/^(\d+)\+$/);
+  if (openEnded) return { [Op.gte]: Number(openEnded[1]) };
+  const range = value.match(/^(\d+)-(\d+)$/);
+  if (range) return { [Op.gte]: Number(range[1]), [Op.lte]: Number(range[2]) };
+  return null;
+}
+
+/**
+ * Фасеты каталога: сколько юристов попадает под каждый быстрый фильтр и какой
+ * порог считать «недорого». Порог не константа: берём нижнюю треть реальных цен,
+ * иначе на дешёвом или дорогом рынке чип показывает либо всех, либо никого.
+ *
+ * Считается по базовому каталогу (одобренные, активные) без учёта уже выбранных
+ * фильтров — чипы должны показывать, что вообще есть, а не «сколько осталось».
+ */
+async function catalogFacets(baseUserWhere) {
+  const approved = { verificationStatus: 'approved' };
+  const withProfile = (where) => ({
+    where: baseUserWhere,
+    include: [{ model: LawyerProfile, as: 'profile', where: { ...approved, ...where }, required: true }],
+  });
+
+  const prices = await LawyerProfile.findAll({
+    where: approved, attributes: ['price'], raw: true,
+  });
+  const sorted = prices.map((p) => Number(p.price) || 0).filter((p) => p > 0).sort((a, b) => a - b);
+  // 33-й перцентиль; при пустом каталоге порога нет — чип будет отключён.
+  const budgetThreshold = sorted.length ? sorted[Math.max(0, Math.floor(sorted.length / 3) - (sorted.length % 3 === 0 ? 1 : 0))] : null;
+
+  const [total, online, highRating, experienced, budget] = await Promise.all([
+    User.count(withProfile({})),
+    User.count(withProfile({ isAvailable: true })),
+    User.count(withProfile({ rating: { [Op.gte]: HIGH_RATING_FROM } })),
+    User.count(withProfile({ experience: { [Op.gte]: EXPERIENCED_FROM } })),
+    budgetThreshold ? User.count(withProfile({ price: { [Op.lte]: budgetThreshold } })) : 0,
+  ]);
+
+  return {
+    total,
+    online,
+    highRating: { from: HIGH_RATING_FROM, count: highRating },
+    experienced: { from: EXPERIENCED_FROM, count: experienced },
+    budget: { maxPrice: budgetThreshold, count: budget },
+  };
+}
+
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, experience, page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
     const profileWhere = {};
@@ -27,13 +84,22 @@ router.get('/', async (req, res, next) => {
     if (Object.getOwnPropertySymbols(priceFilter).length) profileWhere.price = priceFilter;
     // languages — JSONB-массив; фильтруем по вхождению языка (Postgres @>)
     if (language) profileWhere.languages = { [Op.contains]: [language] };
-    // Фильтр по звёздам: показываем юристов, чей рейтинг округляется до выбранной звезды
-    // (напр. «5 звёзд» → рейтинг 4.5–5.0; «2 звезды» → 1.5–2.49). Совпадает с тем,
-    // сколько звёзд показано на карточке.
-    if (minRating) {
-      const r = parseFloat(minRating);
-      profileWhere.rating = { [Op.gte]: r - 0.5, [Op.lt]: r + 0.5 };
+    // Минимальный рейтинг — именно МИНИМУМ (>=), как и написано на фильтре.
+    //
+    // Было две проблемы. Во-первых, `if (minRating)` пропускало строку "0",
+    // которую фронт шлёт по умолчанию, и каталог фильтровался по диапазону
+    // −0.5…0.5 — то есть был пуст у всех клиентов. Во-вторых, прежняя логика
+    // «корзины звёзд» (4★ = 3.5–4.49) прятала юриста с рейтингом 4.9 при выборе
+    // «от 4 звёзд», что противоречит подписи фильтра.
+    const ratingFrom = parseFloat(minRating);
+    if (Number.isFinite(ratingFrom) && ratingFrom > 0) {
+      profileWhere.rating = { [Op.gte]: ratingFrom };
     }
+
+    // Опыт: '0-5' | '5-10' | '10-15' | '15+' | '10+'. Раньше параметр не читался
+    // вообще — пилюли «Опыт» в сайдбаре были декоративными.
+    const expRange = parseExperienceRange(experience);
+    if (expRange) profileWhere.experience = expRange;
 
     // Безопасный режим: в каталоге показываем ТОЛЬКО одобренных админом юристов.
     // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
@@ -73,11 +139,16 @@ router.get('/', async (req, res, next) => {
       offset,
     });
 
+    // Фасеты нужны фронту, чтобы показать числа на чипах, отключить заведомо
+    // пустые и взять порог «недорого» из реальных цен, а не из константы.
+    const facets = await catalogFacets({ role: 'lawyer', isActive: true });
+
     res.json({
       lawyers: rows,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
+      facets,
     });
   } catch (err) {
     next(err);

@@ -22,6 +22,7 @@ import {
   FavoriteRounded,
   TuneOutlined,
   CheckRounded,
+  CloseRounded,
   CardGiftcardOutlined,
   GridViewOutlined,
   BalanceOutlined,
@@ -101,6 +102,10 @@ const specIcon = (name = '', id) => {
 // Потолок фильтра цены (сум). Разовая консультация у топ-адвоката реально доходит до ~2–4 млн;
 // 10 млн даёт запас под премиум-сегмент. Дефолт диапазона = [0, MAX_PRICE] (показывать всех).
 const MAX_PRICE = 10000000;
+// Пороги быстрых фильтров. Держим синхронно с backend/src/routes/lawyers.js:
+// сервер присылает их в facets, эти значения — фолбэк, если фасеты не пришли.
+const HIGH_RATING_FROM = 4.5;
+const EXPERIENCED_PRESET = '10+';
 
 // Опции сортировки с иконками
 const SORT_OPTS = [
@@ -180,6 +185,9 @@ const LawyersPageGlass = () => {
     language: '',
   });
   const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
+  // Фасеты каталога: счётчики для чипов и порог «недорого» из реальных цен.
+  const [facets, setFacets] = useState(null);
+  const [totalFound, setTotalFound] = useState(0);
 
   useEffect(() => {
     fetchLawyers();
@@ -216,9 +224,12 @@ const LawyersPageGlass = () => {
 
       setLawyers(response.lawyers || []);
       setTotalPages(response.totalPages || 1);
+      setTotalFound(response.total || 0);
+      if (response.facets) setFacets(response.facets);
     } catch (error) {
       console.error('Error fetching lawyers:', error);
       setLawyers([]);
+      setTotalFound(0);
     } finally {
       setLoading(false);
     }
@@ -634,8 +645,52 @@ const LawyersPageGlass = () => {
     );
   };
 
-  // Фильтр «только онлайн» применяем на текущей странице (доступность приходит в списке)
-  const visibleLawyers = filters.onlineOnly ? lawyers.filter((l) => l.isAvailable) : lawyers;
+  // Список отдаёт сервер уже отфильтрованным (в т.ч. по «только онлайн») —
+  // повторная фильтрация на клиенте лишь ломала бы счётчик и пагинацию.
+  const visibleLawyers = lawyers;
+
+  // Порог «недорого» — из фасетов сервера; без них чип неактивен.
+  const budgetMax = facets?.budget?.maxPrice ?? null;
+
+  // Активные фильтры одним списком: каждый можно снять по отдельности.
+  const activeChips = (() => {
+    const chips = [];
+    const fmt = (k, v) => t('lawyers.' + k).replace('{n}', v);
+    (filters.specializations || []).forEach((sp) => chips.push({
+      key: `spec:${sp}`,
+      label: fmt('fltSpec', sp),
+      clear: () => handleFilterChange('specializations', filters.specializations.filter((x) => x !== sp)),
+    }));
+    if (searchQuery) chips.push({
+      key: 'search', label: fmt('fltSearch', searchQuery), clear: () => setSearchQuery(''),
+    });
+    if (filters.onlineOnly) chips.push({
+      key: 'online', label: t('lawyers.fltOnline'), clear: () => handleFilterChange('onlineOnly', false),
+    });
+    if (filters.minRating > 0) chips.push({
+      key: 'rating', label: fmt('fltRating', filters.minRating), clear: () => handleFilterChange('minRating', 0),
+    });
+    if (filters.experience) chips.push({
+      key: 'exp', label: fmt('fltExperience', filters.experience), clear: () => handleFilterChange('experience', ''),
+    });
+    if (filters.priceRange[0] > 0) chips.push({
+      key: 'priceFrom',
+      label: fmt('fltPriceFrom', filters.priceRange[0].toLocaleString()),
+      clear: () => handleFilterChange('priceRange', [0, filters.priceRange[1]]),
+    });
+    if (filters.priceRange[1] < MAX_PRICE) chips.push({
+      key: 'priceTo',
+      label: fmt('fltPrice', filters.priceRange[1].toLocaleString()),
+      clear: () => handleFilterChange('priceRange', [filters.priceRange[0], MAX_PRICE]),
+    });
+    if (filters.location) chips.push({
+      key: 'loc', label: fmt('fltLocation', filters.location), clear: () => handleFilterChange('location', ''),
+    });
+    if (filters.language) chips.push({
+      key: 'lang', label: fmt('fltLanguage', filters.language), clear: () => handleFilterChange('language', ''),
+    });
+    return chips;
+  })();
 
   return (
     <GlassShell active="/lawyers" title={t('lawyers.title')} subtitle={t('lawyers.subtitle')}>
@@ -809,27 +864,127 @@ const LawyersPageGlass = () => {
             </FormControl>
           </div>
 
-          {/* Быстрые фильтры-пресеты — в один тап */}
+          {/* Быстрые фильтры.
+              Раньше три из четырёх были ярлыками СОРТИРОВКИ: перезаписывали друг
+              друга, не выключались и дублировали выпадающий список, а «Высокий
+              рейтинг» горел всегда (сортировка по умолчанию — rating). Теперь это
+              настоящие независимые фильтры: комбинируются, снимаются повторным
+              нажатием, показывают, сколько юристов под них попадает, и гаснут,
+              если таких нет. Пороги приходят с сервера (фасеты) — «недорого»
+              считается от реальных цен каталога, а не от константы. */}
           {(() => {
             const presets = [
-              { k: 'presetOnline', active: filters.onlineOnly, apply: () => handleFilterChange('onlineOnly', !filters.onlineOnly) },
-              { k: 'presetTop', active: filters.sortBy === 'rating', apply: () => handleFilterChange('sortBy', 'rating') },
-              { k: 'presetCheap', active: filters.sortBy === 'price_low', apply: () => handleFilterChange('sortBy', 'price_low') },
-              { k: 'presetExperienced', active: filters.sortBy === 'experience', apply: () => handleFilterChange('sortBy', 'experience') },
+              {
+                k: 'presetOnline',
+                active: filters.onlineOnly,
+                count: facets?.online,
+                hint: t('lawyers.presetOnlineHint'),
+                apply: () => handleFilterChange('onlineOnly', !filters.onlineOnly),
+              },
+              {
+                k: 'presetTop',
+                active: filters.minRating === HIGH_RATING_FROM,
+                count: facets?.highRating?.count,
+                hint: t('lawyers.presetTopHint').replace('{n}', facets?.highRating?.from ?? HIGH_RATING_FROM),
+                apply: () => handleFilterChange('minRating', filters.minRating === HIGH_RATING_FROM ? 0 : HIGH_RATING_FROM),
+              },
+              {
+                k: 'presetCheap',
+                active: budgetMax != null && filters.priceRange[1] === budgetMax,
+                count: facets?.budget?.count,
+                disabled: budgetMax == null,
+                hint: budgetMax != null ? t('lawyers.presetCheapHint').replace('{n}', budgetMax.toLocaleString()) : '',
+                apply: () => handleFilterChange(
+                  'priceRange',
+                  filters.priceRange[1] === budgetMax ? [filters.priceRange[0], MAX_PRICE] : [filters.priceRange[0], budgetMax],
+                ),
+              },
+              {
+                k: 'presetExperienced',
+                active: filters.experience === EXPERIENCED_PRESET,
+                count: facets?.experienced?.count,
+                hint: t('lawyers.presetExperiencedHint').replace('{n}', facets?.experienced?.from ?? 10),
+                apply: () => handleFilterChange('experience', filters.experience === EXPERIENCED_PRESET ? '' : EXPERIENCED_PRESET),
+              },
             ];
             return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-                {presets.map((p) => (
-                  <button key={p.k} onClick={p.apply} style={{
-                    cursor: 'pointer', padding: '8px 15px', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', fontWeight: p.active ? 600 : 400,
-                    border: `1px solid ${p.active ? 'var(--accent)' : 'var(--border-strong)'}`,
-                    background: p.active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--surface)',
-                    color: p.active ? '#fff' : 'var(--text2)', transition: 'all .15s',
-                  }}>{t('lawyers.' + p.k)}</button>
-                ))}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {presets.map((p) => {
+                  // Чип без единого подходящего юриста бесполезен: гасим, чтобы
+                  // клиент не тыкал в него и не получал пустой экран.
+                  const empty = p.disabled || p.count === 0;
+                  return (
+                    <button
+                      key={p.k}
+                      onClick={empty ? undefined : p.apply}
+                      disabled={empty}
+                      title={empty ? t('lawyers.presetNone') : p.hint}
+                      aria-pressed={p.active}
+                      style={{
+                        cursor: empty ? 'not-allowed' : 'pointer', padding: '8px 15px', borderRadius: 999,
+                        fontSize: 13, fontFamily: 'inherit', fontWeight: p.active ? 600 : 400,
+                        border: `1px solid ${p.active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                        background: p.active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--surface)',
+                        color: p.active ? '#fff' : 'var(--text2)', transition: 'all .15s',
+                        opacity: empty ? 0.45 : 1,
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                      }}
+                    >
+                      {t('lawyers.' + p.k)}
+                      {p.count != null && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, lineHeight: 1, padding: '3px 6px', borderRadius: 999,
+                          background: p.active ? 'rgba(255,255,255,0.22)' : 'var(--border)',
+                          color: p.active ? '#fff' : 'var(--text3)',
+                        }}>{p.count}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             );
           })()}
+
+          {/* Активные фильтры: видно, что именно сужает выдачу, и каждый снимается
+              по отдельности — раньше был только «сбросить всё». */}
+          {activeChips.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <span style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                {t('lawyers.activeFilters')}
+              </span>
+              {activeChips.map((c) => (
+                <button
+                  key={c.key}
+                  onClick={c.clear}
+                  title={t('lawyers.clearOne')}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                    padding: '6px 10px 6px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                    border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text2)',
+                  }}
+                >
+                  {c.label}
+                  <CloseRounded sx={{ fontSize: 14, color: 'var(--text3)' }} />
+                </button>
+              ))}
+              <button
+                onClick={handleClearFilters}
+                style={{
+                  cursor: 'pointer', padding: '6px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                  border: 'none', background: 'transparent', color: 'var(--accent-dark)', fontWeight: 600,
+                }}
+              >
+                {t('lawyers.clearAll')}
+              </button>
+            </div>
+          )}
+
+          {/* Сколько всего нашлось — раньше количество нигде не показывалось */}
+          {!loading && (
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 14 }}>
+              {totalFound > 0 ? `${t('lawyers.found')}: ${totalFound}` : t('lawyers.foundNone')}
+            </div>
+          )}
 
           {/* results */}
           {loading ? (
@@ -870,6 +1025,31 @@ const LawyersPageGlass = () => {
               <div style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 22 }}>
                 {t('lawyers.emptySub')}
               </div>
+
+              {/* Вместо одной кнопки «сбросить всё» предлагаем снять конкретное
+                  условие: чаще всего мешает один фильтр, а не все сразу. */}
+              {activeChips.length > 0 && (
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 10 }}>{t('lawyers.emptyHint')}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                    {activeChips.map((c) => (
+                      <button
+                        key={c.key}
+                        onClick={c.clear}
+                        style={{
+                          display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                          padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                          border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text2)',
+                        }}
+                      >
+                        {c.label}
+                        <CloseRounded sx={{ fontSize: 14, color: 'var(--text3)' }} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handleClearFilters}
                 style={{
