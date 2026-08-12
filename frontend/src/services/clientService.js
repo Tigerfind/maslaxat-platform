@@ -91,10 +91,15 @@ export const clientLawyerService = {
         lawyers,
         totalPages: data.totalPages || 1,
         total: data.total || lawyers.length,
+        // Фасеты обязаны дойти до страницы: на них держатся числа на чипах,
+        // порог «Недорого» и весь блок подбора по карману/статусу. Пока этот
+        // ключ здесь терялся, чипы стояли без счётчиков, «Недорого» было
+        // погашено навсегда, а блок подбора просто не отрисовывался.
+        facets: data.facets || null,
       };
     } catch (error) {
       console.error('Error searching lawyers:', error);
-      return { lawyers: [], totalPages: 1, total: 0 };
+      return { lawyers: [], totalPages: 1, total: 0, facets: null };
     }
   },
 
