@@ -12,6 +12,12 @@ ARG REACT_APP_API_URL=
 ENV REACT_APP_API_URL=$REACT_APP_API_URL
 
 COPY . .
+# Линтер в релизной сборке выключен: без lock-файла подтягиваются свежие
+# eslint-плагины, несовместимые с eslint-config-react-app («Environment key
+# jest/globals is unknown»), и сборка падает на конфиге, а не на коде.
+# Линт и тесты гоняются локально/в CI до деплоя.
+ENV DISABLE_ESLINT_PLUGIN=true
+ENV CI=false
 RUN npm run build
 
 FROM nginx:alpine
