@@ -34,15 +34,17 @@ async function reconcileLawyerMetrics() {
   const casesByLawyer = new Map(consultationRows.map((row) => [row.lawyerId, Number(row.count)]));
 
   await sequelize.transaction(async (transaction) => {
-    await Promise.all(profiles.map(({ userId }) => {
+    // Одна транзакция использует одно pg-соединение: запросы должны идти
+    // последовательно, иначе pg предупреждает о concurrent client.query().
+    for (const { userId } of profiles) {
       const reviews = reviewsByLawyer.get(userId);
       const rating = reviews ? Math.round(Number(reviews.rating) * 10) / 10 : 0;
-      return LawyerProfile.update({
+      await LawyerProfile.update({
         rating,
         reviewsCount: reviews ? Number(reviews.count) : 0,
         completedCases: casesByLawyer.get(userId) || 0,
       }, { where: { userId }, transaction });
-    }));
+    }
   });
 
   return { profiles: profiles.length };
