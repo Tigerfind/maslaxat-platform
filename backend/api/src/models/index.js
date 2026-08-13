@@ -328,6 +328,44 @@ const AIConversation = sequelize.define('AIConversation', {
   },
 });
 
+// ─── LEGAL KNOWLEDGE BASE ───────────────────────────────────
+// Полные тексты загружаются только из разрешённого/лицензированного корпуса.
+// sourceUrl всегда ведёт на официальный оригинал, а версии не перезаписываются.
+const LegalDocument = sequelize.define('LegalDocument', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  title: { type: DataTypes.STRING, allowNull: false },
+  code: { type: DataTypes.STRING },
+  language: { type: DataTypes.STRING(8), allowNull: false, defaultValue: 'ru' },
+  sourceUrl: { type: DataTypes.TEXT, allowNull: false },
+  version: { type: DataTypes.STRING, allowNull: false },
+  effectiveFrom: { type: DataTypes.DATEONLY },
+  effectiveTo: { type: DataTypes.DATEONLY },
+  isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  checksum: { type: DataTypes.STRING(64) },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, {
+  indexes: [{ unique: true, fields: ['source_url', 'version'] }],
+});
+
+const LegalChunk = sequelize.define('LegalChunk', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  ordinal: { type: DataTypes.INTEGER, allowNull: false },
+  articleNumber: { type: DataTypes.STRING },
+  heading: { type: DataTypes.TEXT },
+  content: { type: DataTypes.TEXT, allowNull: false },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, {
+  indexes: [{ unique: true, fields: ['document_id', 'ordinal'] }],
+});
+
 // ─── AI MESSAGE MODEL ───────────────────────────────────────
 const AIMessage = sequelize.define('AIMessage', {
   id: {
@@ -345,6 +383,16 @@ const AIMessage = sequelize.define('AIMessage', {
   },
   category: {
     type: DataTypes.STRING,
+  },
+  sources: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  },
+  fallback: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
   },
 });
 
@@ -782,6 +830,9 @@ AIConversation.belongsTo(User, { foreignKey: 'userId' });
 AIConversation.hasMany(AIMessage, { foreignKey: 'conversationId', as: 'messages' });
 AIMessage.belongsTo(AIConversation, { foreignKey: 'conversationId' });
 
+LegalDocument.hasMany(LegalChunk, { foreignKey: 'documentId', as: 'chunks', onDelete: 'CASCADE' });
+LegalChunk.belongsTo(LegalDocument, { foreignKey: 'documentId', as: 'document' });
+
 // User <-> Document
 User.hasMany(Document, { foreignKey: 'userId', as: 'documents' });
 Document.belongsTo(User, { foreignKey: 'userId' });
@@ -858,6 +909,8 @@ module.exports = {
   Consultation,
   AIConversation,
   AIMessage,
+  LegalDocument,
+  LegalChunk,
   Document,
   LawyerDocument,
   CaseDocument,

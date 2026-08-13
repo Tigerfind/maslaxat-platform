@@ -14,6 +14,7 @@
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "db:migrate:status": "sequelize-cli db:migrate:status",
+    "legal:import": "node src/scripts/importLegalCorpus.js",
     "test": "jest --forceExit --detectOpenHandles"
   },
   "dependencies": {

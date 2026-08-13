@@ -20,7 +20,7 @@ import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import AILimitUpsell from '../../components/AILimitUpsell';
 import BookingModal from '../../components/BookingModal';
-import { extractLaws, stripMarkdown } from './aiFormat';
+import { stripMarkdown } from './aiFormat';
 import MarkdownMessage from '../../components/MarkdownMessage';
 import { useTranslation } from '../../i18n';
 
@@ -280,6 +280,7 @@ const AIChatPageGlass = () => {
         timestamp: new Date().toISOString(),
         category: response.category,
         fallback: response.fallback === true,
+        sources: Array.isArray(response.sources) ? response.sources : [],
       };
 
       setMessages((prev) => [...prev, aiMessage]);
@@ -580,7 +581,7 @@ const AIChatPageGlass = () => {
         )}
 
         {messages.map((m, index) => {
-          const laws = !m.isUser && !m.isError && m.category ? extractLaws(m.text) : [];
+          const sources = Array.isArray(m.sources) ? m.sources : [];
           return (
           m.isUser ? (
             <div key={index} style={{ alignSelf: 'flex-end', maxWidth: '70%', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 7 }}>
@@ -635,18 +636,18 @@ const AIChatPageGlass = () => {
                   </div>
                 )}
 
-                {/* Карточка «Статьи закона» — извлечённые ссылки на кодексы РУз */}
-                {laws.length > 0 && (
+                {/* Только проверенные сервером источники, реально процитированные AI. */}
+                {sources.length > 0 && (
                   <div style={{ marginTop: 13, padding: '12px 14px', background: 'rgba(184,149,110,0.07)', border: '1px solid rgba(184,149,110,0.22)', borderRadius: 12 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
                       <GavelOutlined sx={{ fontSize: 16, color: 'var(--accent-dark)' }} />
-                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-dark)' }}>{t('ai.lawsTitle')}</span>
+                      <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--accent-dark)' }}>{t('ai.sourcesTitle')}</span>
                     </div>
-                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7 }}>
-                      {laws.map((law, li) => (
-                        <span key={li} style={{ fontSize: 12, color: 'var(--text)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '4px 10px' }}>
-                          {law}
-                        </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {sources.map((source) => (
+                        <a key={source.citation || source.chunkId} href={source.url} target="_blank" rel="noopener noreferrer" style={{ fontSize: 12, color: 'var(--accent-dark)', background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 8, padding: '7px 10px', textDecoration: 'none' }}>
+                          [{source.citation}] {source.title}{source.article ? `, ${t('ai.article')} ${source.article}` : ''}
+                        </a>
                       ))}
                     </div>
                   </div>
