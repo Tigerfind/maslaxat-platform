@@ -29,6 +29,14 @@ async function resetDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_transaction_id_unique
     ON payments (provider, transaction_id) WHERE transaction_id IS NOT NULL
   `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_lawyer_idempotency_unique
+    ON withdrawals (lawyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+  `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_provider_transaction_unique
+    ON withdrawals (provider, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })

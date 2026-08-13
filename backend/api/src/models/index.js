@@ -806,11 +806,6 @@ const Withdrawal = sequelize.define('Withdrawal', {
   processedBy: { type: DataTypes.UUID },
   failureCode: { type: DataTypes.STRING },
   failureMessage: { type: DataTypes.TEXT },
-}, {
-  indexes: [
-    { unique: true, fields: ['lawyer_id', 'idempotency_key'] },
-    { unique: true, fields: ['provider', 'provider_transaction_id'] },
-  ],
 });
 
 const FinancialEvent = sequelize.define('FinancialEvent', {
