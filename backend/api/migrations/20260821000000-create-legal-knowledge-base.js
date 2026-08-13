@@ -40,14 +40,15 @@ module.exports = {
       });
     }
 
-    const aiColumns = await queryInterface.describeTable('ai_messages');
+    // Sequelize разделяет acronym AI при underscored:true: AIMessage → a_i_messages.
+    const aiColumns = await queryInterface.describeTable('a_i_messages');
     if (!aiColumns.sources) {
-      await queryInterface.addColumn('ai_messages', 'sources', {
+      await queryInterface.addColumn('a_i_messages', 'sources', {
         type: Sequelize.JSONB, allowNull: false, defaultValue: [],
       });
     }
     if (!aiColumns.fallback) {
-      await queryInterface.addColumn('ai_messages', 'fallback', {
+      await queryInterface.addColumn('a_i_messages', 'fallback', {
         type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false,
       });
     }
@@ -69,9 +70,9 @@ module.exports = {
   },
 
   async down(queryInterface) {
-    const aiColumns = await queryInterface.describeTable('ai_messages');
-    if (aiColumns.fallback) await queryInterface.removeColumn('ai_messages', 'fallback');
-    if (aiColumns.sources) await queryInterface.removeColumn('ai_messages', 'sources');
+    const aiColumns = await queryInterface.describeTable('a_i_messages');
+    if (aiColumns.fallback) await queryInterface.removeColumn('a_i_messages', 'fallback');
+    if (aiColumns.sources) await queryInterface.removeColumn('a_i_messages', 'sources');
     await queryInterface.dropTable('legal_chunks');
     await queryInterface.dropTable('legal_documents');
   },
