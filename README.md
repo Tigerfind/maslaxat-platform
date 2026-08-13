@@ -52,6 +52,7 @@ npm start
 ```bash
 cd backend/api && npm test
 cd frontend && npm run build:prod
+node scripts/smoke-production.js
 ```
 
 Backend-тесты используют отдельную PostgreSQL БД `emaslaxat_test`.

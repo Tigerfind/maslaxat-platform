@@ -56,6 +56,7 @@ const PortfolioPage = lazy(() => import('./pages/Client/PortfolioPage'));
 const PaymentsPageGlass = lazy(() => import('./pages/Payments/PaymentsPageGlass'));
 const VerifyEmailPage = lazy(() => import('./pages/Auth/VerifyEmailPage'));
 const LandingPage = lazy(() => import('./pages/Landing/LandingPage'));
+const LegalPage = lazy(() => import('./pages/Legal/LegalPage'));
 
 const theme = axelionTheme;
 
@@ -111,6 +112,9 @@ const AppContent = () => {
         <Route path="/forgot-password" element={!isAuthenticated ? <ForgotPasswordPage /> : <Navigate to="/dashboard" />} />
         <Route path="/reset-password" element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/terms" element={<LegalPage documentType="terms" />} />
+        <Route path="/privacy" element={<LegalPage documentType="privacy" />} />
+        <Route path="/refund-policy" element={<LegalPage documentType="refund" />} />
 
         <Route element={
           <ProtectedRoute allowedRoles={['client']}>

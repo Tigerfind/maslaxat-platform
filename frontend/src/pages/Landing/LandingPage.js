@@ -341,8 +341,12 @@ const LandingPage = () => {
             </Box>
             <Box sx={{ textAlign: { xs: 'left', sm: 'right' }, color: C.textSecondary, fontSize: 14 }}>
               <Typography sx={{ fontSize: 14 }}>support@maslaxat.uz</Typography>
-              <Typography sx={{ fontSize: 14 }}>+998 71 200 00 00</Typography>
               <Typography sx={{ fontSize: 14 }}>Telegram: @maslaxat_support</Typography>
+              <Box sx={{ display: 'flex', justifyContent: { xs: 'flex-start', sm: 'flex-end' }, flexWrap: 'wrap', gap: 1.5, mt: 1.5 }}>
+                <Box component="a" href="/terms" sx={{ color: C.textSecondary }}>{t('landing.terms')}</Box>
+                <Box component="a" href="/privacy" sx={{ color: C.textSecondary }}>{t('landing.privacy')}</Box>
+                <Box component="a" href="/refund-policy" sx={{ color: C.textSecondary }}>{t('landing.refunds')}</Box>
+              </Box>
             </Box>
           </Container>
           <Box sx={{ textAlign: 'center', pb: 3, color: C.textMuted, fontSize: 12 }}>

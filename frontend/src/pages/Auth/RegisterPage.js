@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import {
   Container, Box, Typography, TextField, Button, Alert, CircularProgress,
-  InputAdornment, IconButton, Card,
+  InputAdornment, IconButton, Card, Checkbox, FormControlLabel,
 } from '@mui/material';
 import {
   Visibility, VisibilityOff, Person, Lock, Email, Phone, Gavel, ArrowBack,
@@ -44,6 +44,7 @@ const RegisterPage = () => {
     name: '', email: '', phone: '', password: '', confirmPassword: '', specializations: [],
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
 
   // Шаги зависят от роли: у юриста добавляется выбор специализации.
@@ -65,6 +66,7 @@ const RegisterPage = () => {
       if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) { setError(t('register.emailInvalid')); return false; }
       if (!formData.password || formData.password.length < 8) { setError(t('register.passwordMin')); return false; }
       if (formData.password !== formData.confirmPassword) { setError(t('register.passwordsMismatch')); return false; }
+      if (!acceptedTerms) { setError(t('register.acceptRequired')); return false; }
     }
     if (key === 'spec' && formData.specializations.length === 0) { setError(t('register.specRequired')); return false; }
     return true;
@@ -79,6 +81,7 @@ const RegisterPage = () => {
   const back = () => { setError(''); if (step === 0) navigate('/login'); else setStep((s) => s - 1); };
 
   const handleSubmit = async () => {
+    if (!acceptedTerms) { setError(t('register.acceptRequired')); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -198,6 +201,16 @@ const RegisterPage = () => {
               value={formData.confirmPassword} onChange={handleChange} placeholder={t('register.confirmPlaceholder')}
               sx={{ ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
+            <FormControlLabel
+              sx={{ mt: 1.5, alignItems: 'flex-start' }}
+              control={<Checkbox checked={acceptedTerms} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />}
+              label={(
+                <Typography component="span" sx={{ fontSize: '0.76rem', color: axelionColors.textSecondary, lineHeight: 1.5 }}>
+                  {t('register.acceptPrefix')} <Box component="a" href="/terms" target="_blank" sx={{ color: axelionColors.goldDark }}>{t('register.terms')}</Box>{' '}
+                  {t('register.and')} <Box component="a" href="/privacy" target="_blank" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
+                </Typography>
+              )}
+            />
           </Box>
         </Box>
       );

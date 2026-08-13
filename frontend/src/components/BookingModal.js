@@ -73,12 +73,14 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [useFree, setUseFree] = useState(false);
   const [subLeft, setSubLeft] = useState(0);
   const [useSubFree, setUseSubFree] = useState(false);
+  const [paymentConsent, setPaymentConsent] = useState(false);
 
   // При открытии: сначала акция «первая бесплатно» (приоритетнее), затем —
   // бесплатная консультация, включённая в подписку (если лоялти недоступна).
   useEffect(() => {
     if (!open) return;
     setUseFree(false);
+    setPaymentConsent(false);
     setUseSubFree(false);
     setSubLeft(0);
     // Память брони: подставляем последний выбор клиента (тип/длительность/оплата),
@@ -295,6 +297,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
   // ---- Бронирование по кнопке «Оплатить»: dev — имитация, прод — Payme-редирект ----
   const handlePayNow = async () => {
+    if (!paymentConsent) {
+      toast.error(t('booking.consentRequired'));
+      return;
+    }
     try {
       setLoading(true);
 
@@ -1121,6 +1127,16 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </div>
             </>
             )}
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', margin: '4px 0 18px', color: 'var(--text2)', fontSize: 12.5, lineHeight: 1.5 }}>
+              <input type="checkbox" checked={paymentConsent} onChange={(e) => setPaymentConsent(e.target.checked)} style={{ marginTop: 3, accentColor: 'var(--accent)' }} />
+              <span>
+                {t('booking.consentPrefix')}{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.terms')}</a>,{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.privacy')}</a>{' '}
+                {t('booking.and')}{' '}
+                <a href="/refund-policy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.refundPolicy')}</a>.
+              </span>
+            </label>
           </>
         )}
 
@@ -1239,7 +1255,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               {t('booking.back')}
             </button>
             {step === 3 ? (
-              <button onClick={handlePayNow} disabled={loading} style={primaryBtn}>
+              <button onClick={handlePayNow} disabled={loading || !paymentConsent} style={{ ...primaryBtn, opacity: paymentConsent ? 1 : 0.55 }}>
                 {loading ? t('booking.paying') : (freeBooking ? t('booking.bookFree') : `${t('booking.pay')} · ${fmt(total)} ${t('booking.sum')}`)}
               </button>
             ) : (
