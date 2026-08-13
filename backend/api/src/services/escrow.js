@@ -55,11 +55,10 @@ async function completeConsultation(consultationId, notes, actualDuration) {
     let released = false;
     if (totalPaid > 0) {
       const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId }, transaction: t });
-      if (lp) {
-        await lp.decrement('pendingBalance', { by: totalPaid, transaction: t });
-        await lp.increment('balance', { by: totalPaid, transaction: t });
-        released = true;
-      }
+      if (!lp) throw new Error('Lawyer profile missing for escrow release');
+      await lp.decrement('pendingBalance', { by: totalPaid, transaction: t });
+      await lp.increment('balance', { by: totalPaid, transaction: t });
+      released = true;
     }
     // Биллинг (модель B): эскроу отдан юристу → помечаем released (только когда деньги
     // реально двинулись). Аддитивно, на денежную логику не влияет.

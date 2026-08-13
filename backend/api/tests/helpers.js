@@ -25,6 +25,10 @@ async function resetDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique
     ON users (phone) WHERE phone IS NOT NULL
   `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_transaction_id_unique
+    ON payments (provider, transaction_id) WHERE transaction_id IS NOT NULL
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })

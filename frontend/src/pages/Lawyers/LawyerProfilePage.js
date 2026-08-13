@@ -88,6 +88,7 @@ const LawyerProfilePage = () => {
   const [error, setError] = useState(false);
   const [tab, setTab] = useState('about');
   const [bookingOpen, setBookingOpen] = useState(false);
+  const [avatarFailed, setAvatarFailed] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -103,7 +104,8 @@ const LawyerProfilePage = () => {
           id: l.id,
           name: l.name || t('lawyerProfile.lawyerFallback'),
           avatar: l.avatar,
-          verified: p.verificationStatus === 'approved',
+          // Публичный профиль существует только для одобренного юриста.
+          verified: true,
           rating: p.rating || 0,
           reviewsCount: p.reviewsCount || 0,
           completedConsultations: p.completedCases || 0,
@@ -199,6 +201,14 @@ const LawyerProfilePage = () => {
           <div className="lp-left" style={{ ...glassCard, padding: 30, textAlign: 'center', position: 'sticky', top: 12, alignSelf: 'start' }}>
             <div style={{ width: 100, height: 100, margin: '0 auto 18px', borderRadius: '50%', background: AV_BG[0], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 34, fontWeight: 300, position: 'relative' }}>
               {initialsOf(lawyer.name)}
+              {lawyer.avatar && !avatarFailed && (
+                <img
+                  src={lawyer.avatar}
+                  alt={lawyer.name}
+                  onError={() => setAvatarFailed(true)}
+                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
+                />
+              )}
               {lawyer.verified && (
                 <span style={{ position: 'absolute', bottom: 2, right: 8, width: 26, height: 26, borderRadius: '50%', background: '#7A9A6B', border: '3px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 14 }}>✓</span>
               )}

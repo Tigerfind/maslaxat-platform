@@ -18,6 +18,7 @@ COPY . .
 # Линт и тесты гоняются локально/в CI до деплоя.
 ENV DISABLE_ESLINT_PLUGIN=true
 ENV CI=false
+ENV GENERATE_SOURCEMAP=false
 RUN npm run build
 
 # Финальный слой — node, а не nginx: railway.json задаёт startCommand

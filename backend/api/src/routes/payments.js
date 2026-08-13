@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const logger = require('../config/logger');
 const { Op } = require('sequelize');
-const { Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
+const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 
@@ -191,91 +191,148 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
       // ── CreateTransaction ──────────────────────────────────
       case 'CreateTransaction': {
-        const payment = await Payment.findOne({
-          where: { id: params.account.consultation_id },
+        const initial = await Payment.findOne({
+          where: { id: params.account.consultation_id, provider: 'payme' },
+        });
+        if (!initial) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
+
+        const outcome = await sequelize.transaction(async (transaction) => {
+          const consultation = await Consultation.findByPk(initial.consultationId, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          const payment = await Payment.findOne({
+            where: { id: initial.id, provider: 'payme' },
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
+          if (params.amount !== Number(payment.amount) * 100) return { error: ERRORS.INVALID_AMOUNT };
+          if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
+          if (payment.status === 'failed' || consultation.status !== 'payment_pending') return { error: ERRORS.CANT_PERFORM };
+          if (payment.transactionId && payment.transactionId !== params.id) return { error: ERRORS.CANT_PERFORM };
+
+          const createTime = payment.providerResponse?.createTime || params.time;
+          if (!payment.transactionId) {
+            await payment.update({
+              transactionId: params.id,
+              providerResponse: { ...payment.providerResponse, createTime },
+            }, { transaction });
+          }
+          return { result: { create_time: createTime, transaction: payment.id, state: 1 } };
         });
 
-        if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
-
-        const expectedTiyin = payment.amount * 100;
-        if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
-
-        if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
-        if (payment.status === 'failed') return replyError(ERRORS.CANT_PERFORM);
-
-        await payment.update({
-          transactionId: params.id,
-          providerResponse: { ...payment.providerResponse, createTime: params.time },
-        });
-
-        return reply({
-          create_time: params.time,
-          transaction: payment.id,
-          state: 1,
-        });
+        return outcome.error ? replyError(outcome.error) : reply(outcome.result);
       }
 
       // ── PerformTransaction ─────────────────────────────────
       case 'PerformTransaction': {
-        const payment = await Payment.findOne({
-          where: { transactionId: params.id },
-          include: [{ model: Consultation }],
+        const initial = await Payment.findOne({
+          where: { transactionId: params.id, provider: 'payme' },
+        });
+        if (!initial) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
+
+        const outcome = await sequelize.transaction(async (transaction) => {
+          // Единый порядок блокировок во всех денежных сценариях уменьшает риск deadlock.
+          const consultation = await Consultation.findByPk(initial.consultationId, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          const payment = await Payment.findOne({
+            where: { transactionId: params.id, provider: 'payme' },
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
+
+          if (payment.status === 'paid') {
+            return {
+              result: {
+                perform_time: payment.providerResponse?.performTime || 0,
+                transaction: payment.id,
+                state: 2,
+              },
+              performed: false,
+            };
+          }
+          if (payment.status === 'failed' || consultation.status !== 'payment_pending') {
+            return { error: ERRORS.CANT_PERFORM };
+          }
+
+          const lawyerProfile = await LawyerProfile.findOne({
+            where: { userId: consultation.lawyerId },
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!lawyerProfile) return { error: ERRORS.CANT_PERFORM };
+
+          const performTime = Date.now();
+          await payment.update({
+            status: 'paid',
+            providerResponse: { ...payment.providerResponse, performTime },
+          }, { transaction });
+          await consultation.update({ status: 'pending' }, { transaction });
+          await lawyerProfile.increment('pendingBalance', { by: Number(payment.amount), transaction });
+
+          return {
+            result: { perform_time: performTime, transaction: payment.id, state: 2 },
+            performed: true,
+            lawyerId: consultation.lawyerId,
+            consultationId: consultation.id,
+          };
         });
 
-        if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
-        if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
-        if (payment.status === 'failed') return replyError(ERRORS.CANT_PERFORM);
-
-        const performTime = Date.now();
-
-        // Оплата прошла — переводим консультацию в статус pending (ждёт юриста)
-        await payment.update({
-          status: 'paid',
-          providerResponse: { ...payment.providerResponse, performTime },
-        });
-
-        await payment.Consultation.update({ status: 'pending' });
-
-        // Юрист получает pendingBalance (деньги будут переведены после завершения)
-        const lawyerProfile = await LawyerProfile.findOne({
-          where: { userId: payment.Consultation.lawyerId },
-        });
-        if (lawyerProfile) {
-          await lawyerProfile.increment('pendingBalance', { by: payment.amount });
+        if (outcome.error) return replyError(outcome.error);
+        if (outcome.performed) {
+          try {
+            await notificationService.createNotification(
+              outcome.lawyerId,
+              'new_booking',
+              'Новая консультация',
+              'Клиент оплатил консультацию. Подтвердите или отклоните.',
+              { consultationId: outcome.consultationId }
+            );
+          } catch (notificationError) {
+            logger.error('Payme payment notification failed', { message: notificationError.message });
+          }
         }
 
-        // Уведомляем юриста о новой оплаченной консультации
-        await notificationService.createNotification(
-          payment.Consultation.lawyerId,
-          'new_booking',
-          'Новая консультация',
-          'Клиент оплатил консультацию. Подтвердите или отклоните.',
-          { consultationId: payment.Consultation.id }
-        );
-
-        return reply({ perform_time: performTime, transaction: payment.id, state: 2 });
+        return reply(outcome.result);
       }
 
       // ── CancelTransaction ──────────────────────────────────
       case 'CancelTransaction': {
-        const payment = await Payment.findOne({
-          where: { transactionId: params.id },
-          include: [{ model: Consultation }],
+        const initial = await Payment.findOne({
+          where: { transactionId: params.id, provider: 'payme' },
+        });
+        if (!initial) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
+
+        const outcome = await sequelize.transaction(async (transaction) => {
+          const consultation = await Consultation.findByPk(initial.consultationId, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          const payment = await Payment.findOne({
+            where: { transactionId: params.id, provider: 'payme' },
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
+          if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
+          if (payment.status === 'failed') {
+            return {
+              result: {
+                cancel_time: payment.providerResponse?.cancelTime || 0,
+                transaction: payment.id,
+                state: -1,
+              },
+            };
+          }
+          if (consultation.status !== 'payment_pending') return { error: ERRORS.CANT_PERFORM };
+
+          const cancelTime = Date.now();
+          await payment.update({
+            status: 'failed',
+            providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
+          }, { transaction });
+          await consultation.update({ status: 'cancelled' }, { transaction });
+          return { result: { cancel_time: cancelTime, transaction: payment.id, state: -1 } };
         });
 
-        if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
-        if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
-
-        const cancelTime = Date.now();
-
-        await payment.update({
-          status: 'failed',
-          providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
-        });
-
-        await payment.Consultation.update({ status: 'cancelled' });
-
-        return reply({ cancel_time: cancelTime, transaction: payment.id, state: -1 });
+        return outcome.error ? replyError(outcome.error) : reply(outcome.result);
       }
 
       // ── CheckTransaction ───────────────────────────────────

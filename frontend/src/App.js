@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import { Provider, useDispatch, useSelector } from 'react-redux';
 import { ThemeProvider } from '@mui/material/styles';
@@ -18,46 +18,44 @@ import GlobalCallListener from './components/Call/GlobalCallListener';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
+import { axelionTheme } from './theme/axelionTheme';
 
 // Pages
-import LoginPage from './pages/Auth/LoginPage';
-import RegisterPage from './pages/Auth/RegisterPage';
-import DashboardPageGlass from './pages/Dashboard/DashboardPageGlass';
-import LawyerDashboard from './pages/Lawyer/LawyerDashboardGlass';
-import LawyerSchedulePage from './pages/Lawyer/LawyerSchedulePage';
-import LawyerConsultationsPage from './pages/Lawyer/LawyerConsultationsPage';
-import LawyerAnalyticsPage from './pages/Lawyer/LawyerAnalyticsPage';
-import LawyerReviewsPage from './pages/Lawyer/LawyerReviewsPage';
-import LawyerProfileEditPage from './pages/Lawyer/LawyerProfileEditPage';
-import AdminDashboard from './pages/Admin/AdminDashboardGlass';
-import AIChatPageGlass from './pages/AI/AIChatPageGlass';
-import ConsultationsPageGlass from './pages/Consultations/ConsultationsPageGlass';
-import VideoCallPage from './pages/Consultations/VideoCallPage';
-import ChatPage from './pages/Consultations/ChatPage';
-import LawyersPageGlass from './pages/Lawyers/LawyersPageGlass';
-import LawyerProfilePage from './pages/Lawyers/LawyerProfilePage';
-import DocumentsPageGlass from './pages/Documents/DocumentsPageGlass';
-import ProfilePageGlass from './pages/Profile/ProfilePageGlass';
-import SettingsPageGlass from './pages/Settings/SettingsPageGlass';
-import HelpPage from './pages/Help/HelpPage';
-import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
-import ResetPasswordPage from './pages/Auth/ResetPasswordPage';
-import SpecializationsPageGlass from './pages/Admin/SpecializationsPageGlass';
-import AdminLawyersPage from './pages/Admin/AdminLawyersPage';
-import AdminUsersPage from './pages/Admin/AdminUsersPage';
-import AdminPromosPage from './pages/Admin/AdminPromosPage';
-import AdminSupportPage from './pages/Admin/AdminSupportPage';
-import AdminReviewsPage from './pages/Admin/AdminReviewsPage';
-import AdminFinancePage from './pages/Admin/AdminFinancePage';
-import AdminConsultationsPage from './pages/Admin/AdminConsultationsPage';
-import FavoritesPage from './pages/Client/FavoritesPage';
-import PortfolioPage from './pages/Client/PortfolioPage';
-import PaymentsPageGlass from './pages/Payments/PaymentsPageGlass';
-import VerifyEmailPage from './pages/Auth/VerifyEmailPage';
-import LandingPage from './pages/Landing/LandingPage';
-
-// MaslaXat Premium Theme
-import { axelionTheme } from './theme/axelionTheme';
+const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
+const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
+const DashboardPageGlass = lazy(() => import('./pages/Dashboard/DashboardPageGlass'));
+const LawyerDashboard = lazy(() => import('./pages/Lawyer/LawyerDashboardGlass'));
+const LawyerSchedulePage = lazy(() => import('./pages/Lawyer/LawyerSchedulePage'));
+const LawyerConsultationsPage = lazy(() => import('./pages/Lawyer/LawyerConsultationsPage'));
+const LawyerAnalyticsPage = lazy(() => import('./pages/Lawyer/LawyerAnalyticsPage'));
+const LawyerReviewsPage = lazy(() => import('./pages/Lawyer/LawyerReviewsPage'));
+const LawyerProfileEditPage = lazy(() => import('./pages/Lawyer/LawyerProfileEditPage'));
+const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboardGlass'));
+const AIChatPageGlass = lazy(() => import('./pages/AI/AIChatPageGlass'));
+const ConsultationsPageGlass = lazy(() => import('./pages/Consultations/ConsultationsPageGlass'));
+const VideoCallPage = lazy(() => import('./pages/Consultations/VideoCallPage'));
+const ChatPage = lazy(() => import('./pages/Consultations/ChatPage'));
+const LawyersPageGlass = lazy(() => import('./pages/Lawyers/LawyersPageGlass'));
+const LawyerProfilePage = lazy(() => import('./pages/Lawyers/LawyerProfilePage'));
+const DocumentsPageGlass = lazy(() => import('./pages/Documents/DocumentsPageGlass'));
+const ProfilePageGlass = lazy(() => import('./pages/Profile/ProfilePageGlass'));
+const SettingsPageGlass = lazy(() => import('./pages/Settings/SettingsPageGlass'));
+const HelpPage = lazy(() => import('./pages/Help/HelpPage'));
+const ForgotPasswordPage = lazy(() => import('./pages/Auth/ForgotPasswordPage'));
+const ResetPasswordPage = lazy(() => import('./pages/Auth/ResetPasswordPage'));
+const SpecializationsPageGlass = lazy(() => import('./pages/Admin/SpecializationsPageGlass'));
+const AdminLawyersPage = lazy(() => import('./pages/Admin/AdminLawyersPage'));
+const AdminUsersPage = lazy(() => import('./pages/Admin/AdminUsersPage'));
+const AdminPromosPage = lazy(() => import('./pages/Admin/AdminPromosPage'));
+const AdminSupportPage = lazy(() => import('./pages/Admin/AdminSupportPage'));
+const AdminReviewsPage = lazy(() => import('./pages/Admin/AdminReviewsPage'));
+const AdminFinancePage = lazy(() => import('./pages/Admin/AdminFinancePage'));
+const AdminConsultationsPage = lazy(() => import('./pages/Admin/AdminConsultationsPage'));
+const FavoritesPage = lazy(() => import('./pages/Client/FavoritesPage'));
+const PortfolioPage = lazy(() => import('./pages/Client/PortfolioPage'));
+const PaymentsPageGlass = lazy(() => import('./pages/Payments/PaymentsPageGlass'));
+const VerifyEmailPage = lazy(() => import('./pages/Auth/VerifyEmailPage'));
+const LandingPage = lazy(() => import('./pages/Landing/LandingPage'));
 
 const theme = axelionTheme;
 
@@ -98,7 +96,12 @@ const AppContent = () => {
   return (
     <Router>
       {isAuthenticated && <GlobalCallListener />}
-      <Routes>
+      <Suspense fallback={(
+        <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
+          <LoadingSpinner />
+        </Box>
+      )}>
+        <Routes>
         <Route path="/" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <LandingPage />
         } />
@@ -232,7 +235,8 @@ const AppContent = () => {
         <Route path="*" element={
           isAuthenticated ? <Navigate to="/dashboard" /> : <Navigate to="/login" />
         } />
-      </Routes>
+        </Routes>
+      </Suspense>
     </Router>
   );
 };

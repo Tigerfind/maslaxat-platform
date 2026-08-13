@@ -10,6 +10,14 @@ const tiers = require('../services/lawyerTiers');
 // («Опытные») и условие выборки не разъезжались.
 const HIGH_RATING_FROM = 4.5;
 const EXPERIENCED_FROM = 10;
+const PUBLIC_PROFILE_ATTRIBUTES = [
+  'specialization', 'specializations', 'description', 'experience', 'price',
+  'rating', 'reviewsCount', 'completedCases', 'location', 'languages',
+  'education', 'certificates', 'schedule', 'isAvailable',
+];
+const PUBLIC_REVIEW_ATTRIBUTES = [
+  'id', 'rating', 'text', 'replyText', 'repliedAt', 'helpfulCount', 'createdAt',
+];
 
 /**
  * Разбирает фильтр опыта: '0-5' | '5-10' | '10-15' | '15+' | '10+'.
@@ -159,10 +167,11 @@ router.get('/', async (req, res, next) => {
     // Never expose phone/email of lawyers to public/client searches
     const { count, rows } = await User.findAndCountAll({
       where: userWhere,
-      attributes: ['id', 'name', 'avatar', 'role', 'isVerified', 'createdAt'],
+      attributes: ['id', 'name', 'avatar', 'role'],
       include: [{
         model: LawyerProfile,
         as: 'profile',
+        attributes: PUBLIC_PROFILE_ATTRIBUTES,
         where: profileWhere,
         required: true,
       }],
@@ -204,7 +213,11 @@ router.get('/', async (req, res, next) => {
 // ВАЖНО: объявлено ВЫШЕ '/:id', иначе 'filter-options' попадёт в параметр :id.
 router.get('/filter-options', async (req, res, next) => {
   try {
-    const profiles = await LawyerProfile.findAll({ attributes: ['location', 'languages'], raw: true });
+    const profiles = await LawyerProfile.findAll({
+      where: { verificationStatus: 'approved' },
+      attributes: ['location', 'languages'],
+      raw: true,
+    });
     const locations = [...new Set(profiles.map((p) => p.location).filter(Boolean))].sort();
     const langSet = new Set();
     profiles.forEach((p) => (Array.isArray(p.languages) ? p.languages : []).forEach((l) => l && langSet.add(l)));
@@ -219,13 +232,22 @@ router.get('/:id', async (req, res, next) => {
   try {
     // Never expose phone/email to public profile viewers
     const lawyer = await User.findOne({
-      where: { id: req.params.id, role: 'lawyer' },
-      attributes: ['id', 'name', 'avatar', 'role', 'isVerified', 'createdAt'],
+      where: { id: req.params.id, role: 'lawyer', isActive: true },
+      attributes: ['id', 'name', 'avatar', 'role'],
       include: [
-        { model: LawyerProfile, as: 'profile' },
+        {
+          model: LawyerProfile,
+          as: 'profile',
+          attributes: PUBLIC_PROFILE_ATTRIBUTES,
+          where: { verificationStatus: 'approved' },
+          required: true,
+        },
         {
           model: Review,
           as: 'receivedReviews',
+          attributes: PUBLIC_REVIEW_ATTRIBUTES,
+          where: { isHidden: false },
+          required: false,
           include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
           order: [['createdAt', 'DESC']],
           limit: 20,
@@ -235,7 +257,7 @@ router.get('/:id', async (req, res, next) => {
 
     // Безопасный режим: непроверенный/отклонённый профиль публично не показываем
     // (иначе клиент дошёл бы до него по прямой ссылке минуя каталог).
-    if (!lawyer || !lawyer.profile || lawyer.profile.verificationStatus !== 'approved') {
+    if (!lawyer || !lawyer.profile) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
@@ -250,6 +272,7 @@ router.get('/:id/reviews', async (req, res, next) => {
   try {
     const reviews = await Review.findAll({
       where: { lawyerId: req.params.id, isHidden: false },
+      attributes: PUBLIC_REVIEW_ATTRIBUTES,
       include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
       order: [['createdAt', 'DESC']],
       limit: 50,

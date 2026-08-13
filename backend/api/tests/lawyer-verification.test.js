@@ -26,10 +26,13 @@ describe('каталог показывает только одобренных 
 
     const res = await request(app).get('/api/lawyers?limit=50');
     expect(res.status).toBe(200);
-    const emails = res.body.lawyers.map((l) => l.profile.verificationStatus);
-    // все возвращённые — approved
-    expect(emails.every((s) => s === 'approved')).toBe(true);
     expect(res.body.lawyers.length).toBe(1);
+    expect(res.body.lawyers[0]).not.toHaveProperty('isVerified');
+    expect(res.body.lawyers[0]).not.toHaveProperty('createdAt');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('verificationStatus');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('rejectionReason');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('balance');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('pendingBalance');
   });
 });
 
@@ -44,6 +47,12 @@ describe('публичный профиль (GET /lawyers/:id)', () => {
     const r2 = await request(app).get(`/api/lawyers/${approved.id}`);
     expect(r2.status).toBe(200);
     expect(r2.body.lawyer.id).toBe(approved.id);
+    expect(r2.body.lawyer).not.toHaveProperty('isVerified');
+    expect(r2.body.lawyer).not.toHaveProperty('createdAt');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('verificationStatus');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('rejectionReason');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('balance');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('pendingBalance');
   });
 });
 

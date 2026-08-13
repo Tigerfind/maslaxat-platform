@@ -59,6 +59,28 @@ async function ensureProdIndexes() {
     created.push(REVIEW);
   }
 
+  // 3) Один Payme transaction ID не может провести два разных платежа.
+  const PAYMENT_TX = 'payments_provider_transaction_id_unique';
+  if (await indexExists(PAYMENT_TX)) {
+    skipped.push(PAYMENT_TX);
+  } else {
+    const [dups] = await sequelize.query(`
+      SELECT provider, transaction_id, COUNT(*) AS n
+      FROM payments
+      WHERE transaction_id IS NOT NULL
+      GROUP BY provider, transaction_id HAVING COUNT(*) > 1
+    `);
+    if (dups.length > 0) {
+      throw new Error(`Cannot create ${PAYMENT_TX}: ${dups.length} duplicate provider transaction ID(s). Resolve manually.`);
+    }
+    await sequelize.query(`
+      CREATE UNIQUE INDEX ${PAYMENT_TX}
+      ON payments (provider, transaction_id)
+      WHERE transaction_id IS NOT NULL
+    `);
+    created.push(PAYMENT_TX);
+  }
+
   return { created, skipped };
 }
 

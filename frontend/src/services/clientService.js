@@ -66,10 +66,9 @@ export const clientLawyerService = {
         id: l.id,
         name: l.name,
         avatar: l.avatar,
-        isVerified: l.isVerified,
-        // Статус модерации админом (галочка «Проверенный»). В каталог попадают
-        // только approved, но держим явно — на будущее и для единообразия.
-        verificationStatus: l.profile?.verificationStatus || 'pending',
+        // Публичный endpoint возвращает только одобренных юристов и намеренно
+        // не раскрывает внутренний статус модерации.
+        verificationStatus: 'approved',
         rating: l.profile?.rating || 0,
         // Ступень юриста (топ/эксперт/практик) считает сервер — тем же правилом,
         // что и фильтр подбора, чтобы бейдж и выборка не расходились.

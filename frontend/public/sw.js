@@ -2,14 +2,18 @@
 // устанавливаемым приложением). Стратегия: сеть в приоритете, кэш как запасной
 // вариант при отсутствии сети. Ничего заранее не кэшируем — чтобы в разработке
 // не показывались устаревшие версии.
-const CACHE = 'maslaxat-runtime-v2';
+const CACHE = 'maslaxat-runtime-v3';
 
 self.addEventListener('install', () => {
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-  event.waitUntil(self.clients.claim());
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key !== CACHE).map((key) => caches.delete(key)));
+    await self.clients.claim();
+  })());
 });
 
 self.addEventListener('fetch', (event) => {
@@ -17,9 +21,12 @@ self.addEventListener('fetch', (event) => {
   event.respondWith(
     fetch(event.request)
       .then((response) => {
-        // складываем успешные ответы в кэш на случай оффлайна
-        const copy = response.clone();
-        caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        // Не кэшируем 404/500: старый HTML или отсутствующий lazy chunk иначе
+        // продолжит ломать приложение даже после успешного деплоя.
+        if (response.ok) {
+          const copy = response.clone();
+          caches.open(CACHE).then((cache) => cache.put(event.request, copy)).catch(() => {});
+        }
         return response;
       })
       .catch(() => caches.match(event.request))

@@ -208,6 +208,11 @@ async function start() {
       }
     }
 
+    // Публичные рейтинг/число отзывов/завершённых дел — только из реальных
+    // Review и Consultation, а не из устаревших или демонстрационных агрегатов.
+    const metrics = await require('./services/ratingService').reconcileLawyerMetrics();
+    logger.info('Lawyer metrics reconciled', metrics);
+
     // Прод: досоздаём индексы, которых нет в моделях (частичные/условные unique
     // из миграций — sync() их не создаёт). Идемпотентно и дёшево (2 проверки
     // pg_indexes), безопасно на каждом старте. Ошибка не мешает старту.

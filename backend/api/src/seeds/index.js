@@ -69,9 +69,9 @@ async function seed() {
         specializations: [l.spec],
         experience: l.exp,
         price: l.price,
-        rating: l.rating,
-        reviewsCount: l.reviews,
-        completedCases: l.cases,
+        rating: 0,
+        reviewsCount: 0,
+        completedCases: 0,
         location: l.location,
         // Языки: все владеют русским и узбекским, часть — ещё и английским
         languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],

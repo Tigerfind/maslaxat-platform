@@ -1,4 +1,5 @@
-const { Review, LawyerProfile } = require('../models');
+const { fn, col } = require('sequelize');
+const { sequelize, Review, Consultation, LawyerProfile } = require('../models');
 
 // Пересчитывает агрегат рейтинга юриста по НЕскрытым отзывам.
 // Используется при новом отзыве и при модерации (скрытие/показ).
@@ -10,4 +11,41 @@ async function recomputeLawyerRating(lawyerId) {
   return { rating, reviewsCount: count };
 }
 
-module.exports = { recomputeLawyerRating };
+// Восстанавливает публичные агрегаты из фактических записей. Это не даёт старым
+// сидам или ручным правкам показывать клиентам несуществующие отзывы и дела.
+async function reconcileLawyerMetrics() {
+  const [profiles, reviewRows, consultationRows] = await Promise.all([
+    LawyerProfile.findAll({ attributes: ['userId'], raw: true }),
+    Review.findAll({
+      where: { isHidden: false },
+      attributes: ['lawyerId', [fn('COUNT', col('id')), 'count'], [fn('AVG', col('rating')), 'rating']],
+      group: ['lawyerId'],
+      raw: true,
+    }),
+    Consultation.findAll({
+      where: { status: 'completed' },
+      attributes: ['lawyerId', [fn('COUNT', col('id')), 'count']],
+      group: ['lawyerId'],
+      raw: true,
+    }),
+  ]);
+
+  const reviewsByLawyer = new Map(reviewRows.map((row) => [row.lawyerId, row]));
+  const casesByLawyer = new Map(consultationRows.map((row) => [row.lawyerId, Number(row.count)]));
+
+  await sequelize.transaction(async (transaction) => {
+    await Promise.all(profiles.map(({ userId }) => {
+      const reviews = reviewsByLawyer.get(userId);
+      const rating = reviews ? Math.round(Number(reviews.rating) * 10) / 10 : 0;
+      return LawyerProfile.update({
+        rating,
+        reviewsCount: reviews ? Number(reviews.count) : 0,
+        completedCases: casesByLawyer.get(userId) || 0,
+      }, { where: { userId }, transaction });
+    }));
+  });
+
+  return { profiles: profiles.length };
+}
+
+module.exports = { recomputeLawyerRating, reconcileLawyerMetrics };
