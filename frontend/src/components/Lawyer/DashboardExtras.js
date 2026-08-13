@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, CircularProgress } from '@mui/material';
@@ -38,6 +38,9 @@ const DashboardExtras = () => {
   const [checklist, setChecklist] = useState(null); // { complete, missing, verificationStatus }
   const [wdOpen, setWdOpen] = useState(false);
   const [wdAmount, setWdAmount] = useState('');
+  const [wdOwner, setWdOwner] = useState('');
+  const [wdLastFour, setWdLastFour] = useState('');
+  const wdKeyRef = useRef(null);
   const [wding, setWding] = useState(false);
   const [copied, setCopied] = useState(false);
 
@@ -63,13 +66,17 @@ const DashboardExtras = () => {
 
   const withdraw = async () => {
     const amt = Number(wdAmount);
-    if (!Number.isFinite(amt) || amt <= 0) { toast.error(t('dashExtra.wdInvalid')); return; }
+    if (!Number.isSafeInteger(amt) || amt < 10000) { toast.error(t('dashExtra.wdInvalid')); return; }
     if (balance && amt > Number(balance.balance)) { toast.error(t('dashExtra.wdTooMuch')); return; }
+    if (!wdOwner.trim() || !/^\d{4}$/.test(wdLastFour)) { toast.error(t('dashExtra.wdDestinationInvalid')); return; }
     setWding(true);
     try {
-      const res = await lawyerService.payments.withdraw(amt);
+      if (!wdKeyRef.current) wdKeyRef.current = window.crypto.randomUUID();
+      const res = await lawyerService.payments.withdraw(amt, {
+        ownerName: wdOwner.trim(), accountMask: wdLastFour, method: 'manual_bank',
+      }, wdKeyRef.current);
       toast.success(res?.message || t('dashExtra.wdOk'));
-      setWdOpen(false); setWdAmount('');
+      setWdOpen(false); setWdAmount(''); setWdOwner(''); setWdLastFour(''); wdKeyRef.current = null;
       await loadBalance();
     } catch (err) {
       toast.error(err.response?.data?.error || t('dashExtra.wdError'));
@@ -90,7 +97,7 @@ const DashboardExtras = () => {
           {t('dashExtra.inEscrow')}: <b>{balance ? fmt(balance.pendingBalance) : '—'} {t('lawyerPanel.sum')}</b>
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
-          <button onClick={() => setWdOpen(true)} disabled={!balance || Number(balance.balance) <= 0}
+          <button onClick={() => { wdKeyRef.current = window.crypto.randomUUID(); setWdOpen(true); }} disabled={!balance || Number(balance.balance) <= 0}
             style={{ background: (!balance || Number(balance.balance) <= 0) ? 'var(--border-strong)' : 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: (!balance || Number(balance.balance) <= 0) ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {t('dashExtra.withdraw')}
           </button>
@@ -151,6 +158,10 @@ const DashboardExtras = () => {
           </div>
           <TextField fullWidth type="number" value={wdAmount} onChange={(e) => setWdAmount(e.target.value)}
             placeholder={t('dashExtra.wdPlaceholder')} inputProps={{ min: 0 }} autoFocus />
+          <TextField fullWidth value={wdOwner} onChange={(e) => setWdOwner(e.target.value)}
+            label={t('dashExtra.wdOwner')} sx={{ mt: 2 }} inputProps={{ maxLength: 120 }} />
+          <TextField fullWidth value={wdLastFour} onChange={(e) => setWdLastFour(e.target.value.replace(/\D/g, '').slice(0, 4))}
+            label={t('dashExtra.wdLastFour')} sx={{ mt: 2 }} inputProps={{ inputMode: 'numeric', maxLength: 4 }} />
           <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 10 }}>{t('dashExtra.wdNote')}</div>
         </DialogContent>
         <DialogActions sx={{ p: 2 }}>

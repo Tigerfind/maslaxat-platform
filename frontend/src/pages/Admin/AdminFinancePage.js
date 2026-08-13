@@ -11,12 +11,12 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
-import ConfirmDialog from '../../components/UI/ConfirmDialog';
 
 const PAGE_SIZE = 25;
 
 const WITHDRAWAL_STATUS = {
   pending: { key: 'stPending', c: axelionColors.warning, bg: 'rgba(196,163,90,0.16)' },
+  processing: { key: 'stProcessing', c: axelionColors.bronze, bg: axelionColors.bgBeige },
   paid: { key: 'stPaid', c: axelionColors.success, bg: 'rgba(122,154,107,0.16)' },
   cancelled: { key: 'stCancelled', c: axelionColors.error, bg: 'rgba(176,112,112,0.16)' },
   failed: { key: 'stFailed', c: axelionColors.error, bg: 'rgba(176,112,112,0.16)' },
@@ -52,6 +52,8 @@ const AdminFinancePage = () => {
   const [confirmPaid, setConfirmPaid] = useState(null);
   const [rejectFor, setRejectFor] = useState(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [providerTransactionId, setProviderTransactionId] = useState('');
+  const [providerReference, setProviderReference] = useState('');
 
   const load = useCallback(async (pageNum = 1, currentTab = tab) => {
     setLoading(true);
@@ -85,11 +87,19 @@ const AdminFinancePage = () => {
 
   const markPaid = async () => {
     const w = confirmPaid;
+    if (!providerTransactionId.trim() || !providerReference.trim()) {
+      toast.error(t('adminFinance.needReference')); return;
+    }
     setActing(w.id);
     try {
-      await adminFinanceService.processWithdrawal(w.id, 'paid');
+      await adminFinanceService.processWithdrawal(w.id, 'paid', '', {
+        provider: 'manual_bank',
+        providerTransactionId: providerTransactionId.trim(),
+        providerReference: providerReference.trim(),
+      });
       toast.success(t('adminFinance.paid'));
       setConfirmPaid(null);
+      setProviderTransactionId(''); setProviderReference('');
       await load(page, 0);
     } catch (e) {
       toast.error(e.response?.data?.error || t('common.error'));
@@ -102,10 +112,23 @@ const AdminFinancePage = () => {
     if (!rejectNote.trim()) { toast.error(t('adminFinance.needNote')); return; }
     setActing(rejectFor.id);
     try {
-      await adminFinanceService.processWithdrawal(rejectFor.id, 'cancelled', rejectNote.trim());
+      const targetStatus = rejectFor.status === 'processing' ? 'failed' : 'cancelled';
+      await adminFinanceService.processWithdrawal(rejectFor.id, targetStatus, rejectNote.trim());
       toast.success(t('adminFinance.rejected'));
       setRejectFor(null);
       setRejectNote('');
+      await load(page, 0);
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('common.error'));
+    } finally {
+      setActing(null);
+    }
+  };
+
+  const startProcessing = async (withdrawal) => {
+    setActing(withdrawal.id);
+    try {
+      await adminFinanceService.processWithdrawal(withdrawal.id, 'processing');
       await load(page, 0);
     } catch (e) {
       toast.error(e.response?.data?.error || t('common.error'));
@@ -190,12 +213,18 @@ const AdminFinancePage = () => {
                         </TableCell>
                         <TableCell sx={{ maxWidth: 220, fontSize: 13, color: axelionColors.textSecondary }}>{w.note || '—'}</TableCell>
                         <TableCell align="right">
-                          {w.status === 'pending' && (
+                          {['pending', 'processing'].includes(w.status) && (
                             <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                              <Button size="small" variant="outlined" disabled={acting === w.id} onClick={() => setConfirmPaid(w)}
+                              {w.status === 'pending' ? (
+                                <Button size="small" variant="outlined" disabled={acting === w.id} onClick={() => startProcessing(w)}
+                                  sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none' }}>
+                                  {t('adminFinance.startProcessing')}
+                                </Button>
+                              ) : (
+                              <Button size="small" variant="outlined" disabled={acting === w.id} onClick={() => { setConfirmPaid(w); setProviderTransactionId(''); setProviderReference(''); }}
                                 sx={{ color: axelionColors.success, borderColor: axelionColors.borderLight, textTransform: 'none' }}>
                                 {t('adminFinance.markPaid')}
-                              </Button>
+                              </Button>)}
                               <Button size="small" variant="outlined" disabled={acting === w.id} onClick={() => { setRejectFor(w); setRejectNote(''); }}
                                 sx={{ color: axelionColors.error, borderColor: axelionColors.borderLight, textTransform: 'none' }}>
                                 {t('adminFinance.reject')}
@@ -250,15 +279,20 @@ const AdminFinancePage = () => {
         )}
       </Container>
 
-      <ConfirmDialog
-        open={Boolean(confirmPaid)}
-        title={t('adminFinance.markPaid')}
-        message={`${confirmPaid?.lawyer?.name || ''} · ${fmtMoney(confirmPaid?.amount)} — ${t('adminFinance.confirmPaid')}`}
-        confirmLabel={t('adminFinance.markPaid')}
-        busy={acting === confirmPaid?.id}
-        onConfirm={markPaid}
-        onClose={() => setConfirmPaid(null)}
-      />
+      <Dialog open={Boolean(confirmPaid)} onClose={() => setConfirmPaid(null)} maxWidth="xs" fullWidth>
+        <DialogTitle>{t('adminFinance.markPaid')}</DialogTitle>
+        <DialogContent>
+          <Typography variant="body2" sx={{ color: axelionColors.textMuted, mb: 2 }}>
+            {confirmPaid?.lawyer?.name || ''} · {fmtMoney(confirmPaid?.amount)} — {t('adminFinance.confirmPaid')}
+          </Typography>
+          <TextField fullWidth label={t('adminFinance.transactionId')} value={providerTransactionId} onChange={(e) => setProviderTransactionId(e.target.value)} sx={{ mb: 2 }} />
+          <TextField fullWidth label={t('adminFinance.bankReference')} value={providerReference} onChange={(e) => setProviderReference(e.target.value)} />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setConfirmPaid(null)}>{t('common.cancel')}</Button>
+          <Button onClick={markPaid} disabled={acting === confirmPaid?.id}>{t('adminFinance.markPaid')}</Button>
+        </DialogActions>
+      </Dialog>
 
       {/* Отказ: причина обязательна — она уходит юристу в уведомлении */}
       <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="xs" fullWidth>

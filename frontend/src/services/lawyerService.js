@@ -144,8 +144,10 @@ export const lawyerPaymentService = {
     const response = await api.get('/payments/balance');
     return response.data;
   },
-  withdraw: async (amount) => {
-    const response = await api.post('/payments/withdraw', { amount });
+  withdraw: async (amount, destination, idempotencyKey) => {
+    const response = await api.post('/payments/withdraw', { amount, destination }, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
   getWithdrawals: async () => {

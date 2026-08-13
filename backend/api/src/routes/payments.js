@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const logger = require('../config/logger');
 const { Op } = require('sequelize');
-const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
+const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal, FinancialEvent } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 
@@ -18,6 +18,9 @@ const ERRORS = {
 
 // ─── Payme Basic Auth Middleware ─────────────────────────────
 const verifyPayme = (req, res, next) => {
+  if (!process.env.PAYME_KEY) {
+    return res.status(503).json({ jsonrpc: '2.0', id: req.body?.id || null, error: ERRORS.CANT_PERFORM });
+  }
   const auth = req.headers.authorization || '';
   const b64 = auth.replace('Basic ', '');
   const decoded = Buffer.from(b64, 'base64').toString('utf-8');
@@ -65,7 +68,7 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
       // Прошлая попытка не удалась/отменена (failed) — сбрасываем в pending,
       // иначе повторная оплата навсегда блокировалась (webhook требует pending).
       if (payment.status === 'failed') {
-        await payment.update({ status: 'pending', amount, providerResponse: null });
+        await payment.update({ status: 'pending', amount, transactionId: null, providerResponse: null });
       }
     } else {
       payment = await Payment.create({
@@ -311,7 +314,28 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             transaction, lock: transaction.LOCK.UPDATE,
           });
           if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
-          if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
+          if (payment.status === 'refunded') {
+            return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 } };
+          }
+          if (payment.status === 'paid') {
+            if (payment.refundStatus !== 'requested' || payment.escrowReleased) return { error: ERRORS.ALREADY_DONE };
+            const cancelTime = Date.now();
+            await payment.update({
+              status: 'refunded', refundStatus: 'completed', refundedAt: new Date(cancelTime),
+              providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
+            }, { transaction });
+            await FinancialEvent.findOrCreate({
+              where: { idempotencyKey: `refund_confirmed:${payment.id}` },
+              defaults: {
+                consultationId: consultation.id, paymentId: payment.id, source: 'payme',
+                type: 'refund_confirmed', amount: payment.amount,
+                idempotencyKey: `refund_confirmed:${payment.id}`,
+                metadata: { reason: params.reason, rpcId: id },
+              },
+              transaction,
+            });
+            return { result: { cancel_time: cancelTime, transaction: payment.id, state: -2 } };
+          }
           if (payment.status === 'failed') {
             return {
               result: {
@@ -355,7 +379,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
       case 'GetStatement': {
         const payments = await Payment.findAll({
           where: {
-            status: 'paid',
+            status: { [Op.in]: ['paid', 'refunded'] },
             createdAt: {
               [require('sequelize').Op.between]: [
                 new Date(params.from),
@@ -375,8 +399,8 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             perform_time: p.providerResponse?.performTime || 0,
             cancel_time: p.providerResponse?.cancelTime || 0,
             transaction: p.id,
-            state: 2,
-            reason: null,
+            state: p.status === 'refunded' ? -2 : 2,
+            reason: p.providerResponse?.reason || null,
           })),
         });
       }
@@ -429,13 +453,23 @@ router.get('/balance', authenticate, authorize('lawyer'), async (req, res, next)
 // Запрос на вывод баланса юристом (B3)
 router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, next) => {
   try {
-    const { amount } = req.body;
+    const { amount, destination } = req.body;
+    const idempotencyKey = String(req.get('Idempotency-Key') || req.body.idempotencyKey || '').trim();
 
-    // Валидация суммы: положительное конечное число
+    // UZS учитываем целыми сумами: дроби и значения вне DECIMAL(12,2) запрещены.
     const amt = Number(amount);
-    if (!Number.isFinite(amt) || amt <= 0) {
+    if (!Number.isSafeInteger(amt) || amt < 10000 || amt > 9999999999) {
       return res.status(400).json({ error: 'Укажите корректную сумму вывода' });
     }
+    if (!idempotencyKey || idempotencyKey.length > 100) {
+      return res.status(400).json({ error: 'Отсутствует ключ идемпотентности' });
+    }
+    const ownerName = String(destination?.ownerName || '').trim().slice(0, 120);
+    const lastFour = String(destination?.accountMask || '').replace(/\D/g, '').slice(-4);
+    if (!ownerName || lastFour.length !== 4) {
+      return res.status(400).json({ error: 'Укажите владельца и маскированные реквизиты выплаты' });
+    }
+    const accountMask = `**** ${lastFour}`;
 
     // Списание баланса и запись в леджер — в ОДНОЙ транзакции: иначе при сбое
     // Withdrawal.create баланс уже уменьшен, а заявки нет → деньги «пропадают»
@@ -444,6 +478,17 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
     let withdrawal;
     try {
       await LawyerProfile.sequelize.transaction(async (t) => {
+        const existing = await Withdrawal.findOne({
+          where: { lawyerId: req.userId, idempotencyKey }, transaction: t, lock: t.LOCK.UPDATE,
+        });
+        if (existing) {
+          if (Number(existing.amount) !== amt) {
+            const conflict = new Error('IDEMPOTENCY_CONFLICT'); conflict.code = 'IDEMPOTENCY_CONFLICT'; throw conflict;
+          }
+          withdrawal = existing;
+          profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'], transaction: t });
+          return;
+        }
         const [affected] = await LawyerProfile.update(
           { balance: LawyerProfile.sequelize.literal(`balance - ${amt}`) },
           { where: { userId: req.userId, balance: { [Op.gte]: amt } }, transaction: t }
@@ -458,6 +503,17 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
           amount: amt,
           status: 'pending',
           provider: 'manual',
+          idempotencyKey,
+          destinationSnapshot: { ownerName, accountMask, method: String(destination?.method || 'manual') },
+        }, { transaction: t });
+        await FinancialEvent.create({
+          withdrawalId: withdrawal.id,
+          actorUserId: req.userId,
+          source: 'lawyer',
+          type: 'withdrawal_requested',
+          amount: amt,
+          idempotencyKey: `withdrawal_requested:${withdrawal.id}`,
+          metadata: { destination: { ownerName, accountMask } },
         }, { transaction: t });
         profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'], transaction: t });
       });
@@ -465,7 +521,18 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
       if (e.code === 'INSUFFICIENT_FUNDS') {
         return res.status(400).json({ error: 'Недостаточно средств на балансе' });
       }
-      throw e;
+      if (e.code === 'IDEMPOTENCY_CONFLICT') {
+        return res.status(409).json({ error: 'Ключ уже использован для другой суммы' });
+      }
+      if (e.name === 'SequelizeUniqueConstraintError') {
+        withdrawal = await Withdrawal.findOne({ where: { lawyerId: req.userId, idempotencyKey } });
+        if (!withdrawal || Number(withdrawal.amount) !== amt) {
+          return res.status(409).json({ error: 'Ключ идемпотентности уже использован' });
+        }
+        profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'] });
+      } else {
+        throw e;
+      }
     }
 
     res.json({

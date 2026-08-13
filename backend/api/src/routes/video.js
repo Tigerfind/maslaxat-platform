@@ -75,8 +75,12 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
     if (consultation.status === 'accepted') {
-      consultation.status = 'in_progress';
-      await consultation.save();
+      const [affected] = await Consultation.update(
+        { status: 'in_progress' },
+        { where: { id: consultation.id, status: 'accepted' } }
+      );
+      if (affected === 0) return res.status(400).json({ error: 'Консультация уже изменена' });
+      await consultation.reload();
     } else if (consultation.status !== 'in_progress') {
       return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
     }

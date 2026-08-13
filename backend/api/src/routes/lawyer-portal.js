@@ -154,15 +154,15 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    // Источник-гейт: принять можно только новую заявку (pending). Повторный вызов на
-    // уже принятой — идемпотентный no-op; из completed/in_progress/rejected — нельзя.
-    if (![...ACCEPTABLE_FROM, 'accepted'].includes(consultation.status)) {
-      return res.status(400).json({ error: 'Запрос нельзя принять в текущем статусе' });
-    }
     const wasAlreadyAccepted = consultation.status === 'accepted';
-
-    consultation.status = 'accepted';
-    await consultation.save();
+    if (!wasAlreadyAccepted) {
+      const [affected] = await Consultation.update(
+        { status: 'accepted' },
+        { where: { id: consultation.id, status: { [Op.in]: ACCEPTABLE_FROM } } }
+      );
+      if (affected === 0) return res.status(400).json({ error: 'Запрос нельзя принять в текущем статусе' });
+      await consultation.reload();
+    }
 
     // Приветствие юриста при принятии → уходит клиенту первым сообщением в чат
     // (НЕ перезаписываем notes клиента). Маскируем контакты (anti-churn, как в чате).
@@ -207,7 +207,9 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
-      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      await refundConsultationEscrow(consultation.id, {
+        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason: req.body.reason,
+      });
       return true;
     });
     if (!rejected) {
@@ -274,13 +276,15 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
 
     // Источник-гейт (как в accept): подтвердить можно только pending; повтор на
     // accepted — no-op; из completed/in_progress/rejected — нельзя (без отката).
-    if (![...ACCEPTABLE_FROM, 'accepted'].includes(consultation.status)) {
-      return res.status(400).json({ error: 'Консультацию нельзя подтвердить в текущем статусе' });
-    }
     const wasAlreadyAccepted = consultation.status === 'accepted';
-
-    consultation.status = 'accepted';
-    await consultation.save();
+    if (!wasAlreadyAccepted) {
+      const [affected] = await Consultation.update(
+        { status: 'accepted' },
+        { where: { id: consultation.id, status: { [Op.in]: ACCEPTABLE_FROM } } }
+      );
+      if (affected === 0) return res.status(400).json({ error: 'Консультацию нельзя подтвердить в текущем статусе' });
+      await consultation.reload();
+    }
 
     if (!wasAlreadyAccepted) {
       const lawyerConfirm = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -311,7 +315,9 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
-      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      await refundConsultationEscrow(consultation.id, {
+        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason: req.body.reason,
+      });
       return true;
     });
     if (!rejected) {
@@ -344,8 +350,12 @@ router.post('/consultations/:id/start', async (req, res, next) => {
     // уже in_progress. Запрет старта из completed убирает revert-примитив (повторную
     // выплату эскроу через start→end по уже завершённой консультации).
     if (STARTABLE_FROM.includes(consultation.status)) {
-      consultation.status = 'in_progress';
-      await consultation.save();
+      const [affected] = await Consultation.update(
+        { status: 'in_progress' },
+        { where: { id: consultation.id, status: { [Op.in]: STARTABLE_FROM } } }
+      );
+      if (affected === 0) return res.status(400).json({ error: 'Начать можно только подтверждённую консультацию' });
+      await consultation.reload();
       const lawyerStart = await User.findByPk(req.userId, { attributes: ['name'] });
       notificationService.notifyConsultationStarted(consultation.clientId, lawyerStart?.name || 'Юрист', consultation);
     } else if (consultation.status !== 'in_progress') {

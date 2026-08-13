@@ -1,9 +1,9 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Consultation, User, LawyerProfile, Payment, Review, Promo } = require('../models');
+const { Consultation, User, LawyerProfile, Review, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
-const { completeConsultation } = require('../services/escrow');
+const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
 
 // GET /api/consultations — мои консультации
 router.get('/', authenticate, async (req, res, next) => {
@@ -103,7 +103,9 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
 
     // БЕЗОПАСНОСТЬ: разрешаем только валидные целевые статусы, а не произвольный enum.
     // payment_pending/pending — системные (оплата), их через этот роут ставить нельзя.
-    const ALLOWED_STATUS = ['accepted', 'rejected', 'in_progress', 'completed', 'cancelled'];
+    // cancelled/rejected идут только через специализированные endpoints с
+    // атомарным снятием escrow и постановкой provider-refund в очередь.
+    const ALLOWED_STATUS = ['accepted', 'in_progress', 'completed'];
     if (!ALLOWED_STATUS.includes(req.body.status)) {
       return res.status(400).json({ error: 'Недопустимый статус' });
     }
@@ -265,35 +267,25 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
     // (а) запрещает отмену completed/cancelled/in_progress (в т.ч. после оказанной
     // услуги), (б) исключает гонку двойного клика — только один запрос выиграет
     // переход, поэтому возврат эскроу выполнится ровно один раз.
-    const [affected] = await Consultation.update(
-      { status: 'cancelled', notes: req.body.reason || 'Отменено пользователем' },
-      { where: { id: consultation.id, status: { [Op.in]: ['payment_pending', 'pending', 'accepted'] } } }
-    );
-    if (affected === 0) {
-      return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
-    }
-
-    // Возврат эскроу: если консультация была оплачена — снимаем резерв с
-    // pendingBalance юриста и помечаем платёж возвращённым (иначе деньги
-    // зависали бы в pendingBalance). Реальный возврат клиенту через Payme —
-    // отдельно (Фаза 6); здесь чиним учёт.
-    const paidPayment = await Payment.findOne({
-      where: { consultationId: consultation.id, status: 'paid' },
-    });
-    if (paidPayment) {
-      const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
-      if (lp) await lp.decrement('pendingBalance', { by: paidPayment.amount });
-      await paidPayment.update({ status: 'refunded' });
-    }
-
-    // Возвращаем использование промокода, если он применялся к этой брони
-    // (иначе usedCount сгорал на отменённых бронях).
-    if (consultation.promoCode) {
-      const { literal } = require('sequelize');
-      await Promo.increment('usedCount', {
-        by: -1,
-        where: { code: consultation.promoCode, usedCount: { [Op.gt]: 0 } },
+    const cancelled = await Consultation.sequelize.transaction(async (transaction) => {
+      const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!locked || !['payment_pending', 'pending', 'accepted'].includes(locked.status)) return false;
+      const reason = req.body.reason || 'Отменено пользователем';
+      await locked.update({ status: 'cancelled', notes: reason }, { transaction });
+      await refundConsultationEscrow(locked.id, {
+        transaction, actorUserId: req.userId, source: req.userRole || 'client', reason,
       });
+      if (locked.promoCode) {
+        await Promo.increment('usedCount', {
+          by: -1,
+          where: { code: locked.promoCode, usedCount: { [Op.gt]: 0 } },
+          transaction,
+        });
+      }
+      return true;
+    });
+    if (!cancelled) {
+      return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
     }
 
     await consultation.reload();

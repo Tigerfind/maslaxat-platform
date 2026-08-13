@@ -669,6 +669,15 @@ const Payment = sequelize.define('Payment', {
     allowNull: false,
     defaultValue: false,
   },
+  refundStatus: {
+    type: DataTypes.ENUM('none', 'requested', 'completed', 'failed'),
+    allowNull: false,
+    defaultValue: 'none',
+  },
+  refundRequestedAt: { type: DataTypes.DATE },
+  refundedAt: { type: DataTypes.DATE },
+  refundReason: { type: DataTypes.TEXT },
+  refundRequestedBy: { type: DataTypes.UUID },
 });
 
 // ─── PHONE OTP MODEL ────────────────────────────────────────
@@ -777,7 +786,7 @@ const Withdrawal = sequelize.define('Withdrawal', {
   status: {
     // pending — заявка принята; paid — реально переведено (Payme Transfer, Фаза 6);
     // failed/cancelled — служебные
-    type: DataTypes.ENUM('pending', 'paid', 'failed', 'cancelled'),
+    type: DataTypes.ENUM('pending', 'processing', 'paid', 'failed', 'cancelled'),
     defaultValue: 'pending',
   },
   provider: {
@@ -787,7 +796,35 @@ const Withdrawal = sequelize.define('Withdrawal', {
   note: {
     type: DataTypes.TEXT,
   },
+  currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'UZS' },
+  idempotencyKey: { type: DataTypes.STRING },
+  providerTransactionId: { type: DataTypes.STRING },
+  providerReference: { type: DataTypes.STRING },
+  destinationSnapshot: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+  processingAt: { type: DataTypes.DATE },
+  processedAt: { type: DataTypes.DATE },
+  processedBy: { type: DataTypes.UUID },
+  failureCode: { type: DataTypes.STRING },
+  failureMessage: { type: DataTypes.TEXT },
+}, {
+  indexes: [
+    { unique: true, fields: ['lawyer_id', 'idempotency_key'] },
+    { unique: true, fields: ['provider', 'provider_transaction_id'] },
+  ],
 });
+
+const FinancialEvent = sequelize.define('FinancialEvent', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  consultationId: { type: DataTypes.UUID },
+  paymentId: { type: DataTypes.UUID },
+  withdrawalId: { type: DataTypes.UUID },
+  actorUserId: { type: DataTypes.UUID },
+  source: { type: DataTypes.STRING, allowNull: false },
+  type: { type: DataTypes.STRING, allowNull: false },
+  amount: { type: DataTypes.DECIMAL(12, 2) },
+  idempotencyKey: { type: DataTypes.STRING, allowNull: false, unique: true },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, { updatedAt: false });
 
 // Web-push подписка устройства (один пользователь → много устройств)
 const PushSubscription = sequelize.define('PushSubscription', {
@@ -884,7 +921,7 @@ User.hasMany(FavoriteLawyer, { foreignKey: 'lawyerId', as: 'favoritedBy' });
 FavoriteLawyer.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
 
 // Payment <-> Consultation
-Consultation.hasOne(Payment, { foreignKey: 'consultationId', as: 'payment' });
+Consultation.hasMany(Payment, { foreignKey: 'consultationId', as: 'payments' });
 Payment.belongsTo(Consultation, { foreignKey: 'consultationId' });
 
 // Payment <-> User (payer)
@@ -924,6 +961,7 @@ module.exports = {
   SupportTicket,
   Promo,
   Withdrawal,
+  FinancialEvent,
   PushSubscription,
   PhoneOtp,
 };

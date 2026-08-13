@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { Consultation, Payment, LawyerProfile } = require('../models');
+const { Consultation, Payment, LawyerProfile, FinancialEvent } = require('../models');
 
 /**
  * Идемпотентное завершение консультации + высвобождение эскроу.
@@ -20,6 +20,16 @@ const { Consultation, Payment, LawyerProfile } = require('../models');
  */
 async function completeConsultation(consultationId, notes, actualDuration) {
   return Consultation.sequelize.transaction(async (t) => {
+    const current = await Consultation.findByPk(consultationId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!current) return { consultation: null, released: false, alreadyCompleted: true };
+    if (current.status === 'completed') {
+      return { consultation: current, released: false, alreadyCompleted: true };
+    }
+    // Никогда не воскрешаем cancelled/rejected/payment_pending и не платим за них.
+    if (!['accepted', 'in_progress'].includes(current.status)) {
+      return { consultation: current, released: false, alreadyCompleted: false };
+    }
+
     const patch = { status: 'completed' };
     if (notes) patch.notes = notes;
     // Фактическая длительность звонка (сек) — только если валидная и положительная
@@ -30,7 +40,7 @@ async function completeConsultation(consultationId, notes, actualDuration) {
     // Атомарный переход в completed (только если ещё НЕ completed). Служит гейтом
     // для «первого завершения» (completedCases), но БОЛЬШЕ не гейтит выплату.
     const [statusAffected] = await Consultation.update(patch, {
-      where: { id: consultationId, status: { [Op.ne]: 'completed' } },
+      where: { id: consultationId, status: { [Op.in]: ['accepted', 'in_progress'] } },
       transaction: t,
     });
 
@@ -45,7 +55,7 @@ async function completeConsultation(consultationId, notes, actualDuration) {
     const [, releasedPayments] = await Payment.update(
       { escrowReleased: true },
       {
-        where: { consultationId, status: 'paid', escrowReleased: false },
+        where: { consultationId, status: 'paid', escrowReleased: false, refundStatus: 'none' },
         returning: true,
         transaction: t,
       }
@@ -59,6 +69,16 @@ async function completeConsultation(consultationId, notes, actualDuration) {
       await lp.decrement('pendingBalance', { by: totalPaid, transaction: t });
       await lp.increment('balance', { by: totalPaid, transaction: t });
       released = true;
+      for (const payment of releasedPayments) {
+        await FinancialEvent.findOrCreate({
+          where: { idempotencyKey: `escrow_released:${payment.id}` },
+          defaults: {
+            consultationId, paymentId: payment.id, source: 'system', type: 'escrow_released',
+            amount: payment.amount, idempotencyKey: `escrow_released:${payment.id}`,
+          },
+          transaction: t,
+        });
+      }
     }
     // Биллинг (модель B): эскроу отдан юристу → помечаем released (только когда деньги
     // реально двинулись). Аддитивно, на денежную логику не влияет.
@@ -96,25 +116,58 @@ async function completeConsultation(consultationId, notes, actualDuration) {
  */
 async function refundConsultationEscrow(consultationId, options = {}) {
   const t = options.transaction;
-  const consultation = await Consultation.findByPk(consultationId, { transaction: t });
+  const consultation = await Consultation.findByPk(consultationId, { transaction: t, lock: t?.LOCK.UPDATE });
   if (!consultation) return { refunded: 0 };
 
-  const [, refundedPayments] = await Payment.update(
-    { status: 'refunded' },
+  // Реальные деньги ещё находятся у Payme. Локальная отмена только снимает
+  // внутренний escrow и создаёт обязательство возврата; refunded ставится лишь
+  // после подтверждённого CancelTransaction провайдера.
+  const now = new Date();
+  const [, refundRequestedPayments] = await Payment.update(
     {
-      where: { consultationId, status: 'paid', escrowReleased: false },
+      refundStatus: 'requested',
+      refundRequestedAt: now,
+      refundReason: options.reason || consultation.notes || null,
+      refundRequestedBy: options.actorUserId || null,
+    },
+    {
+      where: { consultationId, status: 'paid', escrowReleased: false, refundStatus: 'none' },
       returning: true,
       transaction: t,
     }
   );
-  const totalRefund = (refundedPayments || []).reduce((s, p) => s + Number(p.amount), 0);
+  const totalRefund = (refundRequestedPayments || []).reduce((s, p) => s + Number(p.amount), 0);
+
+  // Не проведённые операции внешних денег не содержат: закрываем их как failed.
+  await Payment.update(
+    { status: 'failed', refundStatus: 'completed', refundedAt: now },
+    { where: { consultationId, status: 'pending' }, transaction: t }
+  );
 
   if (totalRefund > 0) {
-    await LawyerProfile.decrement('pendingBalance', {
-      by: totalRefund,
-      where: { userId: consultation.lawyerId },
-      transaction: t,
+    const profile = await LawyerProfile.findOne({
+      where: { userId: consultation.lawyerId }, transaction: t, lock: t?.LOCK.UPDATE,
     });
+    if (!profile || Number(profile.pendingBalance) < totalRefund) {
+      throw new Error('Escrow balance mismatch during refund request');
+    }
+    await profile.decrement('pendingBalance', { by: totalRefund, transaction: t });
+    for (const payment of refundRequestedPayments) {
+      await FinancialEvent.findOrCreate({
+        where: { idempotencyKey: `refund_requested:${payment.id}` },
+        defaults: {
+          consultationId,
+          paymentId: payment.id,
+          actorUserId: options.actorUserId || null,
+          source: options.source || 'system',
+          type: 'refund_requested',
+          amount: payment.amount,
+          idempotencyKey: `refund_requested:${payment.id}`,
+          metadata: { reason: options.reason || consultation.notes || null },
+        },
+        transaction: t,
+      });
+    }
   }
 
   return { refunded: totalRefund };

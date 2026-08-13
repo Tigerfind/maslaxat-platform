@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
 const fs = require('fs');
-const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument, Withdrawal, Payment } = require('../models');
+const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument, Withdrawal, Payment, FinancialEvent } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const { withLawyerCounts } = require('../services/specializationStats');
@@ -712,9 +712,9 @@ router.get('/withdrawals', async (req, res, next) => {
     const offset = (page - 1) * limit;
 
     const where = {};
-    if (['pending', 'paid', 'failed', 'cancelled'].includes(status)) where.status = status;
+    if (['pending', 'processing', 'paid', 'failed', 'cancelled'].includes(status)) where.status = status;
 
-    const [{ count, rows }, all, pending, paid, pendingSum] = await Promise.all([
+    const [{ count, rows }, all, pending, processing, paid, pendingSum] = await Promise.all([
       Withdrawal.findAndCountAll({
         where,
         include: [{
@@ -729,10 +729,11 @@ router.get('/withdrawals', async (req, res, next) => {
       }),
       Withdrawal.count(),
       Withdrawal.count({ where: { status: 'pending' } }),
+      Withdrawal.count({ where: { status: 'processing' } }),
       Withdrawal.count({ where: { status: 'paid' } }),
       // Сколько денег сейчас «заморожено» в необработанных заявках — главная
       // цифра для админа: столько он должен перевести.
-      Withdrawal.sum('amount', { where: { status: 'pending' } }),
+      Withdrawal.sum('amount', { where: { status: { [Op.in]: ['pending', 'processing'] } } }),
     ]);
 
     res.json({
@@ -740,7 +741,7 @@ router.get('/withdrawals', async (req, res, next) => {
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
-      counts: { all, pending, paid, pendingAmount: Number(pendingSum) || 0 },
+      counts: { all, pending, processing, paid, pendingAmount: Number(pendingSum) || 0 },
     });
   } catch (err) {
     next(err);
@@ -752,28 +753,48 @@ router.get('/withdrawals', async (req, res, next) => {
 //   cancelled / failed  → возвращаем сумму на баланс юриста
 router.patch('/withdrawals/:id', async (req, res, next) => {
   try {
-    const { status, note } = req.body;
-    if (!['paid', 'cancelled', 'failed'].includes(status)) {
+    const { status, note, provider, providerTransactionId, providerReference, failureCode } = req.body;
+    if (!['processing', 'paid', 'cancelled', 'failed'].includes(status)) {
       return res.status(400).json({ error: 'Недопустимый статус заявки' });
     }
 
     const withdrawal = await Withdrawal.findByPk(req.params.id);
     if (!withdrawal) return res.status(404).json({ error: 'Заявка не найдена' });
-    if (withdrawal.status !== 'pending') {
-      // Идемпотентность: обработанную заявку нельзя обработать повторно, иначе
-      // отказ дважды вернул бы деньги на баланс.
-      return res.status(409).json({ error: `Заявка уже обработана (${withdrawal.status})` });
+    const allowedFrom = { processing: 'pending', cancelled: 'pending', paid: 'processing', failed: 'processing' };
+    if (withdrawal.status !== allowedFrom[status]) return res.status(409).json({ error: `Недопустимый переход ${withdrawal.status} → ${status}` });
+    if (['cancelled', 'failed'].includes(status) && !String(note || '').trim()) {
+      return res.status(400).json({ error: 'Укажите причину отказа' });
+    }
+    if (status === 'paid' && (!String(providerTransactionId || '').trim() || !String(providerReference || '').trim())) {
+      return res.status(400).json({ error: 'Для выплаты обязательны transaction ID и банковский reference' });
     }
 
     const amount = Number(withdrawal.amount) || 0;
-    const refund = status !== 'paid';
+    const refund = ['cancelled', 'failed'].includes(status);
 
     await Withdrawal.sequelize.transaction(async (t) => {
-      // Условный UPDATE по status='pending' — защита от гонки двух админов:
+      const patch = {
+        status,
+        note: note ? String(note).slice(0, 500) : withdrawal.note,
+        processedBy: req.userId,
+      };
+      if (status === 'processing') patch.processingAt = new Date();
+      if (['paid', 'failed', 'cancelled'].includes(status)) patch.processedAt = new Date();
+      if (status === 'paid') {
+        patch.provider = String(provider || 'manual').slice(0, 30);
+        patch.providerTransactionId = String(providerTransactionId).trim().slice(0, 150);
+        patch.providerReference = String(providerReference).trim().slice(0, 150);
+      }
+      if (status === 'failed') {
+        patch.failureCode = String(failureCode || 'manual_failure').slice(0, 80);
+        patch.failureMessage = String(note).slice(0, 500);
+      }
+
+      // Условный UPDATE по ожидаемому статусу — защита от гонки двух админов.
       // второй получит affected=0 и не выполнит второй возврат.
       const [affected] = await Withdrawal.update(
-        { status, note: note ? String(note).slice(0, 500) : withdrawal.note },
-        { where: { id: withdrawal.id, status: 'pending' }, transaction: t }
+        patch,
+        { where: { id: withdrawal.id, status: allowedFrom[status] }, transaction: t }
       );
       if (affected === 0) {
         const err = new Error('ALREADY_PROCESSED');
@@ -781,11 +802,21 @@ router.patch('/withdrawals/:id', async (req, res, next) => {
         throw err;
       }
       if (refund) {
-        await LawyerProfile.update(
+        const [profileAffected] = await LawyerProfile.update(
           { balance: LawyerProfile.sequelize.literal(`balance + ${amount}`) },
           { where: { userId: withdrawal.lawyerId }, transaction: t }
         );
+        if (profileAffected !== 1) throw new Error('Lawyer profile missing during withdrawal refund');
       }
+      await FinancialEvent.create({
+        withdrawalId: withdrawal.id,
+        actorUserId: req.userId,
+        source: 'admin',
+        type: `withdrawal_${status}`,
+        amount,
+        idempotencyKey: `withdrawal_${status}:${withdrawal.id}`,
+        metadata: { note: note || null, provider: provider || null, providerReference: providerReference || null },
+      }, { transaction: t });
     }).catch((e) => {
       if (e.code === 'ALREADY_PROCESSED') {
         const err = new Error('Заявка уже обработана');
@@ -801,9 +832,11 @@ router.patch('/withdrawals/:id', async (req, res, next) => {
       await notifications.createNotification(
         withdrawal.lawyerId,
         'withdrawal',
-        status === 'paid' ? 'Выплата отправлена' : 'Заявка на вывод отклонена',
+        status === 'paid' ? 'Выплата отправлена' : status === 'processing' ? 'Выплата обрабатывается' : 'Заявка на вывод отклонена',
         status === 'paid'
           ? `Выплата ${amount.toLocaleString('ru-RU')} сум отправлена.`
+          : status === 'processing'
+            ? `Заявка на ${amount.toLocaleString('ru-RU')} сум взята в обработку.`
           : `Заявка на ${amount.toLocaleString('ru-RU')} сум отклонена, сумма возвращена на баланс.${note ? ` Причина: ${note}` : ''}`,
         { withdrawalId: withdrawal.id, status },
       );
@@ -813,6 +846,9 @@ router.patch('/withdrawals/:id', async (req, res, next) => {
     res.json({ success: true, withdrawal: updated, refunded: refund });
   } catch (err) {
     if (err.status === 409) return res.status(409).json({ error: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ error: 'Такой ID банковской операции уже использован' });
+    }
     next(err);
   }
 });
@@ -835,8 +871,8 @@ router.get('/payments', async (req, res, next) => {
         offset,
       }),
       Payment.count(),
-      Payment.count({ where: { status: 'paid' } }),
-      Payment.sum('amount', { where: { status: 'paid' } }),
+      Payment.count({ where: { status: 'paid', refundStatus: 'none' } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none' } }),
     ]);
 
     res.json({

@@ -9,14 +9,51 @@ beforeAll(async () => {
 // Заявка на вывод: юрист подаёт через POST /payments/withdraw (баланс списывается
 // сразу), админ обрабатывает. До Фазы 3 обработать было нечем — деньги зависали.
 async function requestWithdrawal(lawyerUser, amount) {
+  const key = `withdraw-${lawyerUser.id}-${amount}-${Date.now()}-${Math.random()}`;
   const res = await request(app).post('/api/payments/withdraw')
     .set('Authorization', `Bearer ${tokenFor(lawyerUser)}`)
-    .send({ amount });
+    .set('Idempotency-Key', key)
+    .send({ amount, destination: { ownerName: 'Test Lawyer', accountMask: '1234' } });
   expect(res.status).toBe(200);
   return res.body.withdrawalId;
 }
 
 describe('admin: обработка заявок на вывод', () => {
+  test('повтор запроса с одним idempotency key создаёт одну заявку и одно списание', async () => {
+    const { user: lawyer, lp } = await makeLawyer('wlawyer-idem@test.uz', { balance: 300000 });
+    const key = 'withdraw-idempotency-test';
+    const send = () => request(app).post('/api/payments/withdraw')
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set('Idempotency-Key', key)
+      .send({ amount: 100000, destination: { ownerName: 'Test Lawyer', accountMask: '1234' } });
+
+    const [a, b] = await Promise.all([send(), send()]);
+    expect([a.status, b.status]).toEqual([200, 200]);
+    expect(a.body.withdrawalId).toBe(b.body.withdrawalId);
+    await lp.reload();
+    expect(Number(lp.balance)).toBe(200000);
+    expect(await models.Withdrawal.count({ where: { lawyerId: lawyer.id } })).toBe(1);
+  });
+
+  test('нельзя отметить pending выплаченным или завершить processing без reference', async () => {
+    const admin = await makeAdmin('wadmin-state@test.uz');
+    const { user: lawyer } = await makeLawyer('wlawyer-state@test.uz', { balance: 200000 });
+    const id = await requestWithdrawal(lawyer, 50000);
+    const token = tokenFor(admin);
+
+    const direct = await request(app).patch(`/api/admin/withdrawals/${id}`)
+      .set('Authorization', `Bearer ${token}`).send({ status: 'paid' });
+    expect(direct.status).toBe(409);
+
+    const started = await request(app).patch(`/api/admin/withdrawals/${id}`)
+      .set('Authorization', `Bearer ${token}`).send({ status: 'processing' });
+    expect(started.status).toBe(200);
+
+    const noReference = await request(app).patch(`/api/admin/withdrawals/${id}`)
+      .set('Authorization', `Bearer ${token}`).send({ status: 'paid' });
+    expect(noReference.status).toBe(400);
+  });
+
   test('очередь показывает заявку и сумму к переводу', async () => {
     const admin = await makeAdmin('wadmin1@test.uz');
     const { user: lawyer } = await makeLawyer('wlawyer1@test.uz', { balance: 500000 });
@@ -43,8 +80,12 @@ describe('admin: обработка заявок на вывод', () => {
     await lp.reload();
     expect(Number(lp.balance)).toBe(200000); // списано при подаче
 
+    await request(app).patch(`/api/admin/withdrawals/${id}`)
+      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'processing' });
     const res = await request(app).patch(`/api/admin/withdrawals/${id}`)
-      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'paid' });
+      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({
+        status: 'paid', provider: 'manual_bank', providerTransactionId: `tx-${id}`, providerReference: `ref-${id}`,
+      });
     expect(res.status).toBe(200);
     expect(res.body.refunded).toBe(false);
 
@@ -78,11 +119,11 @@ describe('admin: обработка заявок на вывод', () => {
     const token = tokenFor(admin);
 
     const first = await request(app).patch(`/api/admin/withdrawals/${id}`)
-      .set('Authorization', `Bearer ${token}`).send({ status: 'cancelled' });
+      .set('Authorization', `Bearer ${token}`).send({ status: 'cancelled', note: 'Отмена' });
     expect(first.status).toBe(200);
 
     const second = await request(app).patch(`/api/admin/withdrawals/${id}`)
-      .set('Authorization', `Bearer ${token}`).send({ status: 'cancelled' });
+      .set('Authorization', `Bearer ${token}`).send({ status: 'cancelled', note: 'Отмена' });
     expect(second.status).toBe(409);
 
     await lp.reload();
@@ -97,8 +138,8 @@ describe('admin: обработка заявок на вывод', () => {
     const token = tokenFor(admin);
 
     const [a, b] = await Promise.all([
-      request(app).patch(`/api/admin/withdrawals/${id}`).set('Authorization', `Bearer ${token}`).send({ status: 'cancelled' }),
-      request(app).patch(`/api/admin/withdrawals/${id}`).set('Authorization', `Bearer ${token}`).send({ status: 'cancelled' }),
+      request(app).patch(`/api/admin/withdrawals/${id}`).set('Authorization', `Bearer ${token}`).send({ status: 'cancelled', note: 'Отмена' }),
+      request(app).patch(`/api/admin/withdrawals/${id}`).set('Authorization', `Bearer ${token}`).send({ status: 'cancelled', note: 'Отмена' }),
     ]);
     const codes = [a.status, b.status].sort();
     expect(codes).toEqual([200, 409]);
@@ -113,11 +154,15 @@ describe('admin: обработка заявок на вывод', () => {
 
     const id = await requestWithdrawal(lawyer, 50000);
     await request(app).patch(`/api/admin/withdrawals/${id}`)
-      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'paid' });
+      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'processing' });
+    await request(app).patch(`/api/admin/withdrawals/${id}`)
+      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({
+        status: 'paid', providerTransactionId: `tx-${id}`, providerReference: `ref-${id}`,
+      });
 
     const notes = await models.Notification.findAll({ where: { userId: lawyer.id, type: 'withdrawal' } });
-    expect(notes.length).toBe(1);
-    expect(notes[0].metadata.withdrawalId).toBe(id);
+    expect(notes.length).toBe(2);
+    expect(notes.every((n) => n.metadata.withdrawalId === id)).toBe(true);
   });
 
   test('недопустимый статус → 400; клиент не имеет доступа → 403', async () => {

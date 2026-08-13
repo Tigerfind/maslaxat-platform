@@ -66,7 +66,9 @@ describe('деньги/эскроу — фиксы аудита', () => {
 
     const after = await LawyerProfile.findByPk(lp.id);
     expect(Number(after.pendingBalance)).toBe(0); // резерв снят
-    expect((await Payment.findOne({ where: { consultationId: cons.id } })).status).toBe('refunded');
+    const payment = await Payment.findOne({ where: { consultationId: cons.id } });
+    expect(payment.status).toBe('paid');
+    expect(payment.refundStatus).toBe('requested');
   });
 
   test('нельзя отменить завершённую консультацию', async () => {

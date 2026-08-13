@@ -478,6 +478,7 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Финансы: локальная отмена больше не выдаётся за завершённый Payme refund; refund requested→provider confirmed, FinancialEvent audit, withdrawal idempotency и pending→processing→paid/failed с обязательным bank reference.
 - Legal RAG: LegalDocument/LegalChunk + PostgreSQL FTS, разрешённый JSON/JSONL-импорт, обязательные [S#] citations и сохранение sources/fallback в истории; массовый scraping LexUZ запрещён без разрешения.
 - Frontend lint очищен (42 предупреждения → 0), исправлены stale/race в бронировании, AI-беседах и WebRTC; добавлены первые frontend unit-тесты.
 - Единый гейт полноты профиля юриста применяется при submit и admin approve: обязательны фото, описание, реальная специализация, цена, расписание и документ.

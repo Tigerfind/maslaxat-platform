@@ -210,8 +210,8 @@ export const adminFinanceService = {
     return response.data;
   },
   // status: 'paid' | 'cancelled' | 'failed'. Отказ возвращает сумму юристу.
-  processWithdrawal: async (id, status, note) => {
-    const response = await api.patch(`/admin/withdrawals/${id}`, { status, note });
+  processWithdrawal: async (id, status, note, details = {}) => {
+    const response = await api.patch(`/admin/withdrawals/${id}`, { status, note, ...details });
     return response.data;
   },
   getPayments: async (params = {}) => {

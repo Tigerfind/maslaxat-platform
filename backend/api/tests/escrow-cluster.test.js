@@ -62,7 +62,7 @@ describe('escrow released AT MOST ONCE (tied to payment, not status)', () => {
 });
 
 describe('reject-after-pay refunds the client (from pendingBalance)', () => {
-  test('lawyer rejects a paid pending consultation → payment refunded, pendingBalance restored', async () => {
+  test('lawyer rejects a paid pending consultation → refund requested, pendingBalance restored', async () => {
     const { lawyer, lp, cons, pay, price } = await seedPaid({ status: 'pending' });
     const token = tokenFor(lawyer);
 
@@ -76,7 +76,8 @@ describe('reject-after-pay refunds the client (from pendingBalance)', () => {
     expect(reloaded.status).toBe('rejected');
 
     const paid = await Payment.findByPk(pay.id);
-    expect(paid.status).toBe('refunded');
+    expect(paid.status).toBe('paid');
+    expect(paid.refundStatus).toBe('requested');
 
     const lawyerProfile = await LawyerProfile.findByPk(lp.id);
     expect(Number(lawyerProfile.pendingBalance)).toBe(0); // возвращено, не отрицательное

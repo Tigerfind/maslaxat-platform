@@ -205,7 +205,7 @@ router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, 
     const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
 
     // Выручка платформы — по оплаченным платежам
-    const paidRows = await Payment.findAll({ where: { status: 'paid' }, attributes: ['amount', 'createdAt'], raw: true });
+    const paidRows = await Payment.findAll({ where: { status: 'paid', refundStatus: 'none' }, attributes: ['amount', 'createdAt'], raw: true });
     const revenueByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
     let totalRevenue = 0;
     for (const p of paidRows) {
@@ -265,8 +265,8 @@ router.get('/admin/stats', authenticate, authorize('admin'), async (req, res, ne
       Consultation.count({ where: { status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } } }),
       // Доход = сумма ОПЛАЧЕННЫХ платежей (как в /reports), скаляром для KPI-карточек,
       // которые раньше читали несуществующие поля → всегда 0.
-      Payment.sum('amount', { where: { status: 'paid' } }),
-      Payment.sum('amount', { where: { status: 'paid', createdAt: { [Op.gte]: startOfMonth } } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none' } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none', createdAt: { [Op.gte]: startOfMonth } } }),
     ]);
 
     res.json({
