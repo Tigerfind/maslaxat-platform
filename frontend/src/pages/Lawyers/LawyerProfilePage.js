@@ -135,7 +135,7 @@ const LawyerProfilePage = () => {
       }
     })();
     return () => { alive = false; };
-  }, [lawyerId]);
+  }, [lawyerId, t]);
 
   const goAiChat = () => navigate('/ai-chat', { state: { lawyerId } });
   // Видеозвонок возможен только по забронированной консультации — открываем бронь

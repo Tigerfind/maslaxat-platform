@@ -64,7 +64,7 @@ const ChatPage = () => {
       }
     };
     loadData();
-  }, [consultationId]);
+  }, [consultationId, t]);
 
   // Socket connection
   useEffect(() => {

@@ -47,12 +47,11 @@ const DashboardExtras = () => {
     lawyerService.verification.getChecklist().then(setChecklist).catch(() => {});
   }, []);
 
-  // Сила профиля: фото (user.avatar) + 5 пунктов чек-листа. missing приходит с бэкенда.
+  // Сила профиля полностью определяется серверным чек-листом.
   const missing = new Set(checklist?.missing || []);
-  const hasPhoto = Boolean(user?.avatar);
-  const doneItems = STRENGTH_ITEMS.filter((it) => (it.key === 'photo' ? hasPhoto : !missing.has(it.key)));
+  const doneItems = STRENGTH_ITEMS.filter((it) => !missing.has(it.key));
   const strength = checklist ? Math.round((doneItems.length / STRENGTH_ITEMS.length) * 100) : 0;
-  const todoItems = STRENGTH_ITEMS.filter((it) => (it.key === 'photo' ? !hasPhoto : missing.has(it.key)));
+  const todoItems = STRENGTH_ITEMS.filter((it) => missing.has(it.key));
 
   const profileUrl = `${window.location.origin}/lawyers/${user?.id || ''}`;
   const approved = (checklist?.verificationStatus || '') === 'approved';

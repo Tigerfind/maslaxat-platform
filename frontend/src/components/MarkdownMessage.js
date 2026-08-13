@@ -18,16 +18,16 @@ const components = {
   ul: (props) => <ul style={{ margin: '6px 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 5 }} {...props} />,
   ol: (props) => <ol style={{ margin: '6px 0', paddingLeft: 20, display: 'flex', flexDirection: 'column', gap: 5 }} {...props} />,
   li: (props) => <li style={{ lineHeight: 1.55 }} {...props} />,
-  h1: (props) => <h3 style={{ fontSize: 16, fontWeight: 700, margin: '10px 0 4px' }} {...props} />,
-  h2: (props) => <h3 style={{ fontSize: 15, fontWeight: 700, margin: '10px 0 4px' }} {...props} />,
-  h3: (props) => <h4 style={{ fontSize: 14.5, fontWeight: 700, margin: '8px 0 4px' }} {...props} />,
-  h4: (props) => <h4 style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 4px' }} {...props} />,
-  a: ({ href, ...props }) => {
+  h1: ({ children, ...props }) => <h3 style={{ fontSize: 16, fontWeight: 700, margin: '10px 0 4px' }} {...props}>{children}</h3>,
+  h2: ({ children, ...props }) => <h3 style={{ fontSize: 15, fontWeight: 700, margin: '10px 0 4px' }} {...props}>{children}</h3>,
+  h3: ({ children, ...props }) => <h4 style={{ fontSize: 14.5, fontWeight: 700, margin: '8px 0 4px' }} {...props}>{children}</h4>,
+  h4: ({ children, ...props }) => <h4 style={{ fontSize: 14, fontWeight: 700, margin: '8px 0 4px' }} {...props}>{children}</h4>,
+  a: ({ href, children, ...props }) => {
     // react-markdown уже нейтрализует опасные протоколы (javascript:void(0)); на всякий
     // случай полностью убираем href с javascript:/data:/vbscript: — ссылка становится
     // инертной, без предупреждения React о javascript:-URL.
     const safe = href && !/^\s*(javascript|data|vbscript):/i.test(href) ? href : undefined;
-    return <a href={safe} style={{ color: 'var(--accent-dark)', textDecoration: 'underline' }} target="_blank" rel="noopener noreferrer" {...props} />;
+    return <a href={safe} style={{ color: 'var(--accent-dark)', textDecoration: 'underline' }} target="_blank" rel="noopener noreferrer" {...props}>{children}</a>;
   },
   blockquote: (props) => <blockquote style={{ borderLeft: '3px solid var(--border)', margin: '6px 0', padding: '2px 0 2px 12px', color: 'var(--text2)' }} {...props} />,
   code: ({ inline, ...props }) => (inline

@@ -232,7 +232,7 @@ export const adminReviewService = {
   },
 };
 
-export default {
+const adminService = {
   dashboard: adminDashboardService,
   users: adminUserService,
   lawyers: adminLawyerService,
@@ -243,3 +243,5 @@ export default {
   reviews: adminReviewService,
   finance: adminFinanceService,
 };
+
+export default adminService;

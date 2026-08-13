@@ -1639,9 +1639,7 @@ const translations = {
       accept: 'Принять',
       reject: 'Отклонить',
       cancel: 'Отменить',
-      reschedule: 'Перенести',
       startCall: 'Начать звонок',
-      joinCall: 'Присоединиться',
       leaveReview: 'Оставить отзыв',
 
       // Бронирование
@@ -1713,9 +1711,7 @@ const translations = {
       accept: 'Қабул қилиш',
       reject: 'Рад этиш',
       cancel: 'Бекор қилиш',
-      reschedule: 'Қайта режалаштириш',
       startCall: 'Қўнғироқни бошлаш',
-      joinCall: 'Қўшилиш',
       leaveReview: 'Фикр қолдириш',
 
       // Бронирование
@@ -1787,9 +1783,7 @@ const translations = {
       accept: 'Accept',
       reject: 'Reject',
       cancel: 'Cancel',
-      reschedule: 'Reschedule',
       startCall: 'Start call',
-      joinCall: 'Join call',
       leaveReview: 'Leave review',
 
       // Бронирование

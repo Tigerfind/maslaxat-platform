@@ -164,14 +164,14 @@ const VideoCallPage = () => {
           calleeIdRef.current = cons.clientId === user.id ? cons.lawyerId : cons.clientId;
         }
       } catch (err) {
-        setError(t('videoCall.loadError'));
+        setError('videoCall.loadError');
         console.error('Load consultation error:', err);
       } finally {
         setLoading(false);
       }
     };
     loadConsultation();
-  }, [consultationId]);
+  }, [consultationId, user?.id]);
 
   // Start call timer + перевод в in_progress ТОЛЬКО когда оба реально соединились
   // (раньше /start дёргался при входе одного — тогда «дозвон без ответа» + отбой
@@ -363,7 +363,7 @@ const VideoCallPage = () => {
       console.error('Peer error:', err);
       // Don't show error for non-critical peer issues during negotiation
       if (err.code === 'ERR_DATA_CHANNEL' || err.code === 'ERR_CONNECTION_FAILURE') {
-        setError(t('videoCall.peerError'));
+        setError('videoCall.peerError');
       }
     });
 
@@ -1006,6 +1006,7 @@ const VideoCallPage = () => {
 
   // Error state
   if (error) {
+    const errorText = error.startsWith?.('videoCall.') ? t(error) : error;
     return (
       <Box
         sx={{
@@ -1025,7 +1026,7 @@ const VideoCallPage = () => {
           {t('videoCall.connectionError')}
         </Typography>
         <Typography variant="body1" sx={{ color: axelionColors.textMuted, maxWidth: 400 }}>
-          {error}
+          {errorText}
         </Typography>
         <Box
           component="button"

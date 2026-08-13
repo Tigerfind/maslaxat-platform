@@ -85,6 +85,8 @@ const LawyerDashboardGlass = () => {
 
   useEffect(() => {
     loadDashboardData();
+    // Initial load only; accept/reject actions refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadDashboardData = async () => {

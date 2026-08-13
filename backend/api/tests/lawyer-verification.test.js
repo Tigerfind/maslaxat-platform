@@ -12,7 +12,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer, makeAdmin } = require('./helpers');
 
-const { User, LawyerProfile, Notification } = models;
+const { User, LawyerProfile, LawyerDocument, Notification } = models;
 
 beforeAll(async () => {
   await resetDb();
@@ -96,6 +96,8 @@ describe('админ approve/reject', () => {
   test('approve делает юриста видимым + уведомление', async () => {
     const admin = await makeAdmin('vs-admin1@test.uz');
     const { user: lawyer } = await makeLawyer('vs-p4@test.uz', { verificationStatus: 'pending' });
+    await lawyer.update({ avatar: '/uploads/lawyer.png' });
+    await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
 
     const res = await request(app)
       .post(`/api/admin/lawyers/${lawyer.id}/approve`)
@@ -112,6 +114,18 @@ describe('админ approve/reject', () => {
     // теперь в каталоге
     const cat = await request(app).get('/api/lawyers?limit=50');
     expect(cat.body.lawyers.map((l) => l.id)).toContain(lawyer.id);
+  });
+
+  test('админ не может одобрить неполный профиль', async () => {
+    const admin = await makeAdmin('vs-admin-incomplete@test.uz');
+    const { user: lawyer } = await makeLawyer('vs-incomplete@test.uz', { verificationStatus: 'pending' });
+
+    const res = await request(app)
+      .post(`/api/admin/lawyers/${lawyer.id}/approve`)
+      .set('Authorization', `Bearer ${tokenFor(admin)}`);
+
+    expect(res.status).toBe(400);
+    expect(res.body.missing).toEqual(expect.arrayContaining(['photo', 'documents']));
   });
 
   test('reject с причиной убирает из каталога + пишет причину + уведомление', async () => {

@@ -188,7 +188,7 @@ export const lawyerVerificationService = {
   },
 };
 
-export default {
+const lawyerService = {
   schedule: lawyerScheduleService,
   reviews: lawyerReviewsService,
   dashboard: lawyerDashboardService,
@@ -197,3 +197,5 @@ export default {
   payments: lawyerPaymentService,
   verification: lawyerVerificationService,
 };
+
+export default lawyerService;

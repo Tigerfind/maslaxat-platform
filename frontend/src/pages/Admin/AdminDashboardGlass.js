@@ -67,6 +67,8 @@ const AdminDashboardGlass = () => {
 
   useEffect(() => {
     loadDashboardData();
+    // Initial load only; actions call the same loader explicitly when needed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadDashboardData = async () => {

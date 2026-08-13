@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Dialog, DialogContent, CircularProgress } from '@mui/material';
+import { Dialog, DialogContent } from '@mui/material';
 import { ShieldOutlined, CheckCircle, ContentCopyOutlined, CloseOutlined } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';

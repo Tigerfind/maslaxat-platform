@@ -130,7 +130,7 @@ const LawyerProfileEditPage = () => {
         setVerificationStatus(p.verificationStatus || 'pending');
         setMeta({ rating: p.rating || 0, cases: p.completedCases || 0 });
       } catch {
-        setError(t('lawyerPanel.loadProfileError'));
+        setError('lawyerPanel.loadProfileError');
       } finally {
         setLoading(false);
       }
@@ -229,7 +229,7 @@ const LawyerProfileEditPage = () => {
       <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {error && (
           <div style={{ ...glassCard, padding: '14px 18px', color: 'var(--error)', border: '1px solid var(--error)', fontSize: 14 }}>
-            {error}
+            {error.startsWith?.('lawyerPanel.') ? t(error) : error}
           </div>
         )}
 

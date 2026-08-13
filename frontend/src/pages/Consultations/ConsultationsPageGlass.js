@@ -106,6 +106,8 @@ const ConsultationsPageGlass = () => {
 
   useEffect(() => {
     fetchConsultations();
+    // Initial load only; consultation actions refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchConsultations = async () => {

@@ -168,6 +168,14 @@ const AdminLawyersPage = () => {
   const initials = (name = '') =>
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const specOf = (l) => l.profile?.specialization || t('adminManage.noSpec');
+  const completenessLabel = {
+    photo: t('verification.chkPhoto'),
+    description: t('verification.chkDescription'),
+    specialization: t('verification.chkSpecialization'),
+    price: t('verification.chkPrice'),
+    schedule: t('verification.chkSchedule'),
+    documents: t('verification.chkDocuments'),
+  };
   // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
   // и в узбекской/английской версии даты оставались русскими.
   const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
@@ -297,6 +305,11 @@ const AdminLawyersPage = () => {
                             {l.profile.rejectionReason}
                           </Typography>
                         )}
+                        {!l.profileCompleteness?.complete && (
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: axelionColors.warning, maxWidth: 240, mx: 'auto' }}>
+                            {l.profileCompleteness?.missing?.map((key) => completenessLabel[key] || key).join(', ')}
+                          </Typography>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>{fmtDate(l.createdAt)}</Typography>
@@ -309,7 +322,7 @@ const AdminLawyersPage = () => {
                             {t('adminManage.docs')}
                           </Button>
                           {stOf(l) !== 'approved' && (
-                            <Button size="small" variant="contained" disabled={acting === l.id} onClick={() => setConfirmApprove(l)}
+                            <Button size="small" variant="contained" disabled={acting === l.id || !l.profileCompleteness?.complete} onClick={() => setConfirmApprove(l)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
                               sx={{ background: axelionColors.success, color: '#fff', textTransform: 'none', boxShadow: 'none', borderRadius: '8px', '&:hover': { background: '#1F7A4A', boxShadow: 'none' } }}>
                               {t('adminManage.approve')}

@@ -222,6 +222,8 @@ const SettingsPageGlass = () => {
   useEffect(() => {
     const saved = loadSettings();
     setHasChanges(JSON.stringify(saved) !== JSON.stringify(settings));
+    // loadSettings is a synchronous localStorage snapshot; settings drives recalculation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
 
   // Загружаем настройки с сервера при открытии страницы (сервер — источник истины)

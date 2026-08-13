@@ -5,13 +5,10 @@ import {
   Badge,
   Typography,
   Button,
-  Chip,
-  CircularProgress,
   ClickAwayListener,
   Popper,
   Paper,
   Fade,
-  Divider,
 } from '@mui/material';
 import {
   Notifications,
@@ -71,7 +68,6 @@ const NotificationCenter = ({ sx = {} }) => {
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {

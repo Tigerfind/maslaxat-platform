@@ -107,7 +107,11 @@ const DashboardPageGlass = () => {
   };
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Dashboard is loaded once; upgrade/actions call load explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const load = async () => {
     try {

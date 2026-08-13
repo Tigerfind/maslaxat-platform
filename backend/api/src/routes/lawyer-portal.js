@@ -7,6 +7,7 @@ const { Consultation, User, LawyerProfile, Review, Notification, Payment, Lawyer
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
 // Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
@@ -890,28 +891,6 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
     next(err);
   }
 });
-
-// Полнота профиля юриста для отправки на проверку. Возвращает список того, чего не хватает
-// (стабильные слаги — фронт мапит в подписи). Пустой список = профиль готов к проверке.
-async function computeProfileCompleteness(userId) {
-  const [profile, docCount] = await Promise.all([
-    LawyerProfile.findOne({ where: { userId } }),
-    LawyerDocument.count({ where: { userId } }),
-  ]);
-  const missing = [];
-  // Фото — желательно, но не блокирует (клиент видит инициалы; онбординг не требует фото).
-  if (!profile || !profile.description || String(profile.description).trim().length < 50) missing.push('description');
-  if (!profile || !(Number(profile.price) >= 50000)) missing.push('price');
-  const specs = (Array.isArray(profile?.specializations) && profile.specializations.length)
-    ? profile.specializations
-    : (profile?.specialization ? [profile.specialization] : []);
-  if (specs.length === 0) missing.push('specialization');
-  const sched = profile && profile.schedule;
-  const hasDay = sched && typeof sched === 'object' && Object.values(sched).some((d) => d && d.enabled);
-  if (!hasDay) missing.push('schedule');
-  if (docCount < 1) missing.push('documents');
-  return { complete: missing.length === 0, missing };
-}
 
 // GET /verification/checklist — что осталось заполнить перед отправкой на проверку.
 router.get('/verification/checklist', async (req, res, next) => {

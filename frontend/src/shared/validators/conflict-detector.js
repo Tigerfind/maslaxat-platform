@@ -318,7 +318,7 @@ export const logConflicts = (validationResult) => {
 
 // ===== ЭКСПОРТ =====
 
-export default {
+const conflictDetector = {
   // Детекторы
   detectDuplicateConsultation,
   detectLawyerTimeConflict,
@@ -337,3 +337,5 @@ export default {
   CONFLICT_TYPES,
   CONFLICT_SEVERITY,
 };
+
+export default conflictDetector;

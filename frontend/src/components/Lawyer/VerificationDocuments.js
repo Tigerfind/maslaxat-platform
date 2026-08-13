@@ -48,6 +48,7 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
 
   // Пункты полноты профиля — порядок и подписи. Слаги совпадают с бэкендом.
   const CHECK_ITEMS = [
+    { key: 'photo', label: t('verification.chkPhoto') },
     { key: 'description', label: t('verification.chkDescription') },
     { key: 'specialization', label: t('verification.chkSpecialization') },
     { key: 'price', label: t('verification.chkPrice') },

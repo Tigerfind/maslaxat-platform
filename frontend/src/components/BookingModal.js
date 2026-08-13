@@ -90,20 +90,6 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       if (prefs.payMethod) setPayMethod(prefs.payMethod);
     } catch { /* нет сохранённых предпочтений */ }
     let alive = true;
-    // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
-    // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
-    setSchedule(lawyer?.profile?.schedule || null);
-    // Префилл категорий ПЕРВОЙ проблемы областями юриста (маппинг имя→id справочника).
-    // Раньше сравнивали id с именем — не срабатывало никогда.
-    if (lawyerCatIds.length) {
-      setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)) }));
-    }
-    (async () => {
-      try {
-        const r = await api.get(`/lawyers/${lawyer.id}`);
-        if (alive) setSchedule(r.data?.lawyer?.profile?.schedule || null);
-      } catch { /* оставим prop/none — фолбэк на все слоты */ }
-    })();
     (async () => {
       let freeNow = false;
       try {
@@ -123,6 +109,27 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     })();
     return () => { alive = false; };
   }, [open]);
+
+  // Каталог может передать карточку без расписания, поэтому при смене юриста
+  // обновляем prop сразу и затем запрашиваем полный публичный профиль.
+  useEffect(() => {
+    if (!open || !lawyer?.id) return undefined;
+    let alive = true;
+    setSchedule(lawyer.profile?.schedule || null);
+    api.get(`/lawyers/${lawyer.id}`)
+      .then((r) => { if (alive) setSchedule(r.data?.lawyer?.profile?.schedule || null); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [open, lawyer?.id, lawyer?.profile?.schedule]);
+
+  // Префилл первой проблемы обновляется, когда догрузился справочник категорий.
+  useEffect(() => {
+    if (!open || !lawyerCatIds.length) return;
+    setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : {
+      ...prev,
+      problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)),
+    }));
+  }, [open, lawyerCatIds]);
 
   // Закрывать выпадающий список категорий по клику вне него
   useEffect(() => {

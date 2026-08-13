@@ -6,6 +6,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const { withLawyerCounts } = require('../services/specializationStats');
 const notifications = require('../services/notificationService');
+const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 
 // All routes require admin authentication
 router.use(authenticate, authorize('admin'));
@@ -197,8 +198,13 @@ router.get('/lawyers', async (req, res, next) => {
       LawyerProfile.count({ where: { verificationStatus: 'rejected' } }),
     ]);
 
+    const lawyers = await Promise.all(rows.map(async (lawyer) => ({
+      ...lawyer.toJSON(),
+      profileCompleteness: await computeProfileCompleteness(lawyer.id),
+    })));
+
     res.json({
-      lawyers: rows,
+      lawyers,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
@@ -218,6 +224,14 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
     });
     if (!user || !user.profile) {
       return res.status(404).json({ error: 'Юрист не найден' });
+    }
+
+    const completeness = await computeProfileCompleteness(user.id);
+    if (!completeness.complete) {
+      return res.status(400).json({
+        error: 'Профиль юриста заполнен не полностью',
+        missing: completeness.missing,
+      });
     }
 
     // Модерация — на профиле; user.isActive держим true (isActive = блокировка).

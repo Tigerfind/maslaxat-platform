@@ -60,6 +60,8 @@ const SpecializationsPageGlass = () => {
 
   useEffect(() => {
     loadSpecializations();
+    // Initial load only; mutations refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadSpecializations = async () => {

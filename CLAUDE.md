@@ -478,6 +478,8 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Frontend lint очищен (42 предупреждения → 0), исправлены stale/race в бронировании, AI-беседах и WebRTC; добавлены первые frontend unit-тесты.
+- Единый гейт полноты профиля юриста применяется при submit и admin approve: обязательны фото, описание, реальная специализация, цена, расписание и документ.
 - Публичный каталог/профиль юриста больше не отдаёт balance, pendingBalance, moderation fields и служебные timestamps; отзывы фильтруются по isHidden.
 - Frontend route-level lazy loading: main bundle 572 KB → 318 KB gzip; production source maps отключены.
 - Метрики рейтинга/отзывов/завершённых дел сверяются с реальными Review/Consultation при старте; сиды больше не создают вымышленные агрегаты.

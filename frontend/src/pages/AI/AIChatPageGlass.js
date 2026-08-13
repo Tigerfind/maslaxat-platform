@@ -113,7 +113,31 @@ const AIChatPageGlass = () => {
   }, [messages]);
 
   useEffect(() => {
-    loadConversations();
+    let alive = true;
+    (async () => {
+      try {
+        const data = await clientService.aiChat.getConversations();
+        if (!alive) return;
+        const list = Array.isArray(data) ? data : [];
+        setConversations(list);
+        if (list.length > 0) {
+          setIsLoadingHistory(true);
+          setCurrentConversationId(list[0].id);
+          const history = await clientService.aiChat.getChatHistory(list[0].id);
+          if (!alive) return;
+          const messagesList = Array.isArray(history) ? history : [];
+          setMessages(messagesList);
+          const lastAi = [...messagesList].reverse().find((m) => !m.isUser && m.category);
+          if (lastAi?.category) setCurrentCategory(lastAi.category);
+          setIsLoadingHistory(false);
+        }
+      } catch (error) {
+        if (alive) console.error('Error loading conversations:', error);
+      } finally {
+        if (alive) setIsLoadingHistory(false);
+      }
+    })();
+    return () => { alive = false; };
   }, []);
 
   // Авто-отправка вопроса, пришедшего с дашборда (QuickAIChat). Один раз за монтирование;
@@ -134,11 +158,11 @@ const AIChatPageGlass = () => {
     }
   }, [currentCategory]);
 
-  const loadConversations = async () => {
+  const loadConversations = async ({ openFirst = true } = {}) => {
     try {
       const data = await clientService.aiChat.getConversations();
       setConversations(Array.isArray(data) ? data : []);
-      if (data.length > 0 && !currentConversationId) {
+      if (openFirst && data.length > 0 && !currentConversationId) {
         loadConversationHistory(data[0].id);
       }
     } catch (error) {
@@ -266,7 +290,7 @@ const AIChatPageGlass = () => {
 
       if (response.conversationId && !currentConversationId) {
         setCurrentConversationId(response.conversationId);
-        loadConversations();
+        loadConversations({ openFirst: false });
       }
     } catch (error) {
       console.error('Error sending message:', error);
