@@ -21,6 +21,7 @@
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
 | `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` | @BotFather (токен бота и его username без `@`) | Кнопка «Войти через Telegram» скрыта |
+| `SENTRY_DSN` / `REACT_APP_SENTRY_DSN` | sentry.io → Project Settings → Client Keys | Ошибки остаются только в Railway/Winston logs |
 
 > ⚠️ **Никогда не коммить `.env`** — он уже в `.gitignore`. Реальные секреты вносите
 > через хранилище платформы (Railway Variables, Docker secrets, env хостинга).
@@ -189,5 +190,5 @@ Compose-сеть использует `api:3001` и `frontend:3000`; nginx-ко�
 ## 7. Что ещё в BACKLOG (не блокирует запуск)
 
 - Реальный вывод денег юристом (сейчас тест-флоу; нужен Payme Transfer/выплаты).
-- Мониторинг ошибок (Sentry), метрики.
+- Метрики и alerting поверх подготовленной Sentry-интеграции (нужны DSN и внешний uptime monitor).
 - (Опц.) Сгенерировать baseline-миграцию для полностью чистого прод-деплоя без `sync()`.

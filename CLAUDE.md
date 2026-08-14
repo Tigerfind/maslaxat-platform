@@ -478,6 +478,8 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 11 Chromium E2E; Sentry backend/frontend fail-safe без DSN.
+- Playwright E2E: изолированная БД emaslaxat_e2e, Chromium 11 сценариев (legal/auth/roles/catalog/booking/mobile), GitHub Actions backend+frontend+e2e.
 - Публичные legal pages: /terms, /privacy, /refund-policy + обязательные согласия при регистрации/бронировании; production smoke проверяет SPA routes, health, public API и auth guards.
 - Финансы: локальная отмена больше не выдаётся за завершённый Payme refund; refund requested→provider confirmed, FinancialEvent audit, withdrawal idempotency и pending→processing→paid/failed с обязательным bank reference.
 - Legal RAG: LegalDocument/LegalChunk + PostgreSQL FTS, разрешённый JSON/JSONL-импорт, обязательные [S#] citations и сохранение sources/fallback в истории; массовый scraping LexUZ запрещён без разрешения.

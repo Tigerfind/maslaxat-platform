@@ -1,4 +1,5 @@
 require('dotenv').config();
+const sentry = require('./config/sentry');
 
 const express = require('express');
 const http = require('http');
@@ -170,6 +171,7 @@ app.use('/api/lawyer/dashboard', (req, res, next) => {
 }, require('./routes/dashboard'));
 
 // Error handling
+sentry.setupExpressErrorHandler(app);
 app.use(errorHandler);
 
 // 404

@@ -1,5 +1,7 @@
 # Dependencies
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
 */node_modules/
 # Lock-файлы по умолчанию не коммитим, и в загрузку Railway они тоже не идут.
 # Исключение — бэкенд: его Dockerfile собирает через `npm ci`, которому

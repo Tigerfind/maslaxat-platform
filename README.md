@@ -53,7 +53,13 @@ npm start
 cd backend/api && npm test
 cd frontend && npm run build:prod
 node scripts/smoke-production.js
+cd frontend && npm run e2e
 ```
+
+Перед первым локальным E2E-запуском создайте изолированную БД: `createdb emaslaxat_e2e`.
+Также один раз установите Chromium: `cd frontend && npm run e2e:install`.
+
+Sentry и uptime-настройки описаны в [`docs/MONITORING.md`](docs/MONITORING.md).
 
 Backend-тесты используют отдельную PostgreSQL БД `emaslaxat_test`.
 

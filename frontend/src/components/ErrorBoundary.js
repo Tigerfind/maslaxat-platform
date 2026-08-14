@@ -1,4 +1,5 @@
 import React from 'react';
+import * as Sentry from '@sentry/react';
 
 /**
  * Ловит непойманные ошибки рендера, чтобы вместо белого экрана показать
@@ -15,6 +16,9 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
+    if (process.env.REACT_APP_SENTRY_DSN) {
+      Sentry.captureException(error, { contexts: { react: { componentStack: info?.componentStack } } });
+    }
     // eslint-disable-next-line no-console
     console.error('[ErrorBoundary]', error, info?.componentStack);
   }

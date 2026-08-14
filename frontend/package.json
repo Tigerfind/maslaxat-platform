@@ -10,6 +10,7 @@
     "@mui/lab": "^5.0.0-alpha.140",
     "@mui/material": "^5.14.5",
     "@reduxjs/toolkit": "^1.9.5",
+    "@sentry/react": "^10.70.0",
     "axios": "^1.4.0",
     "buffer": "^6.0.3",
     "crypto-js": "^4.1.1",
@@ -51,7 +52,10 @@
     "eject": "react-scripts eject",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
-    "build:prod": "GENERATE_SOURCEMAP=false react-app-rewired build"
+    "build:prod": "GENERATE_SOURCEMAP=false react-app-rewired build",
+    "e2e": "playwright test",
+    "e2e:headed": "playwright test --headed",
+    "e2e:install": "playwright install chromium"
   },
   "eslintConfig": {
     "extends": [
@@ -72,6 +76,7 @@
     ]
   },
   "devDependencies": {
+    "@playwright/test": "^1.62.1",
     "@types/react": "^18.2.20",
     "@types/react-dom": "^18.2.7",
     "eslint": "^8.46.0",

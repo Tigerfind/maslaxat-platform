@@ -1,8 +1,38 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import * as Sentry from '@sentry/react';
 import './index.css';
 import './styles/glass.css';
 import App from './App';
+
+if (process.env.REACT_APP_SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.REACT_APP_SENTRY_DSN,
+    environment: process.env.REACT_APP_SENTRY_ENVIRONMENT || process.env.NODE_ENV,
+    release: process.env.REACT_APP_SENTRY_RELEASE,
+    tracesSampleRate: 0,
+    maxBreadcrumbs: 0,
+    sendDefaultPii: false,
+    beforeBreadcrumb: () => null,
+    beforeSend(event) {
+      delete event.request;
+      delete event.breadcrumbs;
+      delete event.extra;
+      delete event.user;
+      delete event.transaction;
+      event.contexts = event.contexts?.react ? { react: event.contexts.react } : undefined;
+      if (event.exception?.values) {
+        event.exception.values = event.exception.values.map((value) => ({
+          type: value.type,
+          stacktrace: value.stacktrace,
+          mechanism: value.mechanism ? { handled: value.mechanism.handled } : undefined,
+        }));
+      }
+      return event;
+    },
+    beforeSendTransaction: () => null,
+  });
+}
 
 // Suppress benign ResizeObserver loop error (known browser/MUI issue)
 const origError = window.onerror;
