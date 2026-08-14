@@ -20,7 +20,7 @@ async function main() {
   const manifest = await manifestResponse.json();
   const jsFiles = Object.values(manifest.files || {}).filter((file) => /\.js$/.test(file));
   const bundles = await Promise.all(jsFiles.map((file) => fetch(`${FRONTEND}${file}`, { signal: AbortSignal.timeout(15000) }).then((r) => r.text())));
-  if (!bundles.some((bundle) => bundle.includes('Публичная оферта') && bundle.includes('Политика конфиденциальности'))) {
+  if (!bundles.some((bundle) => bundle.includes('Public offer and terms of use') && bundle.includes('Privacy policy'))) {
     throw new Error('Legal page chunk not found in deployed asset manifest');
   }
 
