@@ -322,6 +322,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         promoCode: promoApplied && !freeBooking ? promo.trim().toUpperCase() : undefined,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
         client: {
           id: currentUser.id,
           name: currentUser.name,

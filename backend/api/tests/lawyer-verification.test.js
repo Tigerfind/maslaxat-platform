@@ -64,7 +64,7 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${pending.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60 });
+      .send({ type: 'video', duration: 60, acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/проверку/i);
   });
@@ -75,7 +75,7 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${approved.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60, problems: [{ text: 'Q', categories: ['civil'] }] });
+      .send({ type: 'video', duration: 60, problems: [{ text: 'Q', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('CONTACT_UNVERIFIED');
   });
@@ -87,7 +87,7 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${approved.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }] });
+      .send({ type: 'video', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
     expect([200, 201]).toContain(res.status);
   });
 });

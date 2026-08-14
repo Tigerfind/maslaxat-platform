@@ -55,7 +55,7 @@ describe('гварды доступа/валидации — фиксы ауди
     const { user: lawyer } = await makeLawyer('ag-l5@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'q', preferredDate: '31-12-2026' });
+      .send({ question: 'q', preferredDate: '31-12-2026', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(400);
   });
 

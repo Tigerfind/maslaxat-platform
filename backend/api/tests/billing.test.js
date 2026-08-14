@@ -22,7 +22,7 @@ async function book(client, lawyer) {
   return request(app)
     .post(`/api/lawyers/${lawyer.id}/book`)
     .set('Authorization', `Bearer ${tokenFor(client)}`)
-    .send({ type: 'video', duration: 60, problems: [{ text: 'Вопрос', categories: ['civil'] }] });
+    .send({ type: 'video', duration: 60, problems: [{ text: 'Вопрос', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
 }
 
 describe('бронь = холд без предоплаты', () => {

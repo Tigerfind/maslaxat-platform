@@ -11,7 +11,7 @@ beforeAll(async () => {
 async function book(token, lawyerId, body) {
   return request(app).post(`/api/client/lawyers/${lawyerId}/book`)
     .set('Authorization', `Bearer ${token}`)
-    .send({ question: 'q', consultationType: 'video', ...body });
+    .send({ question: 'q', consultationType: 'video', acceptedTerms: true, legalVersion: '2026-08-13', ...body });
 }
 
 describe('подписочная льгота: N бесплатных консультаций/мес', () => {

@@ -15,6 +15,8 @@ export default function PhoneAuth({ onSuccess }) {
   const [code, setCode] = useState('');
   const [name, setName] = useState('');
   const [needName, setNeedName] = useState(false);
+  const [needLegal, setNeedLegal] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [devCode, setDevCode] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,12 +37,17 @@ export default function PhoneAuth({ onSuccess }) {
     setError('');
     setLoading(true);
     try {
-      const res = await api.post('/auth/phone/verify', { phone, code, ...(name ? { name } : {}) });
+      const res = await api.post('/auth/phone/verify', {
+        phone, code, ...(name ? { name } : {}), acceptedTerms, legalVersion: '2026-08-13',
+      });
       onSuccess(res.data);
     } catch (e) {
       if (e.response?.data?.needName) {
         setNeedName(true);
         setError(t('phoneAuth.needName'));
+      } else if (e.response?.data?.needLegal) {
+        setNeedLegal(true);
+        setError(t('phoneAuth.needLegal'));
       } else {
         setError(e.response?.data?.error || t('phoneAuth.verifyErr'));
       }
@@ -67,9 +74,15 @@ export default function PhoneAuth({ onSuccess }) {
       {devCode && <div style={{ fontSize: 13, color: axelionColors.gold, marginBottom: 10 }}>{t('phoneAuth.devCode')}: <b>{devCode}</b></div>}
       <input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ''))} placeholder={t('phoneAuth.codePlaceholder')} maxLength={6} style={inputStyle} />
       {needName && <input value={name} onChange={(e) => setName(e.target.value)} placeholder={t('phoneAuth.namePlaceholder')} style={inputStyle} />}
+      {(needName || needLegal) && (
+        <label style={{ display: 'flex', gap: 8, alignItems: 'flex-start', fontSize: 12, color: axelionColors.textMuted, marginBottom: 12 }}>
+          <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
+          <span>{t('phoneAuth.acceptLegal')} <a href="/terms" target="_blank" rel="noopener noreferrer">{t('phoneAuth.terms')}</a> / <a href="/privacy" target="_blank" rel="noopener noreferrer">{t('phoneAuth.privacy')}</a></span>
+        </label>
+      )}
       {error && <div style={{ color: needName ? axelionColors.textMuted : '#C0492F', fontSize: 13, marginBottom: 10 }}>{error}</div>}
-      <button onClick={verify} disabled={loading || code.length < 6 || (needName && name.trim().length < 2)} style={btnStyle}>{loading ? t('phoneAuth.checking') : t('phoneAuth.verify')}</button>
-      <button onClick={() => { setStep('phone'); setCode(''); setNeedName(false); setError(''); }} style={linkStyle}>{t('phoneAuth.changeNumber')}</button>
+      <button onClick={verify} disabled={loading || code.length < 6 || (needName && name.trim().length < 2) || ((needName || needLegal) && !acceptedTerms)} style={btnStyle}>{loading ? t('phoneAuth.checking') : t('phoneAuth.verify')}</button>
+      <button onClick={() => { setStep('phone'); setCode(''); setNeedName(false); setNeedLegal(false); setAcceptedTerms(false); setError(''); }} style={linkStyle}>{t('phoneAuth.changeNumber')}</button>
     </div>
   );
 }

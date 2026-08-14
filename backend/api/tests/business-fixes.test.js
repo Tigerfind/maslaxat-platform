@@ -29,7 +29,7 @@ describe('бизнес-фиксы из аудита', () => {
     // бронь с промокодом → usedCount 1, promoCode сохранён
     const book = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'q', consultationType: 'video', promoCode: 'BFTEST10' });
+      .send({ question: 'q', consultationType: 'video', promoCode: 'BFTEST10', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(book.status).toBe(201);
     expect((await Promo.findByPk(promo.id)).usedCount).toBe(1);
     const consId = book.body.consultation.id;

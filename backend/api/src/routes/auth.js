@@ -8,6 +8,7 @@ const rateLimit = require('express-rate-limit');
 const { User, LawyerProfile, PhoneOtp } = require('../models');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
+const LEGAL_VERSION = '2026-08-13';
 
 // Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
 // (считаем все попытки, не только неудачные).
@@ -54,6 +55,8 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       role: Joi.string().valid('client', 'lawyer').default('client'),
       specialization: Joi.string().optional(),
       specializations: Joi.array().items(Joi.string()).optional(),
+      acceptedTerms: Joi.boolean().valid(true).required(),
+      legalVersion: Joi.string().valid(LEGAL_VERSION).required(),
     });
     // Пароль ≥8 — усиление против подбора (было 6).
 
@@ -81,8 +84,8 @@ router.post('/register', emailLimiter, async (req, res, next) => {
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const { specialization, specializations, phone: _rawPhone, ...userData } = value;
-    const user = await User.create({ ...userData, phone: phone || null, verificationToken });
+    const { specialization, specializations, phone: _rawPhone, acceptedTerms: _acceptedTerms, legalVersion, ...userData } = value;
+    const user = await User.create({ ...userData, phone: phone || null, verificationToken, legalAcceptedAt: new Date(), legalVersion });
 
     if (value.role === 'lawyer') {
       // Мультиспециализация: принимаем массив ИЛИ одиночную строку (legacy). Дедуп,
@@ -172,6 +175,9 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
     if (!user && name.length < 2) {
       return res.status(400).json({ error: 'Укажите имя для регистрации', needName: true });
     }
+    if (!user && (req.body.acceptedTerms !== true || req.body.legalVersion !== LEGAL_VERSION)) {
+      return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
+    }
 
     await otp.destroy(); // код использован
 
@@ -182,7 +188,7 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
       // плейсхолдер по номеру; реальный email клиент сможет добавить в профиле.
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const genEmail = `${phone.replace(/\D/g, '')}@phone.maslaxat.uz`;
-      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true });
+      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true, legalAcceptedAt: new Date(), legalVersion: LEGAL_VERSION });
       created = true;
     }
 
@@ -303,6 +309,9 @@ router.post('/google', async (req, res, next) => {
     let user = await User.findOne({ where: { googleId: data.googleId } });
     if (!user) user = await User.findOne({ where: { email: data.email } });
     if (!user) {
+      if (req.body.acceptedTerms !== true || req.body.legalVersion !== LEGAL_VERSION) {
+        return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
+      }
       user = await User.create({
         email: data.email,
         name: data.name,
@@ -311,6 +320,8 @@ router.post('/google', async (req, res, next) => {
         isVerified: true,
         googleId: data.googleId,
         password: crypto.randomBytes(24).toString('hex'),
+        legalAcceptedAt: new Date(),
+        legalVersion: LEGAL_VERSION,
       });
     } else if (!user.googleId) {
       user.googleId = data.googleId;
@@ -326,11 +337,15 @@ router.post('/google', async (req, res, next) => {
 router.post('/telegram', async (req, res, next) => {
   try {
     if (!socialAuth.telegramEnabled()) return res.status(503).json({ error: 'Вход через Telegram недоступен' });
-    const data = socialAuth.verifyTelegramAuth(req.body);
+    const { acceptedTerms, legalVersion, ...telegramPayload } = req.body;
+    const data = socialAuth.verifyTelegramAuth(telegramPayload);
     if (!data) return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Telegram' });
 
     let user = await User.findOne({ where: { telegramId: data.telegramId } });
     if (!user) {
+      if (acceptedTerms !== true || legalVersion !== LEGAL_VERSION) {
+        return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
+      }
       user = await User.create({
         email: `tg${data.telegramId}@telegram.local`,
         name: data.name,
@@ -339,6 +354,8 @@ router.post('/telegram', async (req, res, next) => {
         isVerified: true,
         telegramId: data.telegramId,
         password: crypto.randomBytes(24).toString('hex'),
+        legalAcceptedAt: new Date(),
+        legalVersion: LEGAL_VERSION,
       });
     }
     issueFor(user, res);

@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import {
   Container, Box, Typography, TextField, Button, Alert, CircularProgress,
-  InputAdornment, IconButton, Card, Checkbox, FormControlLabel,
+  InputAdornment, IconButton, Card, Checkbox,
 } from '@mui/material';
 import {
   Visibility, VisibilityOff, Person, Lock, Email, Phone, Gavel, ArrowBack,
@@ -91,6 +91,8 @@ const RegisterPage = () => {
         password: formData.password,
         phone: formData.phone || undefined,
         role,
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
         ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
@@ -201,16 +203,13 @@ const RegisterPage = () => {
               value={formData.confirmPassword} onChange={handleChange} placeholder={t('register.confirmPlaceholder')}
               sx={{ ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
-            <FormControlLabel
-              sx={{ mt: 1.5, alignItems: 'flex-start' }}
-              control={<Checkbox checked={acceptedTerms} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />}
-              label={(
-                <Typography component="span" sx={{ fontSize: '0.76rem', color: axelionColors.textSecondary, lineHeight: 1.5 }}>
-                  {t('register.acceptPrefix')} <Box component="a" href="/terms" target="_blank" sx={{ color: axelionColors.goldDark }}>{t('register.terms')}</Box>{' '}
-                  {t('register.and')} <Box component="a" href="/privacy" target="_blank" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
-                </Typography>
-              )}
-            />
+            <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'flex-start' }}>
+              <Checkbox inputProps={{ 'aria-label': t('register.acceptRequired') }} checked={acceptedTerms} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />
+              <Typography component="span" sx={{ pt: 1, fontSize: '0.76rem', color: axelionColors.textSecondary, lineHeight: 1.5 }}>
+                {t('register.acceptPrefix')} <Box component="a" href="/terms" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.terms')}</Box>{' '}
+                {t('register.and')} <Box component="a" href="/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
+              </Typography>
+            </Box>
           </Box>
         </Box>
       );

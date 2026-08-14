@@ -286,6 +286,9 @@ router.get('/:id/reviews', async (req, res, next) => {
 // POST /api/lawyers/:id/book — бронирование консультации
 router.post('/:id/book', authenticate, authorize('client'), async (req, res, next) => {
   try {
+    if (req.body.acceptedTerms !== true || req.body.legalVersion !== '2026-08-13') {
+      return res.status(400).json({ error: 'Примите условия бронирования и возврата' });
+    }
     // Анти-фрод: бронировать может только клиент с подтверждённым контактом
     // (email подтверждён ИЛИ регистрация по телефону-OTP → isVerified=true).
     // Отсекает фейковые аккаунты и пустые брони под модель оплаты B.
@@ -382,6 +385,8 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,
       duration,
+      legalAcceptedAt: new Date(),
+      legalVersion: req.body.legalVersion,
     };
 
     let price = fullPrice;

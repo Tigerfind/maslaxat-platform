@@ -145,7 +145,7 @@ const translations = {
       loginSuccess: 'Вход выполнен успешно',
       loginError: 'Ошибка входа',
       twoFA: { title: 'Двухфакторная аутентификация', subtitle: 'Введите 6-значный код из приложения-аутентификатора или резервный код', codeLabel: 'Код подтверждения', submit: 'Подтвердить', checking: 'Проверка…', back: 'Назад ко входу', error: 'Неверный код' },
-      social: { or: 'или войти через' },
+      social: { or: 'или войти через', acceptLegal: 'Принимаю', terms: 'условия', privacy: 'конфиденциальность' },
       invalidCredentials: 'Неверный email или пароль',
 
       // Footer
@@ -197,7 +197,7 @@ const translations = {
       loginSuccess: 'Кириш муваффақиятли бажарилди',
       loginError: 'Кириш хатоси',
       twoFA: { title: 'Икки босқичли аутентификация', subtitle: 'Аутентификатор иловасидан 6 рақамли код ёки заҳира кодини киритинг', codeLabel: 'Тасдиқлаш коди', submit: 'Тасдиқлаш', checking: 'Текширилмоқда…', back: 'Кириш саҳифасига', error: 'Нотўғри код' },
-      social: { or: 'ёки орқали киринг' },
+      social: { or: 'ёки орқали киринг', acceptLegal: 'Қабул қиламан', terms: 'шартлар', privacy: 'махфийлик' },
       invalidCredentials: 'Нотўғри email ёки парол',
 
       // Footer
@@ -249,7 +249,7 @@ const translations = {
       loginSuccess: 'Login successful',
       loginError: 'Login error',
       twoFA: { title: 'Two-factor authentication', subtitle: 'Enter the 6-digit code from your authenticator app or a backup code', codeLabel: 'Verification code', submit: 'Verify', checking: 'Checking…', back: 'Back to login', error: 'Invalid code' },
-      social: { or: 'or continue with' },
+      social: { or: 'or continue with', acceptLegal: 'I accept', terms: 'terms', privacy: 'privacy' },
       invalidCredentials: 'Invalid email or password',
 
       // Footer
@@ -462,9 +462,9 @@ const translations = {
   },
 
   phoneAuth: {
-    ru: { usePhone: 'Войти по номеру телефона', useEmail: 'Войти по email', phonePlaceholder: 'Номер телефона (+998…)', getCode: 'Получить код', sending: 'Отправка…', sentTo: 'Код отправлен на', devCode: 'Код (dev)', codePlaceholder: 'Код из SMS', namePlaceholder: 'Ваше имя', verify: 'Войти', checking: 'Проверка…', changeNumber: 'Изменить номер', needName: 'Новый номер — укажите имя для регистрации', requestErr: 'Не удалось отправить код', verifyErr: 'Не удалось подтвердить код' },
-    uz: { usePhone: 'Телефон рақами орқали кириш', useEmail: 'Email орқали кириш', phonePlaceholder: 'Телефон рақами (+998…)', getCode: 'Код олиш', sending: 'Юборилмоқда…', sentTo: 'Код юборилди:', devCode: 'Код (dev)', codePlaceholder: 'SMS коди', namePlaceholder: 'Исмингиз', verify: 'Кириш', checking: 'Текширилмоқда…', changeNumber: 'Рақамни ўзгартириш', needName: 'Янги рақам — рўйхатдан ўтиш учун исм киритинг', requestErr: 'Код юборилмади', verifyErr: 'Кодни тасдиқлаб бўлмади' },
-    en: { usePhone: 'Sign in with phone number', useEmail: 'Sign in with email', phonePlaceholder: 'Phone number (+998…)', getCode: 'Get code', sending: 'Sending…', sentTo: 'Code sent to', devCode: 'Code (dev)', codePlaceholder: 'SMS code', namePlaceholder: 'Your name', verify: 'Sign in', checking: 'Checking…', changeNumber: 'Change number', needName: 'New number — enter your name to register', requestErr: 'Could not send the code', verifyErr: 'Could not verify the code' },
+    ru: { usePhone: 'Войти по номеру телефона', useEmail: 'Войти по email', phonePlaceholder: 'Номер телефона (+998…)', getCode: 'Получить код', sending: 'Отправка…', sentTo: 'Код отправлен на', devCode: 'Код (dev)', codePlaceholder: 'Код из SMS', namePlaceholder: 'Ваше имя', verify: 'Войти', checking: 'Проверка…', changeNumber: 'Изменить номер', needName: 'Новый номер — укажите имя для регистрации', needLegal: 'Для регистрации примите условия', acceptLegal: 'Принимаю', terms: 'условия', privacy: 'конфиденциальность', requestErr: 'Не удалось отправить код', verifyErr: 'Не удалось подтвердить код' },
+    uz: { usePhone: 'Телефон рақами орқали кириш', useEmail: 'Email орқали кириш', phonePlaceholder: 'Телефон рақами (+998…)', getCode: 'Код олиш', sending: 'Юборилмоқда…', sentTo: 'Код юборилди:', devCode: 'Код (dev)', codePlaceholder: 'SMS коди', namePlaceholder: 'Исмингиз', verify: 'Кириш', checking: 'Текширилмоқда…', changeNumber: 'Рақамни ўзгартириш', needName: 'Янги рақам — рўйхатдан ўтиш учун исм киритинг', needLegal: 'Рўйхатдан ўтиш учун шартларни қабул қилинг', acceptLegal: 'Қабул қиламан', terms: 'шартлар', privacy: 'махфийлик', requestErr: 'Код юборилмади', verifyErr: 'Кодни тасдиқлаб бўлмади' },
+    en: { usePhone: 'Sign in with phone number', useEmail: 'Sign in with email', phonePlaceholder: 'Phone number (+998…)', getCode: 'Get code', sending: 'Sending…', sentTo: 'Code sent to', devCode: 'Code (dev)', codePlaceholder: 'SMS code', namePlaceholder: 'Your name', verify: 'Sign in', checking: 'Checking…', changeNumber: 'Change number', needName: 'New number — enter your name to register', needLegal: 'Accept the terms to register', acceptLegal: 'I accept', terms: 'terms', privacy: 'privacy', requestErr: 'Could not send the code', verifyErr: 'Could not verify the code' },
   },
 
   // ==================== ЮРИСТЫ ====================

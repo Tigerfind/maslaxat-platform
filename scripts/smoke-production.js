@@ -2,7 +2,7 @@ const FRONTEND = process.env.FRONTEND_URL || 'https://frontend-production-eb74.u
 const API = process.env.API_URL || 'https://backend-production-fa8f.up.railway.app/api';
 
 async function expectStatus(url, expected, checkRoot = false) {
-  const response = await fetch(url, { redirect: 'manual' });
+  const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(15000) });
   if (response.status !== expected) throw new Error(`${url}: expected ${expected}, got ${response.status}`);
   if (checkRoot) {
     const body = await response.text();
@@ -13,6 +13,16 @@ async function expectStatus(url, expected, checkRoot = false) {
 async function main() {
   const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/terms', '/privacy', '/refund-policy'];
   for (const route of publicRoutes) await expectStatus(`${FRONTEND}${route}`, 200, true);
+
+  // Без браузерного раннера проверяем, что legal lazy chunk реально вошёл в build,
+  // а не только что SPA server вернул index.html для неизвестного маршрута.
+  const manifestResponse = await fetch(`${FRONTEND}/asset-manifest.json`, { signal: AbortSignal.timeout(15000) });
+  const manifest = await manifestResponse.json();
+  const jsFiles = Object.values(manifest.files || {}).filter((file) => /\.js$/.test(file));
+  const bundles = await Promise.all(jsFiles.map((file) => fetch(`${FRONTEND}${file}`, { signal: AbortSignal.timeout(15000) }).then((r) => r.text())));
+  if (!bundles.some((bundle) => bundle.includes('Публичная оферта') && bundle.includes('Политика конфиденциальности'))) {
+    throw new Error('Legal page chunk not found in deployed asset manifest');
+  }
 
   await expectStatus(`${API}/health`, 200);
   await expectStatus(`${API}/lawyers?limit=1`, 200);

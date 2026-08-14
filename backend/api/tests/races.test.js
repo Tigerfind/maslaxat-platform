@@ -82,7 +82,7 @@ describe('#4 AI daily limit — reserve + refund', () => {
 
 describe('#3 free-consultation — нет double-spend под конкуренцией', () => {
   const book = (token, lawyerId, body) =>
-    request(app).post(`/api/client/lawyers/${lawyerId}/book`).set('Authorization', `Bearer ${token}`).send(body);
+    request(app).post(`/api/client/lawyers/${lawyerId}/book`).set('Authorization', `Bearer ${token}`).send({ acceptedTerms: true, legalVersion: '2026-08-13', ...body });
 
   test('N параллельных loyalty-броней у нового клиента → ровно одна бесплатная', async () => {
     const client = await makeClient(`l3_${Date.now()}@t.uz`);

@@ -140,7 +140,7 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const { user: lawyer } = await makeLawyer('mf-l7@test.uz', { price: 200000 });
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'q', consultationType: 'video', duration: 90 });
+      .send({ question: 'q', consultationType: 'video', duration: 90, acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.duration).toBe(90);
     expect(res.body.consultation.price).toBe(300000); // 200000 * 90/60

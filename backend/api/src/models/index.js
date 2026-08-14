@@ -44,6 +44,8 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  legalAcceptedAt: { type: DataTypes.DATE },
+  legalVersion: { type: DataTypes.STRING },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
@@ -302,6 +304,8 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.ENUM('none', 'held', 'charged', 'released', 'failed'),
     defaultValue: 'none',
   },
+  legalAcceptedAt: { type: DataTypes.DATE },
+  legalVersion: { type: DataTypes.STRING },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
