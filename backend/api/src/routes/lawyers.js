@@ -1,10 +1,11 @@
 const router = require('express').Router();
-const { Op } = require('sequelize');
-const { User, LawyerProfile, Review, Consultation } = require('../models');
+const { Op, fn, col, literal, where: sqlWhere } = require('sequelize');
+const { sequelize, User, LawyerProfile, Review, Consultation } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const tiers = require('../services/lawyerTiers');
+const presenceService = require('../services/presenceService');
 
 // Пороги быстрых фильтров каталога. Держим в одном месте, чтобы подпись чипа
 // («Опытные») и условие выборки не разъезжались.
@@ -40,7 +41,7 @@ function parseExperienceRange(value) {
  * Считается по базовому каталогу (одобренные, активные) без учёта уже выбранных
  * фильтров — чипы должны показывать, что вообще есть, а не «сколько осталось».
  */
-async function catalogFacets(baseUserWhere) {
+async function catalogFacets(baseUserWhere, onlineUserIds = []) {
   const approved = { verificationStatus: 'approved' };
   const withProfile = (where) => ({
     where: baseUserWhere,
@@ -48,7 +49,16 @@ async function catalogFacets(baseUserWhere) {
   });
 
   const prices = await LawyerProfile.findAll({
-    where: approved, attributes: ['price'], raw: true,
+    where: approved,
+    attributes: ['price'],
+    include: [{
+      model: User,
+      as: 'user',
+      attributes: [],
+      where: baseUserWhere,
+      required: true,
+    }],
+    raw: true,
   });
   const sorted = prices.map((p) => Number(p.price) || 0).filter((p) => p > 0).sort((a, b) => a - b);
   // 33-й перцентиль; при пустом каталоге порога нет — чип будет отключён.
@@ -56,7 +66,9 @@ async function catalogFacets(baseUserWhere) {
 
   const [total, online, highRating, experienced, budget] = await Promise.all([
     User.count(withProfile({})),
-    User.count(withProfile({ isAvailable: true })),
+    onlineUserIds.length
+      ? User.count({ ...withProfile({}), where: { ...baseUserWhere, id: { [Op.in]: onlineUserIds } } })
+      : 0,
     User.count(withProfile({ rating: { [Op.gte]: HIGH_RATING_FROM } })),
     User.count(withProfile({ experience: { [Op.gte]: EXPERIENCED_FROM } })),
     budgetThreshold ? User.count(withProfile({ price: { [Op.lte]: budgetThreshold } })) : 0,
@@ -97,9 +109,14 @@ async function catalogFacets(baseUserWhere) {
 router.get('/', async (req, res, next) => {
   try {
     const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, experience, budget, status, page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
+    const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
+    const limitNumber = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
+    const offset = (pageNumber - 1) * limitNumber;
 
     const profileWhere = {};
+    const addProfileCondition = (condition) => {
+      profileWhere[Op.and] = [...(profileWhere[Op.and] || []), condition];
+    };
     // Фильтр по специализации: клиент может выбрать НЕСКОЛЬКО областей (через запятую).
     // Юрист подходит, если ведёт ХОТЯ БЫ ОДНУ из выбранных (Op.overlap = массивы пересекаются).
     if (specialization) {
@@ -107,8 +124,7 @@ router.get('/', async (req, res, next) => {
       if (specs.length) profileWhere.specializations = { [Op.overlap]: specs };
     }
     if (location) profileWhere.location = location;
-    // Фильтр по цене консультации (profile.price). Границы приходят только когда реально
-    // заданы (см. clientService): minPrice>0 и/или maxPrice<потолка.
+    // Фильтр по цене консультации (profile.price).
     const priceFilter = {};
     if (minPrice !== undefined && !Number.isNaN(Number(minPrice))) priceFilter[Op.gte] = Number(minPrice);
     if (maxPrice !== undefined && !Number.isNaN(Number(maxPrice))) priceFilter[Op.lte] = Number(maxPrice);
@@ -136,33 +152,49 @@ router.get('/', async (req, res, next) => {
     // каталога, а не от константы.
     const bands = await tiers.priceBands();
     const bandWhere = tiers.priceWhere(budget, bands);
-    if (bandWhere) Object.assign(profileWhere, bandWhere);
+    if (bandWhere) addProfileCondition(bandWhere);
 
     // Подбор «по статусу»: ступень юриста (топ / эксперт / практик).
-    if (tiers.STATUS_WHERE[status]) Object.assign(profileWhere, tiers.STATUS_WHERE[status]);
+    if (tiers.STATUS_WHERE[status]) addProfileCondition(tiers.STATUS_WHERE[status]);
 
     // Безопасный режим: в каталоге показываем ТОЛЬКО одобренных админом юристов.
     // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
     profileWhere.verificationStatus = 'approved';
 
-    // «Доступен сейчас»: показать только онлайн-юристов (isAvailable=true).
-    // Раньше тумблер был декоративным — бэкенд его не читал.
+    // «Онлайн»: только юристы с активным authenticated socket.
     const onlyOnline = onlineOnly === 'true' || onlineOnly === true;
-    if (onlyOnline) profileWhere.isAvailable = true;
 
     const userWhere = { role: 'lawyer', isActive: true };
-    if (search) {
-      userWhere.name = { [Op.iLike]: `%${search}%` };
+    const presenceSnapshot = await presenceService.getSnapshot('lawyer');
+    const { onlineUserIds } = presenceSnapshot;
+    if (onlyOnline && presenceSnapshot.degraded) {
+      return res.status(503).json({ error: 'Статус онлайн временно недоступен' });
+    }
+    if (onlyOnline) userWhere.id = { [Op.in]: onlineUserIds.length ? onlineUserIds : [null] };
+    const searchTerm = typeof search === 'string' ? search.trim().slice(0, 100) : '';
+    if (searchTerm) {
+      const escapedTerm = searchTerm.replace(/[\\%_]/g, '\\$&');
+      const pattern = `%${escapedTerm}%`;
+      profileWhere[Op.or] = [
+        { specialization: { [Op.iLike]: pattern } },
+        sqlWhere(fn('array_to_string', col('profile.specializations'), ' '), { [Op.iLike]: pattern }),
+        sqlWhere(col('User.name'), { [Op.iLike]: pattern }),
+      ];
     }
 
     // Онлайн-юристы всегда ВЫШЕ — клиенту удобнее видеть тех, с кем можно поговорить
     // сейчас. Внутри — выбранная сортировка (по умолчанию новизна).
-    const onlineFirst = [{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC'];
-    let order = [onlineFirst, ['createdAt', 'DESC']];
-    if (sortBy === 'rating') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
-    if (sortBy === 'price_low') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
-    if (sortBy === 'price_high') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
-    if (sortBy === 'experience') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'experience', 'DESC']];
+    const onlineFirst = onlineUserIds.length
+      ? [[literal(`CASE WHEN "User"."id" IN (${onlineUserIds.map((id) => sequelize.escape(id)).join(',')}) THEN 0 ELSE 1 END`), 'ASC']]
+      : [];
+    const acceptingBookingsFirst = [[{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC']];
+    const orderPrefix = [...onlineFirst, ...acceptingBookingsFirst];
+    let order = [...orderPrefix, ['createdAt', 'DESC']];
+    if (sortBy === 'rating') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
+    if (sortBy === 'price_low') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
+    if (sortBy === 'price_high') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
+    if (sortBy === 'experience') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'experience', 'DESC']];
+    order.push(['id', 'ASC']);
 
     // Never expose phone/email of lawyers to public/client searches
     const { count, rows } = await User.findAndCountAll({
@@ -176,13 +208,14 @@ router.get('/', async (req, res, next) => {
         required: true,
       }],
       order,
-      limit: parseInt(limit),
+      distinct: true,
+      limit: limitNumber,
       offset,
     });
 
     // Фасеты нужны фронту, чтобы показать числа на чипах, отключить заведомо
     // пустые и взять порог «недорого» из реальных цен, а не из константы.
-    const facets = await catalogFacets({ role: 'lawyer', isActive: true });
+    const facets = await catalogFacets({ role: 'lawyer', isActive: true }, onlineUserIds);
 
     // Ступень считаем тем же правилом, что и фильтр: карточка и фильтр не должны
     // расходиться в том, кто «топ».
@@ -194,14 +227,15 @@ router.get('/', async (req, res, next) => {
         ? plain.profile.toJSON()
         : plain.profile;
       if (profile) plain.profile = { ...profile, status: tiers.statusOf(profile) };
+      plain.presence = presenceService.getPresenceFromSnapshot(u.id, presenceSnapshot);
       return plain;
     });
 
     res.json({
       lawyers,
       total: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit),
+      page: pageNumber,
+      totalPages: Math.ceil(count / limitNumber),
       facets,
     });
   } catch (err) {
@@ -216,6 +250,13 @@ router.get('/filter-options', async (req, res, next) => {
     const profiles = await LawyerProfile.findAll({
       where: { verificationStatus: 'approved' },
       attributes: ['location', 'languages'],
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: [],
+        where: { role: 'lawyer', isActive: true },
+        required: true,
+      }],
       raw: true,
     });
     const locations = [...new Set(profiles.map((p) => p.location).filter(Boolean))].sort();
@@ -261,7 +302,10 @@ router.get('/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    res.json({ lawyer });
+    const plainLawyer = lawyer.toJSON();
+    const presenceSnapshot = await presenceService.getSnapshot('lawyer');
+    plainLawyer.presence = presenceService.getPresenceFromSnapshot(lawyer.id, presenceSnapshot);
+    res.json({ lawyer: plainLawyer });
   } catch (err) {
     next(err);
   }

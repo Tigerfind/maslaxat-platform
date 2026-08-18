@@ -62,7 +62,10 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
-        REACT_APP_API_URL: ${REACT_APP_API_URL:-}
+        VITE_API_URL: ${VITE_API_URL:-}
+        VITE_SENTRY_DSN: ${VITE_SENTRY_DSN:-}
+        VITE_SENTRY_ENVIRONMENT: ${VITE_SENTRY_ENVIRONMENT:-production}
+        VITE_SENTRY_RELEASE: ${VITE_SENTRY_RELEASE:-}
     container_name: emaslaxat-frontend
     restart: always
     ports:

@@ -1,0 +1,9 @@
+node_modules
+build
+.env
+.env.*
+coverage
+e2e
+playwright-report
+test-results
+npm-debug.log*

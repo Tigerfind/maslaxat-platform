@@ -18,8 +18,10 @@ async function main() {
   // а не только что SPA server вернул index.html для неизвестного маршрута.
   const manifestResponse = await fetch(`${FRONTEND}/asset-manifest.json`, { signal: AbortSignal.timeout(15000) });
   const manifest = await manifestResponse.json();
-  const jsFiles = Object.values(manifest.files || {}).filter((file) => /\.js$/.test(file));
-  const bundles = await Promise.all(jsFiles.map((file) => fetch(`${FRONTEND}${file}`, { signal: AbortSignal.timeout(15000) }).then((r) => r.text())));
+  const jsFiles = Object.values(manifest)
+    .map((entry) => entry?.file)
+    .filter((file) => typeof file === 'string' && /\.js$/.test(file));
+  const bundles = await Promise.all(jsFiles.map((file) => fetch(`${FRONTEND}/${file}`, { signal: AbortSignal.timeout(15000) }).then((r) => r.text())));
   if (!bundles.some((bundle) => bundle.includes('Public offer and terms of use') && bundle.includes('Privacy policy'))) {
     throw new Error('Legal page chunk not found in deployed asset manifest');
   }

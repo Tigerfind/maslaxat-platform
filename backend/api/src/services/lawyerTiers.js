@@ -1,5 +1,5 @@
 const { Op } = require('sequelize');
-const { LawyerProfile } = require('../models');
+const { LawyerProfile, User } = require('../models');
 
 /**
  * Сегменты каталога: «по карману» (цена) и «по статусу» (уровень юриста).
@@ -77,6 +77,13 @@ async function priceBands() {
   const rows = await LawyerProfile.findAll({
     where: { verificationStatus: 'approved' },
     attributes: ['price'],
+    include: [{
+      model: User,
+      as: 'user',
+      attributes: [],
+      where: { role: 'lawyer', isActive: true },
+      required: true,
+    }],
     raw: true,
   });
   const prices = rows.map((r) => Number(r.price) || 0).filter((p) => p > 0).sort((a, b) => a - b);

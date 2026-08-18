@@ -7,6 +7,7 @@ const { recomputeLawyerRating } = require('../services/ratingService');
 const { withLawyerCounts } = require('../services/specializationStats');
 const notifications = require('../services/notificationService');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
+const { disconnectUserSockets } = require('../socket/io');
 
 // All routes require admin authentication
 router.use(authenticate, authorize('admin'));
@@ -145,6 +146,7 @@ router.put('/users/:id/status', async (req, res, next) => {
 
     user.isActive = req.body.status === 'active';
     await user.save();
+    if (!user.isActive) disconnectUserSockets(user.id);
 
     res.json({ success: true, user });
   } catch (err) {
@@ -239,6 +241,7 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
     user.profile.rejectionReason = null;
     await user.profile.save();
     if (!user.isActive) { user.isActive = true; await user.save(); }
+    disconnectUserSockets(user.id);
 
     // Уведомляем юриста об одобрении (fail-safe: ошибка уведомления не валит запрос)
     try {
@@ -273,6 +276,7 @@ router.post('/lawyers/:id/reject', async (req, res, next) => {
     user.profile.verificationStatus = 'rejected';
     user.profile.rejectionReason = reason || null;
     await user.profile.save();
+    disconnectUserSockets(user.id);
 
     try {
       await notifications.createNotification(

@@ -15,10 +15,15 @@ const ERRORS = {
   ALREADY_DONE:        { code: -31060, message: 'Transaction already completed' },
   ALREADY_CANCELLED:   { code: -31061, message: 'Transaction already cancelled' },
 };
+const paymeConfigured = () => {
+  const key = String(process.env.PAYME_KEY || '').trim();
+  const merchant = String(process.env.PAYME_MERCHANT_ID || '').trim();
+  return Boolean(key && key !== 'CHANGE_ME' && merchant && merchant !== 'CHANGE_ME');
+};
 
 // ─── Payme Basic Auth Middleware ─────────────────────────────
 const verifyPayme = (req, res, next) => {
-  if (!process.env.PAYME_KEY) {
+  if (!paymeConfigured()) {
     return res.status(503).json({ jsonrpc: '2.0', id: req.body?.id || null, error: ERRORS.CANT_PERFORM });
   }
   const auth = req.headers.authorization || '';
@@ -41,6 +46,10 @@ const verifyPayme = (req, res, next) => {
 router.post('/create', authenticate, authorize('client'), async (req, res, next) => {
   try {
     const { consultationId } = req.body;
+    const merchantId = String(process.env.PAYME_MERCHANT_ID || '').trim();
+    if (!paymeConfigured()) {
+      return res.status(503).json({ error: 'Оплата Payme временно недоступна' });
+    }
 
     const consultation = await Consultation.findOne({
       where: { id: consultationId, clientId: req.userId },
@@ -83,7 +92,6 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
 
     // Payme checkout URL
     // Формат: account[consultation_id]=ID&amount=TIYIN
-    const merchantId = process.env.PAYME_MERCHANT_ID;
     const params = Buffer.from(
       `m=${merchantId};ac.consultation_id=${payment.id};a=${amountTiyin}`
     ).toString('base64');

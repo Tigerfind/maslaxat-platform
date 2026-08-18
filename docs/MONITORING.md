@@ -20,10 +20,9 @@ SENTRY_TRACES_SAMPLE_RATE=0
 Переменные должны существовать во время сборки frontend:
 
 ```env
-REACT_APP_SENTRY_DSN=https://...
-REACT_APP_SENTRY_ENVIRONMENT=production
-REACT_APP_SENTRY_RELEASE=<git-sha>
-REACT_APP_SENTRY_TRACES_SAMPLE_RATE=0
+VITE_SENTRY_DSN=https://...
+VITE_SENTRY_ENVIRONMENT=production
+VITE_SENTRY_RELEASE=<git-sha>
 ```
 
 React ErrorBoundary сохраняет брендовый fallback и отправляет exception с component stack.

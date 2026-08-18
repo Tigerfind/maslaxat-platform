@@ -5,11 +5,11 @@ import './index.css';
 import './styles/glass.css';
 import App from './App';
 
-if (process.env.REACT_APP_SENTRY_DSN) {
+if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
-    dsn: process.env.REACT_APP_SENTRY_DSN,
-    environment: process.env.REACT_APP_SENTRY_ENVIRONMENT || process.env.NODE_ENV,
-    release: process.env.REACT_APP_SENTRY_RELEASE,
+    dsn: import.meta.env.VITE_SENTRY_DSN,
+    environment: import.meta.env.VITE_SENTRY_ENVIRONMENT || import.meta.env.MODE,
+    release: import.meta.env.VITE_SENTRY_RELEASE,
     tracesSampleRate: 0,
     maxBreadcrumbs: 0,
     sendDefaultPii: false,
@@ -52,6 +52,12 @@ root.render(
 
 // PWA: регистрируем service worker, чтобы сайт можно было установить как приложение
 if ('serviceWorker' in navigator) {
+  let reloadingForUpdate = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (reloadingForUpdate) return;
+    reloadingForUpdate = true;
+    window.location.reload();
+  });
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   });

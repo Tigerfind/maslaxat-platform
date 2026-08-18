@@ -25,8 +25,9 @@ const authenticate = async (req, res, next) => {
 
     // Токен, выданный ДО последней смены пароля (сброс при компрометации),
     // считается недействительным — старые сессии выкидываются.
-    if (user.passwordChangedAt && decoded.iat) {
-      if (decoded.iat * 1000 < new Date(user.passwordChangedAt).getTime()) {
+    if (user.passwordChangedAt) {
+      const sessionVersion = new Date(user.passwordChangedAt).getTime();
+      if (Number(decoded.sv) !== sessionVersion) {
         return res.status(401).json({ error: 'Сессия недействительна, войдите заново' });
       }
     }

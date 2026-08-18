@@ -1,7 +1,28 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
+
+function buildIceServers(userId) {
+  const servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+  const urls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
+    .split(',').map((url) => url.trim()).filter(Boolean);
+  if (!urls.length) return servers;
+
+  if (process.env.TURN_SECRET) {
+    const username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
+    const credential = crypto.createHmac('sha1', process.env.TURN_SECRET).update(username).digest('base64');
+    servers.push({ urls, username, credential });
+  } else if ((process.env.NODE_ENV !== 'production' || process.env.TURN_ALLOW_STATIC === '1')
+    && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    servers.push({ urls, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  }
+  return servers;
+}
 
 // All routes require authentication (any role)
 router.use(authenticate);
@@ -33,6 +54,7 @@ router.get('/consultation/:id', async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    const canUseVideo = consultation.type === 'video' && ['accepted', 'in_progress'].includes(consultation.status);
 
     res.json({
       id: consultation.id,
@@ -50,6 +72,10 @@ router.get('/consultation/:id', async (req, res, next) => {
       lawyerId: consultation.lawyerId,
       client: consultation.client,
       lawyer: consultation.lawyer,
+      iceServers: canUseVideo ? buildIceServers(req.userId) : [],
+      iceServersExpiresAt: canUseVideo && process.env.TURN_SECRET
+        ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
+        : null,
     });
   } catch (err) {
     next(err);

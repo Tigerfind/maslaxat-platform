@@ -20,7 +20,7 @@ async function main() {
   fs.mkdirSync(EXPECTED_UPLOAD_DIR, { recursive: true });
 
   const { resetDb, models } = require('../../tests/helpers');
-  const { sequelize, User, LawyerProfile, Specialization } = models;
+  const { sequelize, User, LawyerProfile, Specialization, Consultation } = models;
   await resetDb();
 
   await Specialization.bulkCreate([
@@ -28,7 +28,7 @@ async function main() {
     { name: 'Семейное право', nameUz: 'Oila huquqi', nameEn: 'Family Law', icon: 'FamilyRestroom', lawyerCount: 0 },
   ]);
 
-  await User.create({
+  const client = await User.create({
     email: 'client.e2e@maslaxat.uz', password: 'E2eClient123!', name: 'E2E Client',
     phone: '+998900000001', role: 'client', isVerified: true, isActive: true,
     legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
@@ -43,8 +43,38 @@ async function main() {
     description: 'Тестовый юрист Playwright с заполненным профилем для проверки каталога и бронирования.',
     experience: 10, price: 100000,
     schedule: { mon: { enabled: true, from: '09:00', to: '18:00' } },
-    isAvailable: true, verificationStatus: 'approved',
+    isAvailable: true, verificationStatus: 'approved', balance: 300000, pendingBalance: 0,
   });
+  const refundLawyer = await User.create({
+    email: 'refund-lawyer.e2e@maslaxat.uz', password: 'E2eRefund123!', name: 'E2E Refund Lawyer',
+    role: 'lawyer', isVerified: true, isActive: true,
+    legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+  });
+  await LawyerProfile.create({
+    userId: refundLawyer.id, specialization: 'Гражданское право', specializations: ['Гражданское право'],
+    description: 'Изолированный профиль для E2E возврата.', experience: 5, price: 120000,
+    schedule: {}, isAvailable: false, verificationStatus: 'approved', balance: 0, pendingBalance: 0,
+  });
+  await Consultation.bulkCreate([
+    {
+      id: '11111111-1111-4111-8111-111111111111',
+      clientId: client.id, lawyerId: lawyer.id, type: 'chat', status: 'accepted',
+      question: 'E2E text chat', duration: 60, price: 0, isFree: true, billingStatus: 'none',
+      legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
+    {
+      id: '22222222-2222-4222-8222-222222222222',
+      clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'accepted',
+      question: 'E2E video call', duration: 60, price: 0, isFree: true, billingStatus: 'none',
+      legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
+    {
+      id: '33333333-3333-4333-8333-333333333333',
+      clientId: client.id, lawyerId: refundLawyer.id, type: 'video', status: 'payment_pending',
+      question: 'E2E refund fixture', duration: 60, price: 120000, isFree: false, billingStatus: 'none',
+      legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
+  ]);
   await User.create({
     email: 'admin.e2e@maslaxat.uz', password: 'E2eAdmin123!', name: 'E2E Admin',
     role: 'admin', isVerified: true, isActive: true,

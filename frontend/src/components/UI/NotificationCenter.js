@@ -35,8 +35,8 @@ import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 
-// socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
-const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+// socket.io на корне хоста; VITE_API_URL в проде содержит /api — срезаем.
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
 
 const NOTIFICATION_ICONS = {
   consultation_request: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
@@ -94,6 +94,13 @@ const NotificationCenter = ({ sx = {} }) => {
       if (notif.title) {
         toast.info(notif.title, { autoClose: 5000 });
       }
+    });
+    socket.on('presence:update', (presence) => {
+      if (!presence?.userId) return;
+      window.dispatchEvent(new CustomEvent('maslaxat:presence', { detail: presence }));
+    });
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') setTimeout(() => socket.connect(), 250);
     });
 
     return () => { socket.disconnect(); };

@@ -23,4 +23,9 @@ function emitToUser(userId, event, payload) {
   }
 }
 
-module.exports = { setIO, getIO, emitToUser };
+function disconnectUserSockets(userId) {
+  if (!ioInstance || !userId) return;
+  ioInstance.in(`user:${userId}`).disconnectSockets(true);
+}
+
+module.exports = { setIO, getIO, emitToUser, disconnectUserSockets };

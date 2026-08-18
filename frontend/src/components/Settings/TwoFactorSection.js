@@ -2,7 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogContent } from '@mui/material';
 import { ShieldOutlined, CheckCircle, ContentCopyOutlined, CloseOutlined } from '@mui/icons-material';
 import { toast } from 'react-toastify';
+import { useDispatch } from 'react-redux';
 import api from '../../services/api';
+import { updateToken } from '../../store/slices/authSlice';
 import { useTranslation } from '../../i18n';
 
 // Управление двухфакторной аутентификацией (TOTP) для юристов/админов.
@@ -24,6 +26,7 @@ const outlineBtn = {
 
 const TwoFactorSection = () => {
   const { t } = useTranslation();
+  const dispatch = useDispatch();
   const [status, setStatus] = useState({ enabled: false, available: false, loading: true });
   const [dialog, setDialog] = useState(null); // 'setup' | 'backup' | 'disable' | null
   const [setupData, setSetupData] = useState(null); // { qrDataUrl, secret }
@@ -60,6 +63,7 @@ const TwoFactorSection = () => {
     setBusy(true);
     try {
       const { data } = await api.post('/2fa/enable', { token: code.trim() });
+      if (data.token) dispatch(updateToken(data.token));
       setBackupCodes(data.backupCodes || []);
       setDialog('backup');
       setStatus((s) => ({ ...s, enabled: true }));
@@ -74,7 +78,8 @@ const TwoFactorSection = () => {
     if (!code.trim()) return;
     setBusy(true);
     try {
-      await api.post('/2fa/disable', { token: code.trim() });
+      const { data } = await api.post('/2fa/disable', { token: code.trim() });
+      if (data.token) dispatch(updateToken(data.token));
       setStatus((s) => ({ ...s, enabled: false }));
       setDialog(null);
       setCode('');

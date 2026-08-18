@@ -5,9 +5,9 @@ import io from 'socket.io-client';
 import { CallOutlined, CallEndOutlined, VideocamOutlined } from '@mui/icons-material';
 import { useTranslation } from '../../i18n';
 
-// socket.io живёт на корне хоста, а REACT_APP_API_URL в проде включает /api —
+// socket.io живёт на корне хоста, а VITE_API_URL в проде включает /api —
 // срезаем его (иначе в проде сокет цепляется к неверному namespace).
-const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
 const RING_TIMEOUT_MS = 45000;
 
 // Рингтон без файлов-ассетов: классический двухтональный звонок через Web Audio
@@ -99,6 +99,9 @@ const GlobalCallListener = () => {
     });
     socket.on('call-cancelled', ({ consultationId }) => {
       setCall((c) => (c && c.consultationId === consultationId ? null : c));
+    });
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') setTimeout(() => socket.connect(), 250);
     });
 
     return () => {

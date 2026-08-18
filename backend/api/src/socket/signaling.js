@@ -1,6 +1,8 @@
 const jwt = require('jsonwebtoken');
-const { User, Consultation, Message } = require('../models');
+const { User, LawyerProfile, Consultation, Message } = require('../models');
 const logger = require('../config/logger');
+const presenceService = require('../services/presenceService');
+const { isRedisAdapterAttached } = require('./redisAdapter');
 
 /**
  * WebRTC Signaling Server
@@ -17,14 +19,28 @@ function initSignaling(io) {
       }
 
       const decoded = jwt.verify(token, process.env.JWT_SECRET);
+      if (decoded.twofa) return next(new Error('2FA confirmation required'));
       const user = await User.findByPk(decoded.id, {
-        attributes: ['id', 'name', 'role', 'avatar', 'isActive'],
+        attributes: ['id', 'name', 'role', 'avatar', 'isActive', 'passwordChangedAt'],
+        include: [{
+          model: LawyerProfile,
+          as: 'profile',
+          attributes: ['verificationStatus'],
+          required: false,
+        }],
       });
 
       if (!user || !user.isActive) {
         return next(new Error('User not found'));
       }
+      if (user.passwordChangedAt
+        && Number(decoded.sv) !== new Date(user.passwordChangedAt).getTime()) {
+        return next(new Error('Session expired'));
+      }
 
+      socket.data.userId = user.id;
+      socket.data.userRole = user.role;
+      socket.data.publicPresence = user.role === 'lawyer' && user.profile?.verificationStatus === 'approved';
       socket.userId = user.id;
       socket.userName = user.name;
       socket.userRole = user.role;
@@ -40,6 +56,19 @@ function initSignaling(io) {
 
     // Персональная комната для realtime-уведомлений этого пользователя
     if (socket.userId) socket.join(`user:${socket.userId}`);
+    const becameLocallyOnline = socket.data.publicPresence && presenceService.registerSocket(socket);
+    if (becameLocallyOnline) {
+      const onlineUpdate = {
+        userId: socket.userId,
+        role: socket.userRole,
+        online: true,
+        lastSeenAt: null,
+        observedAt: new Date().toISOString(),
+      };
+      if (!isRedisAdapterAttached()) {
+        io.emit('presence:update', onlineUpdate);
+      }
+    }
 
     // Join a consultation video room
     socket.on('join-room', async ({ consultationId }) => {
@@ -354,6 +383,10 @@ function initSignaling(io) {
         logger.debug(`[Socket] ${socket.userName} left room ${socket.roomId}`);
       }
       billingOnLeave();
+      const presenceUpdate = socket.data.publicPresence ? presenceService.unregisterSocket(socket) : null;
+      if (presenceUpdate && !isRedisAdapterAttached()) {
+        io.emit('presence:update', presenceUpdate);
+      }
     });
 
     // End call (explicit)

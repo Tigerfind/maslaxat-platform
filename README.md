@@ -26,7 +26,7 @@
 
 ## Локальный запуск
 
-Требуются Node.js 18+, PostgreSQL и Redis.
+Требуются Node.js 20.19+, PostgreSQL и Redis.
 
 ```bash
 # Backend

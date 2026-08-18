@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import { PhotoCameraOutlined, HistoryOutlined } from '@mui/icons-material';
-import { updateProfile } from '../../store/slices/authSlice';
+import { updateProfile, updateToken } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -291,7 +291,7 @@ const ProfilePageGlass = () => {
       // Смена пароля инвалидирует старые токены (другие сессии выпадут). Сервер выдал
       // свежий токен для ТЕКУЩЕЙ сессии — сохраняем его, иначе следующий запрос → 401.
       if (res.data?.token) {
-        localStorage.setItem('token', res.data.token);
+        dispatch(updateToken(res.data.token));
       }
       toast.success(t('profile.passwordChanged'));
       setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });

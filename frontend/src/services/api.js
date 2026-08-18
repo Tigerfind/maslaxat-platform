@@ -1,6 +1,24 @@
 import axios from 'axios';
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:3001/api';
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+const API_ORIGIN = new URL(API_BASE_URL, window.location.origin).origin;
+
+function normalizeAssetUrls(value, depth = 0) {
+  if (!value || depth > 8) return value;
+  if (Array.isArray(value)) {
+    value.forEach((item) => normalizeAssetUrls(item, depth + 1));
+    return value;
+  }
+  if (typeof value !== 'object' || value instanceof Blob) return value;
+  Object.entries(value).forEach(([key, item]) => {
+    if ((key === 'avatar' || key === 'photo') && typeof item === 'string' && item.startsWith('/uploads/')) {
+      value[key] = `${API_ORIGIN}${item}`;
+    } else {
+      normalizeAssetUrls(item, depth + 1);
+    }
+  });
+  return value;
+}
 
 // Create axios instance
 const api = axios.create({
@@ -28,7 +46,10 @@ const AUTH_ENDPOINT = /\/auth\/(login|register|forgot-password|reset-password|ve
 const AUTH_PAGE = /\/(login|register|forgot-password|reset-password|verify-email)/;
 
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    normalizeAssetUrls(response.data);
+    return response;
+  },
   (error) => {
     const status = error.response?.status;
     const url = error.config?.url || '';

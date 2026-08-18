@@ -291,7 +291,7 @@ export const formatConflictMessage = (validationResult) => {
  * Логирование конфликтов (для отладки)
  */
 export const logConflicts = (validationResult) => {
-  if (process.env.NODE_ENV === 'development') {
+  if (import.meta.env.DEV) {
     console.group('🔍 Conflict Detection Results');
     console.log('Valid:', validationResult.isValid);
     console.log('Can Proceed:', validationResult.canProceed);

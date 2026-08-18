@@ -127,7 +127,8 @@ async function sendViaPlayMobile(phone, text) {
 // ── публичный API ───────────────────────────────────────────────────────────
 async function sendSms(phone, text) {
   if (!isConfigured()) {
-    logger.info(`[SMS dev] → ${phone}: ${text}`);
+    if (process.env.NODE_ENV !== 'production') logger.info(`[SMS dev] → ${phone}: ${text}`);
+    else logger.warn('[SMS] провайдер не настроен — сообщение не отправлено');
     return { sent: false, dev: true };
   }
   const provider = detectProvider();

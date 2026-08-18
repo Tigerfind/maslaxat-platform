@@ -1,37 +1,32 @@
-FROM node:18-alpine AS build
+FROM node:20-alpine AS build
 
 WORKDIR /app
 COPY package*.json ./
-# npm install, а не npm ci: package-lock.json фронтенда в .gitignore, поэтому в
-# сборку он не попадает — `npm ci` без lock-файла падает с EUSAGE. Бэкенд свой
-# lock коммитит и там ci остаётся.
-RUN npm install --no-audit --no-fund
+# Lock-файл коммитится и проверяется CI, поэтому production собирается из того же дерева.
+RUN npm ci --no-audit --no-fund
 
 # Build arg: API URL for production (defaults to same-origin)
-ARG REACT_APP_API_URL=
-ENV REACT_APP_API_URL=$REACT_APP_API_URL
+ARG VITE_API_URL=
+ENV VITE_API_URL=$VITE_API_URL
+ARG VITE_SENTRY_DSN=
+ARG VITE_SENTRY_ENVIRONMENT=production
+ARG VITE_SENTRY_RELEASE=
+ENV VITE_SENTRY_DSN=$VITE_SENTRY_DSN
+ENV VITE_SENTRY_ENVIRONMENT=$VITE_SENTRY_ENVIRONMENT
+ENV VITE_SENTRY_RELEASE=$VITE_SENTRY_RELEASE
 
 COPY . .
-# Линтер в релизной сборке выключен: без lock-файла подтягиваются свежие
-# eslint-плагины, несовместимые с eslint-config-react-app («Environment key
-# jest/globals is unknown»), и сборка падает на конфиге, а не на коде.
-# Линт и тесты гоняются локально/в CI до деплоя.
-ENV DISABLE_ESLINT_PLUGIN=true
-ENV CI=false
-ENV GENERATE_SOURCEMAP=false
+# Линт и тесты выполняются в CI до production-сборки.
 RUN npm run build
 
-# Финальный слой — node, а не nginx: railway.json задаёт startCommand
-# `npx serve -s build -l $PORT`, и он подменяет CMD образа. В nginx-образе нет
-# ни node, ни /app/build, поэтому контейнер падал сразу после успешной сборки.
-# nginx.conf оставлен в репозитории для docker-compose (локальный стек).
-FROM node:18-alpine
+# Финальный слой запускает статическую SPA на Railway PORT.
+FROM nginx:1.27-alpine
 
-WORKDIR /app
-COPY --from=build /app/build ./build
-RUN npm install -g serve
+COPY --from=build /app/build /usr/share/nginx/html
+COPY nginx.railway.conf.template /etc/nginx/templates/default.conf.template
+ENV PORT=3000
 
 EXPOSE 3000
 
 # $PORT приходит от Railway; локально по умолчанию 3000.
-CMD ["sh", "-c", "serve -s build -l ${PORT:-3000}"]
+CMD ["nginx", "-g", "daemon off;"]

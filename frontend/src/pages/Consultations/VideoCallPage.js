@@ -65,12 +65,12 @@ const pulse = keyframes`
 `;
 
 // Derive Socket.IO server URL: strip /api suffix from API URL if present
-const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
 
 const VideoCallPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
-  const { user } = useSelector((state) => state.auth);
+  const { user, token: authToken } = useSelector((state) => state.auth);
   const { t } = useTranslation();
 
   // State
@@ -149,6 +149,10 @@ const VideoCallPage = () => {
   const callStartedRef = useRef(false);
   const calleeIdRef = useRef(null); // id другой стороны — чтобы отменить ring при отбое
   const peerConnectedRef = useRef(false);
+  const iceServersRef = useRef([
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ]);
   const callDurationRef = useRef(0);
   const warnedRef = useRef({ five: false, one: false, up: false });
 
@@ -158,6 +162,7 @@ const VideoCallPage = () => {
       try {
         const response = await api.get(`/video/consultation/${consultationId}`);
         const cons = response.data;
+        if (Array.isArray(cons.iceServers) && cons.iceServers.length) iceServersRef.current = cons.iceServers;
         setConsultation(cons);
         // id собеседника (для отмены ring при отбое до ответа)
         if (cons && user?.id) {
@@ -172,6 +177,31 @@ const VideoCallPage = () => {
     };
     loadConsultation();
   }, [consultationId, user?.id]);
+
+  useEffect(() => {
+    if (!consultation?.iceServersExpiresAt) return undefined;
+    const refreshIn = Math.max(
+      60000,
+      new Date(consultation.iceServersExpiresAt).getTime() - Date.now() - 5 * 60 * 1000,
+    );
+    const timer = setTimeout(async () => {
+      try {
+        const { data } = await api.get(`/video/consultation/${consultationId}`);
+        if (Array.isArray(data.iceServers) && data.iceServers.length) {
+          iceServersRef.current = data.iceServers;
+          const connection = peerRef.current?._pc;
+          if (connection?.setConfiguration) {
+            connection.setConfiguration({ ...connection.getConfiguration(), iceServers: data.iceServers });
+            connection.restartIce?.();
+          }
+        }
+        setConsultation((current) => current && ({ ...current, iceServersExpiresAt: data.iceServersExpiresAt || null }));
+      } catch (refreshError) {
+        console.error('TURN credentials refresh failed:', refreshError);
+      }
+    }, refreshIn);
+    return () => clearTimeout(timer);
+  }, [consultation?.iceServersExpiresAt, consultationId]);
 
   // Start call timer + перевод в in_progress ТОЛЬКО когда оба реально соединились
   // (раньше /start дёргался при входе одного — тогда «дозвон без ответа» + отбой
@@ -306,29 +336,7 @@ const VideoCallPage = () => {
       trickle: true,
       stream,
       config: {
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' },
-          { urls: 'stun:stun2.l.google.com:19302' },
-          { urls: 'stun:stun3.l.google.com:19302' },
-          { urls: 'stun:stun4.l.google.com:19302' },
-          // Free TURN servers for NAT traversal
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-          {
-            urls: 'turn:openrelay.metered.ca:443?transport=tcp',
-            username: 'openrelayproject',
-            credential: 'openrelayproject',
-          },
-        ],
+        iceServers: iceServersRef.current,
         iceCandidatePoolSize: 10,
       },
     });
@@ -554,7 +562,7 @@ const VideoCallPage = () => {
         if (cancelled) return;
 
         // Connect to signaling server
-        const token = localStorage.getItem('token');
+        const token = authToken || localStorage.getItem('token');
         socket = io(API_URL, {
           auth: { token },
           transports: ['websocket', 'polling'],
@@ -566,6 +574,9 @@ const VideoCallPage = () => {
           setConnected(true);
           socket.emit('join-room', { consultationId });
           socket.emit('join-chat', { consultationId }); // чат в звонке — та же комната
+        });
+        socket.on('disconnect', (reason) => {
+          if (reason === 'io server disconnect' && !cancelled) setTimeout(() => socket.connect(), 250);
         });
 
         // Сообщение чата во время звонка
@@ -739,7 +750,7 @@ const VideoCallPage = () => {
       localStreamRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultationLoaded, consultationId, inLobby]);
+  }, [consultationLoaded, consultationId, inLobby, authToken]);
 
   // Toggle audio
   // Мини-режим: видео собеседника в плавающем окне (браузерный Picture-in-Picture)
@@ -1131,7 +1142,7 @@ const VideoCallPage = () => {
 
         {/* Превью камеры */}
         <Box sx={{ position: 'relative', width: 'min(440px, 92vw)', aspectRatio: '16/9', bgcolor: '#000', borderRadius: '14px', overflow: 'hidden', mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <video ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />
+          <video data-testid="lobby-video" ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />
           {permError && (
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 3, textAlign: 'center' }}>
               <VideocamOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} />
@@ -1338,6 +1349,7 @@ const VideoCallPage = () => {
         {peerConnected ? (
           <>
             <video
+              data-testid="remote-video"
               ref={remoteVideoRef}
               autoPlay
               playsInline
@@ -1449,6 +1461,7 @@ const VideoCallPage = () => {
           }}
         >
           <video
+            data-testid="local-video"
             ref={localVideoRef}
             autoPlay
             playsInline
@@ -1506,12 +1519,12 @@ const VideoCallPage = () => {
         }}
       >
         {/* Mic toggle */}
-        <IconButton onClick={toggleAudio} sx={controlBtnSx(!audioEnabled)}>
+        <IconButton aria-label="toggle-microphone" onClick={toggleAudio} sx={controlBtnSx(!audioEnabled)}>
           {audioEnabled ? <MicOutlined /> : <MicOffOutlined />}
         </IconButton>
 
         {/* Camera toggle */}
-        <IconButton onClick={toggleVideo} sx={controlBtnSx(!videoEnabled)}>
+        <IconButton aria-label="toggle-camera" onClick={toggleVideo} sx={controlBtnSx(!videoEnabled)}>
           {videoEnabled ? <VideocamOutlined /> : <VideocamOffOutlined />}
         </IconButton>
 

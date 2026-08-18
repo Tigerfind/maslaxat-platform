@@ -28,8 +28,9 @@ const emailLimiter = rateLimit({
 });
 
 const signToken = (user) => {
+  const sessionVersion = user.passwordChangedAt ? new Date(user.passwordChangedAt).getTime() : undefined;
   return jwt.sign(
-    { id: user.id, role: user.role },
+    { id: user.id, role: user.role, ...(sessionVersion ? { sv: sessionVersion } : {}) },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
@@ -143,7 +144,8 @@ router.post('/phone/request', emailLimiter, async (req, res, next) => {
 
     // Если провайдер подключён, но отправка не удалась — не врём «отправлено».
     // Пусть клиент повторит (код уже сохранён; повтор перезапишет его).
-    if (smsService.isConfigured() && !result.sent) {
+    if (!result.sent && (process.env.NODE_ENV === 'production' || smsService.isConfigured())) {
+      await PhoneOtp.destroy({ where: { phone, code } });
       return res.status(502).json({ error: 'Не удалось отправить SMS. Попробуйте ещё раз через минуту.' });
     }
 
@@ -166,9 +168,9 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
 
     const otp = await PhoneOtp.findOne({ where: { phone } });
     if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
-    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
-    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
-    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
+    if (new Date(otp.expiresAt) < new Date()) { await PhoneOtp.destroy({ where: { id: otp.id, code: otp.code } }); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
+    if (otp.attempts >= 5) { await PhoneOtp.destroy({ where: { id: otp.id, code: otp.code } }); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
+    if (otp.code !== code) { await PhoneOtp.increment('attempts', { where: { id: otp.id, code: otp.code } }); return res.status(400).json({ error: 'Неверный код' }); }
 
     // Код верный. Новому номеру нужно имя — просим его, НЕ сжигая код (повторим verify).
     let user = await User.findOne({ where: { phone } });
@@ -179,7 +181,8 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
     }
 
-    await otp.destroy(); // код использован
+    const consumed = await PhoneOtp.destroy({ where: { id: otp.id, code } });
+    if (consumed !== 1) return res.status(409).json({ error: 'Код уже использован, запросите новый' });
 
     let created = false;
     if (!user) {
@@ -388,9 +391,9 @@ router.post('/phone/confirm', authenticate, async (req, res, next) => {
 
     const otp = await PhoneOtp.findOne({ where: { phone } });
     if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
-    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
-    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
-    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
+    if (new Date(otp.expiresAt) < new Date()) { await PhoneOtp.destroy({ where: { id: otp.id, code: otp.code } }); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
+    if (otp.attempts >= 5) { await PhoneOtp.destroy({ where: { id: otp.id, code: otp.code } }); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
+    if (otp.code !== code) { await PhoneOtp.increment('attempts', { where: { id: otp.id, code: otp.code } }); return res.status(400).json({ error: 'Неверный код' }); }
 
     // Дедуп: номер занят другим аккаунтом → нельзя привязать.
     const taken = await User.findOne({ where: { phone } });
@@ -398,7 +401,8 @@ router.post('/phone/confirm', authenticate, async (req, res, next) => {
       return res.status(409).json({ error: 'Этот номер уже используется другим аккаунтом' });
     }
 
-    await otp.destroy(); // код использован
+    const consumed = await PhoneOtp.destroy({ where: { id: otp.id, code } });
+    if (consumed !== 1) return res.status(409).json({ error: 'Код уже использован, запросите новый' });
     const user = await User.findByPk(req.userId);
     user.phone = phone;
     user.isVerified = true; // подтверждённый контакт → можно бронировать
@@ -510,10 +514,10 @@ router.post('/resend-verification', emailLimiter, authenticate, async (req, res,
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const delivery = await sendVerificationEmail(user.email, verificationToken);
+    if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
     user.verificationToken = verificationToken;
     await user.save();
-
-    await sendVerificationEmail(user.email, verificationToken);
 
     res.json({ message: 'Письмо отправлено повторно' });
   } catch (err) {

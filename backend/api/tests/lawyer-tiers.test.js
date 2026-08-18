@@ -50,6 +50,11 @@ describe('подбор по статусу', () => {
     expect(body.lawyers.some((l) => Number(l.profile.reviewsCount) === 25)).toBe(false);
   });
 
+  test('статус не заменяет более строгий пользовательский рейтинг', async () => {
+    const { body } = await catalog('?status=top&minRating=5');
+    expect(body.total).toBe(0);
+  });
+
   test('«практик» — те, у кого нет ни стажа, ни истории', async () => {
     const { body } = await catalog('?status=practitioner');
     expect(body.total).toBe(2);
@@ -100,6 +105,11 @@ describe('подбор по карману', () => {
     const res = await catalog('?budget=economy&limit=50');
     expect(res.body.total).toBe(eco.count);
     res.body.lawyers.forEach((l) => expect(Number(l.profile.price)).toBeLessThanOrEqual(eco.to));
+  });
+
+  test('бюджетный сегмент не заменяет пользовательскую границу цены', async () => {
+    const { body } = await catalog('?budget=economy&minPrice=300000');
+    expect(body.total).toBe(0);
   });
 
   test('премиум отбирает верхнюю треть', async () => {

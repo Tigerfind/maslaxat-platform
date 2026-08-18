@@ -80,7 +80,7 @@ const LawyerDashboardGlass = () => {
   const [consultationRequests, setConsultationRequests] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusOnline, setStatusOnline] = useState(true);
+  const [acceptingBookings, setAcceptingBookings] = useState(true);
   const [onboardingDone, setOnboardingDone] = useState(false);
 
   useEffect(() => {
@@ -100,8 +100,7 @@ const LawyerDashboardGlass = () => {
       ]);
 
       setStats(statsData);
-      // Пилюля статуса отражает реальный isAvailable (раньше всегда «онлайн» после загрузки)
-      if (statsData && typeof statsData.isAvailable === 'boolean') setStatusOnline(statsData.isAvailable);
+      if (statsData && typeof statsData.isAvailable === 'boolean') setAcceptingBookings(statsData.isAvailable);
       setConsultations(Array.isArray(consultationsData) ? consultationsData : []);
       setConsultationRequests(Array.isArray(requestsData) ? requestsData : []);
       setReviews(Array.isArray(reviewsData) ? reviewsData : []);
@@ -135,9 +134,9 @@ const LawyerDashboardGlass = () => {
 
   const handleStatusToggle = async () => {
     try {
-      const newStatus = statusOnline ? 'offline' : 'online';
+      const newStatus = acceptingBookings ? 'offline' : 'online';
       await lawyerService.dashboard.updateStatus(newStatus);
-      setStatusOnline(!statusOnline);
+      setAcceptingBookings(!acceptingBookings);
       toast.success(`${t('lawyerPanel.statusChanged')} ${newStatus === 'online' ? t('lawyerPanel.online') : t('lawyerPanel.offline')}`);
     } catch (error) {
       toast.error(t('lawyerPanel.statusError'));
@@ -202,7 +201,7 @@ const LawyerDashboardGlass = () => {
   // это противоречит баннеру «на проверке» (юрист ещё не в каталоге).
   const subtitle = stats?.verificationStatus !== 'approved'
     ? t('lawyerPanel.subNotApproved')
-    : (statusOnline ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline'));
+    : (acceptingBookings ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline'));
 
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
@@ -258,8 +257,8 @@ const LawyerDashboardGlass = () => {
               fontSize: 13, fontWeight: 500, color: 'var(--text)',
             }}
           >
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusOnline ? '#7A9A6B' : 'var(--text3)' }} />
-            {statusOnline ? t('lawyerPanel.online') : t('lawyerPanel.offline')}
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: acceptingBookings ? '#7A9A6B' : 'var(--text3)' }} />
+            {acceptingBookings ? t('lawyerPanel.online') : t('lawyerPanel.offline')}
             <PowerSettingsNewOutlined sx={{ fontSize: 17, color: 'var(--text3)' }} />
           </button>
         </div>

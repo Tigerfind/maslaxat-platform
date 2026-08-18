@@ -12,16 +12,16 @@
 |---|---|---|
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | AI работает в фолбэк-режиме (шаблонные ответы по законам РУз), не реальный Claude |
 | `PAYME_KEY` + `PAYME_MERCHANT_ID` | merchant.payme.uz (регистрация мерчанта) | Реальная оплата отключена; в dev доступен тест-платёж (`/payments/simulate`) |
-| `SMTP_HOST/PORT/USER/PASSWORD/FROM` | Любой SMTP: Gmail App Password, SendGrid, Mailgun, Yandex 360 | Письма (сброс пароля, верификация) уходят только в тестовый Ethereal (dev), реальные юзеры их не получают |
+| `SMTP_HOST/PORT/USER/PASS/FROM` | Любой SMTP: Gmail App Password, SendGrid, Mailgun, Yandex 360 | Письма (сброс пароля, верификация) уходят только в тестовый Ethereal (dev), реальные юзеры их не получают |
 | `SMS_PROVIDER` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) | Eskiz.uz (регистрация → API-пароль) или Play Mobile | Вход/регистрация по телефону: в dev код возвращается в ответе (`devCode`), в проде `phone/request` вернёт ошибку — реальная SMS не уходит |
 | `JWT_SECRET` | Сгенерировать: `openssl rand -base64 48` | Слабый секрет = взлом токенов. **Обязательно заменить** |
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |
-| `TURN_URL/USERNAME/CREDENTIAL` | Свой coturn-сервер или платный TURN (Twilio, Metered) | Видео нестабильно за реальными NAT (сейчас публичный демо-TURN) |
+| `TURN_URL` + `TURN_SECRET` | Свой coturn `use-auth-secret` или платный TURN | Видео нестабильно за реальными NAT. Статические credentials разрешаются только явным `TURN_ALLOW_STATIC=1` |
 | `SOCKET_REDIS` | `1` только при деплое на >1 инстанс | На одном инстансе не нужен (оставить `0`) |
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
 | `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` | @BotFather (токен бота и его username без `@`) | Кнопка «Войти через Telegram» скрыта |
-| `SENTRY_DSN` / `REACT_APP_SENTRY_DSN` | sentry.io → Project Settings → Client Keys | Ошибки остаются только в Railway/Winston logs |
+| `SENTRY_DSN` / `VITE_SENTRY_DSN` | sentry.io → Project Settings → Client Keys | Ошибки остаются только в Railway/Winston logs |
 
 > ⚠️ **Никогда не коммить `.env`** — он уже в `.gitignore`. Реальные секреты вносите
 > через хранилище платформы (Railway Variables, Docker secrets, env хостинга).
@@ -44,7 +44,7 @@ cp .env.example .env
 - Ключи из таблицы выше по мере готовности
 
 Фронтенд (`frontend/.env` или переменные сборки):
-- `REACT_APP_API_URL=https://ВАШ_ДОМЕН/api`
+- `VITE_API_URL=https://ВАШ_ДОМЕН/api`
 
 ---
 
@@ -113,10 +113,11 @@ npm run db:migrate:undo     # откатить последнюю
 
 ### Вариант A — Railway (проще всего, конфиги уже в репозитории)
 
-Готово в репозитории: `backend/api/railway.json` (NIXPACKS, `npm start`, healthcheck
-`/api/health`) и `frontend/railway.json` (`CI=false npm run build` → `serve -s build -l $PORT`).
-БД читает `DATABASE_URL` (плагин Railway), Redis — `REDIS_URL`. `engines.node >=18` в обоих
-`package.json`. На первом старте прод создаёт схему через `sync()` — отдельная миграция не нужна.
+Готово в репозитории: `backend/api/railway.json` (Dockerfile, `npm start`, healthcheck
+`/api/health`) и `frontend/railway.json` (Vite build → Nginx на `$PORT`).
+БД читает `DATABASE_URL` (плагин Railway), Redis — `REDIS_URL`. Backend работает на Node 20,
+frontend требует Node 20.19+. `watchPatterns` изолируют автодеплой: backend-изменения не пересобирают frontend
+и наоборот. На первом старте прод создаёт схему через `sync()`.
 
 Пошагово (аккаунт на railway.app + этот GitHub-репозиторий подключён):
 
@@ -125,6 +126,7 @@ npm run db:migrate:undo     # откатить последнюю
    Railway сам заводит переменные `DATABASE_URL` и `REDIS_URL`.
 3. **Сервис Backend:** созданный из репозитория сервис → *Settings*:
    - **Root Directory:** `backend/api`
+   - **Config File Path:** `/backend/api/railway.json`
    - Railway подхватит `railway.json` (start `npm start`, healthcheck `/api/health`).
    - **Variables** (вкладка Variables у backend-сервиса):
      - `DATABASE_URL` → *Reference* на переменную из Postgres-плагина
@@ -137,10 +139,12 @@ npm run db:migrate:undo     # откатить последнюю
      - ключи по мере готовности: `ANTHROPIC_API_KEY`, `PAYME_*`, `SMTP_*`, `SMS_PROVIDER`+`ESKIZ_*`, `TURN_*`
 4. **Сервис Frontend:** в проекте → *New* → **GitHub Repo** (тот же репозиторий) → *Settings*:
    - **Root Directory:** `frontend`
-   - Railway подхватит `frontend/railway.json` (build + `serve`).
-   - **Variables:** `REACT_APP_API_URL` = `https://<домен backend-сервиса>/api`
-     (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
-     нажать *Generate Domain*).
+   - **Config File Path:** `/frontend/railway.json`
+   - Railway подхватит `frontend/railway.json` (Vite build + Nginx).
+    - **Variables:** `VITE_API_URL` = `https://<домен backend-сервиса>/api`
+      (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
+      нажать *Generate Domain*).
+      Для Railway эта переменная обязательна: frontend и backend работают на разных доменах.
 5. **Сгенерировать домены** обоим сервисам (*Settings → Networking → Generate Domain*), затем
    вернуться в backend и вписать в `CORS_ORIGINS`/`FRONTEND_URL` публичный домен фронта.
 6. **Redeploy** обоих сервисов (кнопка *Deploy* или пуш в `main` — Railway деплоит автоматически).
@@ -150,14 +154,12 @@ npm run db:migrate:undo     # откатить последнюю
 > healthcheck — почти всегда не проброшен `DATABASE_URL`/`REDIS_URL` или отсутствует `JWT_SECRET`.
 
 **Грабли, которые уже учтены/важно знать:**
-- **Билдер:** в репозитории есть `Dockerfile` (для Docker Compose, Вариант B). `railway.json`
-  форсит `NIXPACKS`, поэтому Railway их игнорирует. Если Railway всё же пытается собрать из
-  Dockerfile — в *Settings → Build* выбери builder **Nixpacks**. (Фронтовый Dockerfile — nginx
-  на :80 — на Railway не подходит; правильный путь — `serve -s build -l $PORT` из `railway.json`.)
+- **Билдер:** оба `railway.json` используют Dockerfile. Root Directory каждого сервиса должен
+  совпадать с шагами выше; вручную переключать builder на Nixpacks не нужно.
 - **Загрузки (аватары/документы) исчезнут при редеплое** — диск Railway эфемерный. Реши так:
   backend-сервис → *Volumes* → добавь том с Mount path, напр. `/data`, и поставь переменную
   `UPLOAD_DIR=/data/uploads`. Без этого сайт работает, но загруженные файлы не переживут деплой.
-- **`REACT_APP_API_URL` вшивается при СБОРКЕ фронта** — если поменял его после первого билда,
+- **`VITE_API_URL` вшивается при СБОРКЕ фронта** — если поменял его после первого билда,
   обязательно передеплой фронт (иначе он стучится на localhost).
 
 ### Вариант B — Docker Compose (есть `docker-compose.yml` + Dockerfiles)
@@ -191,4 +193,11 @@ Compose-сеть использует `api:3001` и `frontend:3000`; nginx-ко�
 
 - Реальный вывод денег юристом (сейчас тест-флоу; нужен Payme Transfer/выплаты).
 - Метрики и alerting поверх подготовленной Sentry-интеграции (нужны DSN и внешний uptime monitor).
-- (Опц.) Сгенерировать baseline-миграцию для полностью чистого прод-деплоя без `sync()`.
+- Baseline для чистой БД требует отдельного контролируемого перехода: сначала проверить backup-клон
+  production и содержимое `SequelizeMeta`, затем добавить имя baseline в `SequelizeMeta` живой БД
+  до её первого запуска. Без этого ранняя baseline будет считаться pending и попытается повторно
+  создать существующие таблицы. До такого перехода первый старт остаётся через безопасный `sync()`.
+  Read-only проверка production 18.08.2026 показала 23 таблицы и применённые 32 delta-миграции.
+  Обнаруженные 3376 исторически продублированных индексов и 9 пустых `problems` исправлены
+  в maintenance window 18.08.2026. Post-audit: 40 индексов, drift/data violations = 0.
+  Полный baseline-план: `docs/DB_BASELINE_PLAN.md`.

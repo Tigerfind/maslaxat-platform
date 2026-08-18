@@ -27,7 +27,20 @@ module.exports = defineConfig({
     trace: 'retain-on-failure', screenshot: 'only-on-failure', video: 'retain-on-failure',
     serviceWorkers: 'block',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  projects: [{
+    name: 'chromium',
+    use: {
+      ...devices['Desktop Chrome'],
+      launchOptions: {
+        args: [
+          '--use-fake-ui-for-media-stream',
+          '--use-fake-device-for-media-stream',
+          '--autoplay-policy=no-user-gesture-required',
+          '--disable-features=WebRtcHideLocalIpsWithMdns',
+        ],
+      },
+    },
+  }],
   webServer: [
     {
       command: 'node src/scripts/prepareE2E.js && node src/server.js',
@@ -46,14 +59,14 @@ module.exports = defineConfig({
       },
     },
     {
-      command: 'npm run build:prod && npx serve -s build -l 3100',
+      command: 'npm run build:prod && npm run preview -- --host 127.0.0.1 --port 3100',
       cwd: __dirname,
       url: 'http://127.0.0.1:3100',
       timeout: 120000,
       reuseExistingServer: false,
       env: {
         ...process.env, CI: 'true',
-        REACT_APP_API_URL: 'http://127.0.0.1:3101/api', REACT_APP_SENTRY_DSN: '',
+        VITE_API_URL: 'http://127.0.0.1:3101/api', VITE_SENTRY_DSN: '',
       },
     },
   ],

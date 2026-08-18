@@ -10,6 +10,7 @@ import './styles/toast.css';
 
 import store from './store/store';
 import { initializeApp } from './store/slices/appSlice';
+import { updateToken } from './store/slices/authSlice';
 import { LanguageProvider } from './i18n';
 
 // Components
@@ -78,6 +79,14 @@ const AppContent = () => {
 
   useEffect(() => {
     dispatch(initializeApp());
+  }, [dispatch]);
+
+  useEffect(() => {
+    const syncToken = (event) => {
+      if (event.key === 'token') dispatch(updateToken(event.newValue));
+    };
+    window.addEventListener('storage', syncToken);
+    return () => window.removeEventListener('storage', syncToken);
   }, [dispatch]);
 
   if (loading) {

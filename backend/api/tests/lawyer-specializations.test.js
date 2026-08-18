@@ -8,11 +8,13 @@ jest.mock('../src/services/emailService', () => ({
 const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeLawyer } = require('./helpers');
+const presence = require('../src/services/presenceService');
 
 const { LawyerProfile } = models;
 
 beforeAll(async () => {
   await resetDb();
+  presence.resetForTests();
 });
 
 describe('PUT /lawyer/profile сохраняет несколько специализаций', () => {
@@ -81,7 +83,9 @@ describe('«Доступен сейчас» — фильтр и сортиров
     const on = await makeLawyer('on-online@test.uz', { isAvailable: true, location: 'OnlineCity' });
     const off = await makeLawyer('on-offline@test.uz', { isAvailable: false, location: 'OnlineCity' });
 
-    // Только онлайн
+    presence.registerSocket({ id: 'online-test-socket', data: { userId: on.user.id, userRole: 'lawyer' } });
+
+    // Только с активным socket
     const only = await request(app).get('/api/lawyers?onlineOnly=true&location=OnlineCity&limit=50');
     expect(only.status).toBe(200);
     const ids = only.body.lawyers.map((l) => l.id);

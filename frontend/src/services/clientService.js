@@ -1,5 +1,18 @@
 import api from './api';
 
+export const LAWYER_MAX_PRICE = 10000000;
+
+export const resolvePublicAssetUrl = (value) => {
+  if (!value || !String(value).startsWith('/uploads/')) return value || null;
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (!apiUrl) return value;
+  try {
+    return `${new URL(apiUrl, window.location.origin).origin}${value}`;
+  } catch {
+    return value;
+  }
+};
+
 // Client Dashboard Service
 export const clientDashboardService = {
   // Get dashboard stats
@@ -48,24 +61,23 @@ export const clientDashboardService = {
 // Client Lawyer Search Service
 export const clientLawyerService = {
   // Search lawyers
-  searchLawyers: async (filters) => {
-    try {
-      // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Границы 0 / +∞
-      // не шлём, чтобы не сужать выборку без нужды (0 и максимум = «любая цена»).
-      const { priceRange, ...rest } = filters || {};
-      const params = { ...rest };
-      if (Array.isArray(priceRange)) {
-        const [min, max] = priceRange;
-        if (Number(min) > 0) params.minPrice = min;
-        if (Number(max) > 0 && Number(max) < 2000000) params.maxPrice = max;
-      }
-      const response = await api.get('/client/lawyers', { params });
-      const data = response.data;
-      const rawLawyers = data.lawyers || data || [];
-      const lawyers = rawLawyers.map((l) => ({
+  searchLawyers: async (filters, options = {}) => {
+    // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Полный UI-диапазон
+    // означает отсутствие ограничения; любое выбранное пользователем сужение отправляем.
+    const { priceRange, ...rest } = filters || {};
+    const params = { ...rest };
+    if (Array.isArray(priceRange)) {
+      const [min, max] = priceRange;
+      if (Number(min) > 0) params.minPrice = Number(min);
+      if (Number(max) >= 0) params.maxPrice = Number(max);
+    }
+    const response = await api.get('/client/lawyers', { params, signal: options.signal });
+    const data = response.data;
+    const rawLawyers = data.lawyers || data || [];
+    const lawyers = rawLawyers.map((l) => ({
         id: l.id,
         name: l.name,
-        avatar: l.avatar,
+        avatar: resolvePublicAssetUrl(l.avatar || l.photo),
         // Публичный endpoint возвращает только одобренных юристов и намеренно
         // не раскрывает внутренний статус модерации.
         verificationStatus: 'approved',
@@ -84,22 +96,21 @@ export const clientLawyerService = {
         description: l.profile?.description || '',
         languages: l.profile?.languages || [],
         schedule: l.profile?.schedule || {},
-        isAvailable: l.profile?.isAvailable ?? true,
-      }));
-      return {
-        lawyers,
-        totalPages: data.totalPages || 1,
-        total: data.total || lawyers.length,
+        isAvailable: l.profile?.isAvailable === true,
+        online: l.presence?.online == null ? null : l.presence.online === true,
+        lastSeenAt: l.presence?.lastSeenAt || null,
+        presenceObservedAt: l.presence?.observedAt || null,
+    }));
+    return {
+      lawyers,
+      totalPages: data.totalPages || 1,
+      total: data.total || lawyers.length,
         // Фасеты обязаны дойти до страницы: на них держатся числа на чипах,
         // порог «Недорого» и весь блок подбора по карману/статусу. Пока этот
         // ключ здесь терялся, чипы стояли без счётчиков, «Недорого» было
         // погашено навсегда, а блок подбора просто не отрисовывался.
-        facets: data.facets || null,
-      };
-    } catch (error) {
-      console.error('Error searching lawyers:', error);
-      return { lawyers: [], totalPages: 1, total: 0, facets: null };
-    }
+      facets: data.facets || null,
+    };
   },
 
   // Списки городов и языков для фильтров
@@ -323,13 +334,8 @@ export const clientAIChatService = {
 export const clientFavoritesService = {
   // Get all favorite lawyers
   getFavorites: async () => {
-    try {
-      const response = await api.get('/client/favorites');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching favorites:', error);
-      return [];
-    }
+    const response = await api.get('/client/favorites');
+    return response.data;
   },
 
   // Add lawyer to favorites

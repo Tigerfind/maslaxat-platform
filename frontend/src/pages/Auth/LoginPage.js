@@ -45,7 +45,7 @@ const LoginPage = () => {
   const { loading, error } = useSelector((state) => state.auth);
   const { t } = useTranslation();
 
-  const isDev = process.env.NODE_ENV === 'development';
+  const isDev = import.meta.env.DEV;
 
   const [activeTab, setActiveTab] = useState(0);
   const [formData, setFormData] = useState({

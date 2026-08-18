@@ -471,19 +471,35 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   повтор не платит второй раз, статус completed, без оплаты не высвобождает (4 теста).
 - `backend/api/tests/security.test.js` — гейт /payments/simulate (403 при PAYME_KEY, 401 без токена),
   подделка отзывов (403/400), whitelist статусов (400), чужой юрист (403) — 7 тестов.
-- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 16 наборов, 86 тестов, зелёные.
+- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 38 наборов, 218 тестов, зелёные.
 - `tests/recent-features.test.js` — фильтр цены каталога (min/maxPrice), категория права в
   брони (specialization + problems), привязка email (PUT /client/users/email: формат/уникальность/
   нормализация/verified). Email замокан (без сети).
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
-- CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 11 Chromium E2E; Sentry backend/frontend fail-safe без DSN.
+- CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 19 Chromium E2E
+  (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
+- Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;
+  optional canvas/tar исключён из frontend install через `.npmrc`.
+- Railway autodeploy: backend/frontend `watchPatterns`, Docker build на lock-файле через `npm ci`,
+  `.dockerignore`, Config File Path задокументированы в DEPLOY.md.
 - Playwright E2E: изолированная БД emaslaxat_e2e, Chromium 11 сценариев (legal/auth/roles/catalog/booking/mobile), GitHub Actions backend+frontend+e2e.
 - Публичные legal pages: /terms, /privacy, /refund-policy + обязательные согласия при регистрации/бронировании; production smoke проверяет SPA routes, health, public API и auth guards.
 - Финансы: локальная отмена больше не выдаётся за завершённый Payme refund; refund requested→provider confirmed, FinancialEvent audit, withdrawal idempotency и pending→processing→paid/failed с обязательным bank reference.
 - Legal RAG: LegalDocument/LegalChunk + PostgreSQL FTS, разрешённый JSON/JSONL-импорт, обязательные [S#] citations и сохранение sources/fallback в истории; массовый scraping LexUZ запрещён без разрешения.
 - Frontend lint очищен (42 предупреждения → 0), исправлены stale/race в бронировании, AI-беседах и WebRTC; добавлены первые frontend unit-тесты.
+- Клиентский каталог/профиль юристов: truthful loyalty/online/rating, единый price contract до 10 млн,
+  debounce+AbortController, раздельные error/empty/background states, optimistic favorites с rollback/retry,
+  avatar fallback, честный «Спросить AI», keyboard/a11y и adaptive 320/375/768/1440. Frontend unit 24/24.
+- Frontend переведён CRA/react-app-rewired → Vite 7 + Vitest; Node 20, legacy build, ручной PWA,
+  Nginx Railway runtime, VITE_* env, production audit без high/critical.
+- Realtime presence отделён от booking availability: single-instance events, Redis cluster snapshots,
+  atomic multi-tab, degraded unknown state, sessionVersion JWT и принудительный отзыв sockets.
+- Read-only production DB audit: 23 таблицы, все 32 historical migrations в SequelizeMeta; найдено
+  3376 duplicate indexes и 9 пустых consultation.problems. Три forward-only reconciliation
+  migrations применены 18.08.2026 после backup; production post-audit: 40 индексов,
+  drift/data violations = 0, SequelizeMeta = 35 записей.
 - Единый гейт полноты профиля юриста применяется при submit и admin approve: обязательны фото, описание, реальная специализация, цена, расписание и документ.
 - Публичный каталог/профиль юриста больше не отдаёт balance, pendingBalance, moderation fields и служебные timestamps; отзывы фильтруются по isHidden.
 - Frontend route-level lazy loading: main bundle 572 KB → 318 KB gzip; production source maps отключены.
@@ -508,7 +524,9 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   тесты 11/11 зелёные, сервер 200.
 
 ### BACKLOG (техдолг, отдельными решениями):
-- (Опц.) baseline-миграция для полностью чистого прод-деплоя без sync().
+- (Опц.) baseline для чистого деплоя без sync: стратегия в docs/DB_BASELINE_PLAN.md. НЕ включать
+  автоматический `db:migrate`, пока reconciliation migrations не применены в maintenance window и
+  explicit baseline DDL не проверен на пустой БД и production backup clone.
 - [x] **`POST /lawyers/:id/review` идемпотентен** (один отзыв на консультацию): `Review.findOrCreate`
   по `consultationId` + unique-индекс `reviews_consultation_id_unique` → повтор/гонка = 409, не 500.
   Миграции `20260808000000-dedupe-duplicate-reviews` (чистка дублей) +

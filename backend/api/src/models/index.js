@@ -11,7 +11,6 @@ const User = sequelize.define('User', {
   },
   email: {
     type: DataTypes.STRING,
-    unique: true,
     allowNull: false,
     validate: { isEmail: true },
   },
@@ -97,6 +96,7 @@ const User = sequelize.define('User', {
       }
     },
   },
+  indexes: [{ name: 'users_email_key', unique: true, fields: ['email'] }],
 });
 
 User.prototype.comparePassword = function (password) {
@@ -352,7 +352,7 @@ const LegalDocument = sequelize.define('LegalDocument', {
   checksum: { type: DataTypes.STRING(64) },
   metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
 }, {
-  indexes: [{ unique: true, fields: ['source_url', 'version'] }],
+  indexes: [{ name: 'legal_documents_source_version_unique', unique: true, fields: ['source_url', 'version'] }],
 });
 
 const LegalChunk = sequelize.define('LegalChunk', {
@@ -367,7 +367,7 @@ const LegalChunk = sequelize.define('LegalChunk', {
   content: { type: DataTypes.TEXT, allowNull: false },
   metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
 }, {
-  indexes: [{ unique: true, fields: ['document_id', 'ordinal'] }],
+  indexes: [{ name: 'legal_chunks_document_ordinal_unique', unique: true, fields: ['document_id', 'ordinal'] }],
 });
 
 // ─── AI MESSAGE MODEL ───────────────────────────────────────
@@ -558,7 +558,6 @@ const Specialization = sequelize.define('Specialization', {
   },
   name: {
     type: DataTypes.STRING,
-    unique: true,
     allowNull: false,
   },
   nameUz: {
@@ -579,6 +578,8 @@ const Specialization = sequelize.define('Specialization', {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+}, {
+  indexes: [{ name: 'specializations_name_key', unique: true, fields: ['name'] }],
 });
 
 // ─── MESSAGE MODEL (Chat between lawyer and client) ────────
@@ -696,7 +697,6 @@ const PhoneOtp = sequelize.define('PhoneOtp', {
   phone: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
   },
   code: {
     type: DataTypes.STRING,
@@ -710,6 +710,8 @@ const PhoneOtp = sequelize.define('PhoneOtp', {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+}, {
+  indexes: [{ name: 'phone_otps_phone_key', unique: true, fields: ['phone'] }],
 });
 
 // ─── SUPPORT TICKET MODEL ───────────────────────────────────
@@ -749,7 +751,6 @@ const Promo = sequelize.define('Promo', {
   code: {
     type: DataTypes.STRING,
     allowNull: false,
-    unique: true,
   },
   discountPercent: {
     type: DataTypes.INTEGER,
@@ -774,6 +775,8 @@ const Promo = sequelize.define('Promo', {
     type: DataTypes.INTEGER, // минимальная сумма для применения
     defaultValue: 0,
   },
+}, {
+  indexes: [{ name: 'promos_code_key', unique: true, fields: ['code'] }],
 });
 
 // ─── WITHDRAWAL MODEL (леджер выводов юриста) ───────────────
@@ -821,9 +824,12 @@ const FinancialEvent = sequelize.define('FinancialEvent', {
   source: { type: DataTypes.STRING, allowNull: false },
   type: { type: DataTypes.STRING, allowNull: false },
   amount: { type: DataTypes.DECIMAL(12, 2) },
-  idempotencyKey: { type: DataTypes.STRING, allowNull: false, unique: true },
+  idempotencyKey: { type: DataTypes.STRING, allowNull: false },
   metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
-}, { updatedAt: false });
+}, {
+  updatedAt: false,
+  indexes: [{ name: 'financial_events_idempotency_unique', unique: true, fields: ['idempotency_key'] }],
+});
 
 // Web-push подписка устройства (один пользователь → много устройств)
 const PushSubscription = sequelize.define('PushSubscription', {
@@ -835,13 +841,14 @@ const PushSubscription = sequelize.define('PushSubscription', {
   endpoint: {
     type: DataTypes.TEXT,
     allowNull: false,
-    unique: true,
   },
   // { p256dh, auth } — ключи шифрования из PushSubscription.toJSON().keys
   keys: {
     type: DataTypes.JSONB,
     allowNull: false,
   },
+}, {
+  indexes: [{ name: 'push_subscriptions_endpoint_key', unique: true, fields: ['endpoint'] }],
 });
 
 // ─── ASSOCIATIONS ───────────────────────────────────────────

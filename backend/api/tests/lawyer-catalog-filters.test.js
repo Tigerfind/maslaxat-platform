@@ -1,12 +1,14 @@
 const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, makeLawyer } = require('./helpers');
+const presence = require('../src/services/presenceService');
 
 // Каталог публичный — токен не нужен.
 const catalog = (query = '') => request(app).get(`/api/lawyers${query}`);
 
 beforeAll(async () => {
   await resetDb();
+  presence.resetForTests();
 
   // Разброс по рейтингу, цене, опыту и доступности — чтобы каждый фильтр
   // реально что-то отсекал.
@@ -18,9 +20,10 @@ beforeAll(async () => {
     { email: 'fresh@cat.uz', rating: 0, price: 90000, experience: 1, isAvailable: true },
   ];
   for (const f of fixtures) {
-    await makeLawyer(f.email, {
+    const created = await makeLawyer(f.email, {
       rating: f.rating, price: f.price, experience: f.experience, isAvailable: f.isAvailable,
     });
+    if (f.isAvailable) presence.registerSocket({ id: `socket-${f.email}`, data: { userId: created.user.id, userRole: 'lawyer' } });
   }
 });
 
@@ -81,7 +84,7 @@ describe('каталог юристов: быстрые фильтры комб�
     const res = await catalog('?onlineOnly=true&minRating=4.5');
     expect(res.body.total).toBe(1);
     const l = res.body.lawyers[0];
-    expect(l.profile.isAvailable).toBe(true);
+    expect(l.presence.online).toBe(true);
     expect(Number(l.profile.rating)).toBeGreaterThanOrEqual(4.5);
   });
 

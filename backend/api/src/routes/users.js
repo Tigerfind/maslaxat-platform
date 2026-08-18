@@ -8,6 +8,7 @@ const { User } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { sendVerificationEmail } = require('../services/emailService');
 const logger = require('../config/logger');
+const { disconnectUserSockets } = require('../socket/io');
 
 // Avatar upload config
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -83,22 +84,19 @@ router.put('/password', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Неверный текущий пароль' });
     }
 
-    // Update password (hook will hash it) + инвалидируем ранее выданные токены:
-    // passwordChangedAt усечён до секунды, чтобы свежий токен ТЕКУЩЕЙ сессии (JWT iat
-    // в секундах) не самоинвалидировался — middleware выкидывает токены с iat < этого
-    // момента. Итог: другие сессии выпадают, текущая — остаётся (по новому токену).
+    // Update password (hook will hash it) + инвалидируем ранее выданные токены.
     user.password = newPassword;
-    const nowSec = Math.floor(Date.now() / 1000);
-    user.passwordChangedAt = new Date(nowSec * 1000);
+    user.passwordChangedAt = new Date();
     await user.save();
 
     // Свежий токен для текущей сессии (как signToken при логине). Клиент должен его
     // сохранить вместо старого — иначе следующий запрос со старым токеном получит 401.
     const token = jwt.sign(
-      { id: user.id, role: user.role },
+      { id: user.id, role: user.role, sv: user.passwordChangedAt.getTime() },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
+    disconnectUserSockets(user.id);
 
     res.json({ success: true, message: 'Пароль успешно изменён', token });
   } catch (err) {
@@ -123,18 +121,19 @@ router.put('/email', authenticate, async (req, res, next) => {
     const exists = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } });
     if (exists) return res.status(409).json({ error: 'Этот email уже используется' });
 
-    user.email = email;
-    // Новый email нужно подтвердить — не блокируем аккаунт, но шлём письмо.
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    try {
+      const delivery = await sendVerificationEmail(email, verificationToken);
+      if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
+    } catch (e) {
+      logger.error('Failed to send verification email (email change):', e.message);
+      return res.status(502).json({ error: 'Не удалось отправить письмо подтверждения' });
+    }
+
+    user.email = email;
     user.verificationToken = verificationToken;
     user.isVerified = false;
     await user.save();
-
-    try {
-      await sendVerificationEmail(email, verificationToken);
-    } catch (e) {
-      logger.error('Failed to send verification email (email change):', e.message);
-    }
 
     res.json({ success: true, user: user.toJSON(), message: 'Email обновлён. Подтвердите по ссылке в письме.' });
   } catch (err) {

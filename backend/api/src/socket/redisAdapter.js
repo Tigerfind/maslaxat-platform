@@ -1,6 +1,7 @@
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { getRedis } = require('../config/redis');
 const logger = require('../config/logger');
+let attached = false;
 
 /**
  * Подключает Redis-адаптер к Socket.io — нужен, чтобы события (уведомления, чат)
@@ -21,6 +22,7 @@ async function attachRedisAdapter(io) {
     const subClient = pubClient.duplicate();
     await subClient.connect();
     io.adapter(createAdapter(pubClient, subClient));
+    attached = true;
     logger.info('[Socket] Redis-адаптер подключён (горизонтальное масштабирование)');
     return true;
   } catch (err) {
@@ -29,4 +31,8 @@ async function attachRedisAdapter(io) {
   }
 }
 
-module.exports = { attachRedisAdapter };
+function isRedisAdapterAttached() {
+  return attached;
+}
+
+module.exports = { attachRedisAdapter, isRedisAdapterAttached };

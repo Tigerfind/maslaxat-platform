@@ -59,7 +59,7 @@ const sendPasswordResetEmail = async (email, token) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const resetUrl = `${baseUrl}/reset-password?token=${token}`;
 
-  await sendMail({
+  return sendMail({
     to: email,
     subject: 'Сброс пароля — MaslaXat',
     html: `
@@ -92,7 +92,7 @@ const sendVerificationEmail = async (email, token) => {
   const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
   const verifyUrl = `${baseUrl}/verify-email?token=${token}`;
 
-  await sendMail({
+  return sendMail({
     to: email,
     subject: 'Подтвердите ваш email — MaslaXat',
     html: `

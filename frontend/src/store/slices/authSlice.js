@@ -2,7 +2,13 @@ import { createSlice } from '@reduxjs/toolkit';
 
 const readStoredUser = () => {
   try {
-    return JSON.parse(localStorage.getItem('user')) || null;
+    const user = JSON.parse(localStorage.getItem('user')) || null;
+    if (user?.avatar?.startsWith('/uploads/')) {
+      const origin = new URL(import.meta.env.VITE_API_URL || '/api', window.location.origin).origin;
+      user.avatar = `${origin}${user.avatar}`;
+      localStorage.setItem('user', JSON.stringify(user));
+    }
+    return user;
   } catch {
     localStorage.removeItem('user');
     return null;
@@ -60,6 +66,12 @@ const authSlice = createSlice({
       state.user = { ...state.user, ...action.payload };
       localStorage.setItem('user', JSON.stringify(state.user));
     },
+    updateToken: (state, action) => {
+      state.token = action.payload;
+      state.isAuthenticated = Boolean(action.payload);
+      if (action.payload) localStorage.setItem('token', action.payload);
+      else localStorage.removeItem('token');
+    },
     clearError: (state) => {
       state.error = null;
     },
@@ -72,6 +84,7 @@ export const {
   loginFailure,
   logout,
   updateProfile,
+  updateToken,
   clearError,
 } = authSlice.actions;
 

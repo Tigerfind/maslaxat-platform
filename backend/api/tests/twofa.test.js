@@ -26,6 +26,11 @@ describe('2FA (TOTP)', () => {
       .set('Authorization', `Bearer ${token}`).send({ token: code });
     expect(enable.status).toBe(200);
     expect(enable.body.backupCodes).toHaveLength(8);
+    expect(enable.body.token).toBeTruthy();
+    const oldSession = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${token}`);
+    const currentSession = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${enable.body.token}`);
+    expect(oldSession.status).toBe(401);
+    expect(currentSession.status).toBe(200);
 
     // логин теперь требует 2FA (пароль из хелпера makeLawyer — 'passw0rd')
     const login = await request(app).post('/api/auth/login')

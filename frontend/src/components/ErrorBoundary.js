@@ -16,7 +16,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    if (process.env.REACT_APP_SENTRY_DSN) {
+    if (import.meta.env.VITE_SENTRY_DSN) {
       Sentry.captureException(error, { contexts: { react: { componentStack: info?.componentStack } } });
     }
     // eslint-disable-next-line no-console

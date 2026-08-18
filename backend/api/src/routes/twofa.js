@@ -1,7 +1,19 @@
 const router = require('express').Router();
+const jwt = require('jsonwebtoken');
 const { authenticate } = require('../middleware/auth');
 const { User } = require('../models');
 const twoFactor = require('../services/twoFactorService');
+const { disconnectUserSockets } = require('../socket/io');
+
+function rotateAccessToken(user) {
+  user.passwordChangedAt = new Date();
+  const token = jwt.sign(
+    { id: user.id, role: user.role, sv: user.passwordChangedAt.getTime() },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
+  );
+  return token;
+}
 
 // 2FA доступна юристам и админам
 function require2FARole(req, res, next) {
@@ -56,9 +68,11 @@ router.post('/enable', authenticate, require2FARole, async (req, res, next) => {
     const { plain, hashes } = twoFactor.generateBackupCodes();
     user.twoFactorEnabled = true;
     user.twoFactorBackupCodes = hashes;
+    const accessToken = rotateAccessToken(user);
     await user.save();
+    disconnectUserSockets(user.id);
 
-    res.json({ success: true, backupCodes: plain });
+    res.json({ success: true, backupCodes: plain, token: accessToken });
   } catch (err) {
     next(err);
   }
@@ -81,9 +95,11 @@ router.post('/disable', authenticate, async (req, res, next) => {
     user.twoFactorEnabled = false;
     user.twoFactorSecret = null;
     user.twoFactorBackupCodes = [];
+    const accessToken = rotateAccessToken(user);
     await user.save();
+    disconnectUserSockets(user.id);
 
-    res.json({ success: true });
+    res.json({ success: true, token: accessToken });
   } catch (err) {
     next(err);
   }

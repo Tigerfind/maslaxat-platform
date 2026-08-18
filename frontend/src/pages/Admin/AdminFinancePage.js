@@ -201,7 +201,7 @@ const AdminFinancePage = () => {
                   ) : withdrawals.map((w) => {
                     const st = WITHDRAWAL_STATUS[w.status] || WITHDRAWAL_STATUS.pending;
                     return (
-                      <TableRow key={w.id}>
+                      <TableRow key={w.id} data-testid={`withdrawal-${w.id}`}>
                         <TableCell>
                           <Typography sx={{ fontSize: 14, fontWeight: 500, color: axelionColors.textDark }}>{w.lawyer?.name || '—'}</Typography>
                           <Typography sx={{ fontSize: 12, color: axelionColors.textMuted }}>{w.lawyer?.email}</Typography>
