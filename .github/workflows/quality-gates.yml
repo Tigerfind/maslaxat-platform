@@ -1,0 +1,172 @@
+name: Quality gates
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      run_staging:
+        description: Run protected staging browser and load gates
+        required: true
+        default: false
+        type: boolean
+      confirm_non_production:
+        description: Type STAGING-ONLY
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-gates-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+            e2e/package-lock.json
+      - name: Install exact dependencies
+        run: |
+          npm --prefix backend/api ci
+          npm --prefix frontend ci
+          npm --prefix e2e ci
+      - name: Backend quality contracts
+        run: npm --prefix backend/api test -- --runInBand --testTimeout=120000 tests/e2e-test-harness.test.js tests/load-test-harness.test.js
+      - name: Frontend session and privacy contracts
+        env:
+          CI: true
+        run: npm --prefix frontend test -- --runInBand src/services/serviceWorker.test.js src/services/pushService.test.js src/services/sessionRuntime.test.js src/store/slices/authSlice.test.js
+      - name: Playwright unit and static contracts
+        run: |
+          npm --prefix e2e run test:unit
+          npm --prefix e2e run test:static
+          npm --prefix e2e run test:list
+      - name: Syntax checks
+        run: |
+          node --check frontend/public/sw.js
+          node --check backend/api/src/seeds/load-seed.js
+          node --input-type=module --check < load/k6/common.js
+
+  staging-critical:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      inputs.run_staging == true &&
+      inputs.confirm_non_production == 'STAGING-ONLY'
+    needs: static-contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    environment: quality-staging
+    env:
+      CI: true
+      NODE_ENV: staging
+      E2E_TARGET_ENV: staging
+      E2E_ALLOW_REMOTE: '1'
+      E2E_CONFIRM_TARGET: ${{ vars.QUALITY_STAGING_E2E_CONFIRM_TARGET }}
+      E2E_TEST_API_ENABLED: '1'
+      E2E_RUN_ID: ${{ vars.QUALITY_STAGING_E2E_RUN_ID }}
+      E2E_BASE_URL: ${{ vars.QUALITY_STAGING_WEB_URL }}
+      E2E_API_URL: ${{ vars.QUALITY_STAGING_API_URL }}
+      E2E_DATABASE_URL: ${{ secrets.QUALITY_STAGING_DATABASE_URL }}
+      DATABASE_URL: ${{ secrets.QUALITY_STAGING_DATABASE_URL }}
+      E2E_TEST_API_TOKEN: ${{ secrets.QUALITY_STAGING_E2E_TEST_API_TOKEN }}
+      E2E_TEST_API_SECRET: ${{ secrets.QUALITY_STAGING_E2E_TEST_API_SECRET }}
+      E2E_SAFETY_ATTESTATION_NONCE: ${{ secrets.QUALITY_STAGING_E2E_SAFETY_ATTESTATION_NONCE }}
+      E2E_DB_ATTESTATION_SECRET: ${{ secrets.QUALITY_STAGING_DB_ATTESTATION_SECRET }}
+      E2E_TEST_DB_CONFIRM: ${{ vars.QUALITY_STAGING_DATABASE_NAME }}
+      E2E_TEST_HOST_CONFIRM: ${{ vars.QUALITY_STAGING_DATABASE_HOST }}
+      E2E_PRODUCTION_DB_HOSTS: ${{ vars.QUALITY_PRODUCTION_DB_HOSTS }}
+      E2E_PRODUCTION_DB_FINGERPRINTS: ${{ secrets.QUALITY_PRODUCTION_DB_FINGERPRINTS }}
+      LOAD_TEST_TARGET_URL: ${{ vars.QUALITY_STAGING_LOAD_URL }}
+      BASE_URL: ${{ vars.QUALITY_STAGING_LOAD_URL }}
+      APP_ENV: staging
+      LOAD_TEST_ENABLED: 'true'
+      K6_LOAD_APPROVED: 'true'
+      PAYMENT_SANDBOX_ENABLED: 'true'
+      LOAD_TEST_ALLOWED_HOSTS: ${{ vars.QUALITY_STAGING_LOAD_HOST }}
+      LOAD_TEST_PRODUCTION_HOSTS: ${{ vars.QUALITY_PRODUCTION_HOSTS }}
+      LOAD_TEST_RUN_ID: ${{ vars.QUALITY_STAGING_E2E_RUN_ID }}
+      LOAD_TEST_PASSWORD: ${{ secrets.QUALITY_STAGING_LOAD_PASSWORD }}
+      LOAD_TEST_COMMIT_SHA: ${{ github.sha }}
+      LOAD_TEST_MANIFEST: ${{ runner.temp }}/load-manifest.json
+      LOAD_TEST_ARTIFACT_DIR: ${{ runner.temp }}/load-artifacts
+      LOAD_DB_ATTESTATION_NONCE: ${{ secrets.QUALITY_STAGING_E2E_SAFETY_ATTESTATION_NONCE }}
+      LOAD_DB_ATTESTATION_SECRET: ${{ secrets.QUALITY_STAGING_DB_ATTESTATION_SECRET }}
+      LOAD_DATABASE_ROLE_CONFIRM: ${{ vars.QUALITY_STAGING_LOAD_DATABASE_ROLE }}
+      LOAD_TEST_PRODUCTION_DB_FINGERPRINTS: ${{ secrets.QUALITY_PRODUCTION_DB_FINGERPRINTS }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18
+      - name: Require protected configuration
+        shell: bash
+        run: |
+          required=(E2E_RUN_ID E2E_BASE_URL E2E_API_URL E2E_CONFIRM_TARGET E2E_DATABASE_URL E2E_TEST_API_TOKEN E2E_TEST_API_SECRET E2E_SAFETY_ATTESTATION_NONCE E2E_DB_ATTESTATION_SECRET E2E_TEST_DB_CONFIRM E2E_TEST_HOST_CONFIRM E2E_PRODUCTION_DB_HOSTS E2E_PRODUCTION_DB_FINGERPRINTS BASE_URL LOAD_TEST_ALLOWED_HOSTS LOAD_TEST_PASSWORD LOAD_DATABASE_ROLE_CONFIRM)
+          for name in "${required[@]}"; do
+            if [[ -z "${!name:-}" ]]; then echo "missing: $name"; exit 1; fi
+            echo "configured: $name"
+          done
+      - name: Attest actual application and same database before install
+        shell: bash
+        run: |
+          status_url="${E2E_API_URL%/}/e2e/integrations/status"
+          if ! document=$(curl --silent --fail --max-time 15 \
+            --header "Authorization: Bearer $E2E_TEST_API_TOKEN" \
+            --header "x-e2e-test-secret: $E2E_TEST_API_SECRET" \
+            --header "x-e2e-safety-nonce: $E2E_SAFETY_ATTESTATION_NONCE" \
+            --get --data-urlencode "runId=$E2E_RUN_ID" \
+            --data-urlencode "nonce=$E2E_SAFETY_ATTESTATION_NONCE" "$status_url" 2>/dev/null); then
+            echo 'Application safety attestation failed'; exit 1
+          fi
+          E2E_ATTESTATION="$document" node <<'NODE'
+          const value = JSON.parse(process.env.E2E_ATTESTATION);
+          if (value.safe !== true || value.runId !== process.env.E2E_RUN_ID || value.nonce !== process.env.E2E_SAFETY_ATTESTATION_NONCE) throw new Error('attestation identity mismatch');
+          if (!/^[a-f0-9]{64}$/.test(value.databaseFingerprint || '')) throw new Error('database fingerprint missing');
+          const expected = { payme: 'disabled', claude: 'disabled', smtp: 'stubbed', push: 'disabled', jobs: 'disabled' };
+          for (const [name, mode] of Object.entries(expected)) if (value.integrations?.[name] !== mode) throw new Error(`unsafe integration: ${name}`);
+          if (value.providerSecretsPresent !== false) throw new Error('provider secret state unsafe');
+          require('fs').appendFileSync(process.env.GITHUB_ENV, `LOAD_TARGET_DB_FINGERPRINT=${value.databaseFingerprint}\n`);
+          NODE
+      - name: Install test dependencies after attestation
+        run: |
+          npm --prefix backend/api ci
+          npm --prefix e2e ci
+          npm --prefix e2e exec playwright install -- --with-deps chromium firefox webkit
+      - uses: grafana/setup-k6-action@v1
+      - name: Seed fingerprint-bound database
+        run: |
+          install -d -m 700 "$LOAD_TEST_ARTIFACT_DIR"
+          echo "LOAD_TEST_STARTED_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_ENV"
+          node backend/api/src/seeds/load-seed.js seed "$LOAD_TEST_MANIFEST"
+      - name: Run Playwright matrix with actual-app fixture lifecycle
+        run: npm --prefix e2e test
+      - name: Inspect and run approved baseline
+        run: |
+          k6 inspect load/k6/baseline.js
+          k6 run load/k6/baseline.js
+      - name: Verify same-database post-load invariants
+        if: always()
+        run: node backend/api/src/seeds/load-seed.js verify
+      - name: Clean fingerprint-bound fixtures
+        if: always()
+        run: node backend/api/src/seeds/load-seed.js cleanup
+      - name: Upload failure-only browser and sanitized load artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-failures-${{ github.run_id }}
+          path: |
+            e2e/artifacts/
+            ${{ runner.temp }}/load-artifacts/
+          if-no-files-found: warn
+          retention-days: 14

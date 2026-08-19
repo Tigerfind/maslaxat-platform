@@ -1,0 +1,19 @@
+{
+  "name": "emaslaxat-e2e",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "test": "playwright test",
+    "test:chromium": "playwright test --project=chromium",
+    "test:list": "cross-env E2E_DISABLE_LIFECYCLE=1 playwright test --list",
+    "test:unit": "node --test --test-concurrency=1 tests/unit/*.test.js",
+    "test:static": "node scripts/static-check.js",
+    "test:dry": "npm run test:unit && npm run test:static && npm run test:list",
+    "preflight": "node scripts/preflight.js"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.55.0",
+    "cross-env": "7.0.3",
+    "socket.io-client": "^4.8.1"
+  }
+}

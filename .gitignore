@@ -2,6 +2,9 @@
 node_modules/
 */node_modules/
 package-lock.json
+!backend/api/package-lock.json
+!frontend/package-lock.json
+!e2e/package-lock.json
 yarn.lock
 .pnp
 .pnp.js
@@ -9,6 +12,11 @@ yarn.lock
 # Testing
 coverage/
 .nyc_output/
+e2e/artifacts/
+e2e/playwright-report/
+e2e/test-results/
+load-artifacts/
+load-summary*.json
 
 # Production
 build/
@@ -57,6 +65,8 @@ docker-compose.override.yml
 uploads/
 tmp/
 temp/
+.storage-migration-checkpoint.json
+.storage-migration-checkpoint.json.tmp-*
 
 # Redis dump
 dump.rdb
