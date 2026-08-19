@@ -55,6 +55,7 @@ describe('несколько категорий права на проблему
     const { user: lawyer } = await makeLawyer('sp-l@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .set('Idempotency-Key', 'recent-problems-multiple')
       .send({
         problems: [
           { text: 'Развод', categories: ['family', 'civil'] },
@@ -79,6 +80,7 @@ describe('несколько категорий права на проблему
     const { user: lawyer } = await makeLawyer('sp-ld@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .set('Idempotency-Key', 'recent-problems-dedup')
       .send({ problems: [{ text: 'Вопрос', categories: ['civil', 'civil', 'family'] }], consultationType: 'video' });
     expect(res.status).toBe(201);
     const c = await Consultation.findByPk(res.body.consultation.id);
@@ -90,6 +92,7 @@ describe('несколько категорий права на проблему
     const { user: lawyer } = await makeLawyer('sp-l2@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .set('Idempotency-Key', 'recent-problems-empty-category')
       .send({ problems: [{ text: 'Вопрос', categories: [] }], consultationType: 'video' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.specialization == null).toBe(true);
@@ -103,6 +106,7 @@ describe('несколько категорий права на проблему
     // строка
     const r1 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .set('Idempotency-Key', 'recent-problems-legacy-string')
       .send({ question: 'Просто вопрос', consultationType: 'video' });
     expect(r1.status).toBe(201);
     const c1 = await Consultation.findByPk(r1.body.consultation.id);
@@ -112,6 +116,7 @@ describe('несколько категорий права на проблему
     const client2 = await makeClient('sp-c4@test.uz');
     const r2 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client2)}`)
+      .set('Idempotency-Key', 'recent-problems-legacy-category')
       .send({ problems: [{ text: 'Аренда', category: 'real-estate' }], consultationType: 'video' });
     expect(r2.status).toBe(201);
     const c2 = await Consultation.findByPk(r2.body.consultation.id);

@@ -5,17 +5,26 @@ import {
   Container, Box, Typography, Grid, IconButton, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Tooltip, Stack, CircularProgress,
   Card, Button, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, List,
-  ListItem, ListItemText,
+  ListItem, ListItemText, FormControl, InputLabel, Select, MenuItem, Alert,
 } from '@mui/material';
 import {
   ArrowBack, CheckCircle, Block, Gavel, Verified, HourglassEmpty,
   DescriptionOutlined, DownloadOutlined, FolderOpenOutlined, VisibilityOutlined,
+  FactCheckOutlined,
 } from '@mui/icons-material';
 import { adminLawyerService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import DocumentPreviewDialog from '../../components/UI/DocumentPreviewDialog';
+import { importStatusKey } from '../../utils/profileImportUtils';
+
+const FIELD_DOCUMENT_TYPES = {
+  experience: ['license'],
+  workExperience: ['license'],
+  education: ['diploma'],
+  certificates: ['diploma', 'license', 'other'],
+};
 
 const AdminLawyersPage = () => {
   const navigate = useNavigate();
@@ -30,6 +39,12 @@ const AdminLawyersPage = () => {
   const [docsLoading, setDocsLoading] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // документ для предпросмотра
+  const [sourcesFor, setSourcesFor] = useState(null);
+  const [sourceImports, setSourceImports] = useState({});
+  const [sourceDocs, setSourceDocs] = useState([]);
+  const [sourceLoading, setSourceLoading] = useState(false);
+  const [selectedDocuments, setSelectedDocuments] = useState({});
+  const [sourceActing, setSourceActing] = useState('');
 
   // Blob документа для предпросмотра (тот же эндпоинт, что и скачивание).
   const previewFetch = React.useCallback(async () => {
@@ -61,6 +76,47 @@ const AdminLawyersPage = () => {
     } finally {
       setDownloading(null);
     }
+  };
+
+  const openSources = async (lawyer) => {
+    setSourcesFor(lawyer);
+    setSourceImports({});
+    setSourceDocs([]);
+    setSelectedDocuments({});
+    setSourceLoading(true);
+    try {
+      const sources = lawyer.profile?.profileSources || {};
+      const importIds = [...new Set(Object.values(sources).map((source) => source?.importId).filter(Boolean))];
+      const [documentsResult, ...imports] = await Promise.all([
+        adminLawyerService.getVerificationDocuments(lawyer.id),
+        ...importIds.map((id) => adminLawyerService.getProfileImportSource(id)),
+      ]);
+      setSourceDocs((documentsResult.documents || []).filter((doc) => doc.verificationStatus === 'approved'));
+      setSourceImports(Object.fromEntries(imports.map((result) => [result.import.id, result.import])));
+    } catch {
+      toast.error(t('adminManage.sourcesError'));
+    } finally { setSourceLoading(false); }
+  };
+
+  const verifyField = async (field) => {
+    const documentId = selectedDocuments[field];
+    if (!documentId) return;
+    setSourceActing(field);
+    try {
+      await adminLawyerService.verifyProfileField(sourcesFor.id, field, documentId);
+      toast.success(t('adminManage.sourceVerified'));
+      await load();
+      setSourcesFor(null);
+    } catch { toast.error(t('adminManage.sourcesError')); }
+    finally { setSourceActing(''); }
+  };
+
+  const downloadSource = async (importId) => {
+    setSourceActing(importId);
+    try {
+      await adminLawyerService.downloadProfileImportAttachment(importId, sourceImports[importId]?.originalName);
+    } catch { toast.error(t('adminManage.sourcesError')); }
+    finally { setSourceActing(''); }
   };
 
   const DOC_TYPE_LABEL = {
@@ -238,6 +294,9 @@ const AdminLawyersPage = () => {
                             sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.bronze, background: axelionColors.bgBeige } }}>
                             {t('adminManage.docs')}
                           </Button>
+                          <Button size="small" variant="outlined" onClick={() => openSources(l)} startIcon={<FactCheckOutlined sx={{ fontSize: 16 }} />} sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px' }}>
+                            {t('adminManage.sources')}
+                          </Button>
                           {stOf(l) !== 'approved' && (
                             <Button size="small" variant="contained" disabled={acting === l.id} onClick={() => approve(l.id)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
@@ -314,6 +373,42 @@ const AdminLawyersPage = () => {
             {t('adminManage.docsClose')}
           </Button>
         </DialogActions>
+      </Dialog>
+
+      <Dialog className="profile-import-dialog" open={!!sourcesFor} onClose={() => setSourcesFor(null)} maxWidth="md" fullWidth aria-labelledby="profile-sources-title">
+        <DialogTitle id="profile-sources-title">{t('adminManage.sourcesTitle')}{sourcesFor ? ` — ${sourcesFor.name}` : ''}</DialogTitle>
+        <DialogContent dividers>
+          <Alert severity="info" sx={{ mb: 2 }}>{t('adminManage.sourcesNotice')}</Alert>
+          {sourceLoading ? <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={24} /></Box> : (
+            <Stack spacing={2}>
+              {['experience', 'workExperience', 'education', 'certificates'].map((field) => {
+                const source = sourcesFor?.profile?.profileSources?.[field];
+                const imported = source?.importId ? sourceImports[source.importId] : null;
+                const compatible = sourceDocs.filter((doc) => FIELD_DOCUMENT_TYPES[field].includes(doc.type));
+                return <Card key={field} variant="outlined" sx={{ p: 2, boxShadow: 'none' }}>
+                  <Typography variant="subtitle2">{t(`profileImport.field_${field === 'workExperience' ? 'positions' : field}`)}</Typography>
+                  <Typography variant="body2" sx={{ color: axelionColors.textMuted, my: 1 }}>
+                    {source?.verificationLevel === 'document_checked' ? t('lawyerProfile.provenance_document_checked') : source?.verificationLevel === 'self_reported' ? t('lawyerProfile.provenance_self_reported') : t('adminManage.sourceNone')}
+                  </Typography>
+                  {imported && <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap', mb: 1 }}>
+                    <Chip size="small" label={`${imported.originalName} · ${t(importStatusKey(imported.status))}`} />
+                    <Button onClick={() => downloadSource(imported.id)} disabled={sourceActing === imported.id} startIcon={<DownloadOutlined />} sx={{ minHeight: 44 }}>{t('adminManage.sourceDownload')}</Button>
+                  </Box>}
+                  <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <FormControl size="small" sx={{ minWidth: 240 }}>
+                      <InputLabel id={`source-doc-${field}`}>{t('adminManage.approvedDocument')}</InputLabel>
+                      <Select labelId={`source-doc-${field}`} label={t('adminManage.approvedDocument')} value={selectedDocuments[field] || ''} onChange={(event) => setSelectedDocuments((old) => ({ ...old, [field]: event.target.value }))}>
+                        {compatible.map((doc) => <MenuItem key={doc.id} value={doc.id}>{doc.name}</MenuItem>)}
+                      </Select>
+                    </FormControl>
+                    <Button variant="contained" disabled={!selectedDocuments[field] || sourceActing === field} onClick={() => verifyField(field)} sx={{ minHeight: 44 }}>{t('adminManage.verifyField')}</Button>
+                  </Box>
+                </Card>;
+              })}
+            </Stack>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setSourcesFor(null)} sx={{ minHeight: 44 }}>{t('common.close')}</Button></DialogActions>
       </Dialog>
 
       {/* Предпросмотр документа юриста */}

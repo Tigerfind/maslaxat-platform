@@ -5,6 +5,8 @@
 //
 // Безопасно: перед CREATE проверяет наличие индекса и конфликтующих дублей,
 // при дублях НЕ трогает данные, а бросает понятную ошибку.
+const { exitAfterFatal } = require('../instrument');
+const logger = require('../config/logger');
 const { sequelize } = require('../models');
 
 async function indexExists(name) {
@@ -67,5 +69,5 @@ module.exports = { ensureProdIndexes };
 if (require.main === module) {
   ensureProdIndexes()
     .then((r) => { console.log('OK', r); process.exit(0); })
-    .catch((e) => { console.error('ensure-prod-indexes error:', e); process.exit(1); });
+    .catch((e) => exitAfterFatal(e, { operation: 'ensure_production_indexes_cli' }, { logger }));
 }

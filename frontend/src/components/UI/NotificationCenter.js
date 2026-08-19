@@ -35,6 +35,8 @@ import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
+import { createModeSocket } from '../../services/modeSocket';
+import { notificationDestination } from '../../utils/modeNavigation';
 
 // socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
 const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
@@ -60,7 +62,8 @@ const NOTIFICATION_ICONS = {
 const NotificationCenter = ({ sx = {} }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const authToken = useSelector((s) => s.auth.token);
+  const auth = useSelector((s) => s.auth);
+  const { token: authToken, activeMode } = auth;
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
@@ -72,14 +75,13 @@ const NotificationCenter = ({ sx = {} }) => {
     // Опрос оставляем как fallback (реже — realtime приходит через socket)
     const interval = setInterval(fetchNotifications, 60000);
     return () => clearInterval(interval);
-  }, []);
+  }, [activeMode]);
 
   // Realtime-пуш: мгновенно добавляем новое уведомление без ожидания опроса.
   // Пересоздаём сокет при смене токена (логин/логаут) — иначе realtime «залипал».
   useEffect(() => {
-    const token = authToken || localStorage.getItem('token');
-    if (!token) return undefined;
-    const socket = io(API_URL, { auth: { token }, transports: ['websocket', 'polling'] });
+    if (!authToken || !activeMode) return undefined;
+    const { socket, unregister } = createModeSocket(io, API_URL, authToken, activeMode);
 
     socket.on('notification:new', (notif) => {
       if (!notif || !notif.id) return;
@@ -93,8 +95,8 @@ const NotificationCenter = ({ sx = {} }) => {
       }
     });
 
-    return () => { socket.disconnect(); };
-  }, [authToken]);
+    return () => { socket.disconnect(); unregister(); };
+  }, [activeMode, authToken]);
 
   const fetchNotifications = async () => {
     try {
@@ -243,17 +245,8 @@ const NotificationCenter = ({ sx = {} }) => {
                           onClick={() => {
                             if (!notif.isRead) handleMarkRead(notif.id);
                             handleClose();
-                            const m = notif.metadata || {};
-                            // Тип-специфичная навигация для модерации/документов.
-                            if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
-                            if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
-                            if (notif.type === 'case_document' && m.consultationId) { navigate(`/consultations/chat/${m.consultationId}`); return; }
-                            // Пропущенный звонок → открыть звонок (перезвонить);
-                            // прочие с консультацией → в «Мои консультации».
-                            if (m.consultationId) {
-                              if (m.missedCall) navigate(`/consultations/video/${m.consultationId}`);
-                              else navigate('/consultations');
-                            }
+                             const destination = notificationDestination(notif, auth);
+                             if (destination) navigate(destination);
                           }}
                           sx={{
                             display: 'flex', gap: 1.5, p: 2,

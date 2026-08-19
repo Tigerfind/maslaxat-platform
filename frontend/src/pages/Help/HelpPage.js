@@ -11,6 +11,7 @@ import {
 import GlassShell from '../../components/GlassKit/GlassShell';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { helpPrimaryDestination } from '../../utils/modeNavigation';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -66,7 +67,8 @@ const SUP_CATS = [{ k: 'catGeneral' }, { k: 'catPayment' }, { k: 'catTech' }, { 
 
 const HelpPage = () => {
   const navigate = useNavigate();
-  const { role } = useSelector((s) => s.auth);
+  const auth = useSelector((s) => s.auth);
+  const { activeMode } = auth;
   const { t } = useTranslation();
 
   const [faqOpen, setFaqOpen] = useState(null);
@@ -75,16 +77,18 @@ const HelpPage = () => {
   const [supMsg, setSupMsg] = useState('');
   const [sending, setSending] = useState(false);
 
-  const supChannels = [
-    {
+  const primaryDestination = helpPrimaryDestination(auth);
+  const primaryChannel = primaryDestination ? {
       icon: <ChatBubbleOutline sx={{ fontSize: 22 }} />,
-      title: t('help.chatTitle'),
+      title: primaryDestination.kind === 'ai' ? t('help.chatTitle') : t('nav.consultations'),
       desc: t('help.chatDesc'),
       action: t('help.chatAction'),
       tint: 'rgba(184,149,110,0.16)',
       color: 'var(--accent)',
-      go: () => navigate('/ai-chat'),
-    },
+      go: () => navigate(primaryDestination.path),
+    } : null;
+  const supChannels = [
+    ...(primaryChannel ? [primaryChannel] : []),
     {
       icon: <PhoneOutlined sx={{ fontSize: 22 }} />,
       title: t('help.phoneTitle'),
@@ -127,7 +131,7 @@ const HelpPage = () => {
   };
 
   return (
-    <GlassShell active="/help" title={t('help.title')} subtitle={t('help.subtitle')} role={role || 'client'}>
+    <GlassShell active="/help" title={t('help.title')} subtitle={t('help.subtitle')} role={activeMode}>
       <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* SUPPORT CHANNELS */}

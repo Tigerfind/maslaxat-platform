@@ -8,6 +8,9 @@ import clientService from '../services/clientService';
 import api from '../services/api';
 import ConflictDetector from '../shared/validators/conflict-detector';
 import { useTranslation } from '../i18n';
+import { clearBookingAttempt, getOrCreateBookingAttempt } from '../utils/bookingAttempt';
+import { bookingErrorAction, bookingResponseAction } from '../utils/bookingResponse';
+import { createPromotionAttribution, withPromotionBooking } from '../utils/promotionAttribution';
 
 /**
  * MaslaXat Booking Modal — 4-step consultation booking flow.
@@ -36,6 +39,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { specializations } = useSelector((state) => state.specializations);
+  const currentUser = useSelector((state) => state.auth.user);
   const activeSpecs = useMemo(() => specializations.filter((s) => s.active), [specializations]);
 
   // Умный подбор: области права юриста (имена-строки) → id категорий брони.
@@ -73,11 +77,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [useFree, setUseFree] = useState(false);
   const [subLeft, setSubLeft] = useState(0);
   const [useSubFree, setUseSubFree] = useState(false);
+  const [promotionAttribution, setPromotionAttribution] = useState(null);
 
   // При открытии: сначала акция «первая бесплатно» (приоритетнее), затем —
   // бесплатная консультация, включённая в подписку (если лоялти недоступна).
   useEffect(() => {
     if (!open) return;
+    const attribution = createPromotionAttribution(lawyer);
+    setPromotionAttribution(attribution);
+    if (attribution) clientService.lawyers.recordBookingStart(lawyer.id, attribution).catch(() => {});
     setUseFree(false);
     setUseSubFree(false);
     setSubLeft(0);
@@ -122,6 +130,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       } catch { /* нет подписки */ }
     })();
     return () => { alive = false; };
+  // This effect intentionally snapshots the lawyer when the modal opens.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   // Закрывать выпадающий список категорий по клику вне него
@@ -286,12 +296,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     }
   };
 
-  // ---- Бронирование по кнопке «Оплатить»: dev — имитация, прод — Payme-редирект ----
+  // Сервер создаёт бронь и снапшотированный Payme checkout одним идемпотентным запросом.
   const handlePayNow = async () => {
     try {
       setLoading(true);
-
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
 
       const bookingData = {
         ...formData,
@@ -353,27 +361,34 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         });
       }
 
-      const booking = await clientService.lawyers.bookConsultation(lawyer.id, bookingData);
+      const attempt = getOrCreateBookingAttempt({
+        lawyerId: lawyer.id,
+        terms: {
+          ...bookingData,
+          specialization: bookingData.problems[0]?.categories?.[0] || '',
+        },
+      });
+      const booking = await clientService.lawyers.bookConsultation(
+        lawyer.id,
+        withPromotionBooking(bookingData, promotionAttribution),
+        attempt.key
+      );
 
-      // Модель B «оплата через 5 минут звонка»: предоплаты при брони НЕТ
-      // (requiresPayment=false). Деньги спишутся на 5-й минуте разговора.
-      // Блок ниже оставлен для обратной совместимости, если сервер вернёт requiresPayment.
-      const consultationId = booking?.consultation?.id;
-      if (!freeBooking && booking?.requiresPayment && consultationId) {
-        try {
-          // dev/test-режим: имитация оплаты
-          await clientService.lawyers.simulatePayment(consultationId);
-        } catch (payErr) {
-          // прод (заданы ключи Payme): тест-оплата отключена (403) → реальный Payme-редирект
-          if (payErr.response?.status === 403) {
-            const { checkoutUrl } = await clientService.lawyers.createPayment(consultationId);
-            if (checkoutUrl) {
-              window.location.href = checkoutUrl;
-              return;
-            }
-          }
-          throw payErr;
-        }
+      const action = bookingResponseAction(booking);
+      if (action === 'redirect_checkout') {
+        if (!booking.checkoutUrl) throw new Error('Payment checkout is unavailable');
+        window.location.assign(booking.checkoutUrl);
+        return;
+      }
+      clearBookingAttempt({ lawyerId: lawyer.id });
+      if (action === 'restart_booking') {
+        toast.info(t('booking.toastError'));
+        return;
+      }
+      if (action === 'complete_booking') {
+        onClose?.();
+        window.location.assign('/consultations');
+        return;
       }
 
       // Запоминаем выбор для следующей брони (тип/длительность/оплата).
@@ -381,6 +396,11 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
       setStep(4);
     } catch (error) {
+      if (bookingErrorAction(error) === 'rotate_terms') {
+        clearBookingAttempt({ lawyerId: lawyer.id });
+        toast.error(error.response?.data?.error || t('booking.toastError'));
+        return;
+      }
       // Гейт верификации: нужен подтверждённый контакт — ведём в профиль подтвердить.
       if (error.response?.data?.code === 'CONTACT_UNVERIFIED') {
         toast.info(t('booking.verifyContact'), { autoClose: 6000 });

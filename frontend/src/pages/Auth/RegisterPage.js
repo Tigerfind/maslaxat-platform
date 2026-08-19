@@ -10,7 +10,7 @@ import {
   ArrowForward, CheckCircle,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { loginSuccess } from '../../store/slices/authSlice';
+import { establishSession, getHomePath } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -91,9 +91,8 @@ const RegisterPage = () => {
         ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
-      const { user, token } = response.data;
-      dispatch(loginSuccess({ user, token, role: user.role }));
-      navigate(user.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
+      const session = await dispatch(establishSession(response.data));
+      navigate(getHomePath(session), { replace: true });
     } catch (err) {
       const message = err.response?.data?.error || t('register.regError');
       setError(message);

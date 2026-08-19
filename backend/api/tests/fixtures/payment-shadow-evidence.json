@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 2,
+  "mode": "shadow",
+  "source": "local-parser-only-real-payment-fixtures",
+  "environment": "local",
+  "commitSha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "observedFrom": "2026-08-15T00:00:00.000Z",
+  "observedUntil": "2026-08-15T00:01:00.000Z",
+  "sandboxScenarioSet": null,
+  "comparisons": [
+    {
+      "scenarioId": "CheckPerformTransaction:result",
+      "method": "CheckPerformTransaction",
+      "v2Accepted": true,
+      "v2ErrorCode": null,
+      "legacyOutcome": "result",
+      "legacyErrorCode": null,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    },
+    {
+      "scenarioId": "CreateTransaction:error:-31060",
+      "method": "CreateTransaction",
+      "v2Accepted": false,
+      "v2ErrorCode": -31060,
+      "legacyOutcome": "error",
+      "legacyErrorCode": -31060,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    },
+    {
+      "scenarioId": "PerformTransaction:error:-31008",
+      "method": "PerformTransaction",
+      "v2Accepted": false,
+      "v2ErrorCode": -31008,
+      "legacyOutcome": "error",
+      "legacyErrorCode": -31008,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    },
+    {
+      "scenarioId": "CancelTransaction:result",
+      "method": "CancelTransaction",
+      "v2Accepted": true,
+      "v2ErrorCode": null,
+      "legacyOutcome": "result",
+      "legacyErrorCode": null,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    },
+    {
+      "scenarioId": "CheckTransaction:result",
+      "method": "CheckTransaction",
+      "v2Accepted": true,
+      "v2ErrorCode": null,
+      "legacyOutcome": "result",
+      "legacyErrorCode": null,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    },
+    {
+      "scenarioId": "GetStatement:result",
+      "method": "GetStatement",
+      "v2Accepted": true,
+      "v2ErrorCode": null,
+      "legacyOutcome": "result",
+      "legacyErrorCode": null,
+      "v2PayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "legacyPayloadHash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+      "comparisonMatched": true
+    }
+  ],
+  "integrity": null
+}

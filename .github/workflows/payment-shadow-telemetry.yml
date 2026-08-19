@@ -1,0 +1,94 @@
+name: Payment shadow telemetry export
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  export-observed-staging:
+    environment: payment-shadow-telemetry
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      SOURCE_RUN_ID: ${{ github.run_id }}
+      PAYMENT_STAGING_METADATA_URL: ${{ vars.PAYMENT_STAGING_METADATA_URL }}
+      PAYMENT_STAGING_TELEMETRY_EXPORT_URL: ${{ vars.PAYMENT_STAGING_TELEMETRY_EXPORT_URL }}
+      TELEMETRY_BEARER_TOKEN: ${{ secrets.PAYMENT_STAGING_TELEMETRY_BEARER_TOKEN }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+
+      - name: Install reviewed telemetry evidence tooling
+        run: npm --prefix backend/api ci --ignore-scripts
+
+      - name: Fetch observed deployment metadata and durable private stream
+        run: |
+          umask 077
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --header "Authorization: Bearer $TELEMETRY_BEARER_TOKEN" \
+            "$PAYMENT_STAGING_METADATA_URL" > "$RUNNER_TEMP/deployment-metadata.json"
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --header "Authorization: Bearer $TELEMETRY_BEARER_TOKEN" \
+            "$PAYMENT_STAGING_TELEMETRY_EXPORT_URL/events" > "$RUNNER_TEMP/events.jsonl"
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --header "Authorization: Bearer $TELEMETRY_BEARER_TOKEN" \
+            "$PAYMENT_STAGING_TELEMETRY_EXPORT_URL/stream-metadata" > "$RUNNER_TEMP/stream-metadata.json"
+          curl --fail --silent --show-error --proto '=https' --tlsv1.2 \
+            --header "Authorization: Bearer $TELEMETRY_BEARER_TOKEN" \
+            "$PAYMENT_STAGING_TELEMETRY_EXPORT_URL/provider-totals" > "$RUNNER_TEMP/provider-totals.json"
+          chmod 600 "$RUNNER_TEMP"/deployment-metadata.json "$RUNNER_TEMP"/events.jsonl \
+            "$RUNNER_TEMP"/stream-metadata.json "$RUNNER_TEMP"/provider-totals.json
+
+      - name: Bind source attestation to observed metadata and raw artifact bytes
+        run: |
+          test "$(jq -r .commitSha "$RUNNER_TEMP/deployment-metadata.json")" = "$REVIEWED_SHA"
+          generated_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          inventory_digest=$(node -e "process.stdout.write(require('./backend/api/src/services/paymentShadowEvidence').scenarioInventoryDigest())")
+          jq -n \
+            --argjson sourceRunId "$SOURCE_RUN_ID" \
+            --arg sourceWorkflow '.github/workflows/payment-shadow-telemetry.yml' \
+            --arg repository "$REPOSITORY_NAME" \
+            --arg commitSha "$REVIEWED_SHA" \
+            --arg deploymentId "$(jq -r .deploymentId "$RUNNER_TEMP/deployment-metadata.json")" \
+            --arg serviceId "$(jq -r .serviceId "$RUNNER_TEMP/deployment-metadata.json")" \
+            --arg configDigest "$(jq -r .configDigest "$RUNNER_TEMP/deployment-metadata.json")" \
+            --arg migrationHead "$(jq -r .migrationHead "$RUNNER_TEMP/deployment-metadata.json")" \
+            --arg generatedAt "$generated_at" \
+            --arg observationMode "$(jq -r .observationMode "$RUNNER_TEMP/deployment-metadata.json")" \
+            --arg inventoryDigest "$inventory_digest" \
+            --arg eventsDigest "$(shasum -a 256 "$RUNNER_TEMP/events.jsonl" | cut -d' ' -f1)" \
+            --arg streamMetadataDigest "$(shasum -a 256 "$RUNNER_TEMP/stream-metadata.json" | cut -d' ' -f1)" \
+            --arg providerSnapshotDigest "$(shasum -a 256 "$RUNNER_TEMP/provider-totals.json" | cut -d' ' -f1)" \
+            '{schemaVersion:1,kind:"payment-shadow-source",sourceRunId:$sourceRunId,sourceWorkflow:$sourceWorkflow,repository:$repository,commitSha:$commitSha,deploymentId:$deploymentId,serviceId:$serviceId,configDigest:$configDigest,migrationHead:$migrationHead,generatedAt:$generatedAt,observationMode:$observationMode,inventoryDigest:$inventoryDigest,eventsDigest:$eventsDigest,streamMetadataDigest:$streamMetadataDigest,providerSnapshotDigest:$providerSnapshotDigest}' \
+            > "$RUNNER_TEMP/source-attestation.unsigned.json"
+          node -e "const fs=require('fs');const {digest}=require('./backend/api/src/services/paymentShadowEvidence');const p=process.env.RUNNER_TEMP+'/source-attestation.unsigned.json';const value=JSON.parse(fs.readFileSync(p));fs.writeFileSync(process.env.RUNNER_TEMP+'/source-attestation.json',JSON.stringify({...value,sourceDigest:digest(value)},null,2)+'\n',{mode:0o600,flag:'wx'})"
+
+      - name: Sign source with telemetry-only key
+        env:
+          TELEMETRY_PRIVATE_KEY_B64: ${{ secrets.PAYMENT_TELEMETRY_PRIVATE_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/telemetry-source-private.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$TELEMETRY_PRIVATE_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          node backend/api/src/scripts/paymentEvidenceManifest.js sign-artifact \
+            --input "$RUNNER_TEMP/source-attestation.json" \
+            --output "$RUNNER_TEMP/source-attestation.signed.json" \
+            --key-file "$key" --key-id telemetry-source-v1
+
+      - name: Upload private raw telemetry package
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-shadow-raw
+          path: |
+            ${{ runner.temp }}/events.jsonl
+            ${{ runner.temp }}/stream-metadata.json
+            ${{ runner.temp }}/provider-totals.json
+            ${{ runner.temp }}/source-attestation.signed.json
+          retention-days: 7
+          if-no-files-found: error

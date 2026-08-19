@@ -1,4 +1,6 @@
 require('dotenv').config();
+const { exitAfterFatal } = require('../instrument');
+const logger = require('../config/logger');
 const { sequelize, User, LawyerProfile, Specialization } = require('../models');
 
 const lawyers = [
@@ -96,9 +98,10 @@ async function seed() {
     console.log('\nSeed complete!');
     process.exit(0);
   } catch (error) {
-    console.error('Seed error:', error);
-    process.exit(1);
+    await exitAfterFatal(error, { operation: 'development_seed_cli' }, { logger });
   }
 }
 
-seed();
+if (require.main === module) seed();
+
+module.exports = { seed };

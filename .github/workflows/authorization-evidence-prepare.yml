@@ -1,0 +1,65 @@
+name: Prepare authorization compatibility evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      observed_from: { required: true, type: string }
+      observed_until: { required: true, type: string }
+
+permissions:
+  contents: read
+
+jobs:
+  export:
+    environment: authorization-telemetry-export
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      DATABASE_URL: ${{ secrets.AUTHORIZATION_EVIDENCE_DATABASE_URL }}
+      PROVIDER_METADATA_URL: ${{ vars.AUTHORIZATION_PROVIDER_METADATA_URL }}
+      PROVIDER_METADATA_TOKEN: ${{ secrets.AUTHORIZATION_PROVIDER_METADATA_TOKEN }}
+      REVIEWED_SHA: ${{ github.sha }}
+      WORKFLOW_REF: ${{ github.workflow_ref }}
+      WORKFLOW_RUN_ID: ${{ github.run_id }}
+      WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      TRUSTED_REF: ${{ vars.AUTHORIZATION_EVIDENCE_TRUSTED_REF }}
+      OBSERVED_FROM: ${{ inputs.observed_from }}
+      OBSERVED_UNTIL: ${{ inputs.observed_until }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ github.sha }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Validate provider and workflow provenance
+        run: |
+          umask 077
+          curl --fail --silent --show-error --proto '=https' \
+            --header "Authorization: Bearer $PROVIDER_METADATA_TOKEN" \
+            "$PROVIDER_METADATA_URL" > "$RUNNER_TEMP/provider-metadata.json"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          jq -n --arg repository "$REPOSITORY_NAME" --arg workflowRef "$WORKFLOW_REF" \
+            --arg workflowRunId "$WORKFLOW_RUN_ID" --arg workflowRunAttempt "$WORKFLOW_RUN_ATTEMPT" \
+            --arg reviewedCommitSha "$REVIEWED_SHA" --arg trustedRef "$TRUSTED_REF" --arg now "$now" \
+            '$ARGS.named' > "$RUNNER_TEMP/workflow-context.json"
+          node backend/api/src/scripts/authorizationEvidence.js validate-provenance \
+            --metadata "$RUNNER_TEMP/provider-metadata.json" --context "$RUNNER_TEMP/workflow-context.json" \
+            --output "$RUNNER_TEMP/provenance.json"
+      - name: Export bounded privacy-safe evidence
+        run: |
+          umask 077
+          node backend/api/src/scripts/authorizationEvidence.js export \
+            --from "$OBSERVED_FROM" --until "$OBSERVED_UNTIL" \
+            --source-uri "private://github/${GITHUB_REPOSITORY}/actions/${GITHUB_RUN_ID}/authorization-events.json" \
+            --provenance "$RUNNER_TEMP/provenance.json" \
+            --events-output "$RUNNER_TEMP/authorization-events.json" \
+            --output "$RUNNER_TEMP/authorization-evidence.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorization-evidence-prepared
+          path: |
+            ${{ runner.temp }}/authorization-events.json
+            ${{ runner.temp }}/authorization-evidence.json
+            ${{ runner.temp }}/provenance.json
+          retention-days: 30
+          if-no-files-found: error

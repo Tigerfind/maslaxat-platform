@@ -8,6 +8,9 @@ const rateLimit = require('express-rate-limit');
 const { User, LawyerProfile, PhoneOtp } = require('../models');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
+const authChallenges = require('../services/authChallengeService');
+const { authenticate, deriveCapabilities } = require('../middleware/auth');
+const { reportCaughtException } = require('../instrument');
 
 // Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
 // (считаем все попытки, не только неудачные).
@@ -26,21 +29,81 @@ const emailLimiter = rateLimit({
   message: { error: 'Слишком много запросов, попробуйте позже' },
 });
 
-const signToken = (user) => {
+const signToken = (user, authLevel = 'primary') => {
   return jwt.sign(
-    { id: user.id, role: user.role },
+    {
+      id: user.id,
+      role: user.role,
+      authLevel,
+      passwordState: authChallenges.passwordStateFor(user),
+      ...(authLevel === 'mfa' ? { twoFactorVersion: user.twoFactorVersion } : {}),
+    },
     process.env.JWT_SECRET,
     { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
   );
 };
 
-// Короткоживущий токен-вызов между «пароль верный» и «код 2FA верный»
-const signTwoFactorChallenge = (user) => {
-  return jwt.sign(
-    { id: user.id, twofa: 'pending' },
-    process.env.JWT_SECRET,
-    { expiresIn: '5m' }
-  );
+const loginContext = (user, authLevel) => {
+  const capabilities = deriveCapabilities(user, user.profile || null, authLevel);
+  let preferredMode = null;
+  if (user.accountType === 'admin') {
+    if (capabilities.includes('admin')) preferredMode = 'admin';
+  } else if (user.preferredMode === 'lawyer'
+    && (capabilities.includes('lawyerApplicant') || capabilities.includes('lawyer'))) {
+    preferredMode = 'lawyer';
+  } else if (user.preferredMode === 'client' && capabilities.includes('client')) {
+    preferredMode = 'client';
+  } else if (capabilities.includes('client')) {
+    preferredMode = 'client';
+  } else if (capabilities.includes('lawyerApplicant') || capabilities.includes('lawyer')) {
+    preferredMode = 'lawyer';
+  }
+  return { accountType: user.accountType, capabilities, preferredMode };
+};
+
+const finalizeLogin = async (user, res, { status = 200, fields = {}, sourceHash = null } = {}) => {
+  const currentUser = await User.findByPk(user.id, {
+    include: [{ model: LawyerProfile, as: 'profile', required: false }],
+  });
+  if (!currentUser || !currentUser.isActive) {
+    return res.status(401).json({ error: 'Пользователь не найден' });
+  }
+
+  if (currentUser.twoFactorEnabled) {
+    let tempToken;
+    try {
+      tempToken = await authChallenges.issueChallenge(currentUser.id, { sourceHash });
+    } catch (error) {
+      if (error instanceof authChallenges.AuthChallengeError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      throw error;
+    }
+    return res.status(status).json({
+      twoFactorRequired: true,
+      tempToken,
+      ...fields,
+    });
+  }
+
+  if (sourceHash) {
+    try {
+      await authChallenges.consumePrimarySource(currentUser.id, sourceHash);
+    } catch (error) {
+      if (error instanceof authChallenges.AuthChallengeError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      throw error;
+    }
+  }
+
+  return res.status(status).json({
+    user: currentUser.toJSON(),
+    token: signToken(currentUser, 'primary'),
+    role: currentUser.role,
+    ...loginContext(currentUser, 'primary'),
+    ...fields,
+  });
 };
 
 // POST /api/auth/register
@@ -82,7 +145,13 @@ router.post('/register', emailLimiter, async (req, res, next) => {
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
     const { specialization, specializations, phone: _rawPhone, ...userData } = value;
-    const user = await User.create({ ...userData, phone: phone || null, verificationToken });
+    const user = await User.create({
+      ...userData,
+      phone: phone || null,
+      verificationToken,
+      accountType: 'member',
+      preferredMode: value.role === 'lawyer' ? 'lawyer' : 'client',
+    });
 
     if (value.role === 'lawyer') {
       // Мультиспециализация: принимаем массив ИЛИ одиночную строку (legacy). Дедуп,
@@ -91,13 +160,14 @@ router.post('/register', emailLimiter, async (req, res, next) => {
         ? specializations
         : (specialization ? [specialization] : []);
       const specs = [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))].slice(0, 12);
-      const primary = specs[0] || 'Общее право';
       await LawyerProfile.create({
         userId: user.id,
-        specialization: primary,
-        specializations: specs.length ? specs : [primary],
+        specialization: specs[0] || null,
+        specializations: specs,
         price: 200000,
         isAvailable: false, // скрыт до завершения онбординга
+        verificationStatus: 'pending',
+        operatingStatus: 'suspended',
       });
     }
 
@@ -106,9 +176,12 @@ router.post('/register', emailLimiter, async (req, res, next) => {
     // не должен ждать сеть: письмо уходит асинхронно, ошибки только логируем.
     Promise.resolve()
       .then(() => sendVerificationEmail(user.email, verificationToken))
-      .catch((emailErr) => logger.error('Failed to send verification email:', emailErr.message));
+      .catch((emailErr) => {
+        reportCaughtException(emailErr, { operation: 'verification_email_send', userId: user.id });
+        logger.error('verification_email_send_failed', { userId: user.id });
+      });
 
-    const token = signToken(user);
+    const token = signToken(user, 'primary');
 
     res.status(201).json({
       user: user.toJSON(),
@@ -186,8 +259,10 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
       created = true;
     }
 
-    const token = signToken(user);
-    res.status(created ? 201 : 200).json({ user: user.toJSON(), token, role: user.role, created });
+    await finalizeLogin(user, res, {
+      status: created ? 201 : 200,
+      fields: { created },
+    });
   } catch (err) {
     next(err);
   }
@@ -217,21 +292,7 @@ router.post('/login', async (req, res, next) => {
       return res.status(401).json({ error: 'Неверный email или пароль' });
     }
 
-    // Если включена 2FA — не выдаём полный токен, требуем код вторым шагом
-    if (user.twoFactorEnabled) {
-      return res.json({
-        twoFactorRequired: true,
-        tempToken: signTwoFactorChallenge(user),
-      });
-    }
-
-    const token = signToken(user);
-
-    res.json({
-      user: user.toJSON(),
-      token,
-      role: user.role,
-    });
+    await finalizeLogin(user, res);
   } catch (err) {
     next(err);
   }
@@ -245,35 +306,24 @@ router.post('/login/2fa', twoFactorLimiter, async (req, res, next) => {
       return res.status(400).json({ error: 'Требуется код' });
     }
 
-    let payload;
     try {
-      payload = jwt.verify(tempToken, process.env.JWT_SECRET);
-    } catch (e) {
-      return res.status(401).json({ error: 'Сессия входа истекла, войдите заново' });
+      const user = await authChallenges.exchangeChallenge(tempToken, code);
+      const currentUser = await User.findByPk(user.id, {
+        include: [{ model: LawyerProfile, as: 'profile', required: false }],
+      });
+      const token = signToken(currentUser, 'mfa');
+      res.json({
+        user: currentUser.toJSON(),
+        token,
+        role: currentUser.role,
+        ...loginContext(currentUser, 'mfa'),
+      });
+    } catch (error) {
+      if (error instanceof authChallenges.AuthChallengeError) {
+        return res.status(error.status).json({ error: error.message, code: error.code });
+      }
+      throw error;
     }
-    if (payload.twofa !== 'pending') {
-      return res.status(401).json({ error: 'Недействительный токен' });
-    }
-
-    const user = await User.findByPk(payload.id);
-    if (!user || !user.twoFactorEnabled) {
-      return res.status(401).json({ error: 'Недействительный токен' });
-    }
-
-    const twoFactor = require('../services/twoFactorService');
-    const okTotp = twoFactor.verifyToken(user.twoFactorSecret, code);
-    const remaining = twoFactor.consumeBackupCode(user.twoFactorBackupCodes, code);
-    if (!okTotp && !remaining) {
-      return res.status(400).json({ error: 'Неверный код' });
-    }
-    // Резервный код одноразовый — списываем
-    if (!okTotp && remaining) {
-      user.twoFactorBackupCodes = remaining;
-      await user.save();
-    }
-
-    const token = signToken(user);
-    res.json({ user: user.toJSON(), token, role: user.role });
   } catch (err) {
     next(err);
   }
@@ -288,9 +338,8 @@ router.get('/social/config', (req, res) => {
 });
 
 // Общий помощник: выдать токен для найденного/созданного пользователя
-function issueFor(user, res) {
-  const token = signToken(user);
-  res.json({ user: user.toJSON(), token, role: user.role });
+async function issueFor(user, res, sourceHash) {
+  return finalizeLogin(user, res, { sourceHash });
 }
 
 // POST /api/auth/google — вход по Google ID-token
@@ -316,7 +365,7 @@ router.post('/google', async (req, res, next) => {
       user.googleId = data.googleId;
       await user.save();
     }
-    issueFor(user, res);
+    await issueFor(user, res, authChallenges.hashAuthSource('google', req.body.credential));
   } catch (err) {
     next(err);
   }
@@ -341,20 +390,33 @@ router.post('/telegram', async (req, res, next) => {
         password: crypto.randomBytes(24).toString('hex'),
       });
     }
-    issueFor(user, res);
+    await issueFor(user, res, authChallenges.hashAuthSource('telegram', req.body));
   } catch (err) {
     next(err);
   }
 });
 
 // GET /api/auth/me
-const { authenticate } = require('../middleware/auth');
 router.get('/me', authenticate, async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.userId, {
-      include: req.userRole === 'lawyer' ? [{ model: LawyerProfile, as: 'profile' }] : [],
+    const user = req.user;
+    const hasClient = req.capabilities.includes('client');
+    const hasLawyer = req.capabilities.includes('lawyerApplicant') || req.capabilities.includes('lawyer');
+    let preferredMode = null;
+    if (user.accountType !== 'admin') {
+      if (user.preferredMode === 'client' && hasClient) preferredMode = 'client';
+      else if (user.preferredMode === 'lawyer' && hasLawyer) preferredMode = 'lawyer';
+      else if (req.accountMode === 'client' || req.accountMode === 'lawyer') preferredMode = req.accountMode;
+      else if (hasClient) preferredMode = 'client';
+      else if (hasLawyer) preferredMode = 'lawyer';
+    }
+    res.json({
+      user,
+      role: user.role,
+      accountType: user.accountType,
+      capabilities: req.capabilities,
+      preferredMode,
     });
-    res.json({ user });
   } catch (err) {
     next(err);
   }
@@ -417,7 +479,8 @@ router.post('/forgot-password', emailLimiter, async (req, res, next) => {
     // Отправляем письмо fire-and-forget — не ждём, чтобы время ответа не
     // отличалось для существующего/несуществующего email (тайминг-энумерация).
     sendPasswordResetEmail(email, resetToken).catch((emailErr) => {
-      logger.error('Failed to send reset email:', emailErr.message);
+      reportCaughtException(emailErr, { operation: 'password_reset_email_send', userId: user.id });
+      logger.error('password_reset_email_send_failed', { userId: user.id });
     });
 
     res.json({ message: 'Если аккаунт существует, вы получите письмо для сброса пароля' });
@@ -453,7 +516,7 @@ router.post('/reset-password', async (req, res, next) => {
     user.password = value.password;
     user.resetToken = null;
     user.resetTokenExpiry = null;
-    user.passwordChangedAt = new Date(); // инвалидирует ранее выданные JWT
+    user.passwordChangedAt = new Date(Date.now()); // exact state invalidates earlier full/challenge JWTs
     await user.save();
 
     res.json({ message: 'Пароль успешно изменён' });

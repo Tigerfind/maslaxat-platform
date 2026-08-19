@@ -1,10 +1,13 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
+import LinkedInPdfImport from './LinkedInPdfImport';
+import ProfileImportReview from './ProfileImportReview';
+import { mergeProfileIntoForm, replaceObjectUrl, revokeObjectUrl } from '../../utils/profileImportUtils';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -68,7 +71,7 @@ const StepProfile = ({ data, onChange, t }) => (
             hidden type="file" accept="image/*"
             onChange={(e) => {
               const file = e.target.files[0];
-              if (file) onChange('avatarFile', file, URL.createObjectURL(file));
+               if (file) onChange('avatarFile', file);
             }}
           />
         </label>
@@ -271,31 +274,70 @@ const OnboardingWizard = ({ onComplete }) => {
   const [docs, setDocs] = useState([]);
   const [docType, setDocType] = useState('diploma');
   const [uploading, setUploading] = useState(false);
+  const [profileRevision, setProfileRevision] = useState(1);
+  const [profileSnapshot, setProfileSnapshot] = useState(null);
+  const [importRecord, setImportRecord] = useState(null);
+  const [importResetEpoch, setImportResetEpoch] = useState(0);
+  const avatarObjectUrl = useRef(null);
   const [data, setData] = useState({
     description: '',
+    headline: '',
+    greeting: '',
     experience: 3,
     avatarFile: null,
     avatarPreview: null,
     specializations: [],
+    specialization: '',
+    workExperience: [],
+    education: [],
+    certificates: [],
+    languages: ['uz', 'ru'],
+    linkedinUrl: '',
     schedule: {},
     price: 200000,
     location: 'Ташкент',
   });
 
-  const handleChange = (field, value, extra) => {
+  const handleChange = (field, value) => {
+    if (field === 'avatarFile') {
+      const preview = replaceObjectUrl(avatarObjectUrl.current, value);
+      avatarObjectUrl.current = preview;
+      setData((prev) => ({ ...prev, avatarFile: value, avatarPreview: preview }));
+      return;
+    }
     setData((prev) => ({
       ...prev,
       [field]: value,
-      ...(field === 'avatarFile' ? { avatarPreview: extra } : {}),
     }));
   };
+
+  useEffect(() => () => revokeObjectUrl(avatarObjectUrl.current), []);
 
   // Подгружаем уже загруженные документы (если юрист вернулся в мастер).
   useEffect(() => {
     lawyerService.verification.getDocuments()
       .then((r) => setDocs(r.documents || []))
       .catch(() => {});
+    api.get('/lawyer/profile')
+      .then((response) => {
+        setProfileRevision(response.data?.profile?.revision || 1);
+        setProfileSnapshot(response.data?.profile || null);
+        setData((previous) => mergeProfileIntoForm(previous, response.data?.profile || {}));
+      })
+      .catch(() => {});
   }, []);
+
+  const mergeConfirmedProfile = async (confirmedProfile) => {
+    let profile = confirmedProfile;
+    if (!profile) {
+      const response = await api.get('/lawyer/profile');
+      profile = response.data.profile || {};
+    }
+    setProfileRevision(profile.revision || 1);
+    setProfileSnapshot(profile);
+    setData((previous) => mergeProfileIntoForm(previous, profile));
+    setImportRecord(null);
+  };
 
   const uploadDoc = async (file) => {
     setUploading(true);
@@ -331,10 +373,17 @@ const OnboardingWizard = ({ onComplete }) => {
     setSaving(true);
     try {
       const formData = new FormData();
+      formData.append('profileRevision', String(profileRevision));
       formData.append('description', data.description);
+      formData.append('headline', data.headline || '');
+      formData.append('greeting', data.greeting || '');
       formData.append('experience', String(data.experience));
       formData.append('specializations', JSON.stringify(data.specializations));
-      formData.append('languages', JSON.stringify(['uz', 'ru']));
+      formData.append('languages', JSON.stringify(data.languages));
+      formData.append('workExperience', JSON.stringify(data.workExperience));
+      formData.append('education', JSON.stringify(data.education));
+      formData.append('certificates', JSON.stringify(data.certificates));
+      formData.append('linkedinUrl', data.linkedinUrl || '');
       formData.append('schedule', JSON.stringify(data.schedule));
       formData.append('price', String(data.price));
       formData.append('location', data.location);
@@ -360,7 +409,7 @@ const OnboardingWizard = ({ onComplete }) => {
   const meta = STEP_META[step];
 
   return (
-    <div style={{
+    <div className="lawyer-onboarding" style={{
       position: 'fixed', inset: 0, zIndex: 800,
       background: 'radial-gradient(circle at 25% 15%, #2D2820, #1A1A1A 60%)',
       display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, overflowY: 'auto',
@@ -406,7 +455,26 @@ const OnboardingWizard = ({ onComplete }) => {
 
         {/* Step content */}
         <div style={{ minHeight: 220 }}>
-          {step === 0 && <StepProfile data={data} onChange={handleChange} t={t} />}
+          {step === 0 && <div style={{ display: 'grid', gap: 20 }}>
+            <LinkedInPdfImport key={importResetEpoch} onImportReady={setImportRecord} onConfirmedRecovery={() => mergeConfirmedProfile()} onManual={() => setImportRecord(null)} />
+            {importRecord?.status === 'draft' && profileSnapshot && <ProfileImportReview
+              importRecord={importRecord}
+              profile={profileSnapshot}
+              onDiscarded={() => { setImportRecord(null); setImportResetEpoch((value) => value + 1); }}
+              onConfirmed={(confirmedProfile) => mergeConfirmedProfile(confirmedProfile)}
+              onConflict={async () => {
+                const [importResult, profileResult] = await Promise.all([
+                  lawyerService.imports.get(importRecord.id),
+                  api.get('/lawyer/profile'),
+                ]);
+                setProfileSnapshot(profileResult.data.profile);
+                setProfileRevision(profileResult.data.profile?.revision || 1);
+                setData((previous) => mergeProfileIntoForm(previous, profileResult.data.profile || {}));
+                return { import: importResult.import, profile: profileResult.data.profile };
+              }}
+            />}
+            <StepProfile data={data} onChange={handleChange} t={t} />
+          </div>}
           {step === 1 && <StepSpecializations data={data} onChange={handleChange} t={t} />}
           {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} t={t} />}
           {step === 3 && <StepPrice data={data} onChange={handleChange} t={t} />}

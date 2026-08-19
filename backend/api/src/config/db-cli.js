@@ -24,6 +24,6 @@ const prod = process.env.DATABASE_URL
 
 module.exports = {
   development: { ...base, database: process.env.DB_NAME || 'emaslaxat' },
-  test: { ...base, database: 'emaslaxat_test' },
+  test: { ...base, database: process.env.TEST_DB_NAME || 'emaslaxat_test' },
   production: prod,
 };

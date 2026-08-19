@@ -3,7 +3,9 @@
 // ДОБАВЛЯ�ет демо-данные через findOrCreate: существующие записи не трогает,
 // таблицы не пересоздаёт. Безопасно запускать повторно.
 require('dotenv').config();
-const { sequelize, User, LawyerProfile, Specialization } = require('../models');
+const { exitAfterFatal, reportCaughtException } = require('../instrument');
+const logger = require('../config/logger');
+const { sequelize, User, LawyerProfile, PromotionPackage, Specialization } = require('../models');
 
 const lawyers = [
   { name: 'Акбаров Азиз', email: 'akbarov@maslaxat.uz', spec: 'Гражданское право', exp: 12, price: 250000, rating: 4.9, reviews: 127, cases: 234, location: 'Ташкент, Мирзо-Улугбекский район' },
@@ -82,13 +84,35 @@ async function runProdSeed() {
       wasCreated ? created++ : skipped++;
     }
 
+    const promotionPackages = [
+      {
+        code: 'CATALOG_TOP_7',
+        name: { ru: 'TOP на 7 дней', uz: '7 kunlik TOP', en: '7-day TOP' },
+        placement: 'catalog_top', durationDays: 7, priceAmountTiyin: 19900000,
+        currency: 'UZS', maxActiveSlots: 2, sponsoredPositions: [0, 3], isActive: true, displayOrder: 10,
+      },
+      {
+        code: 'CATALOG_TOP_30',
+        name: { ru: 'TOP на 30 дней', uz: '30 kunlik TOP', en: '30-day TOP' },
+        placement: 'catalog_top', durationDays: 30, priceAmountTiyin: 59900000,
+        currency: 'UZS', maxActiveSlots: 2, sponsoredPositions: [0, 3], isActive: true, displayOrder: 20,
+      },
+    ];
+    for (const promotionPackage of promotionPackages) {
+      const [, wasCreated] = await PromotionPackage.findOrCreate({
+        where: { code: promotionPackage.code }, defaults: promotionPackage,
+      });
+      wasCreated ? created++ : skipped++;
+    }
+
     // Промокоды (их сид уже идемпотентен)
     try {
       const { seedPromos } = require('./promos');
       await seedPromos();
       console.log('промокоды: ок');
     } catch (e) {
-      console.log('промокоды пропущены:', e.message);
+      reportCaughtException(e, { operation: 'production_promo_seed' });
+      logger.warn('production_promo_seed_skipped');
     }
 
     console.log(`\nГотово. Создано: ${created}, уже было (пропущено): ${skipped}`);
@@ -101,5 +125,5 @@ module.exports = { runProdSeed };
 if (require.main === module) {
   runProdSeed()
     .then((r) => { console.log('OK', r); process.exit(0); })
-    .catch((e) => { console.error('Seed error:', e); process.exit(1); });
+    .catch((e) => exitAfterFatal(e, { operation: 'production_seed_cli' }, { logger }));
 }

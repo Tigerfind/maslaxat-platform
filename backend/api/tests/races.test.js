@@ -19,7 +19,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 
-const { Consultation, Subscription } = models;
+const { Consultation, Subscription, ObjectCleanupTask, AIConversation, AIMessage } = models;
 
 // Дать сработать res.on('finish') (refund) до проверки счётчика
 const settle = () => new Promise((r) => setTimeout(r, 30));
@@ -78,19 +78,54 @@ describe('#4 AI daily limit — reserve + refund', () => {
     const r = await send(tokenFor(client));
     expect(r.status).toBe(503);
   });
+
+  test('attachment without a real Anthropic key fails before R2 staging and refunds quota', async () => {
+    const client = await makeClient(`ai_attachment_${Date.now()}@t.uz`);
+    const response = await request(app).post('/api/ai/chat/message')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .field('message', 'analyze this')
+      .attach('files', Buffer.from('safe text'), { filename: 'claim.txt', contentType: 'text/plain' });
+    expect(response.status).toBe(503);
+    await settle();
+    expect(mockRedisStore[limitKey()] || 0).toBe(0);
+    expect(await ObjectCleanupTask.count()).toBe(0);
+  });
+
+  test.each([
+    ['arbitrary ZIP DOCX', Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]), 'claim.docx', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'],
+    ['legacy OLE DOC', Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0x00]), 'claim.doc', 'application/msword'],
+  ])('%s returns controlled 400 before staging and refunds quota', async (_label, body, filename, contentType) => {
+    const client = await makeClient(`ai_invalid_${Date.now()}_${filename}@t.uz`);
+    const conversationsBefore = await AIConversation.count();
+    const messagesBefore = await AIMessage.count();
+    const response = await request(app).post('/api/ai/chat/message')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .field('message', 'analyze this')
+      .attach('files', body, { filename, contentType });
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('INVALID_ATTACHMENT');
+    await settle();
+    expect(mockRedisStore[limitKey()] || 0).toBe(0);
+    expect(await ObjectCleanupTask.count()).toBe(0);
+    expect(await AIConversation.count()).toBe(conversationsBefore);
+    expect(await AIMessage.count()).toBe(messagesBefore);
+  });
 });
 
 describe('#3 free-consultation — нет double-spend под конкуренцией', () => {
-  const book = (token, lawyerId, body) =>
-    request(app).post(`/api/client/lawyers/${lawyerId}/book`).set('Authorization', `Bearer ${token}`).send(body);
+  const book = (token, lawyerId, body, key) =>
+    request(app).post(`/api/client/lawyers/${lawyerId}/book`)
+      .set('Authorization', `Bearer ${token}`)
+      .set('Idempotency-Key', key)
+      .send(body);
 
   test('N параллельных loyalty-броней у нового клиента → ровно одна бесплатная', async () => {
     const client = await makeClient(`l3_${Date.now()}@t.uz`);
     const token = tokenFor(client);
     const { user: lawyer } = await makeLawyer(`l3law_${Date.now()}@t.uz`);
 
-    const results = await Promise.all([1, 2, 3, 4].map(() =>
-      book(token, lawyer.id, { useFreePromo: true, question: 'q' })));
+    const results = await Promise.all([1, 2, 3, 4].map((attempt) =>
+      book(token, lawyer.id, { useFreePromo: true, question: 'q' }, `loyalty-race-${attempt}`)));
     const created = results.filter((r) => r.status === 201).map((r) => r.body.consultation);
 
     expect(created.length).toBe(4);
@@ -106,8 +141,8 @@ describe('#3 free-consultation — нет double-spend под конкуренц
     await Subscription.create({ userId: client.id, plan: 'pro' });
     const { user: lawyer } = await makeLawyer(`s3law_${Date.now()}@t.uz`);
 
-    const results = await Promise.all([1, 2, 3, 4, 5].map(() =>
-      book(token, lawyer.id, { useSubscriptionFree: true, question: 'q' })));
+    const results = await Promise.all([1, 2, 3, 4, 5].map((attempt) =>
+      book(token, lawyer.id, { useSubscriptionFree: true, question: 'q' }, `subscription-race-${attempt}`)));
     const created = results.filter((r) => r.status === 201).map((r) => r.body.consultation);
 
     expect(created.length).toBe(5);

@@ -1,0 +1,51 @@
+{
+  "snapshot": "20260815T000000Z",
+  "images": {
+    "builder": {
+      "reference": "debian:bookworm-slim",
+      "digest": "sha256:abd67ffcfa541b485a3dff59865ab629aa048a6c613e639d36e7456b0b229241"
+    },
+    "runtime": {
+      "reference": "node:22.18.0-bookworm-slim",
+      "digest": "sha256:752ea8a2f758c34002a0461bd9f1cee4f9a3c36d48494586f60ffce1fc708e0e"
+    }
+  },
+  "buildPackages": {
+    "bison": "2:3.8.2+dfsg-1+b1",
+    "build-essential": "12.9",
+    "ca-certificates": "20250419~deb12u1",
+    "flex": "2.6.4-8.2",
+    "git": "1:2.39.5-0+deb12u3",
+    "libcap-dev": "1:2.66-4+deb12u3+b1",
+    "libnl-3-dev": "3.7.0-0.2+b1",
+    "libnl-genl-3-dev": "3.7.0-0.2+b1",
+    "libnl-route-3-dev": "3.7.0-0.2+b1",
+    "libprotobuf-dev": "3.21.12-3+deb12u1",
+    "libseccomp-dev": "2.5.4-1+deb12u1",
+    "pkg-config": "1.8.1-1",
+    "protobuf-compiler": "3.21.12-3+deb12u1"
+  },
+  "runtimePackages": {
+    "ca-certificates": "20250419~deb12u1",
+    "clamav": "1.4.3+dfsg-1~deb12u2",
+    "clamav-freshclam": "1.4.3+dfsg-1~deb12u2",
+    "qpdf": "11.3.0-1+deb12u1",
+    "poppler-utils": "22.12.0-2+deb12u3",
+    "util-linux": "2.38.1-5+deb12u3",
+    "libcap2": "1:2.66-4+deb12u3+b1",
+    "libnl-3-200": "3.7.0-0.2+b1",
+    "libnl-genl-3-200": "3.7.0-0.2+b1",
+    "libnl-route-3-200": "3.7.0-0.2+b1",
+    "libprotobuf32": "3.21.12-3+deb12u1",
+    "libseccomp2": "2.5.4-1+deb12u1"
+  },
+  "tools": {
+    "clamscan": "1.4.3",
+    "qpdf": "11.3.0",
+    "pdftotext": "22.12.0"
+  },
+  "nsjail": {
+    "version": "3.4",
+    "commit": "079d70dda4aa1edd9512cfd25ff1e47e316dc355"
+  }
+}

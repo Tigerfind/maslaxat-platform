@@ -48,7 +48,7 @@ export const clientDashboardService = {
 // Client Lawyer Search Service
 export const clientLawyerService = {
   // Search lawyers
-  searchLawyers: async (filters) => {
+  searchLawyers: async (filters, options = {}) => {
     try {
       // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Границы 0 / +∞
       // не шлём, чтобы не сужать выборку без нужды (0 и максимум = «любая цена»).
@@ -59,7 +59,7 @@ export const clientLawyerService = {
         if (Number(min) > 0) params.minPrice = min;
         if (Number(max) > 0 && Number(max) < 2000000) params.maxPrice = max;
       }
-      const response = await api.get('/client/lawyers', { params });
+      const response = await api.get('/client/lawyers', { params, signal: options.signal });
       const data = response.data;
       const rawLawyers = data.lawyers || data || [];
       const lawyers = rawLawyers.map((l) => ({
@@ -83,15 +83,24 @@ export const clientLawyerService = {
         languages: l.profile?.languages || [],
         schedule: l.profile?.schedule || {},
         isAvailable: l.profile?.isAvailable ?? true,
+        placement: l.placement || null,
+        promotionId: l.promotionId || null,
+        promotionAttributionToken: l.promotionAttributionToken || null,
       }));
       return {
         lawyers,
         totalPages: data.totalPages || 1,
         total: data.total || lawyers.length,
+        cursor: data.cursor || null,
       };
     } catch (error) {
+      if (error.response?.status === 410) return { lawyers: [], totalPages: 1, total: 0, cursor: null, sessionExpired: true };
+      if (error.response?.status === 503 && error.response?.data?.code === 'CATALOG_SESSION_UNAVAILABLE') {
+        return { sessionUnavailable: true };
+      }
+      if (error.code === 'ERR_CANCELED') throw error;
       console.error('Error searching lawyers:', error);
-      return { lawyers: [], totalPages: 1, total: 0 };
+      return { lawyers: [], totalPages: 1, total: 0, cursor: null };
     }
   },
 
@@ -106,9 +115,12 @@ export const clientLawyerService = {
   },
 
   // Get lawyer details
-  getLawyerDetails: async (lawyerId) => {
+  getLawyerDetails: async (lawyerId, attribution = null) => {
     try {
-      const response = await api.get(`/client/lawyers/${lawyerId}`);
+      const response = await api.get(`/client/lawyers/${lawyerId}`, attribution ? {
+        params: { attributionToken: attribution.attributionToken },
+        headers: { 'X-Promotion-Request-Id': attribution.profileRequestId },
+      } : undefined);
       return response.data;
     } catch (error) {
       console.error('Error fetching lawyer details:', error);
@@ -116,9 +128,19 @@ export const clientLawyerService = {
     }
   },
 
+  recordBookingStart: async (lawyerId, attribution) => {
+    if (!attribution) return;
+    await api.post(`/client/lawyers/${lawyerId}/promotion/booking-start`, {
+      attributionToken: attribution.attributionToken,
+      requestId: attribution.bookingStartRequestId,
+    });
+  },
+
   // Book consultation — directly through API, no localStorage fallback
-  bookConsultation: async (lawyerId, consultationData) => {
-    const response = await api.post(`/client/lawyers/${lawyerId}/book`, consultationData);
+  bookConsultation: async (lawyerId, consultationData, idempotencyKey) => {
+    const response = await api.post(`/client/lawyers/${lawyerId}/book`, consultationData, {
+      headers: idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {},
+    });
     return response.data;
   },
 

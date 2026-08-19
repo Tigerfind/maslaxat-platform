@@ -1,4 +1,5 @@
 import React from 'react';
+import { captureRenderError } from '../sentry';
 
 /**
  * Ловит непойманные ошибки рендера, чтобы вместо белого экрана показать
@@ -15,8 +16,7 @@ class ErrorBoundary extends React.Component {
   }
 
   componentDidCatch(error, info) {
-    // eslint-disable-next-line no-console
-    console.error('[ErrorBoundary]', error, info?.componentStack);
+    captureRenderError(error, info);
   }
 
   handleReload = () => {

@@ -146,7 +146,7 @@ const Row = ({ label, description, control, last }) => (
 const SettingsPageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { role } = useSelector((s) => s.auth);
+  const { activeMode, user } = useSelector((s) => s.auth);
   const { t } = useTranslation();
 
   // ── appSettings: local-only preferences (NOT theme/language) ──
@@ -181,22 +181,22 @@ const SettingsPageGlass = () => {
   const [devicePush, setDevicePush] = useState({ supported: false, subscribed: false, enabledOnServer: false, busy: false });
   useEffect(() => {
     let alive = true;
-    pushService.getStatus().then((s) => {
+    pushService.getStatus(user?.id).then((s) => {
       if (alive) setDevicePush((prev) => ({ ...prev, supported: s.supported, subscribed: s.subscribed, enabledOnServer: s.enabledOnServer }));
     });
     return () => { alive = false; };
-  }, []);
+  }, [user?.id]);
 
   const handleTogglePush = async () => {
     if (devicePush.busy) return;
     setDevicePush((p) => ({ ...p, busy: true }));
     try {
       if (devicePush.subscribed) {
-        await pushService.disable();
+        await pushService.disable(user?.id);
         setDevicePush((p) => ({ ...p, subscribed: false, busy: false }));
         toast.success(t('settings.pushDeviceOff'));
       } else {
-        await pushService.enable();
+        await pushService.enable(user?.id);
         setDevicePush((p) => ({ ...p, subscribed: true, busy: false }));
         toast.success(t('settings.pushDeviceOn'));
       }
@@ -283,7 +283,7 @@ const SettingsPageGlass = () => {
   };
 
   return (
-    <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')} role={role || 'client'}>
+    <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')} role={activeMode}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
         {/* ── Уведомления ── */}
         <Section
@@ -312,7 +312,9 @@ const SettingsPageGlass = () => {
         </Section>
 
         {/* ── Двухфакторная аутентификация (юристы/админ) ── */}
-        <TwoFactorSection />
+        <div id="two-factor">
+          <TwoFactorSection />
+        </div>
 
         {/* ── Приватность ── */}
         <Section

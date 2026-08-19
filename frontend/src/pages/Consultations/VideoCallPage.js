@@ -34,6 +34,7 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { createModeSocket } from '../../services/modeSocket';
 
 // Короткий сигнал (Web Audio, без файлов) — уведомление о времени
 function beep() {
@@ -70,7 +71,7 @@ const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').r
 const VideoCallPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
-  const { user } = useSelector((state) => state.auth);
+  const { user, token, activeMode } = useSelector((state) => state.auth);
   const { t } = useTranslation();
 
   // State
@@ -111,9 +112,6 @@ const VideoCallPage = () => {
   // Call state
   const [callDuration, setCallDuration] = useState(0);
   const [callStartTime, setCallStartTime] = useState(null);
-  // Биллинг (модель B): когда ОБА в звонке — сервер шлёт billing:call-started с моментом
-  // старта и окном до захвата (5 мин). Ранний выход → billing:call-paused (сброс).
-  const [billing, setBilling] = useState(null); // { startedAt(ms), captureAfterMs } | null
   const [ringStatus, setRingStatus] = useState(null); // null|'ringing'|'offline'|'declined'
   const [quality, setQuality] = useState(null); // null|'good'|'ok'|'poor' — качество связи
   const [extendOpen, setExtendOpen] = useState(false);
@@ -121,9 +119,7 @@ const VideoCallPage = () => {
   const [extendMin, setExtendMin] = useState(15); // выбор длительности продления
   const [extendWaiting, setExtendWaiting] = useState(false); // ждём ответ собеседника
   const [incomingExtend, setIncomingExtend] = useState(null); // { minutes, from }
-  const EXTEND_MIN = 15;
   const extendWaitRef = useRef(null);
-  const extendWaitingRef = useRef(false);
   const endedRef = useRef(false);
 
   // In-call chat
@@ -187,7 +183,6 @@ const VideoCallPage = () => {
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
   useEffect(() => { callDurationRef.current = callDuration; }, [callDuration]);
 
-  useEffect(() => { extendWaitingRef.current = extendWaiting; }, [extendWaiting]);
 
   // Синхронизируем состояние фуллскрина с реальным (в т.ч. выход по ESC),
   // иначе кнопка «залипала» в неверном состоянии.
@@ -406,7 +401,7 @@ const VideoCallPage = () => {
       socketRef.current.emit('end-call');
       // Если собеседник ещё не ответил (мы только звонили) — гасим у него ring
       if (!peerConnectedRef.current && calleeIdRef.current) {
-        socketRef.current.emit('call-cancel', { consultationId, calleeId: calleeIdRef.current });
+        socketRef.current.emit('call-cancel', { consultationId });
       }
     }
     if (socketRef.current) {
@@ -428,15 +423,15 @@ const VideoCallPage = () => {
     // иначе (недозвон/отмена) — сразу возвращаемся.
     if (wasConnectedRef.current) {
       setEndSummary({ seconds });
-    } else if (user?.role === 'lawyer') {
+    } else if (activeMode === 'lawyer') {
       navigate('/lawyer/dashboard');
     } else {
       navigate('/consultations');
     }
-  }, [consultationId, navigate, user]);
+  }, [activeMode, consultationId, navigate]);
 
   const leaveSummary = () => {
-    navigate(user?.role === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
+    navigate(activeMode === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
   };
 
   // ─── Лобби: превью камеры, список устройств, уровень микрофона ───
@@ -513,6 +508,46 @@ const VideoCallPage = () => {
     setInLobby(false); // init-эффект поднимет звонок с выбранными устройствами
   };
 
+  const applyRecoveredExtension = (proposal) => {
+    if (!proposal) {
+      setIncomingExtend(null);
+      setExtendWaiting(false);
+      return;
+    }
+    const alreadyConsented = proposal.consentUserIds?.includes(user?.id);
+    if (!alreadyConsented) {
+      setExtendWaiting(false);
+      setIncomingExtend({
+        minutes: proposal.minutes,
+        proposalId: proposal.proposalId,
+        from: t('videoCall.participant'),
+      });
+      return;
+    }
+    setIncomingExtend(null);
+    setExtendWaiting(!proposal.requiresPayment);
+    if (proposal.requiresPayment && proposal.checkoutUrl && user?.id === consultation?.clientId) {
+      window.location.assign(proposal.checkoutUrl);
+    }
+  };
+
+  const recoverExtensionProposal = async () => {
+    try {
+      const response = await api.get(`/video/consultation/${consultationId}/extension`);
+      applyRecoveredExtension(response.data?.proposal || null);
+    } catch (error) {
+      if (![403, 404].includes(error.response?.status)) {
+        console.error('Extension recovery error:', error.message);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (consultationLoaded) recoverExtensionProposal();
+  // Recovery deliberately follows consultation identity rather than transient socket state.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [consultationLoaded, consultationId]);
+
   // Initialize media and socket connection.
   // Init-эффект зависит от булевых флагов (загружено/не в лобби), а НЕ от объекта
   // consultation: иначе setConsultation (продление) пересоздавал бы эффект → обрыв.
@@ -523,6 +558,7 @@ const VideoCallPage = () => {
     callStartedRef.current = true;
 
     let socket = null;
+    let unregisterSocket = null;
     let stream = null;
     let cancelled = false;
 
@@ -554,11 +590,9 @@ const VideoCallPage = () => {
         if (cancelled) return;
 
         // Connect to signaling server
-        const token = localStorage.getItem('token');
-        socket = io(API_URL, {
-          auth: { token },
-          transports: ['websocket', 'polling'],
-        });
+        const connection = createModeSocket(io, API_URL, token, activeMode);
+        socket = connection.socket;
+        unregisterSocket = connection.unregister;
         socketRef.current = socket;
 
         socket.on('connect', () => {
@@ -566,6 +600,7 @@ const VideoCallPage = () => {
           setConnected(true);
           socket.emit('join-room', { consultationId });
           socket.emit('join-chat', { consultationId }); // чат в звонке — та же комната
+          recoverExtensionProposal();
         });
 
         // Сообщение чата во время звонка
@@ -582,25 +617,13 @@ const VideoCallPage = () => {
 
         // ─── Продление по согласию ───
         // Пришло предложение продлить — показываем окошко для принятия
-        socket.on('extend-request', ({ minutes, from }) => {
-          // Игнорируем чужое предложение, если сами уже предлагаем/ждём ответ —
-          // иначе одновременный обоюдный extend приводил бы к двойному продлению.
-          if (cancelled || extendWaitingRef.current) return;
-          setIncomingExtend({ minutes: minutes || 15, from });
+        socket.on('extend-request', () => {
+          if (!cancelled) recoverExtensionProposal();
         });
         // Собеседник принял наше предложение — применяем новые значения у себя
-        socket.on('extend-accept', (data) => {
+        socket.on('extend-accept', () => {
           if (cancelled) return;
-          setExtendWaiting(false);
-          if (data && data.duration) {
-            setConsultation((prev) => (prev ? { ...prev, duration: data.duration, price: data.price } : prev));
-            warnedRef.current = { five: false, one: false, up: false };
-            toast.success(
-              t('videoCall.extendedOk')
-                .replace('{min}', data.minutes || EXTEND_MIN)
-                .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
-            );
-          }
+          recoverExtensionProposal();
         });
         // Собеседник отклонил продление
         socket.on('extend-decline', () => {
@@ -689,13 +712,6 @@ const VideoCallPage = () => {
           if (!cancelled) setError(message);
         });
 
-        // Биллинг: оба в звонке → пошёл отсчёт до списания; кто-то вышел раньше 5 мин → сброс.
-        socket.on('billing:call-started', ({ at, captureAfterMs }) => {
-          if (!cancelled) setBilling({ startedAt: at || Date.now(), captureAfterMs: captureAfterMs || 300000 });
-        });
-        socket.on('billing:call-paused', () => {
-          if (!cancelled) setBilling(null);
-        });
       } catch (err) {
         if (cancelled) return;
         if (err.name === 'NotAllowedError') {
@@ -729,6 +745,7 @@ const VideoCallPage = () => {
       }
       if (socket) {
         socket.disconnect();
+        unregisterSocket?.();
         socketRef.current = null;
       }
       if (timerRef.current) {
@@ -739,7 +756,7 @@ const VideoCallPage = () => {
       localStreamRef.current = null;
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [consultationLoaded, consultationId, inLobby]);
+  }, [activeMode, consultationLoaded, consultationId, inLobby, token]);
 
   // Toggle audio
   // Мини-режим: видео собеседника в плавающем окне (браузерный Picture-in-Picture)
@@ -812,24 +829,22 @@ const VideoCallPage = () => {
   };
 
   // Предлагаем продление собеседнику (применяется только после его согласия)
-  const proposeExtend = () => {
+  const proposeExtend = async () => {
     if (!socketRef.current) return;
-    socketRef.current.emit('extend-request', { minutes: extendMin });
-    setExtendOpen(false);
-    setExtendWaiting(true);
-    clearTimeout(extendWaitRef.current);
-    extendWaitRef.current = setTimeout(() => setExtendWaiting(false), 30000);
-  };
-
-  // Применяем продление у себя из ответа бэкенда
-  const applyExtendResult = (data) => {
-    setConsultation((prev) => (prev ? { ...prev, duration: data.duration, price: data.price } : prev));
-    warnedRef.current = { five: false, one: false, up: false };
-    toast.success(
-      t('videoCall.extendedOk')
-        .replace('{min}', data.minutes || EXTEND_MIN)
-        .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
-    );
+    const proposalId = window.crypto?.randomUUID?.()
+      || `extension-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    try {
+      await api.post(`/video/consultation/${consultationId}/extend`, { minutes: extendMin }, {
+        headers: { 'Idempotency-Key': proposalId },
+      });
+      socketRef.current.emit('extend-request', { minutes: extendMin, proposalId });
+      setExtendOpen(false);
+      setExtendWaiting(true);
+      clearTimeout(extendWaitRef.current);
+      extendWaitRef.current = setTimeout(() => setExtendWaiting(false), 30000);
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('videoCall.extendErr'));
+    }
   };
 
   // Принять входящее предложение продления: применяем на сервере (доплата
@@ -838,10 +853,11 @@ const VideoCallPage = () => {
     if (!incomingExtend) return;
     setExtending(true);
     try {
-      const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: incomingExtend.minutes });
-      applyExtendResult(res.data || {});
-      socketRef.current?.emit('extend-accept', res.data || {});
-      setIncomingExtend(null);
+      const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: incomingExtend.minutes }, {
+        headers: { 'Idempotency-Key': incomingExtend.proposalId },
+      });
+      socketRef.current?.emit('extend-accept', {});
+      await recoverExtensionProposal();
     } catch (e) {
       toast.error(e.response?.data?.error || t('videoCall.extendErr'));
     } finally {
@@ -849,9 +865,19 @@ const VideoCallPage = () => {
     }
   };
 
-  const declineIncomingExtend = () => {
-    socketRef.current?.emit('extend-decline');
-    setIncomingExtend(null);
+  const declineIncomingExtend = async () => {
+    if (!incomingExtend?.proposalId) return;
+    setExtending(true);
+    try {
+      await api.delete(`/video/consultation/${consultationId}/extension/${incomingExtend.proposalId}`);
+      socketRef.current?.emit('extend-decline');
+      setIncomingExtend(null);
+      setExtendWaiting(false);
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('videoCall.extendErr'));
+    } finally {
+      setExtending(false);
+    }
   };
 
   // Отправка сообщения в чат во время звонка
@@ -982,7 +1008,7 @@ const VideoCallPage = () => {
 
   // Determine the other party's name
   const otherPartyName = consultation
-    ? user?.role === 'lawyer'
+    ? activeMode === 'lawyer'
       ? consultation.client?.name
       : consultation.lawyer?.name
     : '';
@@ -1066,10 +1092,6 @@ const VideoCallPage = () => {
     ? `${t('videoCall.overtime')} +${formatDuration(-remaining)}`
     : `${t('videoCall.timeLeft')} ${formatDuration(remaining)}`;
   const timeColor = overtime ? '#D9534F' : remaining <= 300 ? '#C4A35A' : '#C9A980';
-
-  // Биллинг (модель B): отсчёт до списания. Пересчитывается каждый тик callDuration.
-  const billingRemainingMs = billing ? Math.max(0, billing.startedAt + billing.captureAfterMs - Date.now()) : null;
-  const billingCharged = billing && billingRemainingMs === 0;
 
   // Различаем «собеседник вышел» (насовсем) и краткий обрыв («переподключение»)
   const reconnecting = !peerConnected && wasConnectedRef.current && connected && !remoteLeft;
@@ -1277,26 +1299,6 @@ const VideoCallPage = () => {
           >
             {statusText}
           </Typography>
-
-          {/* Биллинг: таймер до списания / факт списания (модель B) */}
-          {billing && (
-            <Box
-              sx={{
-                display: 'inline-flex', alignItems: 'center', gap: 0.7, ml: 0.5,
-                px: 1.1, py: 0.4, borderRadius: '999px', whiteSpace: 'nowrap',
-                bgcolor: billingCharged ? 'rgba(110,154,95,0.18)' : 'rgba(196,163,90,0.18)',
-                border: `1px solid ${billingCharged ? 'rgba(110,154,95,0.5)' : 'rgba(196,163,90,0.5)'}`,
-              }}
-              title={billingCharged ? t('videoCall.billCharged') : t('videoCall.billPending')}
-            >
-              <span style={{ fontSize: 12 }}>{billingCharged ? '✓' : '💳'}</span>
-              <Typography sx={{ fontSize: 12, fontWeight: 600, color: billingCharged ? '#8FBF7F' : '#E0C069', letterSpacing: '0.02em' }}>
-                {billingCharged
-                  ? t('videoCall.billCharged')
-                  : `${t('videoCall.billIn')} ${formatDuration(Math.ceil(billingRemainingMs / 1000))}`}
-              </Typography>
-            </Box>
-          )}
 
           {/* Индикатор качества связи (полоски сигнала) */}
           {peerConnected && quality && (() => {

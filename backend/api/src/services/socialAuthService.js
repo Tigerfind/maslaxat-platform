@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const { OAuth2Client } = require('google-auth-library');
 const logger = require('../config/logger');
+const { reportCaughtException } = require('../instrument');
 
 // Соц-вход. Всё fail-safe: без ключей провайдер просто отключён (enabled=false),
 // фронт прячет кнопки. Ключи — только через .env / секреты платформы.
@@ -33,7 +34,8 @@ async function verifyGoogleToken(credential) {
     if (p.email_verified !== true) return null;
     return { googleId: p.sub, email: p.email.toLowerCase(), name: p.name || p.email.split('@')[0], avatar: p.picture || null };
   } catch (err) {
-    logger.error('Google token verify failed:', err.message);
+    reportCaughtException(err, { operation: 'google_token_verify' });
+    logger.error('google_token_verify_failed');
     return null;
   }
 }

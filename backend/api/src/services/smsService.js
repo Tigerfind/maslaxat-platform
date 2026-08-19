@@ -1,4 +1,5 @@
 const logger = require('../config/logger');
+const { reportCaughtException } = require('../instrument');
 
 /**
  * Отправка SMS для Узбекистана. Поддерживаются два провайдера:
@@ -42,6 +43,14 @@ function digits(phone) {
 let eskizToken = null;
 let eskizTokenExp = 0;
 
+function smsProviderError(statusCode) {
+  const error = new Error('SMS provider request failed');
+  error.name = 'SmsProviderError';
+  error.code = 'SMS_PROVIDER_ERROR';
+  if (Number.isInteger(statusCode)) error.statusCode = statusCode;
+  return error;
+}
+
 function eskizBase() {
   return (process.env.ESKIZ_BASE_URL || 'https://notify.eskiz.uz/api').replace(/\/$/, '');
 }
@@ -54,7 +63,7 @@ async function eskizLogin() {
   const data = await res.json().catch(() => ({}));
   const token = data && data.data && data.data.token;
   if (!res.ok || !token) {
-    throw new Error(`Eskiz login failed (${res.status}): ${data && data.message ? data.message : 'no token'}`);
+    throw smsProviderError(res.status);
   }
   eskizToken = token;
   eskizTokenExp = Date.now() + 25 * 24 * 60 * 60 * 1000; // 25 дней
@@ -90,7 +99,7 @@ async function sendViaEskiz(phone, text) {
     ({ res, data } = await eskizSendOnce(token, phone, text));
   }
   if (!res.ok) {
-    throw new Error(`Eskiz send failed (${res.status}): ${data && data.message ? data.message : 'unknown'}`);
+    throw smsProviderError(res.status);
   }
   return { sent: true, provider: 'eskiz', id: data && (data.id || (data.data && data.data.id)) };
 }
@@ -118,8 +127,7 @@ async function sendViaPlayMobile(phone, text) {
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    const t = await res.text().catch(() => '');
-    throw new Error(`Play Mobile send failed (${res.status}): ${t.slice(0, 200)}`);
+    throw smsProviderError(res.status);
   }
   return { sent: true, provider: 'playmobile' };
 }
@@ -127,18 +135,19 @@ async function sendViaPlayMobile(phone, text) {
 // ── публичный API ───────────────────────────────────────────────────────────
 async function sendSms(phone, text) {
   if (!isConfigured()) {
-    logger.info(`[SMS dev] → ${phone}: ${text}`);
+    logger.info('sms_delivery_skipped', { reason: 'provider_not_configured' });
     return { sent: false, dev: true };
   }
   const provider = detectProvider();
   try {
     if (provider === 'eskiz') return await sendViaEskiz(phone, text);
     if (provider === 'playmobile') return await sendViaPlayMobile(phone, text);
-    logger.warn(`[SMS] неизвестный провайдер "${provider}" → не отправлено`);
+    logger.warn('sms_delivery_skipped', { reason: 'unknown_provider', provider });
     return { sent: false, error: 'unknown provider' };
   } catch (e) {
-    logger.error(`[SMS] отправка не удалась (${provider}): ${e.message}`);
-    return { sent: false, error: e.message };
+    reportCaughtException(e, { operation: 'sms_send', provider });
+    logger.error('sms_delivery_failed', { provider });
+    return { sent: false, error: 'provider_error' };
   }
 }
 

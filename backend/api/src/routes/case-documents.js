@@ -1,43 +1,29 @@
-const router = require('express').Router();
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
+const express = require('express');
+const crypto = require('crypto');
 const { Consultation, CaseDocument, User } = require('../models');
-const { authenticate } = require('../middleware/auth');
+const {
+  authenticate,
+  authorizeConsultationMode,
+  ownsConsultationPerspective,
+} = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { createMemoryUpload } = require('../middleware/fileUpload');
+const { getFileStorageService } = require('../services/fileStorageRuntime');
+const { streamFile } = require('../services/fileHttpService');
+const { FILE_LIMITS, uploadLimitFor } = require('../config/fileLimits');
+const { registerUuidParams } = require('../middleware/uuidParams');
 
 // Рабочие документы по делу: файлы конкретной консультации, видны ОБОИМ участникам
 // (клиент + юрист). Роль не важна — важно, что ты участник этой консультации.
 
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-try {
-  if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-} catch (e) {
-  console.error(`[case-documents] не удалось создать uploadDir "${uploadDir}": ${e.message}`);
-}
+const upload = createMemoryUpload({
+  types: ['pdf', 'doc', 'docx', 'txt', 'jpeg', 'png', 'webp'],
+  maxBytes: uploadLimitFor('case'),
+});
 
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueName = `case-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp'];
-    const allowedMime = [
-      'application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 'image/jpeg', 'image/png', 'image/webp',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Неподдерживаемый формат файла'));
-  },
-});
+function createCaseDocumentsRouter({ fileStorageService = getFileStorageService() } = {}) {
+const router = express.Router();
+registerUuidParams(router, 'consultationId', 'docId');
 
 // Мидлвар: грузим консультацию и проверяем, что текущий пользователь — её участник.
 // Кладём консультацию и «другую сторону» в req для переиспользования.
@@ -45,13 +31,11 @@ async function requireParticipant(req, res, next) {
   try {
     const consultation = await Consultation.findByPk(req.params.consultationId);
     if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
-    const isClient = consultation.clientId === req.userId;
-    const isLawyer = consultation.lawyerId === req.userId;
-    if (!isClient && !isLawyer) {
+    if (!ownsConsultationPerspective(req, consultation)) {
       return res.status(403).json({ error: 'Нет доступа к этой консультации' });
     }
     req.consultation = consultation;
-    req.otherPartyId = isClient ? consultation.lawyerId : consultation.clientId;
+    req.otherPartyId = req.accountMode === 'client' ? consultation.lawyerId : consultation.clientId;
     next();
   } catch (err) {
     next(err);
@@ -59,7 +43,7 @@ async function requireParticipant(req, res, next) {
 }
 
 // GET /:consultationId/documents — список документов по делу
-router.get('/:consultationId/documents', authenticate, requireParticipant, async (req, res, next) => {
+router.get('/:consultationId/documents', authenticate, authorizeConsultationMode, requireParticipant, async (req, res, next) => {
   try {
     const docs = await CaseDocument.findAll({
       where: { consultationId: req.params.consultationId },
@@ -74,16 +58,20 @@ router.get('/:consultationId/documents', authenticate, requireParticipant, async
 });
 
 // POST /:consultationId/documents — загрузить документ по делу
-router.post('/:consultationId/documents', authenticate, requireParticipant, upload.single('file'), async (req, res, next) => {
+router.post('/:consultationId/documents', authenticate, authorizeConsultationMode, requireParticipant, upload.single('file'), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const doc = await CaseDocument.create({
-      consultationId: req.params.consultationId,
-      uploaderId: req.userId,
-      name: req.file.originalname,
-      path: req.file.path,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
+    const id = crypto.randomUUID();
+    const doc = await fileStorageService.store({
+      kind: 'case', scopeId: req.params.consultationId, fileId: id,
+      body: req.file.buffer, mimeType: req.file.mimetype,
+      persist: ({ transaction, metadata }) => CaseDocument.create({
+        id,
+        consultationId: req.params.consultationId,
+        uploaderId: req.userId,
+        name: req.file.originalname,
+        ...metadata,
+      }, { transaction }),
     });
     // Уведомляем другую сторону о новом документе (fail-safe)
     try {
@@ -106,22 +94,23 @@ router.post('/:consultationId/documents', authenticate, requireParticipant, uplo
 });
 
 // GET /:consultationId/documents/:docId/download — скачать (любой участник)
-router.get('/:consultationId/documents/:docId/download', authenticate, requireParticipant, async (req, res, next) => {
+router.get('/:consultationId/documents/:docId/download', authenticate, authorizeConsultationMode, requireParticipant, async (req, res, next) => {
   try {
     const doc = await CaseDocument.findOne({
       where: { id: req.params.docId, consultationId: req.params.consultationId },
     });
-    if (!doc || !doc.path || !fs.existsSync(doc.path)) {
-      return res.status(404).json({ error: 'Документ не найден' });
-    }
-    res.download(doc.path, doc.name);
+    if (!doc) return res.status(404).json({ error: 'Документ не найден' });
+    await streamFile({
+      storage: fileStorageService, req, res, record: doc, filename: doc.name,
+      maxBytes: FILE_LIMITS.case,
+    });
   } catch (err) {
     next(err);
   }
 });
 
 // DELETE /:consultationId/documents/:docId — удалить (только автор загрузки)
-router.delete('/:consultationId/documents/:docId', authenticate, requireParticipant, async (req, res, next) => {
+router.delete('/:consultationId/documents/:docId', authenticate, authorizeConsultationMode, requireParticipant, async (req, res, next) => {
   try {
     const doc = await CaseDocument.findOne({
       where: { id: req.params.docId, consultationId: req.params.consultationId },
@@ -131,12 +120,21 @@ router.delete('/:consultationId/documents/:docId', authenticate, requireParticip
     if (doc.uploaderId !== req.userId) {
       return res.status(403).json({ error: 'Удалить документ может только тот, кто его загрузил' });
     }
-    if (doc.path) { try { fs.unlinkSync(doc.path); } catch (e) { /* файла нет */ } }
-    await doc.destroy();
+    if (doc.storageKey) {
+      await fileStorageService.delete({
+        record: doc,
+        destroy: ({ transaction }) => doc.destroy({ transaction }),
+      });
+    } else {
+      await doc.destroy();
+    }
     res.json({ success: true });
   } catch (err) {
     next(err);
   }
 });
 
-module.exports = router;
+return router;
+}
+
+module.exports = createCaseDocumentsRouter;

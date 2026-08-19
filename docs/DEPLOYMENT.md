@@ -1,5 +1,7 @@
 # MaslaXat Platform Deployment Guide
 
+> **DEPRECATED: DO NOT USE THIS FILE TO DEPLOY OR RESTORE MASLAXAT.** It describes a legacy architecture and unsafe historical commands. Use the current release status in `DEPLOY.md`, the approval and rollback procedure in `docs/runbooks/deploy-rollback.md`, and the protected backup procedure in `docs/runbooks/backup-restore.md`. Production actions still require explicit approval and all current release gates.
+
 ## Table of Contents
 - [Prerequisites](#prerequisites)
 - [Quick Start](#quick-start)

@@ -1,30 +1,34 @@
 const router = require('express').Router();
 const logger = require('../config/logger');
-const path = require('path');
-const fs = require('fs');
-const multer = require('multer');
+const crypto = require('crypto');
 const { authenticate } = require('../middleware/auth');
+const { createMemoryUpload } = require('../middleware/fileUpload');
+const { uploadLimitFor } = require('../config/fileLimits');
 const { AIConversation, AIMessage, Subscription } = require('../models');
 const { getRedis } = require('../config/redis');
+const { getObjectStorageService } = require('../services/fileStorageRuntime');
+const objectCleanupTaskService = require('../services/objectCleanupTaskService');
+const {
+  createAITemporaryAttachmentService,
+  parseAttachmentBuffers,
+  validateAttachmentStructure,
+} = require('../services/aiTemporaryAttachmentService');
+const { reportCaughtException } = require('../instrument');
 
-// File upload for AI chat. В проде UPLOAD_DIR указывает на записываемый volume
-// (напр. /data/uploads); в dev — относительная папка внутри проекта.
-const aiUploadDir = process.env.UPLOAD_DIR
-  ? path.join(process.env.UPLOAD_DIR, 'ai-chat')
-  : path.join(__dirname, '../../uploads/ai-chat');
-const upload = multer({
-  dest: aiUploadDir,
-  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype) || file.mimetype === 'application/pdf'
-      || file.mimetype === 'application/msword'
-      || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      || file.mimetype === 'text/plain';
-    cb(null, ext || mime);
-  },
+const upload = createMemoryUpload({
+  types: ['jpeg', 'png', 'webp', 'pdf', 'doc', 'docx', 'txt'],
+  maxBytes: uploadLimitFor('ai'),
 });
+const temporaryAttachmentService = createAITemporaryAttachmentService({
+  objectStorage: getObjectStorageService(),
+  cleanupService: objectCleanupTaskService,
+});
+
+function hasRealAnthropicKey(env = process.env) {
+  const key = env.ANTHROPIC_API_KEY;
+  return typeof key === 'string' && /^sk-ant-[A-Za-z0-9_-]{20,}$/.test(key)
+    && key !== 'sk-ant-CHANGE_ME';
+}
 
 // ─── SYSTEM PROMPT: Uzbekistan Legal Expert ─────────────────
 const SYSTEM_PROMPT = `Ты — профессиональный AI юридический консультант платформы MaslaXat, специализирующийся на законодательстве Республики Узбекистан.
@@ -76,7 +80,7 @@ const SYSTEM_PROMPT = `Ты — профессиональный AI юридич
 
 // ─── Generate AI Response ───────────────────────────────────
 const generateAIResponse = async (message, attachments = []) => {
-  if (process.env.ANTHROPIC_API_KEY && process.env.ANTHROPIC_API_KEY !== 'CHANGE_ME' && process.env.ANTHROPIC_API_KEY !== 'sk-ant-CHANGE_ME') {
+  if (hasRealAnthropicKey()) {
     try {
       const Anthropic = require('@anthropic-ai/sdk');
       const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -84,55 +88,7 @@ const generateAIResponse = async (message, attachments = []) => {
       // Build message content with attachments
       const content = [];
 
-      // Add file attachments as images or text descriptions
-      for (const att of attachments) {
-        if (att.mimetype && att.mimetype.startsWith('image/')) {
-          const fileData = fs.readFileSync(att.path);
-          const base64 = fileData.toString('base64');
-          const mediaType = att.mimetype;
-          content.push({
-            type: 'image',
-            source: { type: 'base64', media_type: mediaType, data: base64 },
-          });
-        } else if (att.mimetype === 'application/pdf') {
-          try {
-            const pdfParse = require('pdf-parse');
-            const data = await pdfParse(fs.readFileSync(att.path));
-            content.push({
-              type: 'text',
-              text: `[Прикреплённый файл: ${att.originalname}]\n${(data.text || '').substring(0, 5000)}`,
-            });
-          } catch (e) {
-            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать PDF]` });
-          }
-        } else if ((att.mimetype && att.mimetype.includes('word')) || /\.docx?$/i.test(att.originalname || '')) {
-          try {
-            const mammoth = require('mammoth');
-            const { value } = await mammoth.extractRawText({ path: att.path });
-            content.push({
-              type: 'text',
-              text: `[Прикреплённый файл: ${att.originalname}]\n${(value || '').substring(0, 5000)}`,
-            });
-          } catch (e) {
-            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать документ]` });
-          }
-        } else if (att.mimetype === 'text/plain') {
-          try {
-            const text = fs.readFileSync(att.path, 'utf-8');
-            content.push({
-              type: 'text',
-              text: `[Прикреплённый файл: ${att.originalname}]\n${text.substring(0, 5000)}`,
-            });
-          } catch (e) {
-            content.push({ type: 'text', text: `[Прикреплённый файл: ${att.originalname} — не удалось прочитать]` });
-          }
-        } else {
-          content.push({
-            type: 'text',
-            text: `[Прикреплённый файл: ${att.originalname}, тип: ${att.mimetype}]`,
-          });
-        }
-      }
+      content.push(...await parseAttachmentBuffers(attachments));
 
       content.push({ type: 'text', text: message });
 
@@ -150,7 +106,9 @@ const generateAIResponse = async (message, attachments = []) => {
 
       return { reply: cleanText, category: detectedCategory, fallback: false };
     } catch (err) {
-      logger.error('Claude API error:', err.message);
+      if (err.code === 'INVALID_ATTACHMENT') throw err;
+      reportCaughtException(err, { operation: 'ai_provider_request' });
+      logger.error('ai_provider_request_failed');
     }
   }
 
@@ -429,7 +387,9 @@ const checkAIRateLimit = async (req, res, next) => {
     res.on('finish', () => {
       if (res.statusCode >= 400 && !refunded) {
         refunded = true;
-        redis.decr(key).catch(() => {});
+        redis.decr(key).catch((error) => {
+          reportCaughtException(error, { operation: 'ai_quota_refund', userId: req.userId });
+        });
       }
     });
 
@@ -439,25 +399,37 @@ const checkAIRateLimit = async (req, res, next) => {
     req.aiLimitKey = key;
     next();
   } catch (err) {
-    logger.error('AI rate limit check failed:', err.message);
+    reportCaughtException(err, { operation: 'ai_rate_limit_check', userId: req.userId });
+    logger.error('ai_rate_limit_check_failed', { userId: req.userId });
     // FAIL-CLOSED: при сбое лимитера не открываем платный Claude без учёта
     return res.status(503).json({ error: 'Лимит временно недоступен, попробуйте позже' });
   }
 };
 
 // ─── POST /api/ai/chat/message — send message (with optional files) ───
-router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files', 5), async (req, res, next) => {
-  const uploaded = req.files || [];
-  const cleanupFiles = () => {
-    for (const att of uploaded) {
-      try { fs.unlinkSync(att.path); } catch (e) { /* ignore */ }
-    }
-  };
+function validateAIAttachments(req, _res, next) {
+  try {
+    for (const file of req.files || []) validateAttachmentStructure(file);
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
+router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files', 5), validateAIAttachments, async (req, res, next) => {
+  const abortController = new AbortController();
+  req.once('aborted', () => abortController.abort());
   try {
     const { message, conversationId } = req.body;
     if (!message || !message.trim()) {
       // файлы почистит finally
       return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+    }
+    if ((req.files || []).length > 0 && !hasRealAnthropicKey()) {
+      return res.status(503).json({
+        error: 'AI-анализ вложений временно недоступен, попробуйте позже',
+        code: 'AI_ATTACHMENT_PROVIDER_UNAVAILABLE',
+      });
     }
 
     // Find or create conversation
@@ -491,8 +463,13 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
       isUser: true,
     });
 
-    // Generate AI response (pass attachments for Claude vision)
-    const aiResponse = await generateAIResponse(message, attachments);
+    // R2 is a crash-recovery boundary; parsing consumes the original bounded memory buffers.
+    const aiResponse = await temporaryAttachmentService.withAttachments({
+      userId: req.userId,
+      requestId: crypto.randomUUID(),
+      files: attachments,
+      signal: abortController.signal,
+    }, (temporaryFiles) => generateAIResponse(message, temporaryFiles));
 
     // Save AI message
     await AIMessage.create({
@@ -518,8 +495,6 @@ router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files
     });
   } catch (err) {
     next(err);
-  } finally {
-    cleanupFiles(); // файлы удаляются на ЛЮБОМ исходе (успех/ошибка)
   }
 });
 
@@ -556,3 +531,4 @@ router.get('/chat/history/:conversationId', authenticate, async (req, res, next)
 });
 
 module.exports = router;
+module.exports.generateAIResponse = generateAIResponse;

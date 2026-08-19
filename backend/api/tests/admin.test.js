@@ -1,54 +1,62 @@
 const request = require('supertest');
 const app = require('../src/server');
-const { resetDb, models, tokenFor, makeClient, makeAdmin } = require('./helpers');
+const { resetDb, models, tokenFor, makeClient, makeAdmin: makeAdminFixture } = require('./helpers');
 
 beforeAll(async () => {
   await resetDb();
 });
 
+async function makeAdmin(email) {
+  const user = await makeAdminFixture(email);
+  await user.update({ twoFactorEnabled: true });
+  return user;
+}
+
+const adminAuth = (user) => ({ Authorization: `Bearer ${tokenFor(user, 'mfa')}`, 'X-Maslaxat-Mode': 'admin' });
+
 describe('admin: промокоды CRUD', () => {
   test('админ создаёт, листит, включает/выключает и удаляет промокод', async () => {
     const admin = await makeAdmin('promoadmin@test.uz');
-    const token = tokenFor(admin);
+    const headers = adminAuth(admin);
 
     // create
     const created = await request(app).post('/api/admin/promos')
-      .set('Authorization', `Bearer ${token}`)
+      .set(headers)
       .send({ code: 'adm25', discountPercent: 25, minAmount: 0 });
     expect(created.status).toBe(201);
     expect(created.body.code).toBe('ADM25');
     const id = created.body.id;
 
     // list
-    const list = await request(app).get('/api/admin/promos').set('Authorization', `Bearer ${token}`);
+    const list = await request(app).get('/api/admin/promos').set(headers);
     expect(list.status).toBe(200);
     expect(list.body.some((p) => p.id === id)).toBe(true);
 
     // toggle off
     const patched = await request(app).patch(`/api/admin/promos/${id}`)
-      .set('Authorization', `Bearer ${token}`).send({ isActive: false });
+      .set(headers).send({ isActive: false });
     expect(patched.status).toBe(200);
     expect(patched.body.isActive).toBe(false);
 
     // delete
-    const del = await request(app).delete(`/api/admin/promos/${id}`).set('Authorization', `Bearer ${token}`);
+    const del = await request(app).delete(`/api/admin/promos/${id}`).set(headers);
     expect(del.status).toBe(200);
   });
 
   test('дубликат кода → 409', async () => {
     const admin = await makeAdmin('promoadmin2@test.uz');
-    const token = tokenFor(admin);
+    const headers = adminAuth(admin);
     await models.Promo.create({ code: 'DUP', discountPercent: 10 });
     const res = await request(app).post('/api/admin/promos')
-      .set('Authorization', `Bearer ${token}`).send({ code: 'dup', discountPercent: 10 });
+      .set(headers).send({ code: 'dup', discountPercent: 10 });
     expect(res.status).toBe(409);
   });
 
   test('невалидная скидка (>100) → 400', async () => {
     const admin = await makeAdmin('promoadmin3@test.uz');
-    const token = tokenFor(admin);
+    const headers = adminAuth(admin);
     const res = await request(app).post('/api/admin/promos')
-      .set('Authorization', `Bearer ${token}`).send({ code: 'BAD', discountPercent: 150 });
+      .set(headers).send({ code: 'BAD', discountPercent: 150 });
     expect(res.status).toBe(400);
   });
 
@@ -72,13 +80,13 @@ describe('admin: поддержка', () => {
     const ticketId = created.body.ticket.id;
 
     // admin lists
-    const list = await request(app).get('/api/admin/support').set('Authorization', `Bearer ${tokenFor(admin)}`);
+    const list = await request(app).get('/api/admin/support').set(adminAuth(admin));
     expect(list.status).toBe(200);
     expect(list.body.some((tk) => tk.id === ticketId)).toBe(true);
 
     // admin changes status
     const patched = await request(app).patch(`/api/admin/support/${ticketId}`)
-      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'closed' });
+      .set(adminAuth(admin)).send({ status: 'closed' });
     expect(patched.status).toBe(200);
     expect(patched.body.ticket.status).toBe('closed');
   });
@@ -89,7 +97,7 @@ describe('admin: поддержка', () => {
     const created = await request(app).post('/api/support')
       .set('Authorization', `Bearer ${tokenFor(client)}`).send({ message: 'x' });
     const res = await request(app).patch(`/api/admin/support/${created.body.ticket.id}`)
-      .set('Authorization', `Bearer ${tokenFor(admin)}`).send({ status: 'hacked' });
+      .set(adminAuth(admin)).send({ status: 'hacked' });
     expect(res.status).toBe(400);
   });
 });

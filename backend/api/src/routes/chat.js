@@ -1,9 +1,13 @@
 const router = require('express').Router();
 const { Message, Consultation, User, LawyerProfile } = require('../models');
-const { authenticate } = require('../middleware/auth');
+const {
+  authenticate,
+  authorizeConsultationMode,
+  ownsConsultationPerspective,
+} = require('../middleware/auth');
 
 // GET /api/chat/:consultationId/messages — get chat history
-router.get('/:consultationId/messages', authenticate, async (req, res, next) => {
+router.get('/:consultationId/messages', authenticate, authorizeConsultationMode, async (req, res, next) => {
   try {
     const consultation = await Consultation.findByPk(req.params.consultationId);
     if (!consultation) {
@@ -11,7 +15,7 @@ router.get('/:consultationId/messages', authenticate, async (req, res, next) => 
     }
 
     // Only participants can read
-    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+    if (!ownsConsultationPerspective(req, consultation)) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
@@ -62,14 +66,14 @@ router.get('/:consultationId/messages', authenticate, async (req, res, next) => 
 });
 
 // POST /api/chat/:consultationId/messages — send a message (REST fallback)
-router.post('/:consultationId/messages', authenticate, async (req, res, next) => {
+router.post('/:consultationId/messages', authenticate, authorizeConsultationMode, async (req, res, next) => {
   try {
     const consultation = await Consultation.findByPk(req.params.consultationId);
     if (!consultation) {
       return res.status(404).json({ error: 'Консультация не найдена' });
     }
 
-    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+    if (!ownsConsultationPerspective(req, consultation)) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
@@ -106,7 +110,7 @@ router.post('/:consultationId/messages', authenticate, async (req, res, next) =>
 });
 
 // GET /api/chat/:consultationId/unread — unread count for this chat
-router.get('/:consultationId/unread', authenticate, async (req, res, next) => {
+router.get('/:consultationId/unread', authenticate, authorizeConsultationMode, async (req, res, next) => {
   try {
     const consultation = await Consultation.findByPk(req.params.consultationId);
     if (!consultation) {
@@ -114,11 +118,11 @@ router.get('/:consultationId/unread', authenticate, async (req, res, next) => {
     }
 
     // Только участник видит счётчик непрочитанных (как в /messages)
-    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+    if (!ownsConsultationPerspective(req, consultation)) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    const otherUserId = consultation.clientId === req.userId ? consultation.lawyerId : consultation.clientId;
+    const otherUserId = req.accountMode === 'client' ? consultation.lawyerId : consultation.clientId;
 
     const count = await Message.count({
       where: {

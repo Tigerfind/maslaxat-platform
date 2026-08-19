@@ -1,68 +1,71 @@
 const nodemailer = require('nodemailer');
 const logger = require('../config/logger');
+const { loadEmailConfig } = require('../config/env');
 
-// Create transporter — uses SMTP settings from env or falls back to Ethereal (dev)
-let transporter;
+const MAIL_FIELDS = Object.freeze(['to', 'subject', 'html']);
 
-const getTransporter = async () => {
-  if (transporter) return transporter;
+function createEmailService({ env = process.env, nodemailer: mailer = nodemailer, logger: log = logger } = {}) {
+  const config = loadEmailConfig(env);
+  const { frontendUrl, production, smtp } = config;
+  let transporter;
 
-  if (process.env.SMTP_HOST) {
-    transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT) || 587,
-      secure: process.env.SMTP_SECURE === 'true',
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASS,
-      },
-    });
-  } else {
-    // Dev fallback: Ethereal test account
-    const testAccount = await nodemailer.createTestAccount();
-    transporter = nodemailer.createTransport({
+  async function getTransporter() {
+    if (transporter) return transporter;
+    if (smtp) {
+      const transportConfig = {
+        host: smtp.host,
+        port: smtp.port,
+        secure: smtp.secure,
+        auth: { user: smtp.user, pass: smtp.pass },
+        disableFileAccess: true,
+        disableUrlAccess: true,
+      };
+      if (!smtp.secure && smtp.requireTLS) transportConfig.requireTLS = true;
+      transporter = mailer.createTransport(transportConfig);
+      log.info('Email transport initialized');
+      return transporter;
+    }
+
+    const testAccount = await mailer.createTestAccount();
+    transporter = mailer.createTransport({
       host: 'smtp.ethereal.email',
       port: 587,
       secure: false,
-      auth: {
-        user: testAccount.user,
-        pass: testAccount.pass,
-      },
+      auth: { user: testAccount.user, pass: testAccount.pass },
+      disableFileAccess: true,
+      disableUrlAccess: true,
     });
-    logger.info('Email: using Ethereal test account', testAccount.user);
+    log.info('Email test transport initialized');
+    return transporter;
   }
 
-  return transporter;
-};
+  async function sendMail(message) {
+    if (!message || typeof message !== 'object' || Array.isArray(message)
+      || Object.keys(message).some((name) => !MAIL_FIELDS.includes(name))
+      || MAIL_FIELDS.some((name) => typeof message[name] !== 'string' || !message[name])) {
+      throw new TypeError('Email requires exactly to, subject, and html string fields');
+    }
+    if (production && !smtp) {
+      log.warn('Email skipped because SMTP is not configured');
+      return { skipped: true, reason: 'smtp_not_configured' };
+    }
 
-const sendMail = async ({ to, subject, html }) => {
-  // В проде без настроенного SMTP не пытаемся слать через Ethereal (внешний
-  // сетевой вызов, которого в проде быть не должно) — тихо пропускаем.
-  if (process.env.NODE_ENV === 'production' && !process.env.SMTP_HOST) {
-    logger.warn(`Email не отправлен (SMTP не настроен): "${subject}" → ${to}`);
-    return { skipped: true };
+    const transport = await getTransporter();
+    return transport.sendMail({
+      from: smtp?.from || '"MaslaXat" <noreply@maslaxat.uz>',
+      to: message.to,
+      subject: message.subject,
+      html: message.html,
+    });
   }
-  const t = await getTransporter();
-  const from = process.env.SMTP_FROM || '"MaslaXat" <noreply@maslaxat.uz>';
 
-  const info = await t.sendMail({ from, to, subject, html });
+  async function sendPasswordResetEmail(email, token) {
+    const resetUrl = `${frontendUrl}/reset-password?token=${token}`;
 
-  // In dev, log the preview URL from Ethereal
-  if (!process.env.SMTP_HOST) {
-    logger.info('Email preview:', nodemailer.getTestMessageUrl(info));
-  }
-
-  return info;
-};
-
-const sendPasswordResetEmail = async (email, token) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const resetUrl = `${baseUrl}/reset-password?token=${token}`;
-
-  await sendMail({
-    to: email,
-    subject: 'Сброс пароля — MaslaXat',
-    html: `
+    return sendMail({
+      to: email,
+      subject: 'Сброс пароля — MaslaXat',
+      html: `
       <div style="font-family: 'Inter', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 40px 24px; color: #2D2D2D;">
         <div style="text-align: center; margin-bottom: 32px;">
           <h1 style="font-size: 24px; font-weight: 300; letter-spacing: 0.2em; color: #B8956E; text-transform: uppercase; margin: 0;">MaslaXat</h1>
@@ -84,18 +87,17 @@ const sendPasswordResetEmail = async (email, token) => {
           MaslaXat — юридическая онлайн-платформа Узбекистана
         </p>
       </div>
-    `,
-  });
-};
+      `,
+    });
+  }
 
-const sendVerificationEmail = async (email, token) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const verifyUrl = `${baseUrl}/verify-email?token=${token}`;
+  async function sendVerificationEmail(email, token) {
+    const verifyUrl = `${frontendUrl}/verify-email?token=${token}`;
 
-  await sendMail({
-    to: email,
-    subject: 'Подтвердите ваш email — MaslaXat',
-    html: `
+    return sendMail({
+      to: email,
+      subject: 'Подтвердите ваш email — MaslaXat',
+      html: `
       <div style="font-family: 'Inter', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 40px 24px; color: #2D2D2D;">
         <div style="text-align: center; margin-bottom: 32px;">
           <h1 style="font-size: 24px; font-weight: 300; letter-spacing: 0.2em; color: #B8956E; text-transform: uppercase; margin: 0;">MaslaXat</h1>
@@ -117,12 +119,16 @@ const sendVerificationEmail = async (email, token) => {
           MaslaXat — юридическая онлайн-платформа Узбекистана
         </p>
       </div>
-    `,
-  });
-};
+      `,
+    });
+  }
+
+  return Object.freeze({ sendMail, sendPasswordResetEmail, sendVerificationEmail });
+}
+
+const defaultService = createEmailService();
 
 module.exports = {
-  sendMail,
-  sendPasswordResetEmail,
-  sendVerificationEmail,
+  createEmailService,
+  ...defaultService,
 };

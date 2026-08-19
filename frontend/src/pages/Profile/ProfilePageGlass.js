@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import { PhotoCameraOutlined, HistoryOutlined } from '@mui/icons-material';
-import { updateProfile } from '../../store/slices/authSlice';
+import { replaceSessionToken, updateProfile } from '../../store/slices/authSlice';
 import api from '../../services/api';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -108,7 +108,7 @@ const ProfilePageGlass = () => {
   const { t } = useTranslation();
   const fileInputRef = useRef(null);
 
-  const user = useSelector((state) => state.auth.user);
+  const { user, activeMode } = useSelector((state) => state.auth);
 
   const [activeTab, setActiveTab] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
@@ -129,7 +129,7 @@ const ProfilePageGlass = () => {
   // Телефон-аккаунт с email-плейсхолдером → предлагаем привязать настоящий email.
   const isPhoneAccount = (user?.email || '').endsWith('@phone.maslaxat.uz');
   // Клиент без подтверждённого контакта — предлагаем подтвердить телефон (нужно для брони).
-  const needsVerify = user?.role === 'client' && !user?.isVerified;
+  const needsVerify = activeMode === 'client' && !user?.isVerified;
 
   const requestOtp = async () => {
     setOtpSending(true); setDevCode('');
@@ -291,7 +291,7 @@ const ProfilePageGlass = () => {
       // Смена пароля инвалидирует старые токены (другие сессии выпадут). Сервер выдал
       // свежий токен для ТЕКУЩЕЙ сессии — сохраняем его, иначе следующий запрос → 401.
       if (res.data?.token) {
-        localStorage.setItem('token', res.data.token);
+        dispatch(replaceSessionToken(res.data.token));
       }
       toast.success(t('profile.passwordChanged'));
       setPasswordData({ oldPassword: '', newPassword: '', confirmPassword: '' });

@@ -1,8 +1,10 @@
 const router = require('express').Router();
-const { Subscription, Payment } = require('../models');
+const { randomUUID } = require('crypto');
+const { Subscription, User } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { getRedis } = require('../config/redis');
 const { computeSubscriptionBenefit } = require('../services/subscriptionService');
+const { createCheckout, markPaymentPaid } = require('../services/paymentService');
 
 const PLANS = {
   free:  { price: 0,      aiLimit: 3,        consultations: 0, label: 'Бесплатный' },
@@ -61,61 +63,86 @@ router.get('/my', authenticate, async (req, res, next) => {
   }
 });
 
-// ─── POST /api/subscriptions/upgrade ─────────────────────────
-// Оформление платной подписки. БЕЗОПАСНОСТЬ/ДЕНЬГИ: раньше активировалась БЕСПЛАТНО.
-// Теперь проходит через оплату: в dev/test — тестовый платёж (как у консультаций),
-// в проде с реальным Payme — активация только после webhook (Фаза 6).
-router.post('/upgrade', authenticate, async (req, res, next) => {
+async function subscriptionForUser(userId) {
+  return Subscription.sequelize.transaction(async (tx) => {
+    await User.findByPk(userId, { lock: tx.LOCK.UPDATE, transaction: tx });
+    let subscription = await Subscription.findOne({ where: { userId }, lock: tx.LOCK.UPDATE, transaction: tx });
+    if (!subscription) subscription = await Subscription.create({ userId, plan: 'free', price: 0 }, { transaction: tx });
+    return subscription;
+  });
+}
+
+async function buildSubscriptionCheckout(userId, plan, idempotencyKey) {
+  if (!['basic', 'pro'].includes(plan)) {
+    const error = new Error('Допустимые планы: basic, pro');
+    error.status = 400;
+    throw error;
+  }
+  const subscription = await subscriptionForUser(userId);
+  return createCheckout({
+    userId,
+    purpose: 'subscription',
+    subjectId: subscription.id,
+    idempotencyKey,
+    plan,
+  });
+}
+
+// Production checkout remains pending until the authenticated provider webhook confirms payment.
+router.post('/checkout', authenticate, async (req, res, next) => {
   try {
-    const { plan } = req.body;
-
-    if (!['basic', 'pro'].includes(plan)) {
-      return res.status(400).json({ error: 'Допустимые планы: basic, pro' });
-    }
-
-    // В проде подписка активируется только после реальной оплаты Payme (Фаза 6).
-    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
-      return res.status(501).json({ error: 'Оплата подписки через Payme ещё не подключена' });
-    }
-
-    const price = PLANS[plan].price;
-
-    // ТЕСТ-ОПЛАТА подписки: фиксируем платёж в леджере, затем активируем.
-    await Payment.create({
-      userId: req.userId,
-      consultationId: null,
-      amount: price,
-      currency: 'UZS',
-      provider: 'payme',
-      status: 'paid',
-      providerResponse: { test: true, subscription: plan, paidAt: Date.now() },
-    });
-
-    let subscription = await Subscription.findOne({ where: { userId: req.userId } });
-
-    // Продлеваем от текущего срока, если подписка ещё активна (тот же план) —
-    // иначе повторная оплата до истечения теряла оплаченный остаток.
-    const now = new Date();
-    const base = subscription && subscription.plan === plan && subscription.expiresAt && new Date(subscription.expiresAt) > now
-      ? new Date(subscription.expiresAt)
-      : now;
-    const expiresAt = new Date(base);
-    expiresAt.setMonth(expiresAt.getMonth() + 1); // +1 месяц
-
-    if (subscription) {
-      await subscription.update({ plan, price, expiresAt });
-    } else {
-      subscription = await Subscription.create({ userId: req.userId, plan, price, expiresAt });
-    }
-
-    res.json({
-      success: true,
-      plan,
-      expiresAt,
-      message: `Подписка "${PLANS[plan].label}" оплачена (тест) и активирована до ${expiresAt.toLocaleDateString('ru-RU')}`,
+    const idempotencyKey = req.get('Idempotency-Key');
+    if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+    const checkout = await buildSubscriptionCheckout(req.userId, req.body.plan, idempotencyKey);
+    return res.json({
+      paymentId: checkout.payment.id,
+      checkoutUrl: checkout.checkoutUrl,
+      amount: checkout.amount,
+      amountTiyin: checkout.amountTiyin,
     });
   } catch (err) {
-    next(err);
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+// Compatibility endpoint for the current client. Real-provider environments return checkout;
+// only dev/test without Payme credentials performs the explicit simulation through paymentService.
+router.post('/upgrade', authenticate, async (req, res, next) => {
+  try {
+    const plan = req.body.plan;
+    const checkout = await buildSubscriptionCheckout(
+      req.userId,
+      plan,
+      req.get('Idempotency-Key') || randomUUID()
+    );
+    const configuredKey = String(process.env.PAYME_KEY || '').trim();
+    const hasRealPayme = configuredKey && !['CHANGE_ME', 'sk-CHANGE_ME'].includes(configuredKey);
+    if (process.env.NODE_ENV === 'production' || hasRealPayme) {
+      return res.json({
+        paymentId: checkout.payment.id,
+        checkoutUrl: checkout.checkoutUrl,
+        amount: checkout.amount,
+        amountTiyin: checkout.amountTiyin,
+      });
+    }
+
+    await markPaymentPaid({
+      paymentId: checkout.payment.id,
+      providerTransactionId: `test:${checkout.payment.id}`,
+      amountTiyin: checkout.amountTiyin,
+      providerData: { test: true, performTime: Date.now() },
+    });
+    const subscription = await Subscription.findOne({ where: { userId: req.userId } });
+    return res.json({
+      success: true,
+      plan,
+      expiresAt: subscription.expiresAt,
+      message: `Подписка "${PLANS[plan].label}" оплачена (тест) и активирована до ${subscription.expiresAt.toLocaleDateString('ru-RU')}`,
+    });
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
   }
 });
 

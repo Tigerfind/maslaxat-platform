@@ -17,10 +17,14 @@ const monthKey = (date) => {
   const d = new Date(date);
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeCompat } = require('../middleware/auth');
+
+const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
+const lawyerAccess = authorizeCompat({ legacyRoles: ['lawyer'], capability: 'lawyer', telemetryName: 'http.lawyer' });
+const adminAccess = authorizeCompat({ legacyRoles: ['admin'], capability: 'admin', telemetryName: 'http.admin' });
 
 // GET /api/dashboard/client/stats
-router.get('/client/stats', authenticate, authorize('client'), async (req, res, next) => {
+router.get('/client/stats', authenticate, clientAccess, async (req, res, next) => {
   try {
     const [active, completed, documents, unreadNotifications, aiChats] = await Promise.all([
       Consultation.count({ where: { clientId: req.userId, status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } } }),
@@ -43,7 +47,7 @@ router.get('/client/stats', authenticate, authorize('client'), async (req, res, 
 });
 
 // GET /api/dashboard/lawyer/stats
-router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, next) => {
+router.get('/lawyer/stats', authenticate, lawyerAccess, async (req, res, next) => {
   try {
     const [pending, active, completed, reviews, unreadNotifications] = await Promise.all([
       Consultation.count({ where: { lawyerId: req.userId, status: 'pending' } }),
@@ -143,7 +147,7 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
 });
 
 // GET /api/lawyer/dashboard/analytics — доход по месяцам, воронка, рейтинг
-router.get('/lawyer/analytics', authenticate, authorize('lawyer'), async (req, res, next) => {
+router.get('/lawyer/analytics', authenticate, lawyerAccess, async (req, res, next) => {
   try {
     const months = lastMonths(6);
     const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
@@ -198,7 +202,7 @@ router.get('/lawyer/analytics', authenticate, authorize('lawyer'), async (req, r
 });
 
 // GET /api/admin/dashboard/reports — выручка, консультации по статусам, рост юзеров, топ юристов
-router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, next) => {
+router.get('/admin/reports', authenticate, adminAccess, async (req, res, next) => {
   try {
     const months = lastMonths(6);
     const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
@@ -251,7 +255,7 @@ router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, 
 });
 
 // GET /api/dashboard/admin/stats
-router.get('/admin/stats', authenticate, authorize('admin'), async (req, res, next) => {
+router.get('/admin/stats', authenticate, adminAccess, async (req, res, next) => {
   try {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
@@ -284,7 +288,7 @@ router.get('/admin/stats', authenticate, authorize('admin'), async (req, res, ne
 
 // GET /api/client/dashboard/activity — лента активности клиента (агрегация реальных
 // событий: консультации, загруженные документы, оставленные отзывы). Без выдуманных данных.
-router.get('/client/activity', authenticate, authorize('client'), async (req, res, next) => {
+router.get('/client/activity', authenticate, clientAccess, async (req, res, next) => {
   try {
     const [cons, docs, reviews] = await Promise.all([
       Consultation.findAll({

@@ -1,0 +1,147 @@
+name: External payment evidence approval
+
+on:
+  workflow_dispatch:
+    inputs:
+      proof_run_id:
+        required: true
+        type: string
+      role:
+        required: true
+        type: choice
+        options:
+          - payment_owner
+          - release_owner
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  payment-owner-sign:
+    if: ${{ inputs.role == 'payment_owner' }}
+    environment: payment-owner-approval
+    runs-on: ubuntu-24.04
+    env:
+      PROOF_RUN_ID: ${{ inputs.proof_run_id }}
+      APPROVAL_RUN_ID: ${{ github.run_id }}
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      APPROVAL_PUBLIC_KEY_B64: ${{ vars.PAYMENT_APPROVAL_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Resolve reviewed unsigned proof run
+        run: |
+          [[ "$PROOF_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          gh api "repos/$REPOSITORY_NAME/actions/runs/$PROOF_RUN_ID" > "$RUNNER_TEMP/proof-run.json"
+          jq -e --arg sha "$REVIEWED_SHA" '.status == "completed" and .conclusion == "success" and .head_sha == $sha and .path == ".github/workflows/payment-staging-evidence-prepare.yml"' "$RUNNER_TEMP/proof-run.json"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-reconciliation-proof
+          path: ${{ runner.temp }}/proof
+          run-id: ${{ env.PROOF_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Build payment owner role attestation from reviewed proof
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/proof"/*
+          approved_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          public_key="$RUNNER_TEMP/approval-public.pem"
+          printf '%s' "$APPROVAL_PUBLIC_KEY_B64" | base64 --decode > "$public_key"
+          chmod 600 "$public_key"
+          role_fingerprint=$(node -e "const fs=require('fs');const {publicKeyFingerprint}=require('./backend/api/src/services/paymentEvidenceManifest');process.stdout.write(publicKeyFingerprint(fs.readFileSync(process.argv[1])))" "$public_key")
+          jq -n --argjson approvalRunId "$APPROVAL_RUN_ID" --argjson proofRunId "$PROOF_RUN_ID" \
+            --arg roleKeyFingerprint "$role_fingerprint" \
+            --arg approvedAt "$approved_at" \
+            --slurpfile source "$RUNNER_TEMP/proof/source-attestation.verified.json" \
+            --slurpfile shadow "$RUNNER_TEMP/proof/shadow-artifact.json" \
+            --slurpfile reconciliation "$RUNNER_TEMP/proof/reconciliation-summary.json" \
+            --slurpfile provider "$RUNNER_TEMP/proof/provider-totals.json" \
+            '{role:"payment_owner",approvalRunId:$approvalRunId,proofRunId:$proofRunId,roleKeyFingerprint:$roleKeyFingerprint,approvedAt:$approvedAt,release:{commitSha:$source[0].commitSha,deploymentId:$source[0].deploymentId,serviceId:$source[0].serviceId,configDigest:$source[0].configDigest,migrationHead:$reconciliation[0].release.migrationHead},inventoryDigest:$shadow[0].inventoryDigest,shadowArtifactDigest:$shadow[0].artifactDigest,reconciliationSummaryDigest:$reconciliation[0].summaryDigest,providerSnapshotDigest:$provider[0].snapshotDigest,databaseIdentityDigest:$reconciliation[0].databaseIdentityDigest,snapshotIdentityDigest:$reconciliation[0].snapshotIdentityDigest,reconciledAt:$reconciliation[0].reconciledAt}' > "$RUNNER_TEMP/approval-input.json"
+          node backend/api/src/scripts/paymentEvidenceProvenance.js build-approval \
+            --input "$RUNNER_TEMP/approval-input.json" --output "$RUNNER_TEMP/approval.json"
+          rm -f "$public_key"
+      - name: Sign payment owner role attestation and clean key
+        env:
+          APPROVAL_PRIVATE_KEY_B64: ${{ secrets.PAYMENT_OWNER_APPROVAL_PRIVATE_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/approval-private.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$APPROVAL_PRIVATE_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          node backend/api/src/scripts/paymentEvidenceManifest.js sign-artifact \
+            --input "$RUNNER_TEMP/approval.json" --output "$RUNNER_TEMP/approval.signed.json" \
+            --key-file "$key" --key-id payment_owner-key-v1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-evidence-approval-payment_owner
+          path: ${{ runner.temp }}/approval.signed.json
+          retention-days: 7
+
+  release-owner-sign:
+    if: ${{ inputs.role == 'release_owner' }}
+    environment: release-owner-approval
+    runs-on: ubuntu-24.04
+    env:
+      PROOF_RUN_ID: ${{ inputs.proof_run_id }}
+      APPROVAL_RUN_ID: ${{ github.run_id }}
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      APPROVAL_PUBLIC_KEY_B64: ${{ vars.RELEASE_APPROVAL_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Resolve reviewed unsigned proof run
+        run: |
+          [[ "$PROOF_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          gh api "repos/$REPOSITORY_NAME/actions/runs/$PROOF_RUN_ID" > "$RUNNER_TEMP/proof-run.json"
+          jq -e --arg sha "$REVIEWED_SHA" '.status == "completed" and .conclusion == "success" and .head_sha == $sha and .path == ".github/workflows/payment-staging-evidence-prepare.yml"' "$RUNNER_TEMP/proof-run.json"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-reconciliation-proof
+          path: ${{ runner.temp }}/proof
+          run-id: ${{ env.PROOF_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Build release owner role attestation from reviewed proof
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/proof"/*
+          approved_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          public_key="$RUNNER_TEMP/approval-public.pem"
+          printf '%s' "$APPROVAL_PUBLIC_KEY_B64" | base64 --decode > "$public_key"
+          chmod 600 "$public_key"
+          role_fingerprint=$(node -e "const fs=require('fs');const {publicKeyFingerprint}=require('./backend/api/src/services/paymentEvidenceManifest');process.stdout.write(publicKeyFingerprint(fs.readFileSync(process.argv[1])))" "$public_key")
+          jq -n --argjson approvalRunId "$APPROVAL_RUN_ID" --argjson proofRunId "$PROOF_RUN_ID" \
+            --arg roleKeyFingerprint "$role_fingerprint" \
+            --arg approvedAt "$approved_at" \
+            --slurpfile source "$RUNNER_TEMP/proof/source-attestation.verified.json" \
+            --slurpfile shadow "$RUNNER_TEMP/proof/shadow-artifact.json" \
+            --slurpfile reconciliation "$RUNNER_TEMP/proof/reconciliation-summary.json" \
+            --slurpfile provider "$RUNNER_TEMP/proof/provider-totals.json" \
+            '{role:"release_owner",approvalRunId:$approvalRunId,proofRunId:$proofRunId,roleKeyFingerprint:$roleKeyFingerprint,approvedAt:$approvedAt,release:{commitSha:$source[0].commitSha,deploymentId:$source[0].deploymentId,serviceId:$source[0].serviceId,configDigest:$source[0].configDigest,migrationHead:$reconciliation[0].release.migrationHead},inventoryDigest:$shadow[0].inventoryDigest,shadowArtifactDigest:$shadow[0].artifactDigest,reconciliationSummaryDigest:$reconciliation[0].summaryDigest,providerSnapshotDigest:$provider[0].snapshotDigest,databaseIdentityDigest:$reconciliation[0].databaseIdentityDigest,snapshotIdentityDigest:$reconciliation[0].snapshotIdentityDigest,reconciledAt:$reconciliation[0].reconciledAt}' > "$RUNNER_TEMP/approval-input.json"
+          node backend/api/src/scripts/paymentEvidenceProvenance.js build-approval \
+            --input "$RUNNER_TEMP/approval-input.json" --output "$RUNNER_TEMP/approval.json"
+          rm -f "$public_key"
+      - name: Sign release owner role attestation and clean key
+        env:
+          APPROVAL_PRIVATE_KEY_B64: ${{ secrets.RELEASE_OWNER_APPROVAL_PRIVATE_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/approval-private.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$APPROVAL_PRIVATE_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          node backend/api/src/scripts/paymentEvidenceManifest.js sign-artifact \
+            --input "$RUNNER_TEMP/approval.json" --output "$RUNNER_TEMP/approval.signed.json" \
+            --key-file "$key" --key-id release_owner-key-v1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-evidence-approval-release_owner
+          path: ${{ runner.temp }}/approval.signed.json
+          retention-days: 7

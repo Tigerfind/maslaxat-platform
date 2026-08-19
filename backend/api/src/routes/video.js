@@ -1,13 +1,36 @@
 const router = require('express').Router();
-const { Consultation, User, LawyerProfile, Payment } = require('../models');
-const { authenticate } = require('../middleware/auth');
+const { Consultation, User, LawyerProfile } = require('../models');
+const {
+  authenticate,
+  authorizeConsultationMode,
+  ownsConsultationPerspective,
+} = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
+const {
+  cancelExtensionProposal,
+  consentToExtensionCheckout,
+  getExtensionProposalState,
+} = require('../services/paymentService');
 
 // All routes require authentication (any role)
 router.use(authenticate);
 
+async function requireVideoParticipant(req, res, next) {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation) return res.status(404).json({ error: 'Consultation not found' });
+    if (!ownsConsultationPerspective(req, consultation)) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    req.consultation = consultation;
+    next();
+  } catch (error) {
+    next(error);
+  }
+}
+
 // GET /api/video/consultation/:id — get consultation details for the video call page
-router.get('/consultation/:id', async (req, res, next) => {
+router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
     const consultation = await Consultation.findByPk(req.params.id, {
       include: [
@@ -23,15 +46,6 @@ router.get('/consultation/:id', async (req, res, next) => {
 
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
-    }
-
-    // Only participants can access
-    const isParticipant =
-      consultation.clientId === req.userId ||
-      consultation.lawyerId === req.userId;
-
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
     }
 
     res.json({
@@ -57,20 +71,9 @@ router.get('/consultation/:id', async (req, res, next) => {
 });
 
 // POST /api/video/consultation/:id/start — mark consultation as in_progress
-router.post('/consultation/:id/start', async (req, res, next) => {
+router.post('/consultation/:id/start', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = await Consultation.findByPk(req.params.id);
-    if (!consultation) {
-      return res.status(404).json({ error: 'Consultation not found' });
-    }
-
-    const isParticipant =
-      consultation.clientId === req.userId ||
-      consultation.lawyerId === req.userId;
-
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const consultation = req.consultation;
 
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
@@ -88,20 +91,9 @@ router.post('/consultation/:id/start', async (req, res, next) => {
 });
 
 // POST /api/video/consultation/:id/end — mark consultation as completed
-router.post('/consultation/:id/end', async (req, res, next) => {
+router.post('/consultation/:id/end', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = await Consultation.findByPk(req.params.id);
-    if (!consultation) {
-      return res.status(404).json({ error: 'Consultation not found' });
-    }
-
-    const isParticipant =
-      consultation.clientId === req.userId ||
-      consultation.lawyerId === req.userId;
-
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
+    const consultation = req.consultation;
 
     // Завершить можно только идущую сессию (in_progress) — иначе юрист мог бы
     // забрать эскроу за непроведённую консультацию (pending/accepted).
@@ -120,75 +112,60 @@ router.post('/consultation/:id/end', async (req, res, next) => {
   }
 });
 
-// POST /api/video/consultation/:id/extend — продлить идущую консультацию
-// Доплата резервируется на эскроу юриста (в dev — тест-оплата; реальный Payme —
-// Фаза 6). Только участник, только in_progress.
+// POST /api/video/consultation/:id/extend — durable consent + prepaid extension checkout.
 const EXTEND_MINUTES = [15, 30];
-router.post('/consultation/:id/extend', async (req, res, next) => {
+router.get('/consultation/:id/extension', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = await Consultation.findByPk(req.params.id, {
-      include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile', attributes: ['price'] }] }],
+    const state = await getExtensionProposalState({ actorId: req.userId, consultationId: req.params.id });
+    return res.json(state);
+  } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.delete('/consultation/:id/extension/:proposalId', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
+  try {
+    const result = await cancelExtensionProposal({
+      actorId: req.userId,
+      consultationId: req.params.id,
+      proposalId: req.params.proposalId,
     });
-    if (!consultation) return res.status(404).json({ error: 'Consultation not found' });
-
-    const isParticipant = consultation.clientId === req.userId || consultation.lawyerId === req.userId;
-    if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
-    if (consultation.status !== 'in_progress') {
-      return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
-    }
-
-    let minutes = parseInt(req.body?.minutes, 10);
-    if (!EXTEND_MINUTES.includes(minutes)) minutes = 15;
-
-    // Доплата = базовая ставка юриста × минуты/60 (на сервере, клиенту не доверяем)
-    const basePrice = consultation.lawyer?.profile?.price || 0;
-    const addAmount = Math.round((basePrice * minutes) / 60);
-
-    // Реальная оплата продления через Payme — Фаза 6; сейчас тест-режим.
-    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
-      return res.status(501).json({ error: 'Оплата продления через Payme ещё не подключена' });
-    }
-
-    // Продление + резерв эскроу — в ОДНОЙ транзакции с блокировкой строки
-    // консультации, чтобы конкурентные продления не искажали price/duration
-    // и не задваивали резерв (SELECT ... FOR UPDATE через lock).
-    let newDuration; let newPrice;
-    await Consultation.sequelize.transaction(async (t) => {
-      const locked = await Consultation.findByPk(consultation.id, { lock: t.LOCK.UPDATE, transaction: t });
-      // Внутри лока перепроверяем статус (мог измениться между проверкой и локом)
-      if (!locked || locked.status !== 'in_progress') {
-        const err = new Error('NOT_IN_PROGRESS');
-        err.code = 'NOT_IN_PROGRESS';
-        throw err;
-      }
-      newDuration = (locked.duration || 60) + minutes;
-      newPrice = (locked.price || 0) + addAmount;
-      await locked.update({ duration: newDuration, price: newPrice }, { transaction: t });
-
-      if (addAmount > 0) {
-        await Payment.create({
-          userId: locked.clientId,
-          consultationId: locked.id,
-          amount: addAmount,
-          currency: 'UZS',
-          provider: 'payme',
-          status: 'paid',
-          providerResponse: { test: true, extension: minutes, paidAt: Date.now() },
-        }, { transaction: t });
-        await LawyerProfile.increment('pendingBalance', { by: addAmount, where: { userId: locked.lawyerId }, transaction: t });
-      }
-    });
-
-    res.json({
+    return res.status(result.outcome === 'cancellation_requested' ? 202 : 200).json({
       success: true,
-      minutes,
-      addAmount,
-      duration: newDuration,
-      price: newPrice,
+      paymentStatus: result.payment.status,
+      outcome: result.outcome,
     });
   } catch (err) {
-    if (err.code === 'NOT_IN_PROGRESS') {
-      return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
+  }
+});
+
+router.post('/consultation/:id/extend', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
+  try {
+    let minutes = parseInt(req.body?.minutes, 10);
+    if (!EXTEND_MINUTES.includes(minutes)) minutes = 15;
+    const idempotencyKey = req.get('Idempotency-Key');
+    if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+    const result = await consentToExtensionCheckout({
+      actorId: req.userId,
+      consultationId: req.params.id,
+      minutes,
+      idempotencyKey,
+    });
+    const payload = {
+      success: true,
+      ...result.proposal,
+      addAmount: Number(result.payment.amount),
+    };
+    return res.status(result.consentComplete ? 200 : 202).json(payload);
+  } catch (err) {
+    if (/not found/i.test(err.message)) return res.status(404).json({ error: err.message });
+    if (/access denied/i.test(err.message)) return res.status(403).json({ error: err.message });
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    if (/not in progress|unsupported|idempotency|active checkout|terminal/i.test(err.message)) {
+      return res.status(err.status || 400).json({ error: err.message });
     }
     next(err);
   }

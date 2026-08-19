@@ -1,5 +1,86 @@
 import api from './api';
 
+const IMPORT_ERROR_CODES = new Set([
+  'INVALID_PDF_UPLOAD', 'PDF_IMPORT_UNAVAILABLE', 'PROFILE_IMPORT_RATE_LIMITED',
+  'PROFILE_IMPORT_BUSY', 'PROFILE_IMPORT_CONCURRENCY_LIMITED', 'PROFILE_IMPORT_RATE_LIMIT_UNAVAILABLE', 'IMPORT_NOT_FOUND',
+  'IMPORT_STATE_CONFLICT', 'IMPORT_VERSION_CONFLICT', 'PROFILE_REVISION_CONFLICT',
+  'IMPORT_ALREADY_CONFIRMED', 'IMPORT_EXPIRED', 'INVALID_IMPORT_DRAFT',
+  'INVALID_ACCEPTED_PATHS', 'INVALID_SPECIALIZATION', 'ERR_CANCELED',
+]);
+
+const normalizeImportError = (error) => {
+  if (error?.code === 'ERR_CANCELED' || error?.name === 'AbortError') {
+    return Object.assign(new Error('Import request canceled'), { code: 'ERR_CANCELED', status: 0, retryAfter: null });
+  }
+  const status = Number(error?.response?.status) || 0;
+  const rawCode = error?.response?.data?.code;
+  const code = IMPORT_ERROR_CODES.has(rawCode) ? rawCode : 'PROFILE_IMPORT_FAILED';
+  const retryHeader = Number(error?.response?.headers?.['retry-after']);
+  const retryBody = Number(error?.response?.data?.retryAfter);
+  const retryAfterValue = Number.isFinite(retryHeader) ? retryHeader : retryBody;
+  const retryAfter = Number.isFinite(retryAfterValue)
+    ? Math.max(0, Math.min(3600, Math.floor(retryAfterValue)))
+    : null;
+  return Object.assign(new Error(code), { code, status, retryAfter });
+};
+
+const importRequest = async (operation) => {
+  try {
+    const response = await operation();
+    return response.data;
+  } catch (error) {
+    throw normalizeImportError(error);
+  }
+};
+
+export const lawyerImportService = {
+  upload: (file, { signal, onProgress, idempotencyKey } = {}) => {
+    const body = new FormData();
+    body.append('file', file);
+    return importRequest(() => api.post('/lawyer/imports', body, {
+      signal,
+      headers: {
+        'Content-Type': 'multipart/form-data',
+        'Idempotency-Key': idempotencyKey,
+      },
+      onUploadProgress: ({ loaded, total }) => {
+        if (onProgress && total > 0) onProgress(Math.min(100, Math.round((loaded / total) * 100)));
+      },
+    }));
+  },
+  current: ({ signal, idempotencyKey } = {}) => importRequest(() => api.get('/lawyer/imports/current', {
+    signal,
+    ...(idempotencyKey ? { headers: { 'Idempotency-Key': idempotencyKey } } : {}),
+  })),
+  get: (id, { signal } = {}) => importRequest(() => api.get(`/lawyer/imports/${id}`, { signal })),
+  poll: async (id, { signal, onUpdate, intervalMs = 1500 } = {}) => {
+    while (!signal?.aborted) {
+      const result = await lawyerImportService.get(id, { signal });
+      onUpdate?.(result.import);
+      if (!['uploaded', 'parsing'].includes(result.import?.status)) return result;
+      await new Promise((resolve, reject) => {
+        const timer = setTimeout(resolve, intervalMs);
+        signal?.addEventListener('abort', () => {
+          clearTimeout(timer);
+          reject(normalizeImportError({ code: 'ERR_CANCELED' }));
+        }, { once: true });
+      });
+    }
+    throw normalizeImportError({ code: 'ERR_CANCELED' });
+  },
+  updateDraft: (id, version, draft, { signal } = {}) => importRequest(() => api.patch(
+    `/lawyer/imports/${id}/draft`, { version, draft }, { signal }
+  )),
+  confirm: (id, version, acceptedPaths, profileRevision, { signal } = {}) => importRequest(() => api.post(
+    `/lawyer/imports/${id}/confirm`, { version, acceptedPaths, profileRevision }, { signal }
+  )),
+  discard: (id, { signal } = {}) => importRequest(() => api.delete(`/lawyer/imports/${id}`, { signal })),
+  attachment: (id, { signal } = {}) => importRequest(() => api.get(`/lawyer/imports/${id}/download`, {
+    signal,
+    responseType: 'blob',
+  })),
+};
+
 // Lawyer Schedule Management
 export const lawyerScheduleService = {
   getSchedule: async (year, month) => {
@@ -196,4 +277,5 @@ export default {
   notification: lawyerNotificationService,
   payments: lawyerPaymentService,
   verification: lawyerVerificationService,
+  imports: lawyerImportService,
 };

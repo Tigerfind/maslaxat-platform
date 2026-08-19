@@ -1,6 +1,7 @@
 const webpush = require('web-push');
 const logger = require('../config/logger');
 const { PushSubscription } = require('../models');
+const { reportCaughtException } = require('../instrument');
 
 // VAPID-ключи самогенерируемые (без сторонних сервисов). Если не заданы —
 // web-push просто отключён (fail-safe): подписка/отправка становятся no-op,
@@ -15,7 +16,8 @@ if (PUBLIC_KEY && PRIVATE_KEY) {
     webpush.setVapidDetails(SUBJECT, PUBLIC_KEY, PRIVATE_KEY);
     enabled = true;
   } catch (err) {
-    logger.error('Web-push VAPID init failed:', err.message);
+    reportCaughtException(err, { operation: 'web_push_vapid_init' });
+    logger.error('web_push_vapid_init_failed');
   }
 }
 
@@ -35,7 +37,8 @@ async function sendToUser(userId, payload) {
   try {
     subs = await PushSubscription.findAll({ where: { userId } });
   } catch (err) {
-    logger.error('Web-push: load subscriptions failed:', err.message);
+    reportCaughtException(err, { operation: 'web_push_load_subscriptions', userId });
+    logger.error('web_push_load_subscriptions_failed', { userId });
     return;
   }
   if (!subs.length) return;
@@ -47,9 +50,12 @@ async function sendToUser(userId, payload) {
     } catch (err) {
       // 404/410 — подписка мертва, удаляем
       if (err.statusCode === 404 || err.statusCode === 410) {
-        await sub.destroy().catch(() => {});
+        await sub.destroy().catch((cleanupError) => {
+          reportCaughtException(cleanupError, { operation: 'web_push_subscription_cleanup', userId });
+        });
       } else {
-        logger.error('Web-push send failed:', err.statusCode || err.message);
+        reportCaughtException(err, { operation: 'web_push_send', userId, statusCode: err.statusCode });
+        logger.error('web_push_send_failed', { userId, statusCode: err.statusCode });
       }
     }
   }));

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Slider, Chip, TextField, CircularProgress } from '@mui/material';
@@ -10,12 +10,16 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import lawyerService from '../../services/lawyerService';
 import { updateProfile } from '../../store/slices/authSlice';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import VerificationDocuments from '../../components/Lawyer/VerificationDocuments';
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
+import LinkedInPdfImport from '../../components/Lawyer/LinkedInPdfImport';
+import ProfileImportReview from '../../components/Lawyer/ProfileImportReview';
+import { mergeProfileIntoForm, replaceObjectUrl, revokeObjectUrl } from '../../utils/profileImportUtils';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -93,8 +97,15 @@ const LawyerProfileEditPage = () => {
   const [error, setError] = useState('');
   const [verificationStatus, setVerificationStatus] = useState('pending');
   const [meta, setMeta] = useState({ rating: 0, cases: 0 }); // для мини-статистики шапки
+  const [profileSnapshot, setProfileSnapshot] = useState(null);
+  const [importRecord, setImportRecord] = useState(null);
+  const [importResetEpoch, setImportResetEpoch] = useState(0);
+  const manualRef = useRef(null);
+  const avatarObjectUrl = useRef(null);
 
   const [form, setForm] = useState({
+    profileRevision: 1,
+    headline: '',
     description: '',
     greeting: '',
     experience: 0,
@@ -103,6 +114,11 @@ const LawyerProfileEditPage = () => {
     specialization: '',
     specializations: [],
     schedule: {},
+    workExperience: [],
+    education: [],
+    certificates: [],
+    languages: [],
+    linkedinUrl: '',
     avatarFile: null,
     avatarPreview: null,
   });
@@ -113,20 +129,11 @@ const LawyerProfileEditPage = () => {
       try {
         const res = await api.get('/lawyer/profile');
         const p = res.data.profile || {};
-        setForm({
-          description: p.description || '',
-          greeting: p.greeting || '',
-          experience: p.experience || 0,
-          price: p.price || 200000,
-          location: p.location || 'Ташкент',
-          specialization: p.specialization || '',
-          specializations: Array.isArray(p.specializations) && p.specializations.length
-            ? p.specializations
-            : (p.specialization ? [p.specialization] : []),
-          schedule: p.schedule || {},
-          avatarFile: null,
-          avatarPreview: res.data.user?.avatar || null,
-        });
+        setProfileSnapshot(p);
+        setForm((previous) => ({
+          ...mergeProfileIntoForm(previous, p),
+          avatarPreview: previous.avatarFile ? previous.avatarPreview : (res.data.user?.avatar || previous.avatarPreview),
+        }));
         setVerificationStatus(p.verificationStatus || 'pending');
         setMeta({ rating: p.rating || 0, cases: p.completedCases || 0 });
       } catch {
@@ -137,6 +144,8 @@ const LawyerProfileEditPage = () => {
     };
     load();
   }, []);
+
+  useEffect(() => () => revokeObjectUrl(avatarObjectUrl.current), []);
 
   const handleChange = (field, value) => {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -163,9 +172,26 @@ const LawyerProfileEditPage = () => {
   const handleAvatarChange = (e) => {
     const file = e.target.files[0];
     if (file) {
-      handleChange('avatarFile', file);
-      handleChange('avatarPreview', URL.createObjectURL(file));
+      const preview = replaceObjectUrl(avatarObjectUrl.current, file);
+      avatarObjectUrl.current = preview;
+      setForm((previous) => ({ ...previous, avatarFile: file, avatarPreview: preview }));
     }
+  };
+
+  const mergeConfirmedProfile = async (confirmedProfile) => {
+    let profile = confirmedProfile;
+    let userData;
+    if (!profile) {
+      const response = await api.get('/lawyer/profile');
+      profile = response.data.profile || {};
+      userData = response.data.user;
+    }
+    setProfileSnapshot(profile);
+    setForm((previous) => ({
+      ...mergeProfileIntoForm(previous, profile),
+      avatarPreview: previous.avatarFile ? previous.avatarPreview : (userData?.avatar || previous.avatarPreview),
+    }));
+    setImportRecord(null);
   };
 
   const handleSave = async () => {
@@ -185,6 +211,8 @@ const LawyerProfileEditPage = () => {
     setSaving(true);
     try {
       const formData = new FormData();
+      formData.append('profileRevision', String(form.profileRevision));
+      formData.append('headline', form.headline || '');
       formData.append('description', form.description);
       formData.append('greeting', form.greeting || '');
       formData.append('experience', String(form.experience));
@@ -192,6 +220,11 @@ const LawyerProfileEditPage = () => {
       formData.append('price', String(form.price));
       formData.append('location', form.location);
       formData.append('schedule', JSON.stringify(form.schedule));
+      formData.append('workExperience', JSON.stringify(form.workExperience));
+      formData.append('education', JSON.stringify(form.education));
+      formData.append('certificates', JSON.stringify(form.certificates));
+      formData.append('languages', JSON.stringify(form.languages));
+      formData.append('linkedinUrl', form.linkedinUrl || '');
       if (form.avatarFile) formData.append('avatar', form.avatarFile);
 
       const res = await api.put('/lawyer/profile', formData, {
@@ -232,6 +265,31 @@ const LawyerProfileEditPage = () => {
             {error}
           </div>
         )}
+
+        <LinkedInPdfImport
+          key={importResetEpoch}
+          onImportReady={setImportRecord}
+          onConfirmedRecovery={() => mergeConfirmedProfile()}
+          onManual={() => manualRef.current?.focus()}
+        />
+        {importRecord?.status === 'draft' && profileSnapshot && <div style={{ ...glassCard, padding: 22 }}>
+          <ProfileImportReview
+            importRecord={importRecord}
+            profile={profileSnapshot}
+            onConfirmed={(confirmedProfile) => mergeConfirmedProfile(confirmedProfile)}
+            onDiscarded={() => { setImportRecord(null); setImportResetEpoch((value) => value + 1); }}
+            onConflict={async () => {
+              const [importResult, profileResult] = await Promise.all([
+                lawyerService.imports.get(importRecord.id),
+                api.get('/lawyer/profile'),
+              ]);
+              const refreshed = profileResult.data.profile || {};
+              setProfileSnapshot(refreshed);
+              setForm((previous) => mergeProfileIntoForm(previous, refreshed));
+              return { import: importResult.import, profile: refreshed };
+            }}
+          />
+        </div>}
 
         {/* Photo — «Аврора-обложка» (вариант C) */}
         <div style={{ ...glassCard, padding: 0, overflow: 'hidden' }}>
@@ -290,8 +348,11 @@ const LawyerProfileEditPage = () => {
         </div>
 
         {/* Main info */}
-        <div style={{ ...glassCard, padding: 26 }}>
+        <div ref={manualRef} tabIndex={-1} style={{ ...glassCard, padding: 26 }}>
           <div style={cardHeading}>{t('lawyerPanel.mainInfo')}</div>
+
+          <div style={fieldLabel}>{t('lawyerProfile.headline')}</div>
+          <TextField fullWidth value={form.headline} onChange={(e) => handleChange('headline', e.target.value)} inputProps={{ maxLength: 300 }} sx={{ mb: 2.5, ...inputSx }} />
 
           <div style={fieldLabel}>{t('lawyerPanel.about')}</div>
           <TextField
@@ -305,6 +366,9 @@ const LawyerProfileEditPage = () => {
             inputProps={{ maxLength: 500 }}
             sx={{ mb: 2.5, ...inputSx }}
           />
+
+          <div style={fieldLabel}>{t('lawyerProfile.linkedin')}</div>
+          <TextField fullWidth type="url" value={form.linkedinUrl} onChange={(e) => handleChange('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/in/..." sx={{ mb: 2.5, ...inputSx }} />
 
           {/* Автоприветствие в чате */}
           <div style={fieldLabel}>{t('lawyerPanel.greeting')}</div>

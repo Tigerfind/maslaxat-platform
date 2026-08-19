@@ -11,8 +11,14 @@ async function seedPaidConsultation({ price = 500000, pending = 500000 } = {}) {
   const client = await User.create({ name: 'C', email: `c${Date.now()}${Math.floor(price)}@t.uz`, password: 'p', role: 'client', isActive: true });
   const lawyer = await User.create({ name: 'L', email: `l${Date.now()}${Math.floor(price)}@t.uz`, password: 'p', role: 'lawyer', isActive: true });
   const lp = await LawyerProfile.create({ userId: lawyer.id, balance: 0, pendingBalance: pending, price, specialization: 'Гражданское право' });
-  const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price });
-  await Payment.create({ userId: client.id, consultationId: cons.id, amount: price, currency: 'UZS', provider: 'payme', status: 'paid' });
+  const cons = await Consultation.create({
+    clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price,
+    commissionRateBps: 0, grossAmountTiyin: price * 100, lawyerNetAmountTiyin: price * 100,
+  });
+  await Payment.create({
+    userId: client.id, consultationId: cons.id, purpose: 'consultation', amount: price,
+    amountTiyin: price * 100, currency: 'UZS', provider: 'payme', status: 'paid',
+  });
   return { client, lawyer, lp, cons };
 }
 

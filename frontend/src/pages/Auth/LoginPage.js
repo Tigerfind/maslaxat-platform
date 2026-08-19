@@ -27,7 +27,12 @@ import {
   AdminPanelSettings,
   CheckCircle,
 } from '@mui/icons-material';
-import { loginStart, loginSuccess, loginFailure } from '../../store/slices/authSlice';
+import {
+  establishSession,
+  getHomePath,
+  loginStart,
+  loginFailure,
+} from '../../store/slices/authSlice';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -78,14 +83,11 @@ const LoginPage = () => {
   };
   const handleBlur = (e) => setTouched((prev) => ({ ...prev, [e.target.name]: true }));
 
-  const dashboardMap = { client: '/dashboard', lawyer: '/lawyer/dashboard', admin: '/admin/dashboard' };
-
-  const finishLogin = (data, email) => {
-    const { user, token, role } = data;
+  const finishLogin = async (data, email) => {
     if (rememberMe) localStorage.setItem('rememberedEmail', email);
     else localStorage.removeItem('rememberedEmail');
-    dispatch(loginSuccess({ user, token, role }));
-    navigate(dashboardMap[role] || '/dashboard');
+    const session = await dispatch(establishSession(data));
+    navigate(getHomePath(session), { replace: true });
   };
 
   const performLogin = async (email, password) => {
@@ -100,7 +102,7 @@ const LoginPage = () => {
         return;
       }
 
-      finishLogin(response.data, email);
+      await finishLogin(response.data, email);
     } catch (err) {
       const message = err.response?.data?.error || err.message || t('login.loginError');
       dispatch(loginFailure(message));
@@ -114,7 +116,7 @@ const LoginPage = () => {
     setTwoFA((p) => ({ ...p, loading: true, error: '' }));
     try {
       const response = await api.post('/auth/login/2fa', { tempToken: twoFA.tempToken, code });
-      finishLogin(response.data, twoFA.email);
+      await finishLogin(response.data, twoFA.email);
     } catch (err) {
       const message = err.response?.data?.error || t('login.twoFA.error');
       setTwoFA((p) => ({ ...p, loading: false, error: message }));
@@ -461,7 +463,7 @@ const LoginPage = () => {
             <Box sx={{ mt: 2 }}>
               {phoneMode ? (
                 <>
-                  <PhoneAuth onSuccess={(data) => finishLogin(data, data.user?.email || '')} />
+                  <PhoneAuth onSuccess={(data) => finishLogin(data, data.user?.email || '').catch((err) => dispatch(loginFailure(err.message)))} />
                   <Button fullWidth onClick={() => setPhoneMode(false)} sx={{ mt: 1, textTransform: 'none', color: axelionColors.textMuted }}>
                     {t('phoneAuth.useEmail')}
                   </Button>
@@ -477,7 +479,7 @@ const LoginPage = () => {
           {/* Соц-вход (кнопки видны только если провайдер включён на сервере) */}
           {!twoFA.required && !phoneMode && (
             <SocialLogin
-              onSuccess={(data) => finishLogin(data, data.user?.email)}
+              onSuccess={(data) => finishLogin(data, data.user?.email).catch((err) => dispatch(loginFailure(err.message)))}
               onError={(err) => dispatch(loginFailure(err.response?.data?.error || t('login.loginError')))}
             />
           )}

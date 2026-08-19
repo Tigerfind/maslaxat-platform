@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { Box, Typography, TextField, Button, Container, Alert } from '@mui/material';
 import { CheckCircle } from '@mui/icons-material';
 import { axelionColors } from '../../theme/axelionTheme';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { consumeAuthQueryToken } from '../../sentry';
+
+const initialResetToken = consumeAuthQueryToken('/reset-password');
 
 const ResetPasswordPage = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
+  const [token] = useState(() => initialResetToken || consumeAuthQueryToken('/reset-password'));
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');

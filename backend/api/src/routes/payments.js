@@ -1,9 +1,23 @@
 const router = require('express').Router();
 const logger = require('../config/logger');
+const observability = require('../instrument');
 const { Op } = require('sequelize');
 const { Payment, Consultation, User, LawyerProfile, Withdrawal } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeCompat } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { recordConsultationEscrow, snapshotConsultationFinancials } = require('../services/ledgerService');
+const { parseWebhook } = require('../services/providers/payme');
+const { buildShadowComparison, getPaymentConfig } = require('../config/payment');
+const { buildStatementResult, evaluatePaymentShadow } = require('../services/paymentShadowService');
+const {
+  markProviderCancelled,
+  markPaymentProcessing,
+  markPaymentPaid,
+  createCheckout,
+} = require('../services/paymentService');
+
+const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
+const lawyerAccess = authorizeCompat({ legacyRoles: ['lawyer'], capability: 'lawyer', telemetryName: 'http.lawyer' });
 
 // ─── Payme JSON-RPC Error Codes ───────────────────────────────
 const ERRORS = {
@@ -15,18 +29,32 @@ const ERRORS = {
   ALREADY_DONE:        { code: -31060, message: 'Transaction already completed' },
   ALREADY_CANCELLED:   { code: -31061, message: 'Transaction already cancelled' },
 };
+const PAYME_METHODS = new Set([
+  'CheckPerformTransaction',
+  'CreateTransaction',
+  'PerformTransaction',
+  'CancelTransaction',
+  'CheckTransaction',
+  'GetStatement',
+]);
 
 // ─── Payme Basic Auth Middleware ─────────────────────────────
 const verifyPayme = (req, res, next) => {
-  const auth = req.headers.authorization || '';
-  const b64 = auth.replace('Basic ', '');
-  const decoded = Buffer.from(b64, 'base64').toString('utf-8');
-  const [, key] = decoded.split(':');
+  const configuredKey = String(process.env.PAYME_KEY || '').trim();
+  if (!configuredKey || configuredKey === 'CHANGE_ME' || configuredKey === 'sk-CHANGE_ME') {
+    return res.status(503).json({ error: 'Payme webhook is not configured' });
+  }
 
-  if (key !== process.env.PAYME_KEY) {
+  const match = /^Basic ([A-Za-z0-9+/]+={0,2})$/.exec(req.headers.authorization || '');
+  const token = match?.[1];
+  const decodedBytes = token ? Buffer.from(token, 'base64') : null;
+  const isCanonical = decodedBytes && decodedBytes.toString('base64') === token;
+  const decoded = isCanonical ? decodedBytes.toString('utf8') : '';
+
+  if (!isCanonical || decoded !== `Paycom:${configuredKey}`) {
     return res.status(401).json({
       jsonrpc: '2.0',
-      id: req.body?.id || null,
+      id: req.body?.id ?? null,
       error: { code: -32504, message: 'Insufficient privilege to perform this method' },
     });
   }
@@ -35,61 +63,26 @@ const verifyPayme = (req, res, next) => {
 
 // ─── POST /api/payments/create ────────────────────────────────
 // Клиент бронирует → создаём Payment + Payme checkout URL
-router.post('/create', authenticate, authorize('client'), async (req, res, next) => {
+router.post('/create', authenticate, clientAccess, async (req, res, next) => {
   try {
     const { consultationId } = req.body;
-
-    const consultation = await Consultation.findOne({
-      where: { id: consultationId, clientId: req.userId },
-      include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile' }] }],
+    const idempotencyKey = req.get('Idempotency-Key');
+    if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+    const checkout = await createCheckout({
+      userId: req.userId,
+      purpose: 'consultation',
+      subjectId: consultationId,
+      idempotencyKey,
     });
-
-    if (!consultation) {
-      return res.status(404).json({ error: 'Консультация не найдена' });
-    }
-    if (consultation.status !== 'payment_pending') {
-      return res.status(400).json({ error: 'Консультация уже оплачена или отменена' });
-    }
-
-    const existingPayment = await Payment.findOne({ where: { consultationId } });
-    if (existingPayment && existingPayment.status === 'paid') {
-      return res.status(400).json({ error: 'Консультация уже оплачена' });
-    }
-
-    const amount = consultation.price; // в сумах
-    const amountTiyin = amount * 100;  // Payme работает в тийинах
-
-    // Создаём или обновляем платёж
-    let payment = existingPayment;
-    if (payment) {
-      // Прошлая попытка не удалась/отменена (failed) — сбрасываем в pending,
-      // иначе повторная оплата навсегда блокировалась (webhook требует pending).
-      if (payment.status === 'failed') {
-        await payment.update({ status: 'pending', amount, providerResponse: null });
-      }
-    } else {
-      payment = await Payment.create({
-        consultationId,
-        userId: req.userId,
-        amount,
-        currency: 'UZS',
-        provider: 'payme',
-        status: 'pending',
-      });
-    }
-
-    // Payme checkout URL
-    // Формат: account[consultation_id]=ID&amount=TIYIN
-    const merchantId = process.env.PAYME_MERCHANT_ID;
-    const params = Buffer.from(
-      `m=${merchantId};ac.consultation_id=${payment.id};a=${amountTiyin}`
-    ).toString('base64');
-
-    const checkoutUrl = `https://checkout.paycom.uz/${params}`;
-
-    res.json({ paymentId: payment.id, checkoutUrl, amount, amountTiyin });
+    return res.json({
+      paymentId: checkout.payment.id,
+      checkoutUrl: checkout.checkoutUrl,
+      amount: checkout.amount,
+      amountTiyin: checkout.amountTiyin,
+    });
   } catch (err) {
-    next(err);
+    if (err.status) return res.status(err.status).json({ error: err.message });
+    return next(err);
   }
 });
 
@@ -100,7 +93,7 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
 // БЕЗОПАСНОСТЬ: в проде отключён ВСЕГДА (fail-closed по NODE_ENV), даже если забыли
 // задать PAYME_KEY — иначе любой клиент оплачивал бы консультации бесплатно.
 // Работает только в dev/test И когда не подключён реальный Payme.
-router.post('/simulate', authenticate, authorize('client'), async (req, res, next) => {
+router.post('/simulate', authenticate, clientAccess, async (req, res, next) => {
   try {
     if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
       return res.status(403).json({ error: 'Тестовая оплата недоступна в этом режиме' });
@@ -132,19 +125,19 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
       });
     }
 
-    await payment.update({
-      status: 'paid',
-      providerResponse: { test: true, paidAt: Date.now() },
+    await Payment.sequelize.transaction(async (tx) => {
+      payment = await Payment.findByPk(payment.id, { lock: tx.LOCK.UPDATE, transaction: tx });
+      await snapshotConsultationFinancials(consultation, Math.round(Number(payment.amount) * 100), tx);
+      await payment.update({
+        purpose: 'consultation',
+        amountTiyin: payment.amountTiyin || Math.round(Number(payment.amount) * 100),
+        status: 'paid',
+        paidAt: new Date(),
+        providerResponse: { test: true, paidAt: Date.now() },
+      }, { transaction: tx });
+      await Consultation.update({ status: 'pending' }, { where: { id: consultation.id }, transaction: tx });
+      await recordConsultationEscrow(payment, tx);
     });
-
-    // Консультация ждёт подтверждения юриста
-    await consultation.update({ status: 'pending' });
-
-    // Эскроу: деньги резервируются на pendingBalance юриста
-    const lawyerProfile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
-    if (lawyerProfile) {
-      await lawyerProfile.increment('pendingBalance', { by: payment.amount });
-    }
 
     // Уведомляем юриста об оплаченной консультации
     await notificationService.createNotification(
@@ -164,10 +157,44 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
 // ─── POST /api/payments/webhook ───────────────────────────────
 // Payme JSON-RPC 2.0 webhook
 router.post('/webhook', verifyPayme, async (req, res) => {
+  let paymentConfig;
+  try {
+    paymentConfig = getPaymentConfig();
+  } catch (error) {
+    observability.reportCaughtException(error, { operation: 'payment_config' });
+    logger.error('payment_mode_configuration_rejected');
+    return res.status(503).json({ error: 'Payment webhook mode is not available' });
+  }
   const { method, params, id } = req.body;
 
-  const reply = (result) => res.json({ jsonrpc: '2.0', id, result });
-  const replyError = (error) => res.json({ jsonrpc: '2.0', id, error });
+  let shadow = null;
+  if (paymentConfig.shadowEnabled) {
+    try {
+      const parsed = parseWebhook(req.body);
+      shadow = await evaluatePaymentShadow(parsed);
+    } catch (err) {
+      const code = Number.isInteger(err.code) ? err.code : -32602;
+      shadow = {
+        method: PAYME_METHODS.has(method) ? method : 'unknown',
+        v2Accepted: false,
+        v2ErrorCode: code,
+        v2Payload: { code },
+      };
+    }
+  }
+
+  const recordShadow = (legacyOutcome, legacyErrorCode = null, legacyPayload = null) => {
+    if (!shadow) return;
+    logger.info('payment_v2_shadow', buildShadowComparison(shadow, legacyOutcome, legacyErrorCode, legacyPayload));
+  };
+  const reply = (result) => {
+    recordShadow('result', null, result);
+    return res.json({ jsonrpc: '2.0', id, result });
+  };
+  const replyError = (error) => {
+    recordShadow('error', error.code, error);
+    return res.json({ jsonrpc: '2.0', id, error });
+  };
 
   try {
     switch (method) {
@@ -181,7 +208,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
 
-        const expectedTiyin = payment.amount * 100;
+        const expectedTiyin = Number(payment.amountTiyin ?? Math.round(Number(payment.amount) * 100));
         if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
 
         if (payment.status !== 'pending') return replyError(ERRORS.CANT_PERFORM);
@@ -197,19 +224,21 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
 
-        const expectedTiyin = payment.amount * 100;
+        const expectedTiyin = Number(payment.amountTiyin ?? Math.round(Number(payment.amount) * 100));
         if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
 
         if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
         if (payment.status === 'failed') return replyError(ERRORS.CANT_PERFORM);
 
-        await payment.update({
-          transactionId: params.id,
-          providerResponse: { ...payment.providerResponse, createTime: params.time },
+        const processing = await markPaymentProcessing({
+          paymentId: payment.id,
+          providerTransactionId: params.id,
+          amountTiyin: params.amount,
+          providerData: { ...(payment.providerData || {}), createTime: params.time },
         });
 
         return reply({
-          create_time: params.time,
+          create_time: processing.payment.providerData.createTime,
           transaction: payment.id,
           state: 1,
         });
@@ -218,40 +247,29 @@ router.post('/webhook', verifyPayme, async (req, res) => {
       // ── PerformTransaction ─────────────────────────────────
       case 'PerformTransaction': {
         const payment = await Payment.findOne({
-          where: { transactionId: params.id },
-          include: [{ model: Consultation }],
+          where: { [Op.or]: [{ providerTransactionId: params.id }, { transactionId: params.id }] },
         });
 
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
-        if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
+        if (payment.status === 'paid') {
+          await markPaymentPaid({
+            paymentId: payment.id,
+            providerTransactionId: params.id,
+            amountTiyin: Number(payment.amountTiyin ?? Math.round(Number(payment.amount) * 100)),
+            providerData: {},
+          });
+          return replyError(ERRORS.ALREADY_DONE);
+        }
         if (payment.status === 'failed') return replyError(ERRORS.CANT_PERFORM);
 
         const performTime = Date.now();
 
-        // Оплата прошла — переводим консультацию в статус pending (ждёт юриста)
-        await payment.update({
-          status: 'paid',
-          providerResponse: { ...payment.providerResponse, performTime },
+        await markPaymentPaid({
+          paymentId: payment.id,
+          providerTransactionId: params.id,
+          amountTiyin: Number(payment.amountTiyin ?? Math.round(Number(payment.amount) * 100)),
+          providerData: { ...(payment.providerData || {}), performTime },
         });
-
-        await payment.Consultation.update({ status: 'pending' });
-
-        // Юрист получает pendingBalance (деньги будут переведены после завершения)
-        const lawyerProfile = await LawyerProfile.findOne({
-          where: { userId: payment.Consultation.lawyerId },
-        });
-        if (lawyerProfile) {
-          await lawyerProfile.increment('pendingBalance', { by: payment.amount });
-        }
-
-        // Уведомляем юриста о новой оплаченной консультации
-        await notificationService.createNotification(
-          payment.Consultation.lawyerId,
-          'new_booking',
-          'Новая консультация',
-          'Клиент оплатил консультацию. Подтвердите или отклоните.',
-          { consultationId: payment.Consultation.id }
-        );
 
         return reply({ perform_time: performTime, transaction: payment.id, state: 2 });
       }
@@ -259,35 +277,35 @@ router.post('/webhook', verifyPayme, async (req, res) => {
       // ── CancelTransaction ──────────────────────────────────
       case 'CancelTransaction': {
         const payment = await Payment.findOne({
-          where: { transactionId: params.id },
-          include: [{ model: Consultation }],
+          where: { [Op.or]: [{ providerTransactionId: params.id }, { transactionId: params.id }] },
         });
 
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
-        if (payment.status === 'paid') return replyError(ERRORS.ALREADY_DONE);
-
-        const cancelTime = Date.now();
-
-        await payment.update({
-          status: 'failed',
-          providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
+        const cancelled = await markProviderCancelled({
+          paymentId: payment.id,
+          providerTransactionId: params.id,
+          cancelTime: Date.now(),
+          reason: params.reason,
         });
-
-        await payment.Consultation.update({ status: 'cancelled' });
-
-        return reply({ cancel_time: cancelTime, transaction: payment.id, state: -1 });
+        return reply({
+          cancel_time: cancelled.cancelTime,
+          transaction: payment.id,
+          state: cancelled.providerState,
+        });
       }
 
       // ── CheckTransaction ───────────────────────────────────
       case 'CheckTransaction': {
-        const payment = await Payment.findOne({ where: { transactionId: params.id } });
+        const payment = await Payment.findOne({
+          where: { [Op.or]: [{ providerTransactionId: params.id }, { transactionId: params.id }] },
+        });
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
 
         const stateMap = { pending: 1, paid: 2, failed: -1, refunded: -2 };
         return reply({
-          create_time: payment.providerResponse?.createTime || 0,
-          perform_time: payment.providerResponse?.performTime || 0,
-          cancel_time: payment.providerResponse?.cancelTime || 0,
+          create_time: payment.providerData?.createTime || payment.providerResponse?.createTime || 0,
+          perform_time: payment.providerData?.performTime || payment.providerResponse?.performTime || 0,
+          cancel_time: payment.providerData?.cancelTime || payment.providerResponse?.cancelTime || 0,
           transaction: payment.id,
           state: stateMap[payment.status] || 1,
           reason: payment.providerResponse?.reason || null,
@@ -306,36 +324,30 @@ router.post('/webhook', verifyPayme, async (req, res) => {
               ],
             },
           },
+          order: [['createdAt', 'ASC'], ['id', 'ASC']],
         });
 
-        return reply({
-          transactions: payments.map((p) => ({
-            id: p.transactionId,
-            time: p.providerResponse?.createTime || p.createdAt.getTime(),
-            amount: p.amount * 100,
-            account: { consultation_id: p.id },
-            create_time: p.providerResponse?.createTime || p.createdAt.getTime(),
-            perform_time: p.providerResponse?.performTime || 0,
-            cancel_time: p.providerResponse?.cancelTime || 0,
-            transaction: p.id,
-            state: 2,
-            reason: null,
-          })),
-        });
+        return reply(buildStatementResult(payments));
       }
 
       default:
         return replyError(ERRORS.METHOD_NOT_FOUND);
     }
   } catch (err) {
-    logger.error('Payme webhook error:', err);
+    observability.reportCaughtException(err, {
+      operation: 'payme_webhook',
+      method: PAYME_METHODS.has(method) ? method : 'unknown',
+    });
+    logger.error('payme_webhook_failed', {
+      method: PAYME_METHODS.has(method) ? method : 'unknown',
+    });
     return replyError(ERRORS.CANT_PERFORM);
   }
 });
 
 // ─── GET /api/payments/my ─────────────────────────────────────
 // История платежей текущего пользователя
-router.get('/my', authenticate, async (req, res, next) => {
+router.get('/my', authenticate, clientAccess, async (req, res, next) => {
   try {
     const payments = await Payment.findAll({
       where: { userId: req.userId },
@@ -354,7 +366,7 @@ router.get('/my', authenticate, async (req, res, next) => {
 
 // ─── GET /api/payments/balance ────────────────────────────────
 // Баланс юриста
-router.get('/balance', authenticate, authorize('lawyer'), async (req, res, next) => {
+router.get('/balance', authenticate, lawyerAccess, async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
@@ -370,7 +382,7 @@ router.get('/balance', authenticate, authorize('lawyer'), async (req, res, next)
 
 // ─── POST /api/payments/withdraw ─────────────────────────────
 // Запрос на вывод баланса юристом (B3)
-router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, next) => {
+router.post('/withdraw', authenticate, lawyerAccess, async (req, res, next) => {
   try {
     const { amount } = req.body;
 
@@ -423,7 +435,7 @@ router.post('/withdraw', authenticate, authorize('lawyer'), async (req, res, nex
 });
 
 // ─── GET /api/payments/withdrawals — история выводов юриста ───
-router.get('/withdrawals', authenticate, authorize('lawyer'), async (req, res, next) => {
+router.get('/withdrawals', authenticate, lawyerAccess, async (req, res, next) => {
   try {
     const withdrawals = await Withdrawal.findAll({
       where: { lawyerId: req.userId },

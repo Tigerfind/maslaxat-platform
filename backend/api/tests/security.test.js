@@ -72,13 +72,15 @@ describe('security: whitelist статусов консультации', () => 
   test('PATCH /consultations/:id/status с произвольным статусом → 400', async () => {
     const client = await makeClient('st@test.uz');
     const { user: lawyer } = await makeLawyer('stlaw@test.uz');
+    await lawyer.update({ twoFactorEnabled: true });
     const cons = await models.Consultation.create({
       clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000,
     });
-    const token = tokenFor(lawyer);
+    const token = tokenFor(lawyer, 'mfa');
     const res = await request(app)
       .patch(`/api/consultations/${cons.id}/status`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Maslaxat-Mode', 'lawyer')
       .send({ status: 'hacked' });
     expect(res.status).toBe(400);
   });
@@ -87,13 +89,15 @@ describe('security: whitelist статусов консультации', () => 
     const client = await makeClient('st2@test.uz');
     const { user: lawyer } = await makeLawyer('stlaw2@test.uz');
     const { user: otherLawyer } = await makeLawyer('otherlaw@test.uz');
+    await otherLawyer.update({ twoFactorEnabled: true });
     const cons = await models.Consultation.create({
       clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000,
     });
-    const token = tokenFor(otherLawyer);
+    const token = tokenFor(otherLawyer, 'mfa');
     const res = await request(app)
       .patch(`/api/consultations/${cons.id}/status`)
       .set('Authorization', `Bearer ${token}`)
+      .set('X-Maslaxat-Mode', 'lawyer')
       .send({ status: 'completed' });
     expect(res.status).toBe(403);
   });

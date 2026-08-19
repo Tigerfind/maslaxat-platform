@@ -1,12 +1,31 @@
-const router = require('express').Router();
+const express = require('express');
 const logger = require('../config/logger');
-const multer = require('multer');
+const crypto = require('crypto');
 const path = require('path');
-const fs = require('fs');
 const rateLimit = require('express-rate-limit');
 const { Document } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { createMemoryUpload } = require('../middleware/fileUpload');
+const { getFileStorageService } = require('../services/fileStorageRuntime');
+const { streamFile } = require('../services/fileHttpService');
+const { FILE_LIMITS, uploadLimitFor } = require('../config/fileLimits');
+const { registerUuidParams } = require('../middleware/uuidParams');
+
+function serializeDocument(document) {
+  const value = typeof document?.get === 'function' ? document.get({ plain: true }) : document;
+  return {
+    id: value.id,
+    name: value.name,
+    type: value.type,
+    size: value.size,
+    status: value.status,
+    aiAnalysis: value.aiAnalysis,
+    category: value.category,
+    createdAt: value.createdAt,
+    updatedAt: value.updatedAt,
+  };
+}
 
 // Лимит на AI-анализ документов (защита от неограниченных платных вызовов Claude).
 // Ключ — пользователь (не IP), поэтому ставится ПОСЛЕ authenticate.
@@ -30,46 +49,14 @@ try {
   logger.warn('Anthropic SDK not available for document analysis');
 }
 
-// Ensure uploads directory exists (не крашим старт, если ФС read-only —
-// в проде путь задаётся UPLOAD_DIR и указывает на записываемый volume).
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-try {
-  if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
-  }
-} catch (e) {
-  console.error(`[documents] не удалось создать uploadDir "${uploadDir}": ${e.message}`);
-}
-
-// Multer config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueName = Date.now() + '-' + Math.round(Math.random() * 1E9) + path.extname(file.originalname);
-    cb(null, uniqueName);
-  },
+const upload = createMemoryUpload({
+  types: ['pdf', 'doc', 'docx', 'txt', 'jpeg', 'png'],
+  maxBytes: uploadLimitFor('document'),
 });
 
-const upload = multer({
-  storage,
-  limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png'];
-    const allowedMime = [
-      'application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 'image/jpeg', 'image/png',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    // Проверяем И расширение, И заявленный MIME — чтобы нельзя было протащить
-    // произвольный файл, переименовав его в .pdf.
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Неподдерживаемый формат файла'));
-    }
-  },
-});
+function createDocumentsRouter({ fileStorageService = getFileStorageService() } = {}) {
+const router = express.Router();
+registerUuidParams(router, 'id');
 
 // GET /api/documents — list user documents
 router.get('/', authenticate, async (req, res, next) => {
@@ -78,7 +65,7 @@ router.get('/', authenticate, async (req, res, next) => {
       where: { userId: req.userId },
       order: [['createdAt', 'DESC']],
     });
-    res.json(documents);
+    res.json(documents.map(serializeDocument));
   } catch (err) {
     next(err);
   }
@@ -91,7 +78,21 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
       return res.status(400).json({ error: 'Файл не загружен' });
     }
 
-    const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+    let metadata = {};
+    if (req.body.metadata) {
+      try {
+        metadata = JSON.parse(req.body.metadata);
+      } catch (_error) {
+        return res.status(400).json({
+          error: 'Некорректные метаданные файла', code: 'INVALID_METADATA_JSON',
+        });
+      }
+      if (!metadata || typeof metadata !== 'object' || Array.isArray(metadata)) {
+        return res.status(400).json({
+          error: 'Некорректные метаданные файла', code: 'INVALID_METADATA_JSON',
+        });
+      }
+    }
 
     // Категория (папка) — необязательна; ограничиваем длину, пустую → null
     let category = null;
@@ -99,17 +100,22 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
       category = metadata.category.trim().slice(0, 50);
     }
 
-    const document = await Document.create({
-      userId: req.userId,
-      name: req.file.originalname,
-      type: path.extname(req.file.originalname).replace('.', '').toUpperCase(),
-      size: req.file.size,
-      path: req.file.path,
-      status: 'pending',
-      category,
+    const id = crypto.randomUUID();
+    const document = await fileStorageService.store({
+      kind: 'document', scopeId: req.userId, fileId: id,
+      body: req.file.buffer, mimeType: req.file.mimetype,
+      persist: ({ transaction, metadata }) => Document.create({
+        id,
+        userId: req.userId,
+        name: req.file.originalname,
+        type: path.extname(req.file.originalname).replace('.', '').toUpperCase(),
+        status: 'pending',
+        category,
+        ...metadata,
+      }, { transaction }),
     });
 
-    res.status(201).json(document);
+    res.status(201).json(serializeDocument(document));
   } catch (err) {
     next(err);
   }
@@ -126,12 +132,14 @@ router.delete('/:id', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Документ не найден' });
     }
 
-    // Delete file from disk
-    if (document.path && fs.existsSync(document.path)) {
-      fs.unlinkSync(document.path);
+    if (document.storageKey) {
+      await fileStorageService.delete({
+        record: document,
+        destroy: ({ transaction }) => document.destroy({ transaction }),
+      });
+    } else {
+      await document.destroy();
     }
-
-    await document.destroy();
     res.json({ message: 'Документ удалён' });
   } catch (err) {
     next(err);
@@ -149,11 +157,11 @@ router.get('/:id/download', authenticate, async (req, res, next) => {
       return res.status(404).json({ error: 'Документ не найден' });
     }
 
-    if (!document.path || !fs.existsSync(document.path)) {
-      return res.status(404).json({ error: 'Файл не найден на сервере' });
-    }
-
-    res.download(document.path, document.name || path.basename(document.path));
+    await streamFile({
+      storage: fileStorageService, req, res, record: document,
+      filename: document.name || 'document',
+      maxBytes: FILE_LIMITS.document,
+    });
   } catch (err) {
     next(err);
   }
@@ -170,26 +178,21 @@ router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next
       return res.status(404).json({ error: 'Документ не найден' });
     }
 
-    // Read file from disk
-    const filePath = document.path;
-    if (!filePath || !fs.existsSync(filePath)) {
-      return res.status(400).json({ error: 'Файл не найден на диске' });
-    }
-
-    const ext = path.extname(filePath).toLowerCase();
+    const fileBuffer = await fileStorageService.read({
+      record: document, maxBytes: FILE_LIMITS.document,
+    });
+    const ext = path.extname(document.name || '').toLowerCase();
     let documentContent = null;
     let contentBlocks = [];
 
     // Extract text depending on file type
     if (ext === '.pdf') {
       const pdfParse = require('pdf-parse');
-      const pdfBuffer = fs.readFileSync(filePath);
-      const pdfData = await pdfParse(pdfBuffer);
+      const pdfData = await pdfParse(fileBuffer);
       documentContent = pdfData.text.substring(0, 15000);
       contentBlocks = [{ type: 'text', text: `Содержимое PDF документа "${document.name}":\n\n${documentContent}` }];
     } else if (['.jpg', '.jpeg', '.png'].includes(ext)) {
-      const imageBuffer = fs.readFileSync(filePath);
-      const base64 = imageBuffer.toString('base64');
+      const base64 = fileBuffer.toString('base64');
       const mediaType = ext === '.png' ? 'image/png' : 'image/jpeg';
       contentBlocks = [
         { type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } },
@@ -200,7 +203,7 @@ router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next
       // а не читаем бинарь как utf-8 (раньше в AI шёл мусор).
       try {
         const mammoth = require('mammoth');
-        const { value } = await mammoth.extractRawText({ path: filePath });
+        const { value } = await mammoth.extractRawText({ buffer: fileBuffer });
         documentContent = (value || '').substring(0, 15000);
       } catch (e) {
         documentContent = '';
@@ -214,7 +217,7 @@ router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next
       }
       contentBlocks = [{ type: 'text', text: `Содержимое документа "${document.name}":\n\n${documentContent}` }];
     } else if (ext === '.txt') {
-      documentContent = fs.readFileSync(filePath, 'utf-8').substring(0, 15000);
+      documentContent = fileBuffer.toString('utf-8').substring(0, 15000);
       contentBlocks = [{ type: 'text', text: `Содержимое документа "${document.name}":\n\n${documentContent}` }];
     } else {
       return res.status(400).json({ error: 'Неподдерживаемый формат для AI анализа' });
@@ -299,4 +302,7 @@ router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next
   }
 });
 
-module.exports = router;
+return router;
+}
+
+module.exports = createDocumentsRouter;

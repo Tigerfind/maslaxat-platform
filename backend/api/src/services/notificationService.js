@@ -2,6 +2,7 @@ const { Notification } = require('../models');
 const logger = require('../config/logger');
 const { emitToUser } = require('../socket/io');
 const pushService = require('./pushService');
+const { reportCaughtException } = require('../instrument');
 
 const TYPES = {
   BOOKING_NEW: 'booking_new',
@@ -21,19 +22,41 @@ const TYPES = {
   CASE_DOCUMENT: 'case_document',            // новый документ по делу → другой стороне
 };
 
-async function createNotification(userId, type, title, message, metadata = {}) {
+async function createNotification(userId, type, title, message, metadata = {}, options = {}) {
   try {
-    const notification = await Notification.create({ userId, type, title, message, metadata });
+    let notification;
+    let created = true;
+    if (options.dedupeKey) {
+      [notification, created] = await Notification.findOrCreate({
+        where: { dedupeKey: options.dedupeKey },
+        defaults: { userId, type, title, message, metadata, dedupeKey: options.dedupeKey },
+      });
+    } else {
+      notification = await Notification.create({ userId, type, title, message, metadata });
+    }
+    if (!created) return notification;
     // Мгновенный пуш через socket (если пользователь онлайн) — без ожидания опроса
-    emitToUser(userId, 'notification:new', notification.toJSON());
+    try {
+      emitToUser(userId, 'notification:new', notification.toJSON());
+    } catch (err) {
+      reportCaughtException(err, { operation: 'notification_socket_delivery', userId, notificationId: notification.id });
+      logger.error('notification_socket_delivery_failed', { userId, notificationId: notification.id });
+    }
     // Web-push на устройства (работает и когда вкладка закрыта). Fire-and-forget,
     // no-op если VAPID не настроен. Ошибки не должны ломать создание уведомления.
     pushService
       .sendToUser(userId, { title, body: message, type, metadata })
-      .catch((err) => logger.error('[NotificationService] push failed:', err.message));
+      .catch((err) => {
+        reportCaughtException(err, { operation: 'notification_push_delivery', userId, notificationId: notification.id });
+        logger.error('notification_push_delivery_failed', { userId, notificationId: notification.id });
+      });
     return notification;
   } catch (err) {
-    logger.error('[NotificationService] Error creating notification:', err.message);
+    if (!options.throwOnError) {
+      reportCaughtException(err, { operation: 'notification_create', userId, type });
+    }
+    logger.error('notification_create_failed', { userId, type });
+    if (options.throwOnError) throw err;
     return null;
   }
 }

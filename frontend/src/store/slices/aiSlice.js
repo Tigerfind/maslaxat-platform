@@ -1,4 +1,10 @@
 import { createSlice } from '@reduxjs/toolkit';
+import {
+  sessionBoundaryRotated,
+  sessionCleared,
+  sessionRevoked,
+  tokenReplaced,
+} from './authSlice';
 
 const initialState = {
   messages: [],
@@ -36,6 +42,13 @@ const aiSlice = createSlice({
       state.currentCategory = null;
       state.recommendedLawyers = [];
     },
+  },
+  extraReducers: (builder) => {
+    builder
+      .addCase(sessionCleared, () => initialState)
+      .addCase(sessionRevoked, () => initialState)
+      .addCase(sessionBoundaryRotated, () => initialState)
+      .addCase(tokenReplaced, () => initialState);
   },
 });
 

@@ -4,6 +4,7 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import io from 'socket.io-client';
 import { CallOutlined, CallEndOutlined, VideocamOutlined } from '@mui/icons-material';
 import { useTranslation } from '../../i18n';
+import { canUseOperationalCalls, createModeSocket } from '../../services/modeSocket';
 
 // socket.io живёт на корне хоста, а REACT_APP_API_URL в проде включает /api —
 // срезаем его (иначе в проде сокет цепляется к неверному namespace).
@@ -72,7 +73,7 @@ const GlobalCallListener = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isAuthenticated, token } = useSelector((s) => s.auth);
+  const { isAuthenticated, token, activeMode, capabilities } = useSelector((s) => s.auth);
   const socketRef = useRef(null);
   const timeoutRef = useRef(null);
   const ringtoneRef = useRef(null);
@@ -84,10 +85,9 @@ const GlobalCallListener = () => {
   useEffect(() => { onCallPageRef.current = onCallPage; }, [onCallPage]);
 
   useEffect(() => {
-    const authToken = token || localStorage.getItem('token');
-    if (!isAuthenticated || !authToken) return undefined;
+    if (!isAuthenticated || !token || !activeMode || !canUseOperationalCalls(activeMode, capabilities)) return undefined;
 
-    const socket = io(API_URL, { auth: { token: authToken }, transports: ['websocket', 'polling'] });
+    const { socket, unregister } = createModeSocket(io, API_URL, token, activeMode);
     socketRef.current = socket;
 
     socket.on('incoming-call', (data) => {
@@ -103,9 +103,10 @@ const GlobalCallListener = () => {
 
     return () => {
       socket.disconnect();
+      unregister();
       socketRef.current = null;
     };
-  }, [isAuthenticated, token]);
+  }, [activeMode, capabilities, isAuthenticated, token]);
 
   // Рингтон + вибрация, пока есть входящий вызов
   useEffect(() => {
@@ -120,7 +121,7 @@ const GlobalCallListener = () => {
     if (!call) return undefined;
     timeoutRef.current = setTimeout(() => {
       if (socketRef.current) {
-        socketRef.current.emit('call-decline', { consultationId: call.consultationId, callerId: call.callerId });
+        socketRef.current.emit('call-decline', { consultationId: call.consultationId });
       }
       setCall(null);
     }, RING_TIMEOUT_MS);
@@ -129,7 +130,7 @@ const GlobalCallListener = () => {
 
   const accept = () => {
     if (!call) return;
-    socketRef.current?.emit('call-accept', { consultationId: call.consultationId, callerId: call.callerId });
+    socketRef.current?.emit('call-accept', { consultationId: call.consultationId });
     const id = call.consultationId;
     setCall(null);
     navigate(`/consultations/video/${id}`);
@@ -137,7 +138,7 @@ const GlobalCallListener = () => {
 
   const decline = () => {
     if (!call) return;
-    socketRef.current?.emit('call-decline', { consultationId: call.consultationId, callerId: call.callerId });
+    socketRef.current?.emit('call-decline', { consultationId: call.consultationId });
     setCall(null);
   };
 

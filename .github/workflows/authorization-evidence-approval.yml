@@ -1,0 +1,84 @@
+name: Approve authorization compatibility evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      role:
+        required: true
+        type: choice
+        options: [security_owner, release_owner, cutover_owner]
+      prepare_run_id: { required: true, type: string }
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  approve:
+    environment: ${{ inputs.role == 'security_owner' && 'authorization-security-owner-approval' || inputs.role == 'release_owner' && 'authorization-release-owner-approval' || 'authorization-cutover-owner-approval' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorization-evidence-prepared
+          path: ${{ runner.temp }}/prepared
+          run-id: ${{ inputs.prepare_run_id }}
+          github-token: ${{ github.token }}
+      - name: Resolve prepared release tooling commit
+        id: prepared
+        env:
+          PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+        run: |
+          prepared_commit=$(jq -er '.release.commitSha | select(type == "string" and test("^[a-f0-9]{40}$"))' "$RUNNER_TEMP/prepared/authorization-evidence.json")
+          provenance_commit=$(jq -er '.release.commitSha | select(type == "string" and test("^[a-f0-9]{40}$"))' "$RUNNER_TEMP/prepared/provenance.json")
+          provenance_run=$(jq -er '.workflow.runId | select(type == "number")' "$RUNNER_TEMP/prepared/provenance.json")
+          test "$PREPARE_RUN_ID" = "$provenance_run"
+          test "$prepared_commit" = "$provenance_commit"
+          printf 'release_commit=%s\n' "$prepared_commit" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ steps.prepared.outputs.release_commit }}
+      - name: Verify exact approval tooling checkout
+        env:
+          TOOLING_COMMIT: ${{ steps.prepared.outputs.release_commit }}
+        run: test "$(git rev-parse HEAD)" = "$TOOLING_COMMIT"
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Build approval input
+        env:
+          APPROVAL_ROLE: ${{ inputs.role }}
+          PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+          TOOLING_COMMIT: ${{ steps.prepared.outputs.release_commit }}
+        run: |
+          umask 077
+          provenance_run=$(jq -r .workflow.runId "$RUNNER_TEMP/prepared/provenance.json")
+          test "$PREPARE_RUN_ID" = "$provenance_run"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          environment="authorization-${APPROVAL_ROLE//_/-}-approval"
+          jq -n --arg role "$APPROVAL_ROLE" --arg environment "$environment" \
+            --argjson approvalRunId "$GITHUB_RUN_ID" --arg approvedAt "$now" \
+            --arg artifactDigest "$(jq -r .artifactDigest "$RUNNER_TEMP/prepared/authorization-evidence.json")" \
+            --slurpfile evidence "$RUNNER_TEMP/prepared/authorization-evidence.json" \
+            --arg toolingCommitSha "$TOOLING_COMMIT" \
+            '{role:$role,environment:$environment,approvalRunId:$approvalRunId,approvedAt:$approvedAt,artifactDigest:$artifactDigest,release:$evidence[0].release,toolingCommitSha:$toolingCommitSha,decision:"approve"}' \
+            > "$RUNNER_TEMP/approval-input.json"
+          node backend/api/src/scripts/authorizationEvidence.js build-approval \
+            --input "$RUNNER_TEMP/approval-input.json" --output "$RUNNER_TEMP/approval.json"
+      - name: Sign approval and clean private key
+        env:
+          APPROVAL_PRIVATE_KEY_B64: ${{ secrets.AUTHORIZATION_APPROVAL_PRIVATE_KEY_B64 }}
+          APPROVAL_KEY_ID: ${{ vars.AUTHORIZATION_APPROVAL_KEY_ID }}
+        run: |
+          key="$RUNNER_TEMP/approval-private.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$APPROVAL_PRIVATE_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          node backend/api/src/scripts/authorizationEvidence.js sign-artifact \
+            --input "$RUNNER_TEMP/approval.json" --output "$RUNNER_TEMP/approval.signed.json" \
+            --key-file "$key" --key-id "$APPROVAL_KEY_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorization-approval-${{ inputs.role }}
+          path: ${{ runner.temp }}/approval.signed.json
+          retention-days: 30
+          if-no-files-found: error

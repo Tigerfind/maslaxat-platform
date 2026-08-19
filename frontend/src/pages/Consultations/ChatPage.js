@@ -19,6 +19,7 @@ import io from 'socket.io-client';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import { createModeSocket } from '../../services/modeSocket';
 
 // socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
 const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
@@ -27,7 +28,7 @@ const ChatPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { user } = useSelector((state) => state.auth);
+  const { user, token, activeMode } = useSelector((state) => state.auth);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -64,17 +65,13 @@ const ChatPage = () => {
       }
     };
     loadData();
-  }, [consultationId]);
+  }, [activeMode, consultationId]);
 
   // Socket connection
   useEffect(() => {
-    const token = localStorage.getItem('token');
-    if (!token || !consultationId) return;
+    if (!token || !activeMode || !consultationId) return undefined;
 
-    const socket = io(API_URL, {
-      auth: { token },
-      transports: ['websocket', 'polling'],
-    });
+    const { socket, unregister } = createModeSocket(io, API_URL, token, activeMode);
 
     socket.on('connect', () => {
       socket.emit('join-chat', { consultationId });
@@ -100,8 +97,9 @@ const ChatPage = () => {
 
     return () => {
       socket.disconnect();
+      unregister();
     };
-  }, [consultationId]);
+  }, [activeMode, consultationId, token]);
 
   // Auto-scroll on new messages
   useEffect(() => {
@@ -156,7 +154,7 @@ const ChatPage = () => {
 
   const getPartnerName = () => {
     if (!consultation) return t('chat.partnerFallback');
-    if (user?.role === 'client') {
+    if (activeMode === 'client') {
       return consultation.lawyer?.name || t('chat.lawyerFallback');
     }
     return consultation.client?.name || t('chat.clientFallback');

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Box, Typography, CircularProgress, Button } from '@mui/material';
 import CheckCircleOutlineIcon from '@mui/icons-material/CheckCircleOutline';
@@ -7,18 +7,20 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import api from '../../services/api';
 import { updateProfile } from '../../store/slices/authSlice';
 import { useTranslation } from '../../i18n';
+import { consumeAuthQueryToken } from '../../sentry';
+
+const initialVerificationToken = consumeAuthQueryToken('/verify-email');
 
 const VerifyEmailPage = () => {
-  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { t } = useTranslation();
   const { isAuthenticated } = useSelector((state) => state.auth);
   const [status, setStatus] = useState('loading'); // loading | success | error
   const [message, setMessage] = useState('');
+  const [token] = useState(() => initialVerificationToken || consumeAuthQueryToken('/verify-email'));
 
   useEffect(() => {
-    const token = searchParams.get('token');
     if (!token) {
       setStatus('error');
       setMessage(t('authFlow.verifyNoToken'));
@@ -36,7 +38,7 @@ const VerifyEmailPage = () => {
         setStatus('error');
         setMessage(err.response?.data?.error || t('authFlow.verifyBad'));
       });
-  }, [searchParams, isAuthenticated, dispatch]);
+  }, [token, isAuthenticated, dispatch]);
 
   // Куда вести после успеха: залогинен → кабинет, иначе → вход
   const goHome = () => navigate(isAuthenticated ? '/dashboard' : '/login');

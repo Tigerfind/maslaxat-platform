@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -46,6 +46,8 @@ import BookingModal from '../../components/BookingModal';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { SkeletonCard } from '../../components/UI/Skeleton';
+import { createPromotionAttribution, promotionProfileSearch } from '../../utils/promotionAttribution';
+import { canonicalCatalogKey, createCatalogRequestCoordinator } from '../../utils/catalogRequestCoordinator';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -145,6 +147,24 @@ const glassSelectSx = {
   '& .MuiSvgIcon-root': { color: 'var(--text3)' },
 };
 
+export const SponsoredLabel = () => {
+  const { t } = useTranslation();
+  return (
+    <span
+      role="note"
+      aria-label={t('lawyers.sponsoredAria')}
+      style={{
+        display: 'inline-flex', alignItems: 'center', minHeight: 24, padding: '2px 9px',
+        borderRadius: 20, border: '1px solid color-mix(in srgb, var(--accent) 45%, transparent)',
+        background: 'color-mix(in srgb, var(--accent) 12%, transparent)', color: 'var(--accent-dark)',
+        fontSize: 10.5, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+      }}
+    >
+      {t('lawyers.sponsored')}
+    </span>
+  );
+};
+
 const LawyersPageGlass = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
@@ -156,11 +176,14 @@ const LawyersPageGlass = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
+  const [pageCursors, setPageCursors] = useState({ 1: null });
+  const [pageCache, setPageCache] = useState({});
   const [totalPages, setTotalPages] = useState(1);
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [selectedLawyer, setSelectedLawyer] = useState(null);
   const [favoriteLawyers, setFavoriteLawyers] = useState(new Set());
   const [firstFree, setFirstFree] = useState(false);
+  const requestCoordinator = useRef(createCatalogRequestCoordinator());
 
   // Акция «первая консультация бесплатно» — показываем объявление, если доступна
   useEffect(() => {
@@ -182,8 +205,10 @@ const LawyersPageGlass = () => {
   const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
 
   useEffect(() => {
+    const coordinator = requestCoordinator.current;
     fetchLawyers();
     loadFavorites();
+    return () => coordinator.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, currentPage, searchQuery]);
 
@@ -202,30 +227,55 @@ const LawyersPageGlass = () => {
   };
 
   const fetchLawyers = async () => {
+    const cacheKey = canonicalCatalogKey({ filters, searchQuery, page: currentPage });
+    const catalogRequest = requestCoordinator.current.begin(cacheKey);
     try {
       setLoading(true);
+      const cached = pageCache[cacheKey];
+      if (cached) {
+        setLawyers(cached.lawyers || []);
+        setTotalPages(cached.totalPages || 1);
+        return;
+      }
       const { specializations, ...restFilters } = filters;
       const response = await clientService.lawyers.searchLawyers({
         ...restFilters,
         // Мультивыбор областей → бэкенду одной строкой через запятую (OR-совпадение).
         specialization: (specializations || []).join(','),
         search: searchQuery,
-        page: currentPage,
+        cursor: pageCursors[currentPage] || undefined,
         limit: 9,
-      });
+      }, { signal: catalogRequest.signal });
+
+      if (!requestCoordinator.current.isCurrent(catalogRequest)) return;
+      if (response.sessionUnavailable) return;
+
+      if (response.sessionExpired) {
+        setPageCursors({ 1: null });
+        setPageCache({});
+        setCurrentPage(1);
+        return;
+      }
 
       setLawyers(response.lawyers || []);
       setTotalPages(response.totalPages || 1);
+      setPageCache((previous) => ({ ...previous, [cacheKey]: response }));
+      if (response.cursor) {
+        setPageCursors((previous) => ({ ...previous, [currentPage + 1]: response.cursor }));
+      }
     } catch (error) {
+      if (!requestCoordinator.current.isCurrent(catalogRequest) || error.code === 'ERR_CANCELED') return;
       console.error('Error fetching lawyers:', error);
       setLawyers([]);
     } finally {
-      setLoading(false);
+      if (requestCoordinator.current.isCurrent(catalogRequest)) setLoading(false);
     }
   };
 
   const handleFilterChange = (field, value) => {
     setFilters((prev) => ({ ...prev, [field]: value }));
+    setPageCursors({ 1: null });
+    setPageCache({});
     setCurrentPage(1);
   };
 
@@ -241,6 +291,8 @@ const LawyersPageGlass = () => {
       language: '',
     });
     setSearchQuery('');
+    setPageCursors({ 1: null });
+    setPageCache({});
     setCurrentPage(1);
   };
 
@@ -254,8 +306,16 @@ const LawyersPageGlass = () => {
     setSelectedLawyer(null);
   };
 
-  const handleViewProfile = (lawyerId) => {
-    navigate(`/lawyers/${lawyerId}`);
+  const handleViewProfile = (lawyer) => {
+    const params = promotionProfileSearch(createPromotionAttribution(lawyer));
+    navigate(`/lawyers/${lawyer.id}${params}`);
+  };
+
+  const handleSearchChange = (value) => {
+    setSearchQuery(value);
+    setPageCursors({ 1: null });
+    setPageCache({});
+    setCurrentPage(1);
   };
 
   const handleToggleFavorite = async (e, lawyerId) => {
@@ -512,6 +572,7 @@ const LawyersPageGlass = () => {
     return (
       <div
         key={lawyer.id}
+        className="lawyer-card"
         style={{
           ...glassCard,
           padding: 20,
@@ -541,7 +602,7 @@ const LawyersPageGlass = () => {
 
         {/* avatar */}
         <div
-          onClick={() => handleViewProfile(lawyer.id)}
+          onClick={() => handleViewProfile(lawyer)}
           style={{
             width: 60, height: 60, borderRadius: 16, flexShrink: 0, cursor: 'pointer', position: 'relative',
             background: lawyer.avatar ? `center/cover url(${lawyer.avatar})` : grad,
@@ -566,11 +627,12 @@ const LawyersPageGlass = () => {
           {/* name + online */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5, paddingRight: 52 }}>
             <span
-              onClick={() => handleViewProfile(lawyer.id)}
+              onClick={() => handleViewProfile(lawyer)}
               style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
             >
               {lawyer.name}
             </span>
+            {lawyer.placement === 'sponsored' && <SponsoredLabel />}
             {lawyer.isAvailable && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontSize: 11.5, color: '#5AA06A', fontWeight: 500 }}>
                 <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
@@ -713,7 +775,7 @@ const LawyersPageGlass = () => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginBottom: 22, flexWrap: 'wrap' }}>
             <TextField
               value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
+              onChange={(e) => handleSearchChange(e.target.value)}
               placeholder={t('lawyers.searchPlaceholder')}
               size="small"
               sx={{
@@ -740,7 +802,7 @@ const LawyersPageGlass = () => {
                 ),
                 endAdornment: searchQuery && (
                   <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => setSearchQuery('')}>
+                    <IconButton size="small" onClick={() => handleSearchChange('')}>
                       <Close sx={{ color: 'var(--text3)', fontSize: 18 }} />
                     </IconButton>
                   </InputAdornment>
@@ -847,7 +909,9 @@ const LawyersPageGlass = () => {
                   <Pagination
                     count={totalPages}
                     page={currentPage}
-                    onChange={(e, page) => setCurrentPage(page)}
+                    onChange={(e, page) => {
+                      if (page === 1 || pageCursors[page]) setCurrentPage(page);
+                    }}
                     sx={{
                       '& .MuiPaginationItem-root': {
                         color: 'var(--text2)', fontFamily: 'inherit', border: '1px solid var(--border)',
@@ -891,7 +955,10 @@ const LawyersPageGlass = () => {
         @media (max-width: 640px){ .lawyers-grid { grid-template-columns: 1fr !important; } }
         .online-dot { animation: onlinePulse 2s ease-in-out infinite; }
         @keyframes onlinePulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(90,160,106,0.5) } 50%{ box-shadow: 0 0 0 4px rgba(90,160,106,0) } }
-        @media (prefers-reduced-motion: reduce){ .online-dot { animation: none } }
+        @media (prefers-reduced-motion: reduce){
+          .online-dot, .lawyer-card { animation: none !important; transition: none !important; }
+          .lawyer-card { transform: none !important; }
+        }
       `}</style>
     </GlassShell>
   );

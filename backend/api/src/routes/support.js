@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const { SupportTicket, User } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeCompat } = require('../middleware/auth');
+
+const adminAccess = authorizeCompat({ legacyRoles: ['admin'], capability: 'admin', telemetryName: 'http.admin' });
 
 // POST /api/support — создать обращение в поддержку
 router.post('/', authenticate, async (req, res, next) => {
@@ -36,7 +38,7 @@ router.get('/my', authenticate, async (req, res, next) => {
 });
 
 // GET /api/support — все обращения (для админа)
-router.get('/', authenticate, authorize('admin'), async (req, res, next) => {
+router.get('/', authenticate, adminAccess, async (req, res, next) => {
   try {
     const tickets = await SupportTicket.findAll({
       include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],

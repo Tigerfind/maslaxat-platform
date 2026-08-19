@@ -1,0 +1,276 @@
+name: Finalize approved payment staging evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      proof_run_id:
+        description: Successful payment-staging-evidence-prepare run already approved by both roles
+        required: true
+        type: string
+      payment_approval_run_id:
+        required: true
+        type: string
+      release_approval_run_id:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: payment-staging-finalize-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  resolve-approved-proof:
+    environment: payment-staging-finalization
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      PROOF_RUN_ID: ${{ inputs.proof_run_id }}
+      PAYMENT_APPROVAL_RUN_ID: ${{ inputs.payment_approval_run_id }}
+      RELEASE_APPROVAL_RUN_ID: ${{ inputs.release_approval_run_id }}
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      TRUSTED_REF: ${{ vars.PAYMENT_EVIDENCE_TRUSTED_REF }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      PAYMENT_APPROVAL_PUBLIC_KEY_B64: ${{ vars.PAYMENT_APPROVAL_PUBLIC_KEY_B64 }}
+      RELEASE_APPROVAL_PUBLIC_KEY_B64: ${{ vars.RELEASE_APPROVAL_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Validate run IDs and exact successful prepare proof run
+        run: |
+          umask 077
+          jq -n --arg proofRunId "$PROOF_RUN_ID" \
+            --arg paymentApprovalRunId "$PAYMENT_APPROVAL_RUN_ID" \
+            --arg releaseApprovalRunId "$RELEASE_APPROVAL_RUN_ID" \
+            '$ARGS.named' > "$RUNNER_TEMP/dispatch.json"
+          node backend/api/src/scripts/paymentEvidenceProvenance.js validate-dispatch \
+            --input "$RUNNER_TEMP/dispatch.json" --output "$RUNNER_TEMP/dispatch.verified.json"
+          proof_id=$(jq -r .proofRunId "$RUNNER_TEMP/dispatch.verified.json")
+          gh api "repos/$REPOSITORY_NAME/actions/runs/$proof_id" > "$RUNNER_TEMP/proof-run.json"
+          chmod 600 "$RUNNER_TEMP/proof-run.json"
+          jq -n --arg proofRunId "$PROOF_RUN_ID" --arg repository "$REPOSITORY_NAME" \
+            --arg trustedRef "$TRUSTED_REF" --arg reviewedCommitSha "$REVIEWED_SHA" \
+            '$ARGS.named' > "$RUNNER_TEMP/proof-expectations.json"
+          node backend/api/src/scripts/paymentEvidenceProvenance.js validate-proof-run \
+            --input "$RUNNER_TEMP/proof-run.json" --expectations "$RUNNER_TEMP/proof-expectations.json" \
+            --output "$RUNNER_TEMP/proof-run.verified.json"
+      - name: Download exact already-reconciled proof
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-reconciliation-proof
+          path: ${{ runner.temp }}/proof
+          run-id: ${{ env.PROOF_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Resolve successful role approval runs
+        run: |
+          umask 077
+          for role in payment release; do
+            if [ "$role" = payment ]; then run_id="$PAYMENT_APPROVAL_RUN_ID"; expected_role=payment_owner; else run_id="$RELEASE_APPROVAL_RUN_ID"; expected_role=release_owner; fi
+            gh api "repos/$REPOSITORY_NAME/actions/runs/$run_id" > "$RUNNER_TEMP/$role-approval-run.json"
+            chmod 600 "$RUNNER_TEMP/$role-approval-run.json"
+            jq -n --arg runId "$run_id" --arg repository "$REPOSITORY_NAME" \
+              --arg trustedRef "$TRUSTED_REF" --arg reviewedCommitSha "$REVIEWED_SHA" \
+              --arg role "$expected_role" '$ARGS.named' > "$RUNNER_TEMP/$role-approval-expectations.json"
+            node backend/api/src/scripts/paymentEvidenceProvenance.js validate-approval-run \
+              --input "$RUNNER_TEMP/$role-approval-run.json" \
+              --expectations "$RUNNER_TEMP/$role-approval-expectations.json" \
+              --output "$RUNNER_TEMP/$role-approval-run.verified.json"
+          done
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-evidence-approval-payment_owner
+          path: ${{ runner.temp }}/payment-approval
+          run-id: ${{ env.PAYMENT_APPROVAL_RUN_ID }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-evidence-approval-release_owner
+          path: ${{ runner.temp }}/release-approval
+          run-id: ${{ env.RELEASE_APPROVAL_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Generate manifest from exact approved proof without reconciliation rerun
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/proof"/* "$RUNNER_TEMP/payment-approval"/* "$RUNNER_TEMP/release-approval"/*
+          printf '%s' "$PAYMENT_APPROVAL_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/payment-approval.pub"
+          printf '%s' "$RELEASE_APPROVAL_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/release-approval.pub"
+          chmod 600 "$RUNNER_TEMP/payment-approval.pub" "$RUNNER_TEMP/release-approval.pub"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          jq -n --arg generatedAt "$now" \
+            --slurpfile source "$RUNNER_TEMP/proof/source-attestation.verified.json" \
+            --slurpfile inventory backend/api/src/config/paymentSandboxScenarios.json \
+            --slurpfile shadow "$RUNNER_TEMP/proof/shadow-artifact.json" \
+            --slurpfile reconciliation "$RUNNER_TEMP/proof/reconciliation-summary.json" \
+            --slurpfile provider "$RUNNER_TEMP/proof/provider-totals.json" \
+            --slurpfile paymentApproval "$RUNNER_TEMP/payment-approval/approval.signed.json" \
+            --slurpfile releaseApproval "$RUNNER_TEMP/release-approval/approval.signed.json" \
+            '{generatedAt:$generatedAt,environment:"staging",release:{commitSha:$source[0].commitSha,deploymentId:$source[0].deploymentId,serviceId:$source[0].serviceId,configDigest:$source[0].configDigest,migrationHead:$reconciliation[0].release.migrationHead},inventory:$inventory[0],shadowArtifact:$shadow[0],observation:{mode:$source[0].observationMode},reconciliation:{summaryDigest:$reconciliation[0].summaryDigest,ready:$reconciliation[0].ready,mismatchCount:$reconciliation[0].mismatchCount,providerSnapshotDigest:$provider[0].snapshotDigest,providerSnapshotCapturedAt:$provider[0].capturedAt,summaryGeneratedAt:$reconciliation[0].generatedAt,databaseIdentityDigest:$reconciliation[0].databaseIdentityDigest,snapshotIdentityDigest:$reconciliation[0].snapshotIdentityDigest,reconciledAt:$reconciliation[0].reconciledAt},approvalEnvelopes:[$paymentApproval[0],$releaseApproval[0]]}' > "$RUNNER_TEMP/manifest-input.json"
+          node backend/api/src/scripts/paymentEvidenceManifest.js generate \
+            --input "$RUNNER_TEMP/manifest-input.json" --output "$RUNNER_TEMP/manifest.json" \
+            --payment-approval-key-file "$RUNNER_TEMP/payment-approval.pub" \
+            --release-approval-key-file "$RUNNER_TEMP/release-approval.pub" \
+            --payment-approval-run-file "$RUNNER_TEMP/payment-approval-run.verified.json" \
+            --release-approval-run-file "$RUNNER_TEMP/release-approval-run.verified.json" \
+            --proof-run-file "$RUNNER_TEMP/proof-run.verified.json" --now "$now"
+          cp -n "$RUNNER_TEMP/payment-approval/approval.signed.json" \
+            "$RUNNER_TEMP/payment-owner-approval.signed.json"
+          cp -n "$RUNNER_TEMP/release-approval/approval.signed.json" \
+            "$RUNNER_TEMP/release-owner-approval.signed.json"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-manifest-ready
+          path: |
+            ${{ runner.temp }}/proof-run.verified.json
+            ${{ runner.temp }}/proof/source-run.verified.json
+            ${{ runner.temp }}/proof/source-attestation.signed.json
+            ${{ runner.temp }}/proof/source-attestation.verified.json
+            ${{ runner.temp }}/proof/provider-totals.json
+            ${{ runner.temp }}/proof/shadow-artifact.json
+            ${{ runner.temp }}/proof/reconciliation-summary.json
+            ${{ runner.temp }}/payment-owner-approval.signed.json
+            ${{ runner.temp }}/release-owner-approval.signed.json
+            ${{ runner.temp }}/manifest.json
+          retention-days: 7
+
+  sign-and-verify:
+    needs: resolve-approved-proof
+    environment: payment-staging-signing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-manifest-ready
+          path: ${{ runner.temp }}/ready
+      - name: Sign approved proof locally and clean key
+        env:
+          PAYMENT_EVIDENCE_PRIVATE_KEY_B64: ${{ secrets.PAYMENT_EVIDENCE_PRIVATE_KEY_B64 }}
+        run: |
+          private_key="$RUNNER_TEMP/payment-evidence-private.pem"
+          trap 'rm -f "$private_key"' EXIT
+          printf '%s' "$PAYMENT_EVIDENCE_PRIVATE_KEY_B64" | base64 --decode > "$private_key"
+          chmod 600 "$private_key"
+          node backend/api/src/scripts/paymentEvidenceManifest.js sign-artifact \
+            --input "$RUNNER_TEMP/ready/reconciliation-summary.json" \
+            --output "$RUNNER_TEMP/reconciliation-summary.signed.json" \
+            --key-file "$private_key" --key-id payment-staging-v1
+          node backend/api/src/scripts/paymentEvidenceManifest.js sign \
+            --input "$RUNNER_TEMP/ready/manifest.json" --output "$RUNNER_TEMP/manifest.signed.json" \
+            --key-file "$private_key" --key-id payment-staging-v1
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-signed-pending-verification
+          path: |
+            ${{ runner.temp }}/ready/proof-run.verified.json
+            ${{ runner.temp }}/ready/source-run.verified.json
+            ${{ runner.temp }}/ready/source-attestation.signed.json
+            ${{ runner.temp }}/ready/source-attestation.verified.json
+            ${{ runner.temp }}/ready/provider-totals.json
+            ${{ runner.temp }}/ready/shadow-artifact.json
+            ${{ runner.temp }}/ready/reconciliation-summary.json
+            ${{ runner.temp }}/ready/payment-owner-approval.signed.json
+            ${{ runner.temp }}/ready/release-owner-approval.signed.json
+            ${{ runner.temp }}/reconciliation-summary.signed.json
+            ${{ runner.temp }}/manifest.signed.json
+          retention-days: 30
+
+  verify-and-stop:
+    needs: sign-and-verify
+    environment: payment-staging-verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      PAYMENT_EVIDENCE_PUBLIC_KEY_B64: ${{ vars.PAYMENT_EVIDENCE_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-signed-pending-verification
+          path: ${{ runner.temp }}/signed
+      - name: Verify signed approved proof
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/signed"/*
+          public_key="$RUNNER_TEMP/payment-evidence-public.pem"
+          printf '%s' "$PAYMENT_EVIDENCE_PUBLIC_KEY_B64" | base64 --decode > "$public_key"
+          chmod 600 "$public_key"
+          node backend/api/src/scripts/paymentEvidenceManifest.js verify-artifact \
+            --input "$RUNNER_TEMP/signed/reconciliation-summary.signed.json" \
+            --output "$RUNNER_TEMP/reconciliation-summary.verified.json" \
+            --key-file "$public_key" --kind payment-reconciliation-summary --digest-field summaryDigest
+          jq -n --arg commitSha "$(jq -r .commitSha "$RUNNER_TEMP/signed/source-attestation.verified.json")" \
+            --arg deploymentId "$(jq -r .deploymentId "$RUNNER_TEMP/signed/source-attestation.verified.json")" \
+            --arg serviceId "$(jq -r .serviceId "$RUNNER_TEMP/signed/source-attestation.verified.json")" \
+            --arg configDigest "$(jq -r .configDigest "$RUNNER_TEMP/signed/source-attestation.verified.json")" \
+            --arg migrationHead "$(jq -r .migrationHead "$RUNNER_TEMP/signed/source-attestation.verified.json")" \
+            --arg inventoryDigest "$(jq -r .inventoryDigest "$RUNNER_TEMP/signed/shadow-artifact.json")" \
+            --arg reconciliationSummaryDigest "$(jq -r .summaryDigest "$RUNNER_TEMP/signed/reconciliation-summary.json")" \
+            --arg databaseIdentityDigest "$(jq -r .databaseIdentityDigest "$RUNNER_TEMP/signed/reconciliation-summary.json")" \
+            --arg snapshotIdentityDigest "$(jq -r .snapshotIdentityDigest "$RUNNER_TEMP/signed/reconciliation-summary.json")" \
+            --arg reconciledAt "$(jq -r .reconciledAt "$RUNNER_TEMP/signed/reconciliation-summary.json")" \
+            '$ARGS.named' > "$RUNNER_TEMP/manifest-expectations.json"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          node backend/api/src/scripts/paymentEvidenceManifest.js verify \
+            --input "$RUNNER_TEMP/signed/manifest.signed.json" --output "$RUNNER_TEMP/manifest.verified.json" \
+            --key-file "$public_key" --expectations "$RUNNER_TEMP/manifest-expectations.json" --now "$now"
+          rm -f "$public_key"
+      - name: Create bounded final verified package
+        run: |
+          final="$RUNNER_TEMP/final-verified"
+          mkdir -m 700 "$final"
+          cp -n "$RUNNER_TEMP/signed/proof-run.verified.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/source-run.verified.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/source-attestation.signed.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/source-attestation.verified.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/provider-totals.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/shadow-artifact.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/reconciliation-summary.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/payment-owner-approval.signed.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/release-owner-approval.signed.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/reconciliation-summary.signed.json" "$final/"
+          cp -n "$RUNNER_TEMP/signed/manifest.signed.json" "$final/"
+          cp -n "$RUNNER_TEMP/reconciliation-summary.verified.json" "$final/"
+          cp -n "$RUNNER_TEMP/manifest.verified.json" "$final/"
+          (cd "$final" && shasum -a 256 \
+            proof-run.verified.json source-run.verified.json \
+            source-attestation.signed.json source-attestation.verified.json \
+            provider-totals.json shadow-artifact.json reconciliation-summary.json \
+            payment-owner-approval.signed.json release-owner-approval.signed.json \
+            reconciliation-summary.signed.json manifest.signed.json \
+            reconciliation-summary.verified.json manifest.verified.json > sha256sums.txt)
+          verified_at=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          jq -n --arg verifiedAt "$verified_at" \
+            --argjson proofRunId "$(jq -r .id "$final/proof-run.verified.json")" \
+            --arg manifestDigest "$(shasum -a 256 "$final/manifest.signed.json" | cut -d' ' -f1)" \
+            --arg reconciliationDigest "$(shasum -a 256 "$final/reconciliation-summary.signed.json" | cut -d' ' -f1)" \
+            '{schemaVersion:1,kind:"payment-final-verification",verified:true,verifiedAt:$verifiedAt,proofRunId:$proofRunId,manifestBytesSha256:$manifestDigest,reconciliationBytesSha256:$reconciliationDigest,verifierResult:{manifest:{valid:true,cutoverEligible:false,schemaVersion:4},reconciliation:{kind:"payment-reconciliation-summary",signatureValid:true}}}' \
+            > "$final/verification-result.json"
+          chmod 600 "$final"/*
+      - name: Upload immutable final verified package
+        if: ${{ success() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-final-verified-${{ github.run_id }}
+          path: ${{ runner.temp }}/final-verified
+          retention-days: 30
+          if-no-files-found: error
+      - name: STOP_BEFORE_PAYMENT_MODE_CHANGE
+        run: |
+          printf '%s\n' 'Approved evidence verified. Active mode remains impossible.'
+          exit 1

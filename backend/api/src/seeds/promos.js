@@ -1,5 +1,7 @@
 // Сид демо-промокодов. Запуск: node src/seeds/promos.js
 require('dotenv').config();
+const { exitAfterFatal } = require('../instrument');
+const logger = require('../config/logger');
 const { sequelize, Promo } = require('../models');
 
 const PROMOS = [
@@ -20,7 +22,7 @@ async function seedPromos() {
 if (require.main === module) {
   seedPromos()
     .then(() => { console.log('Промокоды засеяны'); process.exit(0); })
-    .catch((e) => { console.error('Ошибка сида промо:', e.message); process.exit(1); });
+    .catch((e) => exitAfterFatal(e, { operation: 'promo_seed_cli' }, { logger }));
 }
 
 module.exports = { seedPromos };

@@ -1,5 +1,9 @@
 const { Op } = require('sequelize');
 const { Consultation, Payment, LawyerProfile } = require('../models');
+const {
+  releaseConsultationEscrow,
+  requestConsultationRefund,
+} = require('./ledgerService');
 
 /**
  * Идемпотентное завершение консультации + высвобождение эскроу.
@@ -39,34 +43,8 @@ async function completeConsultation(consultationId, notes, actualDuration) {
       return { consultation: null, released: false, alreadyCompleted: true };
     }
 
-    // Атомарно забираем не высвобожденные оплаченные платежи. returning:true (Postgres)
-    // отдаёт именно перехваченные строки — их сумму и выплачиваем. Конкурентный вызов
-    // на тех же строках дождётся коммита и перечитает WHERE → escrowReleased уже true.
-    const [, releasedPayments] = await Payment.update(
-      { escrowReleased: true },
-      {
-        where: { consultationId, status: 'paid', escrowReleased: false },
-        returning: true,
-        transaction: t,
-      }
-    );
-    const totalPaid = (releasedPayments || []).reduce((s, p) => s + Number(p.amount), 0);
-
-    let released = false;
-    if (totalPaid > 0) {
-      const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId }, transaction: t });
-      if (lp) {
-        await lp.decrement('pendingBalance', { by: totalPaid, transaction: t });
-        await lp.increment('balance', { by: totalPaid, transaction: t });
-        released = true;
-      }
-    }
-    // Биллинг (модель B): эскроу отдан юристу → помечаем released (только когда деньги
-    // реально двинулись). Аддитивно, на денежную логику не влияет.
-    if (released) {
-      await Consultation.update({ billingStatus: 'released' }, { where: { id: consultationId }, transaction: t });
-    }
-
+    const release = await releaseConsultationEscrow(consultation, t);
+    const released = Boolean(release?.wasCreated);
     // completedCases растёт ровно при ПЕРВОМ переходе в completed (statusAffected===1),
     // включая бесплатные консультации (у них нет Payment). При повторном завершении
     // (например, админ-форс после отката) не задваиваем.
@@ -96,26 +74,25 @@ async function completeConsultation(consultationId, notes, actualDuration) {
  * @returns {Promise<{refunded:number}>} сумма возврата
  */
 async function refundConsultationEscrow(consultationId, options = {}) {
+  const { requestPaymentCancellation } = require('./paymentService');
   const t = options.transaction;
   const consultation = await Consultation.findByPk(consultationId, { transaction: t });
   if (!consultation) return { refunded: 0 };
 
-  const [, refundedPayments] = await Payment.update(
-    { status: 'refunded' },
-    {
-      where: { consultationId, status: 'paid', escrowReleased: false },
-      returning: true,
-      transaction: t,
-    }
-  );
-  const totalRefund = (refundedPayments || []).reduce((s, p) => s + Number(p.amount), 0);
-
-  if (totalRefund > 0) {
-    await LawyerProfile.decrement('pendingBalance', {
-      by: totalRefund,
-      where: { userId: consultation.lawyerId },
+  const payments = await Payment.findAll({
+    where: { consultationId, status: { [Op.in]: ['pending', 'processing', 'paid', 'refund_pending'] }, escrowReleased: false },
+    lock: t.LOCK.UPDATE,
+    transaction: t,
+  });
+  let totalRefund = 0;
+  for (const payment of payments) {
+    const result = await requestPaymentCancellation({
+      paymentId: payment.id,
+      requestedBy: options.requestedBy,
+      reason: options.reason || 'lawyer_rejected_consultation',
       transaction: t,
     });
+    if (result.payment.status === 'refunded') totalRefund += Number(payment.amount);
   }
 
   return { refunded: totalRefund };

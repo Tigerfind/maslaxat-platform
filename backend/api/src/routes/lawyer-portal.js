@@ -1,12 +1,21 @@
-const router = require('express').Router();
+const express = require('express');
+const crypto = require('crypto');
 const { Op, fn, col } = require('sequelize');
-const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
-const { Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument, Message } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { sequelize, Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument, Message } = require('../models');
+const { authenticate, authorizeCompat } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const {
+  profileFieldSnapshot,
+  applyManualProfileChangePolicy,
+  invalidateDocumentProvenance,
+} = require('../services/profileImportService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+const { toConsultationDto } = require('../services/consultationDto');
+const { createMemoryUpload } = require('../middleware/fileUpload');
+const { getFileStorageService } = require('../services/fileStorageRuntime');
+const { streamFile } = require('../services/fileHttpService');
+const { FILE_LIMITS, uploadLimitFor } = require('../config/fileLimits');
+const { registerUuidParams } = require('../middleware/uuidParams');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
 // Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
@@ -35,49 +44,81 @@ function normalizeSchedule(raw) {
   return out;
 }
 
-// Avatar upload config (reuse same setup as users.js)
-const uploadDir = process.env.UPLOAD_DIR || './uploads';
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueName = `avatar-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-const upload = multer({
-  storage,
-  limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Поддерживаются только изображения (jpg, png, webp)'));
-  },
+const upload = createMemoryUpload({
+  types: ['jpeg', 'png', 'webp'],
+  maxBytes: uploadLimitFor('avatar'),
 });
 
 // Загрузка верификационных документов (диплом/лицензия/удостоверение) — PDF + картинки.
-const docStorage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, uploadDir),
-  filename: (req, file, cb) => {
-    const uniqueName = `verif-${Date.now()}-${Math.round(Math.random() * 1E9)}${path.extname(file.originalname)}`;
-    cb(null, uniqueName);
-  },
-});
-const docUpload = multer({
-  storage: docStorage,
-  limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
-    const allowedMime = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Поддерживаются PDF и изображения (jpg, png, webp)'));
-  },
+const docUpload = createMemoryUpload({
+  types: ['pdf', 'jpeg', 'png', 'webp'],
+  maxBytes: uploadLimitFor('lawyer'),
 });
 const VERIF_DOC_TYPES = ['diploma', 'license', 'id', 'other'];
 
-// All routes require lawyer authentication
-router.use(authenticate, authorize('lawyer'));
+function avatarRecord(user) {
+  if (!user?.avatarStorageKey) return null;
+  return {
+    storageProvider: user.avatarStorageProvider,
+    storageKey: user.avatarStorageKey,
+    mimeType: user.avatarMimeType,
+    size: user.avatarSize,
+    sha256: user.avatarSha256,
+    path: user.avatarLocalPath || null,
+  };
+}
+
+function createLawyerPortalRouter({ fileStorageService = getFileStorageService() } = {}) {
+const router = express.Router();
+registerUuidParams(router, 'id');
+
+async function deleteVerificationDocument(doc) {
+  const destroy = async ({ transaction }) => {
+    const profile = await LawyerProfile.findOne({
+      where: { userId: doc.userId }, transaction, lock: transaction.LOCK.UPDATE,
+    });
+    const locked = await LawyerDocument.findOne({
+      where: { id: doc.id, userId: doc.userId }, transaction, lock: transaction.LOCK.UPDATE,
+    });
+    if (!locked) return;
+    if (profile) {
+      await invalidateDocumentProvenance({
+        userId: doc.userId,
+        documentId: doc.id,
+        transaction,
+        lockedProfile: profile,
+      });
+    }
+    await locked.destroy({ transaction });
+  };
+  if (doc.storageKey) return fileStorageService.delete({ record: doc, destroy });
+  return sequelize.transaction((transaction) => destroy({ transaction }));
+}
+
+const applicantAccess = authorizeCompat({
+  legacyRoles: ['lawyer'], capability: 'lawyerApplicant', telemetryName: 'http.lawyer-applicant',
+});
+const operationalAccess = authorizeCompat({
+  legacyRoles: ['lawyer'], capability: 'lawyer', telemetryName: 'http.lawyer',
+});
+const APPLICANT_PATHS = [
+  /^\/profile\/?$/,
+  /^\/verification-documents(?:\/|$)/,
+  /^\/verification(?:\/|$)/,
+];
+
+// Applicants may prepare and submit a profile, but all consultation, money,
+// schedule, review, availability, notification, and status routes are operational.
+const portalAccess = (req, res, next) => {
+  const guard = APPLICANT_PATHS.some((pattern) => pattern.test(req.path))
+    ? applicantAccess
+    : operationalAccess;
+  return guard(req, res, next);
+};
+portalAccess.authorizationGuard = {
+  legacyRoles: ['lawyer'], modes: ['client', 'lawyer', 'admin'], stage: null,
+};
+router.use(authenticate, portalAccess);
 
 // ─── CONSULTATION REQUESTS ──────────────────────────────────
 
@@ -86,9 +127,9 @@ router.get('/consultation-requests', async (req, res, next) => {
   try {
     const { status = 'all' } = req.query;
 
-    const where = { lawyerId: req.userId };
+    const where = { lawyerId: req.userId, status: { [Op.ne]: 'payment_pending' } };
     if (status !== 'all') {
-      where.status = status;
+      where.status = status === 'payment_pending' ? { [Op.ne]: 'payment_pending' } : status;
     }
 
     const consultations = await Consultation.findAll({
@@ -180,7 +221,11 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
       notificationService.notifyBookingAccepted(consultation.clientId, lawyer?.name || 'Юрист', consultation);
     }
 
-    res.json({ success: true, message: 'Запрос принят', consultation });
+    res.json({
+      success: true,
+      message: 'Запрос принят',
+      consultation: toConsultationDto(consultation, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -206,7 +251,11 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
-      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      await refundConsultationEscrow(consultation.id, {
+        transaction: tx,
+        requestedBy: req.userId,
+        reason: req.body.reason || 'lawyer_rejected_consultation',
+      });
       return true;
     });
     if (!rejected) {
@@ -218,7 +267,11 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
     const lawyerForReject = await User.findByPk(req.userId, { attributes: ['name'] });
     notificationService.notifyBookingRejected(consultation.clientId, lawyerForReject?.name || 'Юрист', consultation);
 
-    res.json({ success: true, message: 'Запрос отклонён', consultation });
+    res.json({
+      success: true,
+      message: 'Запрос отклонён',
+      consultation: toConsultationDto(consultation, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -286,7 +339,11 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
       notificationService.notifyBookingAccepted(consultation.clientId, lawyerConfirm?.name || 'Юрист', consultation);
     }
 
-    res.json({ success: true, message: 'Консультация подтверждена', consultation });
+    res.json({
+      success: true,
+      message: 'Консультация подтверждена',
+      consultation: toConsultationDto(consultation, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -310,7 +367,11 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
-      await refundConsultationEscrow(consultation.id, { transaction: tx });
+      await refundConsultationEscrow(consultation.id, {
+        transaction: tx,
+        requestedBy: req.userId,
+        reason: req.body.reason || 'lawyer_rejected_consultation',
+      });
       return true;
     });
     if (!rejected) {
@@ -322,7 +383,11 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
     const lawyerReject2 = await User.findByPk(req.userId, { attributes: ['name'] });
     notificationService.notifyBookingRejected(consultation.clientId, lawyerReject2?.name || 'Юрист', consultation);
 
-    res.json({ success: true, message: 'Консультация отклонена', consultation });
+    res.json({
+      success: true,
+      message: 'Консультация отклонена',
+      consultation: toConsultationDto(consultation, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -351,7 +416,11 @@ router.post('/consultations/:id/start', async (req, res, next) => {
       return res.status(400).json({ error: 'Начать можно только подтверждённую консультацию' });
     }
 
-    res.json({ success: true, message: 'Консультация начата', consultation });
+    res.json({
+      success: true,
+      message: 'Консультация начата',
+      consultation: toConsultationDto(consultation, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -381,7 +450,11 @@ router.post('/consultations/:id/end', async (req, res, next) => {
     const lawyerEnd = await User.findByPk(req.userId, { attributes: ['name'] });
     notificationService.notifyConsultationCompleted(updated.clientId, lawyerEnd?.name || 'Юрист', updated);
 
-    res.json({ success: true, message: 'Консультация завершена', consultation: updated });
+    res.json({
+      success: true,
+      message: 'Консультация завершена',
+      consultation: toConsultationDto(updated, { perspective: 'lawyer' }),
+    });
   } catch (err) {
     next(err);
   }
@@ -401,7 +474,7 @@ router.get('/consultations/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Консультация не найдена' });
     }
 
-    res.json(consultation);
+    res.json(toConsultationDto(consultation, { perspective: 'lawyer' }));
   } catch (err) {
     next(err);
   }
@@ -684,13 +757,40 @@ router.get('/profile', async (req, res, next) => {
 // PUT /profile — update lawyer profile (all fields + optional avatar)
 router.put('/profile', upload.single('avatar'), async (req, res, next) => {
   try {
-    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
-    if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
+    const expectedRevision = Number(req.body.profileRevision);
+    if (!Number.isInteger(expectedRevision) || expectedRevision < 1) {
+      return res.status(400).json({
+        error: 'Укажите актуальную версию профиля',
+        code: 'PROFILE_REVISION_REQUIRED',
+      });
+    }
+    await sequelize.transaction(async (transaction) => {
+    await User.findByPk(req.userId, { transaction, lock: transaction.LOCK.UPDATE });
+    const profile = await LawyerProfile.findOne({
+      where: { userId: req.userId },
+      transaction,
+      lock: transaction.LOCK.UPDATE,
+    });
+    if (!profile) {
+      const error = new Error('Профиль не найден');
+      error.status = 404;
+      error.code = 'PROFILE_NOT_FOUND';
+      throw error;
+    }
+    if (profile.revision !== expectedRevision) {
+      const error = new Error('Профиль был изменён');
+      error.status = 409;
+      error.code = 'PROFILE_REVISION_CONFLICT';
+      error.details = { currentProfileRevision: profile.revision };
+      throw error;
+    }
+    const profileBefore = profileFieldSnapshot(profile);
 
     const {
       specialization,
       specializations,
       description,
+      headline,
       greeting,
       experience,
       price,
@@ -698,6 +798,8 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       languages,
       education,
       certificates,
+      workExperience,
+      linkedinUrl,
       schedule,
     } = req.body;
 
@@ -722,6 +824,7 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       }
     }
     if (description !== undefined) profile.description = description;
+    if (headline !== undefined) profile.headline = typeof headline === 'string' ? headline.trim().slice(0, 300) : null;
     // Автоприветствие: обрезаем до 1000 символов, пустую строку → null
     if (greeting !== undefined) {
       const g = typeof greeting === 'string' ? greeting.trim() : '';
@@ -744,6 +847,20 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       try { profile.certificates = typeof certificates === 'string' ? JSON.parse(certificates) : certificates; }
       catch { profile.certificates = []; }
     }
+    if (workExperience !== undefined) {
+      try { profile.workExperience = typeof workExperience === 'string' ? JSON.parse(workExperience) : workExperience; }
+      catch { profile.workExperience = []; }
+    }
+    if (linkedinUrl !== undefined) {
+      try {
+        profile.linkedinUrl = linkedinUrl;
+      } catch (_error) {
+        const error = new Error('Invalid LinkedIn profile URL');
+        error.status = 400;
+        error.code = 'INVALID_LINKEDIN_URL';
+        throw error;
+      }
+    }
     if (schedule !== undefined) {
       let parsed;
       try { parsed = typeof schedule === 'string' ? JSON.parse(schedule) : schedule; }
@@ -756,12 +873,56 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       profile.isAvailable = true;
     }
 
-    await profile.save();
+    applyManualProfileChangePolicy(profile, profileBefore);
 
-    // Update avatar on User model if file uploaded
+    const changed = profile.changed() || [];
+    if (changed.length) {
+      const values = Object.fromEntries(changed.map((field) => [field, profile.getDataValue(field)]));
+      const [updated] = await LawyerProfile.update(values, {
+        where: { id: profile.id, revision: expectedRevision },
+        transaction,
+      });
+      if (updated !== 1) {
+        const error = new Error('Профиль был изменён');
+        error.status = 409;
+        error.code = 'PROFILE_REVISION_CONFLICT';
+        throw error;
+      }
+    }
+
+    });
+
     if (req.file) {
-      const avatarUrl = `/uploads/${req.file.filename}`;
-      await User.update({ avatar: avatarUrl }, { where: { id: req.userId } });
+      const fileId = crypto.randomUUID();
+      let oldRecord;
+      const updatedAvatarUser = await fileStorageService.store({
+        kind: 'avatar', scopeId: req.userId, fileId,
+        body: req.file.buffer, mimeType: req.file.mimetype,
+        persist: async ({ transaction, metadata }) => {
+          const locked = await User.findByPk(req.userId, {
+            transaction, lock: transaction.LOCK.UPDATE,
+          });
+          if (!locked) {
+            const error = new Error('Пользователь не найден');
+            error.status = 404;
+            throw error;
+          }
+          oldRecord = avatarRecord(locked);
+          await locked.update({
+            avatar: `/api/users/${locked.id}/avatar`,
+            avatarStorageProvider: metadata.storageProvider,
+            avatarStorageKey: metadata.storageKey,
+            avatarMimeType: metadata.mimeType,
+            avatarSize: metadata.size,
+            avatarSha256: metadata.sha256,
+            avatarLocalPath: metadata.path,
+          }, { transaction });
+          return locked;
+        },
+      });
+      if (oldRecord && oldRecord.storageKey !== updatedAvatarUser.avatarStorageKey) {
+        await fileStorageService.delete({ record: oldRecord, destroy: async () => undefined });
+      }
     }
 
     // Return updated data
@@ -834,7 +995,7 @@ router.get('/verification-documents', async (req, res, next) => {
   try {
     const docs = await LawyerDocument.findAll({
       where: { userId: req.userId },
-      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'],
+      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'verificationStatus', 'approvedAt', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     res.json({ documents: docs });
@@ -848,16 +1009,23 @@ router.post('/verification-documents', docUpload.single('file'), async (req, res
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     const type = VERIF_DOC_TYPES.includes(req.body.type) ? req.body.type : 'other';
-    const doc = await LawyerDocument.create({
-      userId: req.userId,
-      type,
-      name: req.file.originalname,
-      path: req.file.path,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
+    const id = crypto.randomUUID();
+    const doc = await fileStorageService.store({
+      kind: 'lawyer', scopeId: req.userId, fileId: id,
+      body: req.file.buffer, mimeType: req.file.mimetype,
+      persist: ({ transaction, metadata }) => LawyerDocument.create({
+        id,
+        userId: req.userId,
+        type,
+        name: req.file.originalname,
+        ...metadata,
+      }, { transaction }),
     });
     res.status(201).json({
-      document: { id: doc.id, type: doc.type, name: doc.name, mimeType: doc.mimeType, size: doc.size, createdAt: doc.createdAt },
+      document: {
+        id: doc.id, type: doc.type, name: doc.name, mimeType: doc.mimeType, size: doc.size,
+        verificationStatus: doc.verificationStatus, approvedAt: doc.approvedAt, createdAt: doc.createdAt,
+      },
     });
   } catch (err) {
     next(err);
@@ -868,10 +1036,11 @@ router.post('/verification-documents', docUpload.single('file'), async (req, res
 router.get('/verification-documents/:id/download', async (req, res, next) => {
   try {
     const doc = await LawyerDocument.findOne({ where: { id: req.params.id, userId: req.userId } });
-    if (!doc || !doc.path || !fs.existsSync(doc.path)) {
-      return res.status(404).json({ error: 'Документ не найден' });
-    }
-    res.download(doc.path, doc.name);
+    if (!doc) return res.status(404).json({ error: 'Документ не найден' });
+    await streamFile({
+      storage: fileStorageService, req, res, record: doc, filename: doc.name,
+      maxBytes: FILE_LIMITS.lawyer,
+    });
   } catch (err) {
     next(err);
   }
@@ -882,9 +1051,7 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
   try {
     const doc = await LawyerDocument.findOne({ where: { id: req.params.id, userId: req.userId } });
     if (!doc) return res.status(404).json({ error: 'Документ не найден' });
-    // Удаляем файл с диска (не валим запрос, если файла уже нет)
-    if (doc.path) { try { fs.unlinkSync(doc.path); } catch (e) { /* файл мог быть удалён */ } }
-    await doc.destroy();
+    await deleteVerificationDocument(doc);
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -929,6 +1096,9 @@ router.get('/verification/checklist', async (req, res, next) => {
 // ГЕЙТ ПОЛНОТЫ: нельзя отправить неполный профиль — админ получает только готовые заявки.
 router.post('/verification/submit', async (req, res, next) => {
   try {
+    if (!req.user.twoFactorEnabled || !req.user.twoFactorSecret) {
+      return res.status(403).json({ error: 'Включите 2FA перед отправкой профиля', code: 'TWO_FACTOR_REQUIRED' });
+    }
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
     if (profile.verificationStatus === 'approved') {
@@ -961,4 +1131,7 @@ router.post('/verification/submit', async (req, res, next) => {
   }
 });
 
-module.exports = router;
+return router;
+}
+
+module.exports = createLawyerPortalRouter;

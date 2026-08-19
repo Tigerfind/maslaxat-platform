@@ -3,6 +3,7 @@ const { Consultation, User } = require('../models');
 const { notifyConsultationReminder } = require('./notificationService');
 const { sendMail } = require('./emailService');
 const logger = require('../config/logger');
+const { reportCaughtException } = require('../instrument');
 
 const WINDOW_MIN = 60; // напоминаем, когда до старта ≤ 60 минут
 
@@ -33,14 +34,24 @@ async function sendReminderEmail(user, partnerName, consultation) {
         </div>`,
     });
   } catch (err) {
-    logger.error('[Reminder] email failed', { error: err.message });
+    reportCaughtException(err, {
+      operation: 'reminder_email',
+      consultationId: consultation.id,
+      userId: user.id,
+    });
+    logger.error('reminder_email_failed', { consultationId: consultation.id, userId: user.id });
   }
 }
 
 // Основная проверка: находит консультации в ближайший час без отправленного напоминания.
-async function checkUpcomingReminders() {
+function abortIfRequested(signal) {
+  if (signal?.aborted) throw Object.assign(new Error('Reminder job aborted'), { name: 'AbortError', code: 'ABORT_ERR' });
+}
+
+async function checkUpcomingReminders(nowValue = new Date(), { signal } = {}) {
   try {
-    const now = new Date();
+    abortIfRequested(signal);
+    const now = new Date(nowValue);
     const horizon = new Date(now.getTime() + WINDOW_MIN * 60 * 1000);
     // ЛОКАЛЬНАЯ дата (preferredDate + preferredTime трактуются как локальное время сервера).
     // Раньше здесь была UTC-дата → рассинхрон у сервера не в UTC и промахи около полуночи.
@@ -64,6 +75,7 @@ async function checkUpcomingReminders() {
 
     let sent = 0;
     for (const c of candidates) {
+      abortIfRequested(signal);
       // Сбой на одной консультации не должен прерывать всю пачку
       try {
         const start = startDateTime(c);
@@ -93,16 +105,24 @@ async function checkUpcomingReminders() {
         }
         sent++;
       } catch (itemErr) {
-        logger.error('[Reminder] item failed', { consultationId: c.id, error: itemErr.message });
+        reportCaughtException(itemErr, { operation: 'reminder_item', consultationId: c.id });
+        logger.error('reminder_item_failed', { consultationId: c.id });
       }
     }
 
     if (sent > 0) logger.info(`[Reminder] Sent reminders for ${sent} consultation(s)`);
     return sent;
   } catch (err) {
-    logger.error('[Reminder] check failed', { error: err.message });
+    if (err?.code === 'ABORT_ERR') throw err;
+    reportCaughtException(err, { operation: 'reminder_check' });
+    logger.error('reminder_check_failed');
     return 0;
   }
+}
+
+async function runReminderOnce(now = new Date(), { signal } = {}) {
+  abortIfRequested(signal);
+  return checkUpcomingReminders(now, { signal });
 }
 
 // Запускает периодическую проверку (каждые 5 минут)
@@ -114,4 +134,4 @@ function startReminderJob() {
   logger.info('[Reminder] Job started (every 5 min)');
 }
 
-module.exports = { checkUpcomingReminders, startReminderJob };
+module.exports = { checkUpcomingReminders, runReminderOnce, startReminderJob };

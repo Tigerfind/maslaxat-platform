@@ -1,0 +1,128 @@
+name: Payment staging unsigned evidence preparation
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  collect-and-prove:
+    environment: payment-staging-collection
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      TRUSTED_REF: ${{ vars.PAYMENT_EVIDENCE_TRUSTED_REF }}
+      REPOSITORY_NAME: ${{ github.repository }}
+      GH_TOKEN: ${{ github.token }}
+      SOURCE_PUBLIC_KEY_B64: ${{ vars.PAYMENT_TELEMETRY_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - name: Resolve and verify source run
+        run: |
+          [[ "$SOURCE_RUN_ID" =~ ^[1-9][0-9]{0,19}$ ]]
+          umask 077
+          gh api "repos/$REPOSITORY_NAME/actions/runs/$SOURCE_RUN_ID" > "$RUNNER_TEMP/source-run.json"
+          chmod 600 "$RUNNER_TEMP/source-run.json"
+          jq -n --arg sourceRunId "$SOURCE_RUN_ID" --arg repository "$REPOSITORY_NAME" \
+            --arg trustedRef "$TRUSTED_REF" --arg reviewedCommitSha "$REVIEWED_SHA" \
+            '$ARGS.named' > "$RUNNER_TEMP/source-expectations.json"
+          node backend/api/src/scripts/paymentEvidenceProvenance.js validate-source-run \
+            --input "$RUNNER_TEMP/source-run.json" --expectations "$RUNNER_TEMP/source-expectations.json" \
+            --output "$RUNNER_TEMP/source-run.verified.json"
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-shadow-raw
+          path: ${{ runner.temp }}/payment-input
+          run-id: ${{ env.SOURCE_RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Verify source and collect continuity proof
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/payment-input"/*
+          key="$RUNNER_TEMP/telemetry-source-public.pem"
+          printf '%s' "$SOURCE_PUBLIC_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          node backend/api/src/scripts/paymentEvidenceProvenance.js verify-source \
+            --input "$RUNNER_TEMP/payment-input/source-attestation.signed.json" \
+            --run "$RUNNER_TEMP/source-run.verified.json" --key-file "$key" \
+            --key-id telemetry-source-v1 --now "$now" \
+            --output "$RUNNER_TEMP/source-attestation.verified.json"
+          test "$(shasum -a 256 "$RUNNER_TEMP/payment-input/events.jsonl" | cut -d' ' -f1)" = "$(jq -r .eventsDigest "$RUNNER_TEMP/source-attestation.verified.json")"
+          test "$(shasum -a 256 "$RUNNER_TEMP/payment-input/stream-metadata.json" | cut -d' ' -f1)" = "$(jq -r .streamMetadataDigest "$RUNNER_TEMP/source-attestation.verified.json")"
+          test "$(shasum -a 256 "$RUNNER_TEMP/payment-input/provider-totals.json" | cut -d' ' -f1)" = "$(jq -r .providerSnapshotDigest "$RUNNER_TEMP/source-attestation.verified.json")"
+          node backend/api/src/scripts/paymentEvidenceManifest.js collect \
+            --input "$RUNNER_TEMP/payment-input/events.jsonl" \
+            --stream-metadata "$RUNNER_TEMP/payment-input/stream-metadata.json" \
+            --output "$RUNNER_TEMP/shadow-artifact.json"
+          cp -n "$RUNNER_TEMP/payment-input/source-attestation.signed.json" \
+            "$RUNNER_TEMP/source-attestation.signed.json"
+          cp -n "$RUNNER_TEMP/payment-input/provider-totals.json" \
+            "$RUNNER_TEMP/provider-totals.json"
+          rm -f "$key"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-collection-proof
+          path: |
+            ${{ runner.temp }}/source-run.verified.json
+            ${{ runner.temp }}/source-attestation.signed.json
+            ${{ runner.temp }}/source-attestation.verified.json
+            ${{ runner.temp }}/provider-totals.json
+            ${{ runner.temp }}/shadow-artifact.json
+          retention-days: 7
+
+  reconcile-read-only:
+    needs: collect-and-prove
+    environment: payment-staging-reconciliation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      REVIEWED_SHA: ${{ vars.PAYMENT_EVIDENCE_REVIEWED_SHA }}
+      DATABASE_URL: ${{ secrets.PAYMENT_STAGING_READONLY_DATABASE_URL }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ env.REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: payment-collection-proof
+          path: ${{ runner.temp }}/collection
+      - name: Reconcile exact financial state
+        run: |
+          umask 077
+          chmod 600 "$RUNNER_TEMP/collection"/*
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          jq -n --arg environment staging \
+            --arg providerSnapshotDigest "$(jq -r .snapshotDigest "$RUNNER_TEMP/collection/provider-totals.json")" \
+            --arg providerSnapshotCapturedAt "$(jq -r .capturedAt "$RUNNER_TEMP/collection/provider-totals.json")" \
+            '$ARGS.named' > "$RUNNER_TEMP/reconciliation-bindings.json"
+          node backend/api/src/scripts/reconcilePayments.js \
+            --provider-snapshot "$RUNNER_TEMP/collection/provider-totals.json" --reconcile-at "$now" \
+            --source-attestation "$RUNNER_TEMP/collection/source-attestation.verified.json" \
+            --summary-bindings "$RUNNER_TEMP/reconciliation-bindings.json" \
+            --summary-file "$RUNNER_TEMP/reconciliation-summary.json" > "$RUNNER_TEMP/reconciliation-private.json"
+          node -e "const r=require(process.env.RUNNER_TEMP+'/reconciliation-summary.json');const s=require(process.env.RUNNER_TEMP+'/collection/source-attestation.verified.json');if(!r.ready||r.mismatchCount!==0||r.release.migrationHead!==s.migrationHead||!/^[a-f0-9]{64}$/.test(r.databaseIdentityDigest)||!/^[a-f0-9]{64}$/.test(r.snapshotIdentityDigest)||r.reconciledAt!==r.generatedAt)process.exit(1)"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: payment-reconciliation-proof
+          path: |
+            ${{ runner.temp }}/collection/source-run.verified.json
+            ${{ runner.temp }}/collection/source-attestation.signed.json
+            ${{ runner.temp }}/collection/source-attestation.verified.json
+            ${{ runner.temp }}/collection/provider-totals.json
+            ${{ runner.temp }}/collection/shadow-artifact.json
+            ${{ runner.temp }}/reconciliation-summary.json
+          retention-days: 7
+          if-no-files-found: error

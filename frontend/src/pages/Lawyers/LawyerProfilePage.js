@@ -1,15 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import {
-  SchoolOutlined,
-  TranslateOutlined,
-  WorkspacePremiumOutlined,
-  ChevronRightOutlined,
-} from '@mui/icons-material';
+import { useParams, useNavigate, useSearchParams } from 'react-router-dom';
+import { TranslateOutlined } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import BookingModal from '../../components/BookingModal';
 import { useTranslation } from '../../i18n';
+import { createPromotionAttribution } from '../../utils/promotionAttribution';
+import PublicProfessionalDetails from '../../components/Lawyer/PublicProfessionalDetails';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -78,6 +75,8 @@ const outlineBtn = {
 
 const LawyerProfilePage = () => {
   const { lawyerId } = useParams();
+  const [searchParams] = useSearchParams();
+  const attributionToken = searchParams.get('attributionToken');
   const navigate = useNavigate();
   const { t } = useTranslation();
   const LANG_NAMES = t('lawyerProfile.langNames');
@@ -95,7 +94,10 @@ const LawyerProfilePage = () => {
       try {
         setLoading(true);
         setError(false);
-        const data = await clientService.lawyers.getLawyerDetails(lawyerId);
+        const attribution = attributionToken
+          ? createPromotionAttribution({ placement: 'sponsored', promotionAttributionToken: attributionToken })
+          : null;
+        const data = await clientService.lawyers.getLawyerDetails(lawyerId, attribution);
         if (!alive) return;
         const l = data?.lawyer || data || {};
         const p = l.profile || {};
@@ -114,9 +116,15 @@ const LawyerProfilePage = () => {
           region: p.location || '',
           priceFrom: p.price || 0,
           bio: p.description || '',
+          headline: p.headline || '',
+          workExperience: Array.isArray(p.workExperience) ? p.workExperience : [],
           education: Array.isArray(p.education) ? p.education : [],
           certifications: Array.isArray(p.certificates) ? p.certificates : [],
           languages: Array.isArray(p.languages) ? p.languages : [],
+          linkedinUrl: p.linkedinUrl || null,
+          provenance: p.provenance || {},
+          placement: attribution ? 'sponsored' : null,
+          promotionAttributionToken: attribution?.attributionToken || null,
         };
         setLawyer(normalized);
         const rv = (l.receivedReviews || []).map((r) => ({
@@ -133,7 +141,9 @@ const LawyerProfilePage = () => {
       }
     })();
     return () => { alive = false; };
-  }, [lawyerId]);
+  // Translation changes do not alter the fetched profile identity or attribution.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lawyerId, attributionToken]);
 
   const goAiChat = () => navigate('/ai-chat', { state: { lawyerId } });
   // Видеозвонок возможен только по забронированной консультации — открываем бронь
@@ -262,20 +272,17 @@ const LawyerProfilePage = () => {
                   {lawyer.bio || t('lawyerProfile.noBio')}
                 </p>
 
-                {(lawyer.education.length > 0 || langText) && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                    {lawyer.education.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <SchoolOutlined sx={{ fontSize: 15 }} /> {t('lawyerProfile.education')}
-                        </div>
-                        <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>
-                          {lawyer.education.map((edu, i) => (
-                            <div key={i}>{typeof edu === 'string' ? edu : (edu.title || edu.name || '')}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                <PublicProfessionalDetails profile={{
+                  headline: lawyer.headline,
+                  workExperience: lawyer.workExperience,
+                  education: lawyer.education,
+                  certificates: lawyer.certifications,
+                  linkedinUrl: lawyer.linkedinUrl,
+                  provenance: lawyer.provenance,
+                }} />
+
+                {langText && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 20, marginTop: 22 }}>
                     {langText && (
                       <div>
                         <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -285,33 +292,6 @@ const LawyerProfilePage = () => {
                       </div>
                     )}
                   </div>
-                )}
-
-                {lawyer.certifications.length > 0 && (
-                  <>
-                    <div style={{ height: 1, background: 'var(--card-brd)', margin: '24px 0' }} />
-                    <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 16 }}>
-                      {t('lawyerProfile.achievements')}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} className="lp-ach">
-                      {lawyer.certifications.map((ach, i) => {
-                        const title = typeof ach === 'string' ? ach : (ach.title || ach.name || '');
-                        const sub = typeof ach === 'string' ? '' : (ach.sub || ach.description || '');
-                        return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, background: 'rgba(184,149,110,0.06)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: '16px 18px' }}>
-                            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, rgba(184,149,110,0.22), rgba(154,123,90,0.14))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--accent)' }}>
-                              <WorkspacePremiumOutlined sx={{ fontSize: 20 }} />
-                            </div>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{title}</div>
-                              {sub && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.5 }}>{sub}</div>}
-                            </div>
-                            <ChevronRightOutlined sx={{ fontSize: 18, color: 'var(--text3)', flexShrink: 0, mt: '2px' }} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
                 )}
               </div>
             )}

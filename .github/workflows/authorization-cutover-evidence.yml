@@ -1,0 +1,187 @@
+name: Finalize authorization cutover evidence
+
+on:
+  workflow_dispatch:
+    inputs:
+      prepare_run_id: { required: true, type: string }
+      security_approval_run_id: { required: true, type: string }
+      release_approval_run_id: { required: true, type: string }
+      cutover_approval_run_id: { required: true, type: string }
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assemble:
+    environment: authorization-evidence-finalization
+    runs-on: ubuntu-24.04
+    env:
+      PREPARE_RUN_ID: ${{ inputs.prepare_run_id }}
+      SECURITY_APPROVAL_RUN_ID: ${{ inputs.security_approval_run_id }}
+      RELEASE_APPROVAL_RUN_ID: ${{ inputs.release_approval_run_id }}
+      CUTOVER_APPROVAL_RUN_ID: ${{ inputs.cutover_approval_run_id }}
+      REVIEWED_SHA: ${{ vars.AUTHORIZATION_EVIDENCE_REVIEWED_SHA }}
+      SECURITY_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_SECURITY_APPROVAL_PUBLIC_KEY_B64 }}
+      RELEASE_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_RELEASE_APPROVAL_PUBLIC_KEY_B64 }}
+      CUTOVER_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_CUTOVER_APPROVAL_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ vars.AUTHORIZATION_EVIDENCE_REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorization-evidence-prepared
+          path: ${{ runner.temp }}/prepared
+          run-id: ${{ inputs.prepare_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorization-approval-security_owner
+          path: ${{ runner.temp }}/security
+          run-id: ${{ inputs.security_approval_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorization-approval-release_owner
+          path: ${{ runner.temp }}/release
+          run-id: ${{ inputs.release_approval_run_id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: authorization-approval-cutover_owner
+          path: ${{ runner.temp }}/cutover
+          run-id: ${{ inputs.cutover_approval_run_id }}
+          github-token: ${{ github.token }}
+      - name: Rebuild source and assemble exact approved manifest
+        run: |
+          umask 077
+          provenance_run=$(jq -r .workflow.runId "$RUNNER_TEMP/prepared/provenance.json")
+          provenance_sha=$(jq -r .release.commitSha "$RUNNER_TEMP/prepared/provenance.json")
+          test "$PREPARE_RUN_ID" = "$provenance_run"
+          test "$REVIEWED_SHA" = "$provenance_sha"
+          test "$SECURITY_APPROVAL_RUN_ID" = "$(jq -r .artifact.approvalRunId "$RUNNER_TEMP/security/approval.signed.json")"
+          test "$RELEASE_APPROVAL_RUN_ID" = "$(jq -r .artifact.approvalRunId "$RUNNER_TEMP/release/approval.signed.json")"
+          test "$CUTOVER_APPROVAL_RUN_ID" = "$(jq -r .artifact.approvalRunId "$RUNNER_TEMP/cutover/approval.signed.json")"
+          printf '%s' "$SECURITY_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/security.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/release.pub"
+          printf '%s' "$CUTOVER_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/cutover.pub"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          node backend/api/src/scripts/authorizationEvidence.js verify-source \
+            --input "$RUNNER_TEMP/prepared/authorization-evidence.json" \
+            --events "$RUNNER_TEMP/prepared/authorization-events.json" \
+            --output "$RUNNER_TEMP/source.verified.json" --now "$now"
+          jq -n --arg generatedAt "$now" --slurpfile evidence "$RUNNER_TEMP/prepared/authorization-evidence.json" \
+            --slurpfile security "$RUNNER_TEMP/security/approval.signed.json" \
+            --slurpfile release "$RUNNER_TEMP/release/approval.signed.json" \
+            --slurpfile cutover "$RUNNER_TEMP/cutover/approval.signed.json" \
+            '{generatedAt:$generatedAt,evidenceArtifact:$evidence[0],approvalEnvelopes:[$security[0],$release[0],$cutover[0]]}' \
+            > "$RUNNER_TEMP/manifest-input.json"
+          node backend/api/src/scripts/authorizationEvidence.js build-manifest \
+            --input "$RUNNER_TEMP/manifest-input.json" --output "$RUNNER_TEMP/manifest.json" --now "$now" \
+            --security-owner-key-file "$RUNNER_TEMP/security.pub" \
+            --release-owner-key-file "$RUNNER_TEMP/release.pub" \
+            --cutover-owner-key-file "$RUNNER_TEMP/cutover.pub"
+          mkdir -m 700 "$RUNNER_TEMP/ready"
+          cp -n "$RUNNER_TEMP/manifest.json" "$RUNNER_TEMP/source.verified.json" "$RUNNER_TEMP/ready/"
+          cp -n "$RUNNER_TEMP/prepared/authorization-events.json" "$RUNNER_TEMP/ready/"
+          cp -n "$RUNNER_TEMP/prepared/authorization-evidence.json" "$RUNNER_TEMP/ready/"
+          cp -n "$RUNNER_TEMP/prepared/provenance.json" "$RUNNER_TEMP/ready/"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorization-manifest-ready
+          path: ${{ runner.temp }}/ready
+          retention-days: 7
+          if-no-files-found: error
+
+  sign:
+    needs: assemble
+    environment: authorization-evidence-signing
+    runs-on: ubuntu-24.04
+    env:
+      EVIDENCE_KEY_ID: ${{ vars.AUTHORIZATION_EVIDENCE_KEY_ID }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ vars.AUTHORIZATION_EVIDENCE_REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: authorization-manifest-ready, path: "${{ runner.temp }}/ready" }
+      - name: Sign manifest and clean private key
+        env:
+          PRIVATE_KEY_B64: ${{ secrets.AUTHORIZATION_EVIDENCE_PRIVATE_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/evidence-private.pem"
+          trap 'rm -f "$key"' EXIT
+          printf '%s' "$PRIVATE_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          node backend/api/src/scripts/authorizationEvidence.js sign-artifact \
+            --input "$RUNNER_TEMP/ready/manifest.json" --output "$RUNNER_TEMP/ready/manifest.signed.json" \
+            --key-file "$key" --key-id "$EVIDENCE_KEY_ID"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorization-signed-pending-verification
+          path: ${{ runner.temp }}/ready
+          retention-days: 30
+          if-no-files-found: error
+
+  verify-and-stop:
+    needs: sign
+    environment: authorization-evidence-verification
+    runs-on: ubuntu-24.04
+    env:
+      EVIDENCE_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_EVIDENCE_PUBLIC_KEY_B64 }}
+      EVIDENCE_KEY_ID: ${{ vars.AUTHORIZATION_EVIDENCE_KEY_ID }}
+      SECURITY_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_SECURITY_APPROVAL_PUBLIC_KEY_B64 }}
+      RELEASE_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_RELEASE_APPROVAL_PUBLIC_KEY_B64 }}
+      CUTOVER_PUBLIC_KEY_B64: ${{ vars.AUTHORIZATION_CUTOVER_APPROVAL_PUBLIC_KEY_B64 }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          ref: ${{ vars.AUTHORIZATION_EVIDENCE_REVIEWED_SHA }}
+      - run: npm --prefix backend/api ci --ignore-scripts
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with: { name: authorization-signed-pending-verification, path: "${{ runner.temp }}/signed" }
+      - name: Independently rebuild source and verify signed manifest
+        run: |
+          umask 077
+          printf '%s' "$EVIDENCE_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/evidence.pub"
+          printf '%s' "$SECURITY_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/security.pub"
+          printf '%s' "$RELEASE_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/release.pub"
+          printf '%s' "$CUTOVER_PUBLIC_KEY_B64" | base64 --decode > "$RUNNER_TEMP/cutover.pub"
+          jq '.release + {authorizationMode:"capability_only"}' "$RUNNER_TEMP/signed/provenance.json" \
+            > "$RUNNER_TEMP/expected.json"
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.000Z)
+          node backend/api/src/scripts/authorizationEvidence.js verify-source \
+            --input "$RUNNER_TEMP/signed/authorization-evidence.json" \
+            --events "$RUNNER_TEMP/signed/authorization-events.json" \
+            --output "$RUNNER_TEMP/source.independently-verified.json" --now "$now"
+          node backend/api/src/scripts/authorizationEvidence.js verify \
+            --input "$RUNNER_TEMP/signed/manifest.signed.json" --output "$RUNNER_TEMP/manifest.verified.json" --now "$now" \
+            --key-file "$RUNNER_TEMP/evidence.pub" --key-id "$EVIDENCE_KEY_ID" \
+            --security-owner-key-file "$RUNNER_TEMP/security.pub" \
+            --release-owner-key-file "$RUNNER_TEMP/release.pub" \
+            --cutover-owner-key-file "$RUNNER_TEMP/cutover.pub" \
+            --expectations "$RUNNER_TEMP/expected.json"
+      - name: Create immutable private verification package
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/final"
+          cp -n "$RUNNER_TEMP/signed/authorization-events.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/signed/authorization-evidence.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/signed/provenance.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/signed/source.verified.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/source.independently-verified.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/signed/manifest.signed.json" "$RUNNER_TEMP/final/"
+          cp -n "$RUNNER_TEMP/manifest.verified.json" "$RUNNER_TEMP/final/"
+          (cd "$RUNNER_TEMP/final" && shasum -a 256 * > sha256sums.txt)
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: authorization-final-verified-${{ github.run_id }}
+          path: ${{ runner.temp }}/final
+          retention-days: 30
+          if-no-files-found: error
+      - name: STOP_BEFORE_AUTHORIZATION_MODE_CHANGE
+        run: |
+          printf '%s\n' 'Evidence verified. Capability-only mode remains externally blocked.'
+          exit 1

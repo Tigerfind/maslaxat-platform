@@ -19,8 +19,9 @@ import {
   DarkModeOutlined,
   LightModeOutlined,
   MenuOutlined,
+  CampaignOutlined,
 } from '@mui/icons-material';
-import { logout } from '../../store/slices/authSlice';
+import { getHomePath, logout, switchMode } from '../../store/slices/authSlice';
 import { useTranslation } from '../../i18n';
 import LanguageSwitcher from '../LanguageSwitcher';
 import NotificationCenter from '../UI/NotificationCenter';
@@ -43,8 +44,15 @@ const NAV = {
     { key: '/lawyer/consultations', tKey: 'nav.consultations', icon: <ForumOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/schedule', tKey: 'nav.schedule', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/analytics', tKey: 'nav.analytics', icon: <InsightsOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/promotions', tKey: 'nav.promotions', icon: <CampaignOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/reviews', tKey: 'nav.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
     { key: '/lawyer/profile/edit', tKey: 'nav.profile', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
+  ],
+  lawyerApplicant: [
+    { key: '/lawyer/onboarding', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/profile/edit', tKey: 'nav.profile', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/lawyer/imports', tKey: 'nav.documents', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/settings#two-factor', label: '2FA', icon: <SettingsOutlined sx={{ fontSize: 20 }} /> },
   ],
   admin: [
     { key: '/admin/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
@@ -52,10 +60,29 @@ const NAV = {
     { key: '/admin/lawyers', tKey: 'admin.manageLawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/specializations', tKey: 'admin.specializations', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/promos', tKey: 'admin.promos', icon: <ReceiptLongOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/promotions', tKey: 'nav.promotions', icon: <CampaignOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/reviews', tKey: 'admin.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/support', tKey: 'admin.support', icon: <HelpOutlineOutlined sx={{ fontSize: 20 }} /> },
   ],
 };
+
+export const canShowMemberModeSwitcher = ({ accountType, capabilities = [] }) => (
+  accountType === 'member'
+  && capabilities.includes('client')
+  && (capabilities.includes('lawyerApplicant') || capabilities.includes('lawyer'))
+);
+
+export const MODE_SWITCH_MIN_SIZE = 44;
+
+const navRoleForAuth = ({ activeMode, capabilities = [] }) => (
+  activeMode === 'lawyer' && !capabilities.includes('lawyer') ? 'lawyerApplicant' : activeMode
+);
+
+export const navKeysForAuth = (auth) => [
+  ...(NAV[navRoleForAuth(auth)] || []).map((item) => item.key),
+  '/settings',
+  '/help',
+];
 
 function useDarkMode() {
   const [dark, setDark] = useState(() => localStorage.getItem('theme') === 'dark');
@@ -73,6 +100,7 @@ const navBtnStyle = (active, dark) => ({
   alignItems: 'center',
   gap: 12,
   padding: '11px 14px',
+  minHeight: 44,
   background: active ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
   border: 'none',
   borderRadius: 'var(--radius)',
@@ -101,15 +129,18 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const dispatch = useDispatch();
-  const { user } = useSelector((s) => s.auth);
+  const auth = useSelector((s) => s.auth);
+  const { user, activeMode, switchingMode, modeUnavailable } = auth;
   const { t } = useTranslation();
   const isDesktop = useMediaQuery('(min-width:1024px)');
   const [dark, toggleDark] = useDarkMode();
   // Профиль по роли (у юриста своя страница, у клиента — /profile)
-  const profilePath = role === 'lawyer' ? '/lawyer/profile/edit' : role === 'admin' ? '/admin/dashboard' : '/profile';
+  const shellRole = activeMode || role;
+  const profilePath = shellRole === 'lawyer' ? '/lawyer/profile/edit' : shellRole === 'admin' ? '/admin/dashboard' : '/profile';
   const [drawerOpen, setDrawerOpen] = useState(false);
 
-  const navItems = NAV[role] || NAV.client;
+  const navRole = navRoleForAuth({ activeMode: shellRole, capabilities: auth.capabilities });
+  const navItems = NAV[navRole] || NAV.client;
   const activeKey = active || location.pathname;
 
   // Фон сайдбара = фон страницы (var(--canvas)) — единый цвет с контентом.
@@ -119,6 +150,16 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
 
   const go = (key) => { navigate(key); setDrawerOpen(false); };
   const handleLogout = () => { dispatch(logout()); navigate('/login'); };
+  const handleModeSwitch = async (targetMode) => {
+    if (switchingMode || targetMode === activeMode) return;
+    try {
+      const session = await dispatch(switchMode(targetMode));
+      navigate(getHomePath(session));
+      setDrawerOpen(false);
+    } catch (error) {
+      // The switch thunk restores the prior validated mode and exposes a clear error.
+    }
+  };
 
   const sidebar = (
     <aside
@@ -148,7 +189,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
               onMouseLeave={(e) => navHoverOut(e, isActive)}
             >
               <span style={{ display: 'flex', width: 20, height: 20 }}>{n.icon}</span>
-              <span>{t(n.tKey)}</span>
+               <span>{n.label || t(n.tKey)}</span>
             </button>
           );
         })}
@@ -199,7 +240,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
         >
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
             {!isDesktop && (
-              <button onClick={() => setDrawerOpen(true)} aria-label={t('nav.menu')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+              <button onClick={() => setDrawerOpen(true)} aria-label={t('nav.menu')} style={{ width: 44, height: 44, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
                 <MenuOutlined />
               </button>
             )}
@@ -209,18 +250,52 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
             </div>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <button onClick={toggleDark} aria-label={t('nav.theme')} title={t('nav.theme')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+            {canShowMemberModeSwitcher(auth) && (
+              <div role="group" aria-label="Режим кабинета" style={{ display: 'flex', padding: 3, border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)' }}>
+                {[
+                  { mode: 'client', label: 'Клиент' },
+                  { mode: 'lawyer', label: 'Юрист' },
+                ].map((item) => {
+                  const selected = activeMode === item.mode;
+                  return (
+                    <button
+                      type="button"
+                      key={item.mode}
+                      aria-label={`Режим: ${item.label}`}
+                      aria-pressed={selected}
+                      disabled={switchingMode}
+                      onClick={() => handleModeSwitch(item.mode)}
+                      style={{
+                        minWidth: MODE_SWITCH_MIN_SIZE, minHeight: MODE_SWITCH_MIN_SIZE,
+                        padding: isDesktop ? '7px 12px' : '7px 8px', border: 0,
+                        borderRadius: 'calc(var(--radius) - 3px)', background: selected ? 'var(--accent)' : 'transparent',
+                        color: selected ? '#fff' : 'var(--text2)', cursor: switchingMode ? 'wait' : 'pointer',
+                        fontFamily: 'inherit', fontSize: 12, fontWeight: selected ? 600 : 500,
+                      }}
+                    >
+                      {isDesktop ? item.label : item.label.charAt(0)}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+            <button onClick={toggleDark} aria-label={t('nav.theme')} title={t('nav.theme')} style={{ width: 44, height: 44, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
               {dark ? <LightModeOutlined sx={{ fontSize: 19 }} /> : <DarkModeOutlined sx={{ fontSize: 19 }} />}
             </button>
             {isDesktop && <LanguageSwitcher variant="dropdown" />}
             <NotificationCenter />
-            <button onClick={() => navigate(profilePath)} aria-label={t('nav.profile')} style={{ display: 'flex', alignItems: 'center', gap: 11, paddingLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
+            <button onClick={() => navigate(profilePath)} aria-label={t('nav.profile')} style={{ minWidth: 44, minHeight: 44, display: 'flex', alignItems: 'center', gap: 11, paddingLeft: 6, background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>
               <div style={{ width: 40, height: 40, borderRadius: '50%', background: 'linear-gradient(135deg, #B8956E, #8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 15, fontWeight: 500 }}>
                 {(user?.name?.charAt(0) || 'К').toUpperCase()}
               </div>
             </button>
           </div>
         </header>
+        {modeUnavailable && (
+          <div role="alert" style={{ padding: '9px 32px', color: '#8B2F2F', background: 'rgba(180,70,70,0.1)', borderBottom: '1px solid rgba(180,70,70,0.2)', fontSize: 13 }}>
+            {modeUnavailable}
+          </div>
+        )}
 
         {/* SCROLLABLE CONTENT */}
         <main className="screen" style={{ flex: 1, overflowY: 'auto', padding: '28px 32px 48px' }}>

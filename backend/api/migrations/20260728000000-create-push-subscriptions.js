@@ -8,7 +8,7 @@ module.exports = {
     if (exists) return;
     await queryInterface.createTable('push_subscriptions', {
       id: { type: Sequelize.UUID, defaultValue: Sequelize.UUIDV4, primaryKey: true },
-      userId: {
+      user_id: {
         type: Sequelize.UUID,
         allowNull: false,
         references: { model: 'users', key: 'id' },
@@ -17,8 +17,8 @@ module.exports = {
       },
       endpoint: { type: Sequelize.TEXT, allowNull: false, unique: true },
       keys: { type: Sequelize.JSONB, allowNull: false },
-      createdAt: { type: Sequelize.DATE, allowNull: false },
-      updatedAt: { type: Sequelize.DATE, allowNull: false },
+      created_at: { type: Sequelize.DATE, allowNull: false },
+      updated_at: { type: Sequelize.DATE, allowNull: false },
     });
   },
   async down(queryInterface) {

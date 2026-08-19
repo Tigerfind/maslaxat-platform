@@ -1,85 +1,82 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { User, LawyerProfile, Review, Consultation } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { User, LawyerProfile, Review, Consultation, Payment } = require('../models');
+const { authenticate, authorizeCompat, evaluateAuthorizationDecision } = require('../middleware/auth');
+const { getAuthorizationMode, recordAuthorizationDecision } = require('../services/authorizationRuntime');
 const notifications = require('../services/notificationService');
 const { recomputeLawyerRating } = require('../services/ratingService');
+const { createCheckout, checkoutIdempotencyCandidates } = require('../services/paymentService');
+const { buildBookingFingerprint } = require('../services/bookingFingerprintService');
+const { getCatalogPage, getCatalogEligibilityCandidates } = require('../services/catalogRankingService');
+const { resolveCatalogAuthorizationSurface } = require('../config/authorizationSurfaces');
+const { recordPromotionEvent } = require('../services/promotionAnalyticsService');
+const { resolveCatalogActor } = require('../services/catalogActorService');
+const { toPublicLawyerDto, toPublicReview } = require('../services/publicLawyerDto');
+const { toConsultationDto } = require('../services/consultationDto');
+
+const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
+
+async function shadowCatalogEligibility(users, surface) {
+  for (const user of users) {
+    const legacyAllowed = user.role === 'lawyer' && user.isActive
+      && user.profile?.verificationStatus === 'approved';
+    const capabilityAllowed = user.accountType === 'member' && user.isActive
+      && user.twoFactorEnabled && user.profile?.verificationStatus === 'approved'
+      && user.profile?.operatingStatus === 'enabled';
+    await evaluateAuthorizationDecision({
+      authorizationMode: getAuthorizationMode(), channel: 'catalog',
+      surface, mode: 'lawyer', legacyAllowed, capabilityAllowed,
+      recordDecision: recordAuthorizationDecision, compatibilityAuthority: 'legacy',
+    });
+  }
+}
+
+async function catalogLawyerAllowed(user, surface, { requireOperating = true } = {}) {
+  if (!user) return false;
+  const legacyAllowed = user.role === 'lawyer' && user.isActive
+    && (!requireOperating || (user.profile?.verificationStatus === 'approved'
+      && user.profile?.operatingStatus === 'enabled'));
+  const capabilityAllowed = user.accountType === 'member' && user.isActive
+    && user.twoFactorEnabled && user.profile?.verificationStatus === 'approved'
+    && user.profile?.operatingStatus === 'enabled';
+  const decision = await evaluateAuthorizationDecision({
+    authorizationMode: getAuthorizationMode(), channel: 'catalog',
+    surface, mode: 'lawyer', legacyAllowed, capabilityAllowed,
+    recordDecision: recordAuthorizationDecision, compatibilityAuthority: 'legacy',
+  });
+  return decision.allowed;
+}
+
+function assertSameBooking(existingPayment, consultation, lawyerId, bookingMetadata) {
+  const sameSubject = consultation
+    && consultation.lawyerId === lawyerId
+    && existingPayment.purpose === 'consultation';
+  const sameFingerprint = existingPayment.providerData?.bookingFingerprintVersion === bookingMetadata.bookingFingerprintVersion
+    && existingPayment.providerData?.bookingFingerprint === bookingMetadata.bookingFingerprint
+    && Number(existingPayment.providerData?.serverPriceTiyin) === bookingMetadata.serverPriceTiyin;
+  if (!sameSubject || !sameFingerprint) {
+    const error = new Error('Idempotency key was already used for a different booking; terms or server price changed');
+    error.status = 409;
+    error.code = 'BOOKING_TERMS_CHANGED';
+    throw error;
+  }
+}
 
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
-
-    const profileWhere = {};
-    // Фильтр по специализации: клиент может выбрать НЕСКОЛЬКО областей (через запятую).
-    // Юрист подходит, если ведёт ХОТЯ БЫ ОДНУ из выбранных (Op.overlap = массивы пересекаются).
-    if (specialization) {
-      const specs = String(specialization).split(',').map((s) => s.trim()).filter(Boolean);
-      if (specs.length) profileWhere.specializations = { [Op.overlap]: specs };
-    }
-    if (location) profileWhere.location = location;
-    // Фильтр по цене консультации (profile.price). Границы приходят только когда реально
-    // заданы (см. clientService): minPrice>0 и/или maxPrice<потолка.
-    const priceFilter = {};
-    if (minPrice !== undefined && !Number.isNaN(Number(minPrice))) priceFilter[Op.gte] = Number(minPrice);
-    if (maxPrice !== undefined && !Number.isNaN(Number(maxPrice))) priceFilter[Op.lte] = Number(maxPrice);
-    if (Object.getOwnPropertySymbols(priceFilter).length) profileWhere.price = priceFilter;
-    // languages — JSONB-массив; фильтруем по вхождению языка (Postgres @>)
-    if (language) profileWhere.languages = { [Op.contains]: [language] };
-    // Фильтр по звёздам: показываем юристов, чей рейтинг округляется до выбранной звезды
-    // (напр. «5 звёзд» → рейтинг 4.5–5.0; «2 звезды» → 1.5–2.49). Совпадает с тем,
-    // сколько звёзд показано на карточке.
-    if (minRating) {
-      const r = parseFloat(minRating);
-      profileWhere.rating = { [Op.gte]: r - 0.5, [Op.lt]: r + 0.5 };
-    }
-
-    // Безопасный режим: в каталоге показываем ТОЛЬКО одобренных админом юристов.
-    // Непроверенные (pending) и отклонённые (rejected) клиентам не видны.
-    profileWhere.verificationStatus = 'approved';
-
-    // «Доступен сейчас»: показать только онлайн-юристов (isAvailable=true).
-    // Раньше тумблер был декоративным — бэкенд его не читал.
-    const onlyOnline = onlineOnly === 'true' || onlineOnly === true;
-    if (onlyOnline) profileWhere.isAvailable = true;
-
-    const userWhere = { role: 'lawyer', isActive: true };
-    if (search) {
-      userWhere.name = { [Op.iLike]: `%${search}%` };
-    }
-
-    // Онлайн-юристы всегда ВЫШЕ — клиенту удобнее видеть тех, с кем можно поговорить
-    // сейчас. Внутри — выбранная сортировка (по умолчанию новизна).
-    const onlineFirst = [{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC'];
-    let order = [onlineFirst, ['createdAt', 'DESC']];
-    if (sortBy === 'rating') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
-    if (sortBy === 'price_low') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
-    if (sortBy === 'price_high') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
-    if (sortBy === 'experience') order = [onlineFirst, [{ model: LawyerProfile, as: 'profile' }, 'experience', 'DESC']];
-
-    // Never expose phone/email of lawyers to public/client searches
-    const { count, rows } = await User.findAndCountAll({
-      where: userWhere,
-      attributes: ['id', 'name', 'avatar', 'role', 'isVerified', 'createdAt'],
-      include: [{
-        model: LawyerProfile,
-        as: 'profile',
-        where: profileWhere,
-        required: true,
-      }],
-      order,
-      limit: parseInt(limit),
-      offset,
+    const { cursor, limit = 20, page: _legacyPage, ...filters } = req.query;
+    const surface = resolveCatalogAuthorizationSurface(req.method, req.originalUrl);
+    await shadowCatalogEligibility(await getCatalogEligibilityCandidates(filters), surface);
+    const result = await getCatalogPage({
+      filters,
+      cursor,
+      pageSize: Number(limit),
+      actorKey: resolveCatalogActor(req, res),
     });
-
-    res.json({
-      lawyers: rows,
-      total: count,
-      page: parseInt(page),
-      totalPages: Math.ceil(count / limit),
-    });
+    res.json(result);
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     next(err);
   }
 });
@@ -103,13 +100,16 @@ router.get('/:id', async (req, res, next) => {
   try {
     // Never expose phone/email to public profile viewers
     const lawyer = await User.findOne({
-      where: { id: req.params.id, role: 'lawyer' },
-      attributes: ['id', 'name', 'avatar', 'role', 'isVerified', 'createdAt'],
+      where: { id: req.params.id, isActive: true },
+      attributes: ['id', 'name', 'avatar', 'role', 'accountType', 'twoFactorEnabled', 'isActive', 'isVerified', 'createdAt'],
       include: [
         { model: LawyerProfile, as: 'profile' },
         {
           model: Review,
           as: 'receivedReviews',
+          where: { isHidden: false },
+          required: false,
+          attributes: ['id', 'rating', 'text', 'createdAt'],
           include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
           order: [['createdAt', 'DESC']],
           limit: 20,
@@ -119,13 +119,45 @@ router.get('/:id', async (req, res, next) => {
 
     // Безопасный режим: непроверенный/отклонённый профиль публично не показываем
     // (иначе клиент дошёл бы до него по прямой ссылке минуя каталог).
-    if (!lawyer || !lawyer.profile || lawyer.profile.verificationStatus !== 'approved') {
+    if (!lawyer || !await catalogLawyerAllowed(
+      lawyer,
+      resolveCatalogAuthorizationSurface(req.method, req.originalUrl),
+    )) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    res.json({ lawyer });
+    const attributionToken = req.query.attributionToken;
+    const requestId = req.get('X-Promotion-Request-Id');
+    if (attributionToken && requestId) {
+      await recordPromotionEvent({
+        attributionToken,
+        event: 'profile_view',
+        actorKey: resolveCatalogActor(req, res),
+        requestId,
+        expectedLawyerId: lawyer.id,
+      }).catch(() => {});
+    }
+
+    res.json({ lawyer: toPublicLawyerDto(lawyer) });
   } catch (err) {
     next(err);
+  }
+});
+
+router.post('/:id/promotion/booking-start', authenticate, clientAccess, async (req, res, next) => {
+  try {
+    const result = await recordPromotionEvent({
+      attributionToken: req.body.attributionToken,
+      event: 'booking_start',
+      actorKey: resolveCatalogActor(req, res),
+      requestId: req.body.requestId,
+      expectedLawyerId: req.params.id,
+    });
+    if (result.reason === 'invalid_attribution') return res.status(403).json({ error: 'Invalid promotion attribution' });
+    return res.status(204).end();
+  } catch (error) {
+    if (error.status) return res.status(error.status).json({ error: error.message });
+    return next(error);
   }
 });
 
@@ -134,19 +166,23 @@ router.get('/:id/reviews', async (req, res, next) => {
   try {
     const reviews = await Review.findAll({
       where: { lawyerId: req.params.id, isHidden: false },
+      attributes: ['id', 'rating', 'text', 'createdAt'],
       include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
       order: [['createdAt', 'DESC']],
       limit: 50,
     });
-    res.json({ reviews });
+    res.json({ reviews: reviews.map(toPublicReview) });
   } catch (err) {
     next(err);
   }
 });
 
 // POST /api/lawyers/:id/book — бронирование консультации
-router.post('/:id/book', authenticate, authorize('client'), async (req, res, next) => {
+router.post('/:id/book', authenticate, clientAccess, async (req, res, next) => {
   try {
+    if (req.params.id === req.userId) {
+      return res.status(403).json({ error: 'Нельзя забронировать консультацию у себя', code: 'SELF_BOOKING_FORBIDDEN' });
+    }
     // Анти-фрод: бронировать может только клиент с подтверждённым контактом
     // (email подтверждён ИЛИ регистрация по телефону-OTP → isVerified=true).
     // Отсекает фейковые аккаунты и пустые брони под модель оплаты B.
@@ -156,16 +192,23 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     }
 
     const lawyer = await User.findOne({
-      where: { id: req.params.id, role: 'lawyer' },
+      where: { id: req.params.id, isActive: true },
       include: [{ model: LawyerProfile, as: 'profile' }],
     });
 
-    if (!lawyer) {
+    if (!lawyer || !await catalogLawyerAllowed(
+      lawyer,
+      resolveCatalogAuthorizationSurface(req.method, req.originalUrl),
+      { requireOperating: false },
+    )) {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
     // Нельзя бронировать непроверенного или недоступного (offline) юриста
     if (!lawyer.profile || lawyer.profile.verificationStatus !== 'approved') {
       return res.status(400).json({ error: 'Этот юрист ещё не прошёл проверку' });
+    }
+    if (lawyer.profile.operatingStatus !== 'enabled') {
+      return res.status(400).json({ error: 'Юрист временно не принимает консультации' });
     }
     if (!lawyer.profile || lawyer.profile.isAvailable === false) {
       return res.status(400).json({ error: 'Юрист сейчас недоступен для записи' });
@@ -263,18 +306,65 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     let isFree = false;
     let freeSource = null;
     let consultation;
+    let checkout = null;
+    let bookingCreated = false;
 
-    // Модель B «оплата через 5 минут звонка»: платная бронь НЕ требует предоплаты.
-    // Карта «замораживается» (billingStatus='held'), бронь сразу уходит юристу (pending);
-    // деньги захватываются на 5-й минуте разговора (billingService.captureHold).
     const paidFields = () => ({
       ...baseFields, price, isFree: false, freeSource: null, notes,
       promoCode: appliedPromo ? appliedPromo.code : null,
-      status: 'pending', billingStatus: 'held',
+      status: 'payment_pending',
     });
+    const bookingIdentity = buildBookingFingerprint({
+      lawyerId: lawyer.id,
+      preferredDate: baseFields.preferredDate,
+      preferredTime: baseFields.preferredTime,
+      duration: baseFields.duration,
+      type: baseFields.type,
+      problems: baseFields.problems,
+      specialization: baseFields.specialization,
+      priceTiyin: price * 100,
+    });
+    const bookingMetadata = {
+      bookingFingerprintVersion: bookingIdentity.version,
+      bookingFingerprint: bookingIdentity.fingerprint,
+      serverPriceTiyin: price * 100,
+    };
 
     if (!wantsFree) {
-      consultation = await Consultation.create(paidFields());
+      const idempotencyKey = req.get('Idempotency-Key');
+      if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+      await Consultation.sequelize.transaction(async (t) => {
+        await Consultation.sequelize.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))',
+          { replacements: { k: `booking-checkout:${req.userId}:${idempotencyKey}` }, transaction: t }
+        );
+        const existingPayment = await Payment.findOne({
+          where: {
+            userId: req.userId,
+            purpose: 'consultation',
+            idempotencyKey: { [Op.in]: checkoutIdempotencyCandidates('consultation', idempotencyKey) },
+          },
+          lock: t.LOCK.UPDATE,
+          transaction: t,
+        });
+        if (existingPayment) {
+          consultation = await Consultation.findByPk(existingPayment.consultationId, { transaction: t });
+          assertSameBooking(existingPayment, consultation, lawyer.id, bookingMetadata);
+        } else {
+          consultation = await Consultation.create(paidFields(), { transaction: t });
+          bookingCreated = true;
+        }
+        checkout = existingPayment?.status === 'failed' && consultation.status === 'cancelled'
+          ? { payment: existingPayment, paymentId: existingPayment.id, checkoutUrl: null }
+          : await createCheckout({
+            userId: req.userId,
+            purpose: 'consultation',
+            subjectId: consultation.id,
+            idempotencyKey,
+            providerData: bookingMetadata,
+            transaction: t,
+          });
+      });
     } else {
       // ГОНКА #3: право на бесплатное пересчитываем и создаём бронь ПОД per-client
       // advisory-локом в одной транзакции. Лок сериализует брони ТОЛЬКО этого клиента
@@ -288,7 +378,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
             { replacements: { k: `booking:${req.userId}` }, transaction: t }
           );
 
-          let fields = paidFields(); // если право не подтвердится под локом — платно
+          let fields = null;
           if (req.body.useFreePromo) {
             const { computeLoyalty } = require('../services/loyaltyService');
             const loyalty = await computeLoyalty(req.userId, { transaction: t });
@@ -304,48 +394,100 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
               fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
             }
           }
-          consultation = await Consultation.create(fields, { transaction: t });
+          if (fields) {
+            consultation = await Consultation.create(fields, { transaction: t });
+            bookingCreated = true;
+          }
+          if (freeSource === 'subscription') {
+            const { recordSubscriptionBenefitConsumption } = require('../services/ledgerService');
+            await recordSubscriptionBenefitConsumption(req.userId, consultation.id, t);
+          }
         });
       } catch (e) {
-        // Защита в глубину: если частичный уникальный индекс поймал вторую loyalty-бронь
-        // (лок не спас в экзотическом случае) — бронируем как ПЛАТНУЮ, не роняем запрос.
         if (e.name === 'SequelizeUniqueConstraintError') {
           isFree = false; freeSource = null;
-          consultation = await Consultation.create(paidFields());
         } else {
           throw e;
         }
+      }
+      if (!consultation) {
+        const idempotencyKey = req.get('Idempotency-Key');
+        if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+        await Consultation.sequelize.transaction(async (t) => {
+          await Consultation.sequelize.query(
+            'SELECT pg_advisory_xact_lock(hashtextextended(:k, 0))',
+            { replacements: { k: `booking-checkout:${req.userId}:${idempotencyKey}` }, transaction: t }
+          );
+          const existingPayment = await Payment.findOne({
+            where: {
+              userId: req.userId,
+              purpose: 'consultation',
+              idempotencyKey: { [Op.in]: checkoutIdempotencyCandidates('consultation', idempotencyKey) },
+            },
+            lock: t.LOCK.UPDATE,
+            transaction: t,
+          });
+          if (existingPayment) {
+            consultation = await Consultation.findByPk(existingPayment.consultationId, { transaction: t });
+            assertSameBooking(existingPayment, consultation, lawyer.id, bookingMetadata);
+          } else {
+            consultation = await Consultation.create(paidFields(), { transaction: t });
+            bookingCreated = true;
+          }
+          checkout = existingPayment?.status === 'failed' && consultation.status === 'cancelled'
+            ? { payment: existingPayment, paymentId: existingPayment.id, checkoutUrl: null }
+            : await createCheckout({
+              userId: req.userId, purpose: 'consultation', subjectId: consultation.id,
+              idempotencyKey, providerData: bookingMetadata, transaction: t,
+            });
+        });
       }
     }
 
     // Промо-инкремент и уведомления — ПОСЛЕ commit (не внутри транзакции, чтобы не
     // трогать бронь, которая могла откатиться). Атомарный гейт used_count < usage_limit.
-    if (appliedPromo) {
+    if (appliedPromo && bookingCreated) {
       const { literal } = require('sequelize');
       await appliedPromo.increment('usedCount', {
         where: { [Op.or]: [{ usageLimit: null }, literal('used_count < usage_limit')] },
       });
     }
-    // Уведомляем юриста о новой брони — теперь и платная сразу уходит ему (pending),
-    // без шага предоплаты (оплата спишется на 5-й минуте звонка).
-    {
+    // Бесплатная бронь сразу actionable; платную публикует только paid callback.
+    if (!checkout && bookingCreated) {
       const client = await User.findByPk(req.userId, { attributes: ['name'] });
       notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);
     }
+    if (bookingCreated && req.body.promotionAttributionToken && req.body.promotionRequestId) {
+      await recordPromotionEvent({
+        attributionToken: req.body.promotionAttributionToken,
+        event: 'booking',
+        actorKey: resolveCatalogActor(req, res),
+        requestId: req.body.promotionRequestId,
+        expectedLawyerId: lawyer.id,
+        consultationId: consultation.id,
+      }).catch(() => {});
+    }
 
+    const paymentStatus = checkout?.payment?.status || null;
+    const requiresPayment = ['pending', 'processing'].includes(paymentStatus);
     res.status(201).json({
       success: true,
-      message: 'Запрос отправлен юристу',
-      requiresPayment: false,
-      consultation,
+      message: requiresPayment ? 'Перейдите к оплате' : 'Запрос отправлен юристу',
+      requiresPayment,
+      consultationId: consultation.id,
+      paymentId: checkout?.paymentId || null,
+      paymentStatus,
+      checkoutUrl: requiresPayment ? checkout?.checkoutUrl || null : null,
+      consultation: toConsultationDto(consultation, { perspective: 'client' }),
     });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     next(err);
   }
 });
 
 // POST /api/lawyers/:id/review — оставить отзыв
-router.post('/:id/review', authenticate, authorize('client'), async (req, res, next) => {
+router.post('/:id/review', authenticate, clientAccess, async (req, res, next) => {
   try {
     const { consultationId, rating, text } = req.body;
     const lawyerId = req.params.id;
@@ -402,3 +544,4 @@ router.post('/:id/review', authenticate, authorize('client'), async (req, res, n
 });
 
 module.exports = router;
+module.exports.toPublicLawyerDto = toPublicLawyerDto;

@@ -1,21 +1,46 @@
 const express = require('express');
 const router = express.Router();
 const { User, FavoriteLawyer, LawyerProfile } = require('../models');
-const { authenticate, authorize } = require('../middleware/auth');
+const { authenticate, authorizeCompat, evaluateAuthorizationDecision } = require('../middleware/auth');
+const { getAuthorizationMode, recordAuthorizationDecision } = require('../services/authorizationRuntime');
+const { resolveHttpAuthorizationSurface } = require('../config/authorizationSurfaces');
+
+const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
+
+async function lawyerTargetAccess(req, res, next) {
+  try {
+    const lawyer = await User.findByPk(req.params.lawyerId, {
+      include: [{ model: LawyerProfile, as: 'profile', required: false }],
+    });
+    if (!lawyer) return res.status(404).json({ message: 'Lawyer not found' });
+    const decision = await evaluateAuthorizationDecision({
+      authorizationMode: getAuthorizationMode(),
+      channel: 'http',
+      surface: resolveHttpAuthorizationSurface(req.method, req.originalUrl, 'target'),
+      mode: 'client',
+      legacyAllowed: lawyer.role === 'lawyer',
+      capabilityAllowed: Boolean(lawyer.accountType === 'member' && lawyer.isActive
+        && lawyer.twoFactorEnabled && lawyer.profile?.verificationStatus === 'approved'
+        && lawyer.profile?.operatingStatus === 'enabled'),
+      recordDecision: recordAuthorizationDecision,
+      compatibilityAuthority: 'legacy',
+    });
+    if (!decision.allowed) return res.status(404).json({ message: 'Lawyer not found' });
+    req.targetLawyer = lawyer;
+    return next();
+  } catch (_error) {
+    return res.status(503).json({ code: 'AUTHORIZATION_TELEMETRY_UNAVAILABLE', error: 'Authorization unavailable' });
+  }
+}
+lawyerTargetAccess.authorizationGuard = { legacyRoles: ['lawyer'], modes: ['client'], stage: 'target' };
 
 // @route   POST /api/favorites/:lawyerId
 // @desc    Add lawyer to favorites
 // @access  Private (Client)
-router.post('/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
+router.post('/:lawyerId', authenticate, clientAccess, lawyerTargetAccess, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
-
-    // Check if lawyer exists
-    const lawyer = await User.findByPk(lawyerId);
-    if (!lawyer || lawyer.role !== 'lawyer') {
-      return res.status(404).json({ message: 'Lawyer not found' });
-    }
 
     // Check if already favorited
     const existing = await FavoriteLawyer.findOne({
@@ -38,7 +63,7 @@ router.post('/:lawyerId', authenticate, authorize('client'), async (req, res, ne
 // @route   DELETE /api/favorites/:lawyerId
 // @desc    Remove lawyer from favorites
 // @access  Private (Client)
-router.delete('/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
+router.delete('/:lawyerId', authenticate, clientAccess, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;
@@ -62,7 +87,7 @@ router.delete('/:lawyerId', authenticate, authorize('client'), async (req, res, 
 // @route   GET /api/favorites
 // @desc    Get all favorite lawyers for current client
 // @access  Private (Client)
-router.get('/', authenticate, authorize('client'), async (req, res, next) => {
+router.get('/', authenticate, clientAccess, async (req, res, next) => {
   try {
     const clientId = req.userId;
 
@@ -108,7 +133,7 @@ router.get('/', authenticate, authorize('client'), async (req, res, next) => {
 // @route   GET /api/favorites/check/:lawyerId
 // @desc    Check if lawyer is favorited
 // @access  Private (Client)
-router.get('/check/:lawyerId', authenticate, authorize('client'), async (req, res, next) => {
+router.get('/check/:lawyerId', authenticate, clientAccess, async (req, res, next) => {
   try {
     const { lawyerId } = req.params;
     const clientId = req.userId;

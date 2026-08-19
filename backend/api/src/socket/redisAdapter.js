@@ -1,6 +1,9 @@
 const { createAdapter } = require('@socket.io/redis-adapter');
 const { getRedis } = require('../config/redis');
 const logger = require('../config/logger');
+const { reportCaughtException } = require('../instrument');
+
+let adapterSubClient = null;
 
 /**
  * Подключает Redis-адаптер к Socket.io — нужен, чтобы события (уведомления, чат)
@@ -17,16 +20,26 @@ async function attachRedisAdapter(io) {
     return false;
   }
 
+  let subClient;
   try {
-    const subClient = pubClient.duplicate();
+    subClient = pubClient.duplicate();
     await subClient.connect();
     io.adapter(createAdapter(pubClient, subClient));
+    adapterSubClient = subClient;
     logger.info('[Socket] Redis-адаптер подключён (горизонтальное масштабирование)');
     return true;
   } catch (err) {
-    logger.error('[Socket] Не удалось подключить Redis-адаптер', { error: err.message });
+    if (subClient?.isOpen) await subClient.quit().catch(() => {});
+    reportCaughtException(err, { operation: 'socket_redis_adapter_attach' });
+    logger.error('socket_redis_adapter_attach_failed');
     return false;
   }
 }
 
-module.exports = { attachRedisAdapter };
+async function closeRedisAdapter() {
+  const client = adapterSubClient;
+  adapterSubClient = null;
+  if (client?.isOpen) await client.quit();
+}
+
+module.exports = { attachRedisAdapter, closeRedisAdapter };

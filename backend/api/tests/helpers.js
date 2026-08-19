@@ -1,6 +1,6 @@
 const jwt = require('jsonwebtoken');
 const db = require('../src/models');
-const { sequelize, User, LawyerProfile } = db;
+const { sequelize, User, LawyerProfile, Payment } = db;
 
 // Пересоздаёт схему в тестовой БД (чистый старт для набора тестов)
 async function resetDb() {
@@ -28,18 +28,25 @@ async function resetDb() {
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })
-function tokenFor(user) {
-  return jwt.sign({ id: user.id }, process.env.JWT_SECRET);
+function tokenFor(user, authLevel) {
+  return jwt.sign({
+    id: user.id,
+    ...(authLevel ? {
+      authLevel,
+      passwordState: String(user.passwordChangedAt ? new Date(user.passwordChangedAt).getTime() : 0),
+      ...(authLevel === 'mfa' ? { twoFactorVersion: user.twoFactorVersion } : {}),
+    } : {}),
+  }, process.env.JWT_SECRET);
 }
 
 // Быстрые фабрики тестовых записей
 async function makeClient(email = 'client@test.uz', overrides = {}) {
   // isVerified:true по умолчанию — тестовый клиент «с подтверждённым контактом»
   // (гейт бронирования требует верификацию). Тест на гейт передаёт isVerified:false.
-  return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true, isVerified: true, ...overrides });
+  return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', accountType: 'member', preferredMode: 'client', isActive: true, isVerified: true, ...overrides });
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
-  const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
+  const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', accountType: 'member', preferredMode: 'lawyer', isActive: true, isVerified: true });
   // verificationStatus по умолчанию 'approved' — большинство тестов ждут, что юрист
   // сразу виден в каталоге и бронируется. Тест на модерацию передаёт своё значение.
   const lp = await LawyerProfile.create({
@@ -49,12 +56,54 @@ async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
     // гейта отправки на проверку (не хватает лишь документа — его тест грузит сам).
     description: 'Опытный юрист с многолетней практикой в различных областях права и судов.',
     schedule: { mon: { enabled: true, from: '09:00', to: '18:00' } },
-    isAvailable: true, verificationStatus: 'approved', ...profile,
+    isAvailable: true, verificationStatus: 'approved', operatingStatus: 'enabled', ...profile,
   });
   return { user, lp };
 }
 async function makeAdmin(email = 'admin@test.uz') {
-  return User.create({ name: 'Test Admin', email, password: 'passw0rd', role: 'admin', isActive: true, isVerified: true });
+  return User.create({ name: 'Test Admin', email, password: 'passw0rd', role: 'admin', accountType: 'admin', preferredMode: null, isActive: true, isVerified: true });
+}
+
+async function makeMember(email = 'member@test.uz', overrides = {}) {
+  return makeClient(email, overrides);
+}
+
+async function makeApplicant(email = 'applicant@test.uz', profile = {}) {
+  const user = await User.create({
+    name: 'Test Applicant', email, password: 'passw0rd', role: 'lawyer',
+    accountType: 'member', preferredMode: 'lawyer', isActive: true, isVerified: true,
+  });
+  const lp = await LawyerProfile.create({
+    userId: user.id,
+    specialization: null,
+    specializations: [],
+    verificationStatus: 'pending',
+    operatingStatus: 'suspended',
+    isAvailable: false,
+    ...profile,
+  });
+  return { user, lp };
+}
+
+async function makeApprovedOperator(email = 'operator@test.uz', profile = {}) {
+  return makeLawyer(email, { verificationStatus: 'approved', operatingStatus: 'enabled', ...profile });
+}
+
+async function makeSuspendedOperator(email = 'suspended@test.uz', profile = {}) {
+  return makeLawyer(email, { verificationStatus: 'approved', operatingStatus: 'suspended', isAvailable: false, ...profile });
+}
+
+async function makePayment(overrides = {}) {
+  const amountTiyin = overrides.amountTiyin ?? 10000;
+  return Payment.create({
+    purpose: 'consultation',
+    amountTiyin,
+    amount: amountTiyin / 100,
+    currency: 'UZS',
+    provider: 'payme',
+    status: 'pending',
+    ...overrides,
+  });
 }
 
 module.exports = {
@@ -63,6 +112,11 @@ module.exports = {
   resetDb,
   tokenFor,
   makeClient,
+  makeMember,
   makeLawyer,
+  makeApplicant,
+  makeApprovedOperator,
+  makeSuspendedOperator,
   makeAdmin,
+  makePayment,
 };

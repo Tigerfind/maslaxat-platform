@@ -55,8 +55,9 @@ describe('reviews: рейтинг юриста пересчитывается и
     const client = await makeClient('revc3@test.uz');
     const { user: lawyer, lp } = await makeLawyer('revl3@test.uz');
     const admin = await makeAdmin('revadmin@test.uz');
+    await admin.update({ twoFactorEnabled: true });
     const cToken = tokenFor(client);
-    const aToken = tokenFor(admin);
+    const aToken = tokenFor(admin, 'mfa');
 
     const c1 = await completedConsultation(client.id, lawyer.id);
     const c2 = await completedConsultation(client.id, lawyer.id);
@@ -73,7 +74,9 @@ describe('reviews: рейтинг юриста пересчитывается и
 
     // Админ скрывает 1★
     const hide = await request(app).patch(`/api/admin/reviews/${lowId}`)
-      .set('Authorization', `Bearer ${aToken}`).send({ isHidden: true });
+      .set('Authorization', `Bearer ${aToken}`)
+      .set('X-Maslaxat-Mode', 'admin')
+      .send({ isHidden: true });
     expect(hide.status).toBe(200);
     expect(hide.body.review.isHidden).toBe(true);
 
@@ -83,10 +86,28 @@ describe('reviews: рейтинг юриста пересчитывается и
     expect(afterHide.reviewsCount).toBe(1);
 
     // Публичный список не содержит скрытый
-    const pub = await request(app).get(`/api/client/lawyers/${lawyer.id}/reviews`)
-      .set('Authorization', `Bearer ${cToken}`);
+    const pub = await request(app).get(`/api/lawyers/${lawyer.id}/reviews`);
     expect(pub.status).toBe(200);
     expect(pub.body.reviews.some((r) => r.id === lowId)).toBe(false);
+    expect(pub.body.reviews).toHaveLength(1);
+    expect(Object.keys(pub.body.reviews[0]).sort()).toEqual([
+      'client', 'createdAt', 'id', 'rating', 'text',
+    ]);
+    expect(Object.keys(pub.body.reviews[0].client).sort()).toEqual(['avatar', 'id', 'name']);
+    expect(pub.body.reviews[0]).not.toHaveProperty('clientId');
+    expect(pub.body.reviews[0]).not.toHaveProperty('lawyerId');
+    expect(pub.body.reviews[0]).not.toHaveProperty('consultationId');
+    expect(pub.body.reviews[0]).not.toHaveProperty('isHidden');
+    expect(pub.body.reviews[0]).not.toHaveProperty('replyText');
+    expect(pub.body.reviews[0]).not.toHaveProperty('repliedAt');
+    expect(pub.body.reviews[0]).not.toHaveProperty('helpfulCount');
+
+    const publicProfile = await request(app).get(`/api/lawyers/${lawyer.id}`);
+    expect(publicProfile.status).toBe(200);
+    expect(publicProfile.body.lawyer.receivedReviews.some((review) => review.id === lowId)).toBe(false);
+    expect(Object.keys(publicProfile.body.lawyer.receivedReviews[0]).sort()).toEqual([
+      'client', 'createdAt', 'id', 'rating', 'text',
+    ]);
 
     // Возврат → рейтинг снова 3.0
     await request(app).patch(`/api/admin/reviews/${lowId}`)

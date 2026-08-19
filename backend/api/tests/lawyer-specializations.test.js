@@ -17,10 +17,12 @@ beforeAll(async () => {
 
 describe('PUT /lawyer/profile сохраняет несколько специализаций', () => {
   test('массив сохраняется, дедуп, specialization = первая', async () => {
-    const { user } = await makeLawyer('spec-a@test.uz');
+    const { user, lp: initialProfile } = await makeLawyer('spec-a@test.uz');
     const res = await request(app)
       .put('/api/lawyer/profile')
       .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .set('X-Maslaxat-Mode', 'lawyer')
+      .field('profileRevision', String(initialProfile.revision))
       .field('specializations', JSON.stringify(['Семейное право', 'Налоговое право', 'Семейное право']));
     expect(res.status).toBe(200);
 
@@ -30,10 +32,12 @@ describe('PUT /lawyer/profile сохраняет несколько специа
   });
 
   test('legacy: одиночная specialization → массив из одного', async () => {
-    const { user } = await makeLawyer('spec-b@test.uz');
+    const { user, lp: initialProfile } = await makeLawyer('spec-b@test.uz');
     const res = await request(app)
       .put('/api/lawyer/profile')
       .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .set('X-Maslaxat-Mode', 'lawyer')
+      .field('profileRevision', String(initialProfile.revision))
       .field('specialization', 'Уголовное право');
     expect(res.status).toBe(200);
     const lp = await LawyerProfile.findOne({ where: { userId: user.id } });

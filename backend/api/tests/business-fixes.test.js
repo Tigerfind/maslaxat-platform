@@ -29,6 +29,7 @@ describe('бизнес-фиксы из аудита', () => {
     // бронь с промокодом → usedCount 1, promoCode сохранён
     const book = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .set('Idempotency-Key', 'business-promo-booking')
       .send({ question: 'q', consultationType: 'video', promoCode: 'BFTEST10' });
     expect(book.status).toBe(201);
     expect((await Promo.findByPk(promo.id)).usedCount).toBe(1);

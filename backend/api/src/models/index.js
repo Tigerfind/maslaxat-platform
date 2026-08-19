@@ -1,6 +1,21 @@
 const sequelize = require('../config/database');
-const { DataTypes } = require('sequelize');
+const { DataTypes, Op } = require('sequelize');
 const bcrypt = require('bcryptjs');
+
+function validateStorageMetadata(instance, fields) {
+  const provider = instance.get(fields.provider);
+  const key = instance.get(fields.key);
+  if (!key && !provider) return;
+  const mimeType = instance.get(fields.mime);
+  const size = instance.get(fields.size);
+  const sha256 = instance.get(fields.sha);
+  if (!key || !['local', 'r2'].includes(provider)
+    || typeof mimeType !== 'string' || !mimeType.trim()
+    || !Number.isInteger(size) || size < 0
+    || !/^[0-9a-f]{64}$/.test(sha256 || '')) {
+    throw new Error('Complete valid storage metadata is required when storageKey is present');
+  }
+}
 
 // ─── USER MODEL ─────────────────────────────────────────────
 const User = sequelize.define('User', {
@@ -37,8 +52,43 @@ const User = sequelize.define('User', {
     type: DataTypes.ENUM('client', 'lawyer', 'admin'),
     defaultValue: 'client',
   },
+  accountType: {
+    type: DataTypes.ENUM('member', 'admin'),
+    allowNull: false,
+    defaultValue: 'member',
+  },
+  preferredMode: {
+    type: DataTypes.ENUM('client', 'lawyer'),
+  },
   avatar: {
     type: DataTypes.STRING,
+  },
+  avatarStorageProvider: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    validate: { isIn: [['local', 'r2']] },
+  },
+  avatarStorageKey: {
+    type: DataTypes.STRING(1024),
+    allowNull: true,
+  },
+  avatarMimeType: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
+  avatarSize: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    validate: { min: 0 },
+  },
+  avatarSha256: {
+    type: DataTypes.CHAR(64),
+    allowNull: true,
+    validate: { is: /^[0-9a-f]{64}$/ },
+  },
+  avatarLocalPath: {
+    type: DataTypes.STRING,
+    allowNull: true,
   },
   isVerified: {
     type: DataTypes.BOOLEAN,
@@ -78,11 +128,34 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
+  twoFactorVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    validate: { min: 0 },
+  },
   twoFactorBackupCodes: {
     type: DataTypes.JSONB,
     defaultValue: [],
   },
 }, {
+  indexes: [{
+    name: 'users_avatar_storage_key_unique',
+    unique: true,
+    fields: ['avatar_storage_provider', 'avatar_storage_key'],
+    where: { avatar_storage_key: { [Op.ne]: null } },
+  }],
+  validate: {
+    avatarStorageMetadataComplete() {
+      validateStorageMetadata(this, {
+        provider: 'avatarStorageProvider', key: 'avatarStorageKey', mime: 'avatarMimeType',
+        size: 'avatarSize', sha: 'avatarSha256',
+      });
+      if (this.avatarLocalPath && !this.avatarStorageKey) {
+        throw new Error('Avatar local path requires managed storage metadata');
+      }
+    },
+  },
   hooks: {
     beforeCreate: async (user) => {
       if (user.password) {
@@ -107,6 +180,12 @@ User.prototype.toJSON = function () {
   delete values.resetToken;
   delete values.resetTokenExpiry;
   delete values.verificationToken;
+  delete values.avatarStorageProvider;
+  delete values.avatarStorageKey;
+  delete values.avatarMimeType;
+  delete values.avatarSize;
+  delete values.avatarSha256;
+  delete values.avatarLocalPath;
   // Секрет и резервные коды 2FA не отдаём наружу никогда; флаг enabled — можно
   delete values.twoFactorSecret;
   delete values.twoFactorBackupCodes;
@@ -120,11 +199,22 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+    unique: 'lawyer_profiles_user_id_unique',
+  },
+  revision: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    validate: { min: 1 },
+  },
   // Основная специализация (для обратной совместимости: = specializations[0]).
   // Каталог/карточка исторически читают это поле; держим синхронно с массивом.
   specialization: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
   },
   // Все специализации юриста (мультивыбор). Источник истины; specialization = первая.
   specializations: {
@@ -133,6 +223,55 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   },
   description: {
     type: DataTypes.TEXT,
+  },
+  headline: {
+    type: DataTypes.STRING,
+  },
+  workExperience: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: [],
+  },
+  profileSources: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  },
+  verifiedSnapshot: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  },
+  verifiedAt: {
+    type: DataTypes.DATE,
+  },
+  linkedinUrl: {
+    type: DataTypes.STRING,
+    set(value) {
+      if (value === null || value === undefined || String(value).trim() === '') {
+        this.setDataValue('linkedinUrl', null);
+        return;
+      }
+      let parsed;
+      try {
+        parsed = new URL(String(value).trim());
+      } catch (_error) {
+        throw new Error('LinkedIn URL is invalid');
+      }
+      const host = parsed.hostname.toLowerCase();
+      if (parsed.protocol !== 'https:'
+        || !['linkedin.com', 'www.linkedin.com'].includes(host)
+        || parsed.username
+        || parsed.password
+        || parsed.port
+        || !/^\/in\/[^/]+\/?$/.test(parsed.pathname)) {
+        throw new Error('LinkedIn URL must be an HTTPS linkedin.com member profile');
+      }
+      parsed.hostname = host;
+      parsed.search = '';
+      parsed.hash = '';
+      this.setDataValue('linkedinUrl', parsed.toString());
+    },
   },
   // Автоприветствие: авто-сообщение юриста при открытии чата (если сообщений ещё нет)
   greeting: {
@@ -197,9 +336,19 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     type: DataTypes.ENUM('pending', 'approved', 'rejected'),
     defaultValue: 'pending',
   },
+  operatingStatus: {
+    type: DataTypes.ENUM('enabled', 'suspended'),
+    allowNull: false,
+    defaultValue: 'suspended',
+  },
   // Причина отклонения — показывается юристу, чтобы он исправил и подал снова.
   rejectionReason: {
     type: DataTypes.TEXT,
+  },
+  promotionPilotEnabled: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
   },
 });
 
@@ -302,6 +451,18 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.ENUM('none', 'held', 'charged', 'released', 'failed'),
     defaultValue: 'none',
   },
+  commissionRateBps: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+  },
+  grossAmountTiyin: {
+    type: DataTypes.BIGINT,
+    allowNull: true,
+  },
+  lawyerNetAmountTiyin: {
+    type: DataTypes.BIGINT,
+    allowNull: true,
+  },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
@@ -367,6 +528,25 @@ const Document = sequelize.define('Document', {
   },
   path: {
     type: DataTypes.STRING,
+    allowNull: true,
+  },
+  storageProvider: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    validate: { isIn: [['local', 'r2']] },
+  },
+  storageKey: {
+    type: DataTypes.STRING(1024),
+    allowNull: true,
+  },
+  mimeType: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
+  sha256: {
+    type: DataTypes.CHAR(64),
+    allowNull: true,
+    validate: { is: /^[0-9a-f]{64}$/ },
   },
   status: {
     type: DataTypes.ENUM('pending', 'verified', 'issues', 'rejected'),
@@ -379,6 +559,20 @@ const Document = sequelize.define('Document', {
   category: {
     type: DataTypes.STRING,
     allowNull: true,
+  },
+}, {
+  indexes: [{
+    name: 'documents_storage_key_unique',
+    unique: true,
+    fields: ['storage_provider', 'storage_key'],
+    where: { storage_key: { [Op.ne]: null } },
+  }],
+  validate: {
+    storageMetadataComplete() {
+      validateStorageMetadata(this, {
+        provider: 'storageProvider', key: 'storageKey', mime: 'mimeType', size: 'size', sha: 'sha256',
+      });
+    },
   },
 });
 
@@ -402,13 +596,55 @@ const LawyerDocument = sequelize.define('LawyerDocument', {
   },
   path: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
+  },
+  storageProvider: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    validate: { isIn: [['local', 'r2']] },
+  },
+  storageKey: {
+    type: DataTypes.STRING(1024),
+    allowNull: true,
+  },
+  sha256: {
+    type: DataTypes.CHAR(64),
+    allowNull: true,
+    validate: { is: /^[0-9a-f]{64}$/ },
   },
   mimeType: {
     type: DataTypes.STRING,
   },
   size: {
     type: DataTypes.INTEGER,
+  },
+  verificationStatus: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'pending',
+    validate: { isIn: [['pending', 'approved', 'rejected']] },
+  },
+  approvedByUserId: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  approvedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+}, {
+  indexes: [{
+    name: 'lawyer_documents_storage_key_unique',
+    unique: true,
+    fields: ['storage_provider', 'storage_key'],
+    where: { storage_key: { [Op.ne]: null } },
+  }],
+  validate: {
+    storageMetadataComplete() {
+      validateStorageMetadata(this, {
+        provider: 'storageProvider', key: 'storageKey', mime: 'mimeType', size: 'size', sha: 'sha256',
+      });
+    },
   },
 });
 
@@ -427,13 +663,41 @@ const CaseDocument = sequelize.define('CaseDocument', {
   },
   path: {
     type: DataTypes.STRING,
-    allowNull: false,
+    allowNull: true,
+  },
+  storageProvider: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    validate: { isIn: [['local', 'r2']] },
+  },
+  storageKey: {
+    type: DataTypes.STRING(1024),
+    allowNull: true,
+  },
+  sha256: {
+    type: DataTypes.CHAR(64),
+    allowNull: true,
+    validate: { is: /^[0-9a-f]{64}$/ },
   },
   mimeType: {
     type: DataTypes.STRING,
   },
   size: {
     type: DataTypes.INTEGER,
+  },
+}, {
+  indexes: [{
+    name: 'case_documents_storage_key_unique',
+    unique: true,
+    fields: ['storage_provider', 'storage_key'],
+    where: { storage_key: { [Op.ne]: null } },
+  }],
+  validate: {
+    storageMetadataComplete() {
+      validateStorageMetadata(this, {
+        provider: 'storageProvider', key: 'storageKey', mime: 'mimeType', size: 'size', sha: 'sha256',
+      });
+    },
   },
 });
 
@@ -495,6 +759,17 @@ const Notification = sequelize.define('Notification', {
     type: DataTypes.JSONB,
     defaultValue: {},
   },
+  dedupeKey: {
+    type: DataTypes.STRING,
+    allowNull: true,
+  },
+}, {
+  indexes: [{
+    name: 'notifications_dedupe_key_unique',
+    unique: true,
+    fields: ['dedupe_key'],
+    where: { dedupe_key: { [Op.ne]: null } },
+  }],
 });
 
 // ─── SPECIALIZATION MODEL ───────────────────────────────────
@@ -583,6 +858,80 @@ const Subscription = sequelize.define('Subscription', {
   },
 });
 
+const PromotionPackage = sequelize.define('PromotionPackage', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  code: { type: DataTypes.STRING, allowNull: false, unique: true },
+  name: { type: DataTypes.JSONB, allowNull: false },
+  placement: { type: DataTypes.STRING, allowNull: false, defaultValue: 'catalog_top' },
+  durationDays: { type: DataTypes.INTEGER, allowNull: false },
+  priceAmountTiyin: { type: DataTypes.BIGINT, allowNull: false },
+  currency: { type: DataTypes.STRING(3), allowNull: false, defaultValue: 'UZS' },
+  maxActiveSlots: { type: DataTypes.INTEGER, allowNull: false },
+  sponsoredPositions: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: false, defaultValue: [0, 3] },
+  isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  displayOrder: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+}, {
+  validate: {
+    validPromotionPackage() {
+      const price = Number(this.priceAmountTiyin);
+      const positions = this.sponsoredPositions;
+      if (this.placement !== 'catalog_top') throw new Error('Unsupported promotion placement');
+      if (![7, 30].includes(Number(this.durationDays))) throw new Error('Promotion duration must be 7 or 30 days');
+      if (!Number.isSafeInteger(price) || price <= 0) throw new Error('Promotion price must be positive integer tiyin');
+      if (!Number.isInteger(this.maxActiveSlots) || this.maxActiveSlots <= 0) throw new Error('Promotion capacity must be positive');
+      if (!Array.isArray(positions) || positions.length < 1 || positions.length > 2
+        || new Set(positions).size !== positions.length
+        || positions.some((position) => !Number.isInteger(position) || position < 0 || position > 19)) {
+        throw new Error('Sponsored positions must contain one or two unique first-page positions');
+      }
+    },
+  },
+});
+
+const LawyerPromotion = sequelize.define('LawyerPromotion', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  lawyerId: { type: DataTypes.UUID, allowNull: false },
+  packageId: { type: DataTypes.UUID, allowNull: false },
+  paymentId: { type: DataTypes.UUID, allowNull: true, unique: true },
+  idempotencyKey: { type: DataTypes.STRING, allowNull: false },
+  placement: { type: DataTypes.STRING, allowNull: false },
+  specialization: { type: DataTypes.STRING, allowNull: false },
+  location: { type: DataTypes.STRING, allowNull: true },
+  durationDays: { type: DataTypes.INTEGER, allowNull: false },
+  priceAmountTiyin: { type: DataTypes.BIGINT, allowNull: false },
+  currency: { type: DataTypes.STRING(3), allowNull: false },
+  maxActiveSlots: { type: DataTypes.INTEGER, allowNull: false },
+  sponsoredPositions: { type: DataTypes.ARRAY(DataTypes.INTEGER), allowNull: false },
+  status: {
+    type: DataTypes.ENUM('pending_payment', 'queued', 'scheduled', 'active', 'paused', 'expired', 'cancelled', 'refund_pending', 'refunded'),
+    allowNull: false,
+    defaultValue: 'pending_payment',
+  },
+  reservationExpiresAt: { type: DataTypes.DATE, allowNull: true },
+  paidAt: { type: DataTypes.DATE, allowNull: true },
+  startsAt: { type: DataTypes.DATE, allowNull: true },
+  activeSince: { type: DataTypes.DATE, allowNull: true },
+  endsAt: { type: DataTypes.DATE, allowNull: true },
+  pausedAt: { type: DataTypes.DATE, allowNull: true },
+  resumeDeadline: { type: DataTypes.DATE, allowNull: true },
+  remainingSeconds: { type: DataTypes.INTEGER, allowNull: true },
+  cancellationRequestedAt: { type: DataTypes.DATE, allowNull: true },
+  cancelledAt: { type: DataTypes.DATE, allowNull: true },
+  cancellationReason: { type: DataTypes.STRING, allowNull: true },
+  refundRequestedAt: { type: DataTypes.DATE, allowNull: true },
+  refundedAt: { type: DataTypes.DATE, allowNull: true },
+  impressions: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+  profileViews: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+  bookingStarts: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+  bookings: { type: DataTypes.BIGINT, allowNull: false, defaultValue: 0 },
+}, {
+  indexes: [
+    { name: 'lawyer_promotions_owner_idempotency_unique', unique: true, fields: ['lawyer_id', 'idempotency_key'] },
+    { name: 'lawyer_promotions_scope_status_idx', fields: ['placement', 'specialization', 'location', 'status'] },
+    { name: 'lawyer_promotions_fifo_idx', fields: ['placement', 'specialization', 'location', 'status', 'paid_at', 'id'] },
+  ],
+});
+
 // ─── PAYMENT MODEL ──────────────────────────────────────────
 const Payment = sequelize.define('Payment', {
   id: {
@@ -594,6 +943,19 @@ const Payment = sequelize.define('Payment', {
     type: DataTypes.DECIMAL(12, 2),
     allowNull: false,
   },
+  purpose: {
+    type: DataTypes.ENUM('consultation', 'consultation_extension', 'subscription', 'lawyer_promotion'),
+    allowNull: true,
+  },
+  amountTiyin: {
+    type: DataTypes.BIGINT,
+    allowNull: true,
+  },
+  refundedAmountTiyin: {
+    type: DataTypes.BIGINT,
+    allowNull: true,
+    defaultValue: 0,
+  },
   currency: {
     type: DataTypes.STRING,
     defaultValue: 'UZS',
@@ -603,15 +965,36 @@ const Payment = sequelize.define('Payment', {
     defaultValue: 'payme',
   },
   status: {
-    type: DataTypes.ENUM('pending', 'paid', 'failed', 'refunded'),
+    type: DataTypes.ENUM('pending', 'processing', 'paid', 'cancelled', 'failed', 'refund_pending', 'partially_refunded', 'refunded'),
     defaultValue: 'pending',
   },
   transactionId: {
     type: DataTypes.STRING,
   },
+  providerTransactionId: {
+    type: DataTypes.STRING,
+  },
+  idempotencyKey: {
+    type: DataTypes.STRING(320),
+  },
   providerResponse: {
     type: DataTypes.JSONB,
     defaultValue: {},
+  },
+  providerData: {
+    type: DataTypes.JSONB,
+  },
+  paidAt: {
+    type: DataTypes.DATE,
+  },
+  cancelledAt: {
+    type: DataTypes.DATE,
+  },
+  refundedAt: {
+    type: DataTypes.DATE,
+  },
+  lawyerPromotionId: {
+    type: DataTypes.UUID,
   },
   // Эскроу по этому платежу уже высвобождено юристу (pendingBalance → balance).
   // Признак привязан к ПЛАТЕЖУ, а не к изменяемому статусу консультации: повторное
@@ -620,6 +1003,137 @@ const Payment = sequelize.define('Payment', {
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: false,
+  },
+}, {
+  indexes: [
+    {
+      name: 'payments_provider_transaction_unique',
+      unique: true,
+      fields: ['provider', 'provider_transaction_id'],
+      where: { provider_transaction_id: { [Op.ne]: null } },
+    },
+    {
+      name: 'payments_user_idempotency_unique',
+      unique: true,
+      fields: ['user_id', 'idempotency_key'],
+      where: { idempotency_key: { [Op.ne]: null } },
+    },
+    {
+      name: 'payments_consultation_active_unique',
+      unique: true,
+      fields: ['consultation_id'],
+      where: {
+        consultation_id: { [Op.ne]: null },
+        purpose: 'consultation',
+        status: { [Op.in]: ['pending', 'processing', 'paid', 'refund_pending', 'partially_refunded'] },
+      },
+    },
+    {
+      name: 'payments_lawyer_promotion_unique',
+      unique: true,
+      fields: ['lawyer_promotion_id'],
+      where: { lawyer_promotion_id: { [Op.ne]: null } },
+    },
+  ],
+  validate: {
+    validAmounts() {
+      if (this.amountTiyin !== null && this.amountTiyin !== undefined) {
+        const amount = Number(this.amountTiyin);
+        if (!Number.isSafeInteger(amount) || amount <= 0) {
+          throw new Error('amountTiyin must be a positive safe integer');
+        }
+        if (this.refundedAmountTiyin !== null && this.refundedAmountTiyin !== undefined) {
+          const refunded = Number(this.refundedAmountTiyin);
+          if (!Number.isSafeInteger(refunded) || refunded < 0 || refunded > amount) {
+            throw new Error('refundedAmountTiyin must be between zero and amountTiyin');
+          }
+        }
+      }
+    },
+    validTypedSubject() {
+      if (!this.purpose) return;
+      if (['consultation', 'consultation_extension'].includes(this.purpose)) {
+        if (!this.consultationId || this.subscriptionId || this.lawyerPromotionId) {
+          throw new Error(`${this.purpose} payment requires only consultationId`);
+        }
+      } else if (this.purpose === 'subscription') {
+        if (!this.subscriptionId || this.consultationId || this.lawyerPromotionId) {
+          throw new Error('subscription payment requires only subscriptionId');
+        }
+      } else if (this.purpose === 'lawyer_promotion') {
+        if (!this.lawyerPromotionId || this.consultationId || this.subscriptionId) {
+          throw new Error('lawyer_promotion payment requires only lawyerPromotionId');
+        }
+      }
+    },
+  },
+});
+
+const immutableFinancialRow = () => {
+  throw new Error('Posted financial rows are immutable');
+};
+
+const allowOnlyLedgerFinalization = (row, options) => {
+  if (options.ledgerFinalize && row.previous('isPosted') === false
+    && row.isPosted === true && row.previous('postingToken') && row.postingToken === null) return;
+  immutableFinancialRow();
+};
+
+const PlatformSetting = sequelize.define('PlatformSetting', {
+  key: { type: DataTypes.STRING, primaryKey: true, allowNull: false },
+  value: { type: DataTypes.STRING, allowNull: false },
+});
+
+const PlatformSettingAudit = sequelize.define('PlatformSettingAudit', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  key: { type: DataTypes.STRING, allowNull: false },
+  oldValue: { type: DataTypes.TEXT, allowNull: false },
+  newValue: { type: DataTypes.TEXT, allowNull: false },
+  changedByUserId: { type: DataTypes.UUID, allowNull: false },
+});
+
+const FinancialTransaction = sequelize.define('FinancialTransaction', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  operationKey: { type: DataTypes.STRING, allowNull: false, unique: true },
+  paymentId: { type: DataTypes.UUID, allowNull: true },
+  reason: { type: DataTypes.STRING, allowNull: false },
+  currency: { type: DataTypes.STRING(3), allowNull: false },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+  postedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  isPosted: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+  postingToken: { type: DataTypes.UUID, allowNull: true },
+}, {
+  hooks: {
+    beforeUpdate: allowOnlyLedgerFinalization,
+    beforeDestroy: immutableFinancialRow,
+    beforeBulkUpdate: immutableFinancialRow,
+    beforeBulkDestroy: immutableFinancialRow,
+  },
+});
+
+const FinancialEntry = sequelize.define('FinancialEntry', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  financialTransactionId: { type: DataTypes.UUID, allowNull: false },
+  postingToken: { type: DataTypes.UUID, allowNull: true },
+  account: { type: DataTypes.STRING, allowNull: false },
+  direction: { type: DataTypes.ENUM('debit', 'credit'), allowNull: false },
+  amountTiyin: {
+    type: DataTypes.BIGINT,
+    allowNull: false,
+    validate: {
+      isPositive(value) {
+        if (!Number.isSafeInteger(Number(value)) || Number(value) <= 0) {
+          throw new Error('amountTiyin must be a positive safe integer');
+        }
+      },
+    },
+  },
+}, {
+  hooks: {
+    beforeUpdate: immutableFinancialRow,
+    beforeDestroy: immutableFinancialRow,
+    beforeBulkUpdate: immutableFinancialRow,
+    beforeBulkDestroy: immutableFinancialRow,
   },
 });
 
@@ -649,6 +1163,50 @@ const PhoneOtp = sequelize.define('PhoneOtp', {
     type: DataTypes.INTEGER,
     defaultValue: 0,
   },
+});
+
+// Persisted second-factor challenges make TOTP/recovery exchange one-time and
+// let social assertions map back to the same challenge across process restarts.
+const AuthChallenge = sequelize.define('AuthChallenge', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  userId: {
+    type: DataTypes.UUID,
+    allowNull: false,
+  },
+  nonceHash: {
+    type: DataTypes.STRING(64),
+    allowNull: false,
+  },
+  sourceHash: {
+    type: DataTypes.STRING(64),
+  },
+  factorVersion: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+  },
+  passwordState: {
+    type: DataTypes.STRING(32),
+    allowNull: false,
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: false,
+  },
+  consumedAt: {
+    type: DataTypes.DATE,
+  },
+}, {
+  indexes: [
+    { name: 'auth_challenges_nonce_unique', unique: true, fields: ['nonce_hash'] },
+    { name: 'auth_challenges_source_unique', unique: true, fields: ['source_hash'] },
+    { name: 'auth_challenges_user_expiry_idx', fields: ['user_id', 'expires_at'] },
+    { name: 'auth_challenges_expires_at_idx', fields: ['expires_at'] },
+    { name: 'auth_challenges_consumed_at_idx', fields: ['consumed_at'] },
+  ],
 });
 
 // ─── SUPPORT TICKET MODEL ───────────────────────────────────
@@ -760,11 +1318,221 @@ const PushSubscription = sequelize.define('PushSubscription', {
   },
 });
 
+const ObjectCleanupTask = sequelize.define('ObjectCleanupTask', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  storageKey: {
+    type: DataTypes.STRING(1024),
+    allowNull: false,
+  },
+  provider: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'r2',
+    validate: { isIn: [['r2', 'local']] },
+  },
+  attempts: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    validate: { min: 0 },
+  },
+  lastError: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+  },
+  status: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'pending',
+    validate: { isIn: [['reserved', 'pending', 'processing', 'completed', 'failed', 'manual_review']] },
+  },
+  nextAttemptAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    defaultValue: DataTypes.NOW,
+  },
+  leaseToken: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  leaseExpiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
+  requiresOwnershipProof: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+  ownershipToken: {
+    type: DataTypes.UUID,
+    allowNull: true,
+  },
+  ownershipMetadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+  },
+  preventsKeyReuse: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false,
+  },
+}, {
+  tableName: 'object_cleanup_tasks',
+  indexes: [
+    {
+      name: 'object_cleanup_tasks_active_key_unique',
+      unique: true,
+      fields: ['provider', 'storage_key'],
+      where: { status: { [Op.in]: ['reserved', 'pending', 'processing'] } },
+    },
+    {
+      name: 'object_cleanup_tasks_due_idx',
+      fields: ['status', 'next_attempt_at', 'lease_expires_at', 'created_at'],
+    },
+    {
+      name: 'object_cleanup_tasks_tombstone_unique',
+      unique: true,
+      fields: ['provider', 'storage_key'],
+      where: { prevents_key_reuse: true },
+    },
+  ],
+  validate: {
+    ownershipProofComplete() {
+      if (this.requiresOwnershipProof && !this.ownershipToken) {
+        throw new Error('Ownership token is required for protected cleanup');
+      }
+      if (!this.requiresOwnershipProof && (this.ownershipToken || this.ownershipMetadata)) {
+        throw new Error('Unprotected cleanup cannot carry ownership metadata');
+      }
+    },
+  },
+});
+
+const LawyerProfileImport = sequelize.define('LawyerProfileImport', {
+  id: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    primaryKey: true,
+  },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  source: {
+    type: DataTypes.STRING(32),
+    allowNull: false,
+    defaultValue: 'linkedin_pdf',
+    validate: { isIn: [['linkedin_pdf']] },
+  },
+  status: {
+    type: DataTypes.STRING(24),
+    allowNull: false,
+    defaultValue: 'uploaded',
+    validate: { isIn: [['uploaded', 'parsing', 'draft', 'confirmed', 'failed', 'discarded']] },
+  },
+  storageKey: { type: DataTypes.TEXT, allowNull: false },
+  uploadIdempotencyKey: { type: DataTypes.STRING(128), allowNull: true },
+  originalName: { type: DataTypes.TEXT, allowNull: false },
+  mimeType: {
+    type: DataTypes.STRING(128),
+    allowNull: false,
+    validate: { isIn: [['application/pdf']] },
+  },
+  size: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: { min: 1, max: 10 * 1024 * 1024 },
+  },
+  sha256: {
+    type: DataTypes.CHAR(64),
+    allowNull: false,
+    validate: { is: /^[0-9a-f]{64}$/ },
+  },
+  parsedData: { type: DataTypes.JSONB, allowNull: true },
+  acceptedData: { type: DataTypes.JSONB, allowNull: true },
+  warnings: { type: DataTypes.JSONB, allowNull: false, defaultValue: [] },
+  parserVersion: { type: DataTypes.STRING(64), allowNull: true },
+  profileRevision: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+  version: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 1, validate: { min: 1 } },
+  confirmedFromVersion: { type: DataTypes.INTEGER, allowNull: true, validate: { min: 1 } },
+  expiresAt: { type: DataTypes.DATE, allowNull: false },
+  confirmedAt: { type: DataTypes.DATE, allowNull: true },
+}, {
+  tableName: 'lawyer_profile_imports',
+  indexes: [
+    { name: 'lawyer_profile_imports_owner_status', fields: ['user_id', 'status'] },
+    {
+      name: 'lawyer_profile_imports_owner_idempotency_unique',
+      unique: true,
+      fields: ['user_id', 'upload_idempotency_key'],
+      where: { upload_idempotency_key: { [Op.ne]: null } },
+    },
+    { name: 'lawyer_profile_imports_parse_queue_idx', fields: ['status', 'updated_at', 'created_at'] },
+    { name: 'lawyer_profile_imports_retention_queue_idx', fields: ['status', 'expires_at', 'confirmed_at'] },
+  ],
+});
+
+const ProfileImportAudit = sequelize.define('ProfileImportAudit', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  importId: { type: DataTypes.UUID, allowNull: true },
+  ownerUserId: { type: DataTypes.UUID, allowNull: false },
+  actorUserId: { type: DataTypes.UUID, allowNull: true },
+  event: {
+    type: DataTypes.STRING(40),
+    allowNull: false,
+    validate: {
+      isIn: [[
+        'admin_view', 'admin_download', 'owner_delete', 'retention_cleanup',
+        'profile_review_cleanup', 'field_verified',
+      ]],
+    },
+  },
+  expiresAt: { type: DataTypes.DATE, allowNull: false },
+}, {
+  tableName: 'profile_import_audits',
+  updatedAt: false,
+  indexes: [{ name: 'profile_import_audits_expiry_idx', fields: ['expires_at'] }],
+});
+
+const AuthorizationEvidenceEvent = sequelize.define('AuthorizationEvidenceEvent', {
+  eventId: { type: DataTypes.STRING(160), primaryKey: true },
+  schemaVersion: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 1 },
+  type: { type: DataTypes.STRING(16), allowNull: false, validate: { isIn: [['decision', 'canary']] } },
+  observedAt: { type: DataTypes.DATE, allowNull: false },
+  commitSha: { type: DataTypes.CHAR(40), allowNull: false, validate: { is: /^[a-f0-9]{40}$/ } },
+  deploymentId: { type: DataTypes.STRING(160), allowNull: false },
+  serviceId: { type: DataTypes.STRING(160), allowNull: false },
+  configDigest: { type: DataTypes.CHAR(64), allowNull: false, validate: { is: /^[a-f0-9]{64}$/ } },
+  migrationHead: { type: DataTypes.STRING(255), allowNull: false },
+  authorizationMode: {
+    type: DataTypes.STRING(24), allowNull: false,
+    validate: { isIn: [['compatibility', 'capability_only']] },
+  },
+  channel: { type: DataTypes.STRING(16), allowNull: true },
+  surface: { type: DataTypes.STRING(160), allowNull: true },
+  mode: { type: DataTypes.STRING(16), allowNull: true },
+  legacyAllowed: { type: DataTypes.BOOLEAN, allowNull: true },
+  capabilityAllowed: { type: DataTypes.BOOLEAN, allowNull: true },
+}, {
+  tableName: 'authorization_evidence_events',
+  updatedAt: false,
+  indexes: [
+    { name: 'authorization_evidence_events_deployment_time_idx', fields: ['deployment_id', 'observed_at'] },
+    { name: 'authorization_evidence_events_surface_mode_time_idx', fields: ['surface', 'mode', 'observed_at'] },
+  ],
+});
+
 // ─── ASSOCIATIONS ───────────────────────────────────────────
 
 // User <-> LawyerProfile (1:1 for lawyers)
 User.hasOne(LawyerProfile, { foreignKey: 'userId', as: 'profile' });
 LawyerProfile.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(LawyerProfileImport, { foreignKey: 'userId', as: 'profileImports', onDelete: 'CASCADE' });
+LawyerProfileImport.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(AuthChallenge, { foreignKey: 'userId', as: 'authChallenges', onDelete: 'CASCADE' });
+AuthChallenge.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 
 // Client <-> Consultation
 User.hasMany(Consultation, { foreignKey: 'clientId', as: 'clientConsultations' });
@@ -832,13 +1600,33 @@ FavoriteLawyer.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
 User.hasMany(FavoriteLawyer, { foreignKey: 'lawyerId', as: 'favoritedBy' });
 FavoriteLawyer.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
 
-// Payment <-> Consultation
-Consultation.hasOne(Payment, { foreignKey: 'consultationId', as: 'payment' });
+// Payment <-> Consultation. Keep the unaliased belongsTo for legacy includes.
+Consultation.hasMany(Payment, { foreignKey: 'consultationId', as: 'payments' });
 Payment.belongsTo(Consultation, { foreignKey: 'consultationId' });
+Payment.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
+
+// Payment <-> Subscription
+Subscription.hasMany(Payment, { foreignKey: 'subscriptionId', as: 'payments' });
+Payment.belongsTo(Subscription, { foreignKey: 'subscriptionId', as: 'subscription' });
+
+PromotionPackage.hasMany(LawyerPromotion, { foreignKey: 'packageId', as: 'campaigns' });
+LawyerPromotion.belongsTo(PromotionPackage, { foreignKey: 'packageId', as: 'package' });
+User.hasMany(LawyerPromotion, { foreignKey: 'lawyerId', as: 'promotions' });
+LawyerPromotion.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
+LawyerPromotion.hasOne(Payment, { foreignKey: 'lawyerPromotionId', as: 'payment', constraints: false });
+Payment.belongsTo(LawyerPromotion, { foreignKey: 'lawyerPromotionId', as: 'lawyerPromotion', constraints: false });
+LawyerPromotion.belongsTo(Payment, { foreignKey: 'paymentId', as: 'purchasePayment', constraints: false });
 
 // Payment <-> User (payer)
 User.hasMany(Payment, { foreignKey: 'userId', as: 'payments' });
 Payment.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+Payment.hasMany(FinancialTransaction, { foreignKey: 'paymentId', as: 'financialTransactions' });
+FinancialTransaction.belongsTo(Payment, { foreignKey: 'paymentId', as: 'payment' });
+FinancialTransaction.hasMany(FinancialEntry, { foreignKey: 'financialTransactionId', as: 'entries' });
+FinancialEntry.belongsTo(FinancialTransaction, { foreignKey: 'financialTransactionId', as: 'transaction' });
+User.hasMany(PlatformSettingAudit, { foreignKey: 'changedByUserId', as: 'platformSettingChanges' });
+PlatformSettingAudit.belongsTo(User, { foreignKey: 'changedByUserId', as: 'changedBy' });
 
 User.hasMany(Withdrawal, { foreignKey: 'lawyerId', as: 'withdrawals' });
 Withdrawal.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
@@ -866,11 +1654,22 @@ module.exports = {
   Specialization,
   Message,
   FavoriteLawyer,
+  PromotionPackage,
+  LawyerPromotion,
   Payment,
+  FinancialTransaction,
+  FinancialEntry,
+  PlatformSetting,
+  PlatformSettingAudit,
   Subscription,
   SupportTicket,
   Promo,
   Withdrawal,
   PushSubscription,
   PhoneOtp,
+  AuthChallenge,
+  ObjectCleanupTask,
+  LawyerProfileImport,
+  ProfileImportAudit,
+  AuthorizationEvidenceEvent,
 };

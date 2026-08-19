@@ -1,4 +1,5 @@
 import api from './api';
+import { safeAttachmentFilename } from '../utils/profileImportUtils';
 
 // Admin Dashboard Service
 export const adminDashboardService = {
@@ -165,6 +166,37 @@ export const adminLawyerService = {
     a.click();
     a.remove();
     window.URL.revokeObjectURL(url);
+  },
+
+  getProfileImportSource: async (importId) => {
+    const response = await api.get(`/lawyer/imports/${importId}`);
+    const source = response.data?.import || {};
+    const fields = ['id', 'source', 'status', 'originalName', 'parserVersion', 'warnings', 'version', 'expiresAt', 'confirmedAt', 'createdAt', 'updatedAt'];
+    return { import: Object.fromEntries(fields.filter((field) => source[field] !== undefined).map((field) => [field, source[field]])) };
+  },
+
+  getProfileImportAttachment: async (importId) => {
+    const response = await api.get(`/lawyer/imports/${importId}/download`, { responseType: 'blob' });
+    return response.data;
+  },
+
+  downloadProfileImportAttachment: async (importId, name) => {
+    const blob = await adminLawyerService.getProfileImportAttachment(importId);
+    const url = window.URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = safeAttachmentFilename(name);
+    document.body.appendChild(anchor);
+    anchor.click();
+    anchor.remove();
+    window.URL.revokeObjectURL(url);
+  },
+
+  verifyProfileField: async (lawyerId, field, documentId) => {
+    const response = await api.patch(`/admin/lawyers/${lawyerId}/profile-fields/${field}/verify`, {
+      documentId,
+    });
+    return response.data;
   },
 };
 

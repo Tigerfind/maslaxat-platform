@@ -8,11 +8,21 @@ jest.mock('../src/services/emailService', () => ({
 
 const request = require('supertest');
 const app = require('../src/server');
-const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
+const { resetDb, models, tokenFor, makeClient, makeLawyer: makeLawyerFixture } = require('./helpers');
 
 const { Consultation, Message } = models;
 
 beforeAll(async () => { await resetDb(); });
+
+async function makeLawyer(email, profile) {
+  const result = await makeLawyerFixture(email, profile);
+  await result.user.update({ twoFactorEnabled: true });
+  return result;
+}
+
+function lawyerAuth(user) {
+  return { Authorization: `Bearer ${tokenFor(user, 'mfa')}`, 'X-Maslaxat-Mode': 'lawyer' };
+}
 
 describe('принятие заявки с приветствием', () => {
   test('responseMessage → сообщение в чат, notes клиента не тронуты', async () => {
@@ -25,7 +35,7 @@ describe('принятие заявки с приветствием', () => {
 
     const res = await request(app)
       .post(`/api/lawyer/consultation-requests/${c.id}/accept`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set(lawyerAuth(lawyer))
       .send({ responseMessage: 'Здравствуйте! Помогу с вашим вопросом.' });
     expect(res.status).toBe(200);
 
@@ -48,7 +58,7 @@ describe('принятие заявки с приветствием', () => {
 
     const res = await request(app)
       .get('/api/lawyer/consultation-requests?status=pending')
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+      .set(lawyerAuth(lawyer));
     expect(res.status).toBe(200);
     const pending = res.body.find((r) => r.question === 'q3');
     expect(pending.repeatCount).toBe(2);
@@ -61,14 +71,14 @@ describe('принятие заявки с приветствием', () => {
 
     const put = await request(app)
       .put(`/api/lawyer/consultations/${c.id}/note`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set(lawyerAuth(lawyer))
       .send({ note: 'Подготовить договор аренды' });
     expect(put.status).toBe(200);
     expect(put.body.lawyerNote).toBe('Подготовить договор аренды');
 
     const list = await request(app)
       .get('/api/lawyer/consultation-requests?status=all')
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+      .set(lawyerAuth(lawyer));
     const found = list.body.find((r) => r.id === c.id);
     expect(found.lawyerNote).toBe('Подготовить договор аренды');
   });
@@ -80,7 +90,7 @@ describe('принятие заявки с приветствием', () => {
     const c = await Consultation.create({ clientId: client.id, lawyerId: a.user.id, type: 'video', status: 'accepted', question: 'q' });
     const put = await request(app)
       .put(`/api/lawyer/consultations/${c.id}/note`)
-      .set('Authorization', `Bearer ${tokenFor(b.user)}`)
+      .set(lawyerAuth(b.user))
       .send({ note: 'хак' });
     expect(put.status).toBe(404);
   });
@@ -93,7 +103,7 @@ describe('принятие заявки с приветствием', () => {
     });
     const res = await request(app)
       .post(`/api/lawyer/consultation-requests/${c.id}/accept`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set(lawyerAuth(lawyer))
       .send({});
     expect(res.status).toBe(200);
     const count = await Message.count({ where: { consultationId: c.id } });

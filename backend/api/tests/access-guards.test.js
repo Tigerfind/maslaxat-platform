@@ -20,11 +20,12 @@ describe('гварды доступа/валидации — фиксы ауди
     expect(res.status).toBe(403);
   });
 
-  test('favorites — юристу запрещено (authorize client)', async () => {
+  test('favorites — lawyer mode cannot perform a client action', async () => {
     const { user: lawyer } = await makeLawyer('ag-l2@test.uz');
     const { user: other } = await makeLawyer('ag-l2b@test.uz');
     const res = await request(app).post(`/api/client/favorites/${other.id}`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set('X-Maslaxat-Mode', 'lawyer');
     expect(res.status).toBe(403);
   });
 
@@ -46,7 +47,8 @@ describe('гварды доступа/валидации — фиксы ауди
     const review = await Review.create({ clientId: client.id, lawyerId: lawyer.id, consultationId: cons.id, rating: 5, text: 'ок' });
 
     const res = await request(app).post(`/api/lawyer/reviews/${review.id}/helpful`)
-      .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
+      .set('Authorization', `Bearer ${tokenFor(lawyer)}`)
+      .set('X-Maslaxat-Mode', 'lawyer');
     expect(res.status).toBe(403);
   });
 

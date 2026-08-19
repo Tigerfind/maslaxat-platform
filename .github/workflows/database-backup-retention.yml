@@ -1,0 +1,118 @@
+name: Approved database backup retention
+
+on:
+  schedule:
+    - cron: '31 5 * * 0'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-mutation
+  cancel-in-progress: false
+
+jobs:
+  validate-images:
+    runs-on: ubuntu-24.04
+    outputs:
+      tool_image: ${{ steps.images.outputs.tool_image }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - id: images
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: |
+          node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+          printf 'tool_image=%s\n' "$BACKUP_TOOL_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+  retention:
+    needs: validate-images
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ needs.validate-images.outputs.tool_image }}
+    timeout-minutes: 30
+    environment: production-backup-retention
+    env:
+      BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+      BACKUP_PREFIX: postgres
+      BACKUP_R2_ENDPOINT: ${{ vars.BACKUP_R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.RETENTION_R2_DELETE_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.RETENTION_R2_DELETE_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate immutable execution image
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: |
+          node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+          versions="$(openssl version);$(aws --version);node $(node --version)"
+          printf 'RETENTION_RUNTIME_VERSIONS=%s\n' "$versions" >> "$GITHUB_ENV"
+      - name: Materialize allowlisted verification keyring
+        env:
+          BACKUP_MANIFEST_VERIFY_KEYRING_JSON: ${{ secrets.BACKUP_MANIFEST_VERIFY_KEYRING_JSON }}
+          BACKUP_MANIFEST_ALLOWED_KEY_IDS: ${{ vars.BACKUP_MANIFEST_ALLOWED_KEY_IDS }}
+        run: |
+          keyring="$RUNNER_TEMP/backup-manifest-keyring"
+          node deployment/scripts/materialize-backup-keyring.js "$keyring" \
+            "$BACKUP_MANIFEST_ALLOWED_KEY_IDS" "$BACKUP_MANIFEST_VERIFY_KEYRING_JSON"
+          printf 'BACKUP_MANIFEST_VERIFY_KEYRING_DIR=%s\n' "$keyring" >> "$GITHUB_ENV"
+          printf 'BACKUP_MANIFEST_ALLOWED_KEY_IDS=%s\n' "$BACKUP_MANIFEST_ALLOWED_KEY_IDS" >> "$GITHUB_ENV"
+      - name: Preview authenticated retention
+        run: bash deployment/scripts/prune-backups.sh | tee "$RUNNER_TEMP/prune-dry-run.txt"
+      - name: Apply approved authenticated retention
+        run: bash deployment/scripts/prune-backups.sh --apply --confirm DELETE-PRUNED-BACKUPS | tee "$RUNNER_TEMP/prune-apply.txt"
+      - name: Upload retention reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: database-backup-retention-${{ github.run_id }}
+          path: ${{ runner.temp }}/prune-*.txt
+          if-no-files-found: warn
+          retention-days: 365
+      - name: Remove verification key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/backup-manifest-keyring"
+
+  finalize-evidence:
+    needs: [validate-images, retention]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ needs.validate-images.outputs.tool_image }}
+    timeout-minutes: 10
+    environment: production-backup-retention-finalization
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate immutable execution image
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+      - name: Materialize retention finalizer signing key
+        env:
+          RETENTION_FINALIZER_SIGNING_KEY_B64: ${{ secrets.RETENTION_FINALIZER_SIGNING_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/retention-finalizer-signing.pem"
+          printf '%s' "$RETENTION_FINALIZER_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          printf 'RETENTION_FINALIZER_SIGNING_KEY_FILE=%s\n' "$key" >> "$GITHUB_ENV"
+      - name: Write signed independent retention evidence
+        env:
+          RETENTION_JOB_RESULT: ${{ needs.retention.result }}
+          RETENTION_RUN_ID: ${{ github.run_id }}
+          RETENTION_RUN_ATTEMPT: ${{ github.run_attempt }}
+          RETENTION_REPOSITORY: ${{ github.repository }}
+          RETENTION_GIT_REF: ${{ github.ref }}
+          RETENTION_COMMIT_SHA: ${{ github.sha }}
+          RETENTION_FINALIZER_EVIDENCE_DIR: ${{ runner.temp }}/retention-finalizer
+          RETENTION_FINALIZER_SIGNING_KEY_ID: ${{ vars.RETENTION_FINALIZER_SIGNING_KEY_ID }}
+        run: bash .github/scripts/retention-evidence-finalizer.sh
+      - name: Upload independent retention finalizer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: retention-finalizer-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/retention-finalizer/*
+          if-no-files-found: warn
+          retention-days: 365
