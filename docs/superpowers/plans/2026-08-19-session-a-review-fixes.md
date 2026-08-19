@@ -71,13 +71,13 @@
 - Modify: `backend/api/tests/backup-evidence-finalizer.test.js`
 
 **Interfaces:**
-- Produces: manifest v4 fields `migration_count` and `migration_digest`, computed from sorted newline-delimited exact filenames.
+- Produces: manifest v5 applied and packaged-target migration count/digest/head fields, computed from sorted newline-delimited exact filenames.
 - Consumes: packaged `backend/api/migrations/*.js`, snapshot-applied `SequelizeMeta`, and restored `SequelizeMeta`.
 
 - [ ] Add failing tests for exact set success, missing/unknown/duplicate applied migrations, deterministic count/digest, restored set mismatch, and evidence propagation.
 - [ ] Run focused backup/finalizer tests and confirm failures.
-- [ ] Before dump, compare packaged and snapshot-applied lists byte-for-byte, calculate count/digest, emit them in manifest v4, and validate them canonically.
-- [ ] Verify the restored full set and include count/digest in primary/finalizer evidence outputs.
+- [ ] Before dump, require snapshot-applied names to be an exact ordered prefix of packaged target names, then emit both identities in manifest v5.
+- [ ] Verify the restored applied set and include applied/target identities in finalizer evidence.
 - [ ] Re-run focused tests and confirm they pass.
 
 ### Task 4: Snapshot Holder Lifecycle
@@ -119,7 +119,7 @@
 - Modify: `DEPLOY.md` only if its canonical production contract requires the new variables.
 
 **Interfaces:**
-- Documents the exact evidence production, Railway secret provisioning, freshness, cluster/release bindings, manifest v4, complete pagination, and operator stop conditions.
+- Documents exact evidence production, Railway secret provisioning, freshness, live cluster/release bindings, manifest v5, complete pagination, and operator stop conditions.
 
 - [ ] Update runbooks and contract tests with exact commands/variables and explicit statement that local test evidence never authorizes production.
 - [ ] Run focused Jest suites for backup scripts, finalizer, release contract, evidence validator, and representative migration.

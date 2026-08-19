@@ -129,8 +129,9 @@ assert_snapshot_holder_alive() {
 }
 assert_snapshot_holder_alive
 
-packaged_migrations="$work_dir/packaged-migrations.txt"
+packaged_migrations="$work_dir/target-migrations.txt"
 applied_migrations="$work_dir/applied-migrations.txt"
+expected_applied_migrations="$work_dir/expected-applied-migrations.txt"
 migrations_dir="$(cd "$script_dir/../../backend/api/migrations" && pwd)"
 shopt -s nullglob
 migration_files=("$migrations_dir"/*.js)
@@ -153,12 +154,20 @@ done < "$applied_migrations"
 LC_ALL=C sort -c "$applied_migrations" >/dev/null 2>&1 || die "$EX_INTEGRITY" 'applied migration set is not sorted'
 [[ "$(LC_ALL=C uniq -d "$applied_migrations" | wc -l | tr -d '[:space:]')" == 0 ]] ||
   die "$EX_INTEGRITY" 'applied migration set contains duplicates'
-cmp -s "$packaged_migrations" "$applied_migrations" || die "$EX_INTEGRITY" 'packaged and applied migration sets differ'
-migration_count="$(wc -l < "$packaged_migrations" | tr -d '[:space:]')"
-migration_digest="$(sha256sum "$packaged_migrations" | cut -d ' ' -f 1)"
-migration_head="$(tail -n 1 "$packaged_migrations")"
-[[ "$migration_count" =~ ^[0-9]+$ && "$migration_count" -gt 0 && "$migration_digest" =~ ^[a-f0-9]{64}$ ]] ||
-  die "$EX_INTEGRITY" 'complete migration set identity is malformed'
+applied_migration_count="$(wc -l < "$applied_migrations" | tr -d '[:space:]')"
+target_migration_count="$(wc -l < "$packaged_migrations" | tr -d '[:space:]')"
+((applied_migration_count <= target_migration_count)) || die "$EX_INTEGRITY" 'applied migration set exceeds packaged target'
+head -n "$applied_migration_count" "$packaged_migrations" > "$expected_applied_migrations"
+cmp -s "$expected_applied_migrations" "$applied_migrations" ||
+  die "$EX_INTEGRITY" 'applied migration set is not an exact ordered prefix of packaged target'
+applied_migration_digest="$(sha256sum "$applied_migrations" | cut -d ' ' -f 1)"
+applied_migration_head="$(tail -n 1 "$applied_migrations")"
+target_migration_digest="$(sha256sum "$packaged_migrations" | cut -d ' ' -f 1)"
+target_migration_head="$(tail -n 1 "$packaged_migrations")"
+[[ "$applied_migration_count" =~ ^[0-9]+$ && "$applied_migration_count" -gt 0 \
+  && "$target_migration_count" =~ ^[0-9]+$ && "$target_migration_count" -gt 0 \
+  && "$applied_migration_digest" =~ ^[a-f0-9]{64}$ && "$target_migration_digest" =~ ^[a-f0-9]{64}$ ]] ||
+  die "$EX_INTEGRITY" 'migration plan identity is malformed'
 
 if ! timeout "$DATABASE_TIMEOUT_SECONDS" pg_dump --dbname="$DATABASE_URL" --format=custom --no-owner --no-acl \
   --snapshot="$database_snapshot" --file="$dump_file"; then
@@ -211,7 +220,7 @@ encrypted_sha256="$(sha256sum "$encrypted_file" | cut -d ' ' -f 1)" || die "$EX_
 [[ "$encrypted_sha256" =~ ^[a-fA-F0-9]{64}$ ]] || die "$EX_INTEGRITY" 'encrypted SHA-256 is malformed'
 
 cat > "$manifest_file" <<EOF
-manifest_version=4
+manifest_version=5
 backup_id=$backup_id
 created_at=$created_at
 signing_key_id=$BACKUP_MANIFEST_SIGNING_KEY_ID
@@ -219,9 +228,12 @@ encrypted_object=$backup_id.dump.age
 encrypted_sha256=$encrypted_sha256
 plaintext_sha256=$plaintext_sha256
 postgres_version=$postgres_version
-migration_count=$migration_count
-migration_digest=$migration_digest
-migration_head=$migration_head
+applied_migration_count=$applied_migration_count
+applied_migration_digest=$applied_migration_digest
+applied_migration_head=$applied_migration_head
+target_migration_count=$target_migration_count
+target_migration_digest=$target_migration_digest
+target_migration_head=$target_migration_head
 users_count=$users_count
 consultations_count=$consultations_count
 payments_count=$payments_count
@@ -279,12 +291,15 @@ put_immutable "$signature_file" "$backup_id.manifest.sig" manifest-signature "$s
 head_verify "$signature_file" "$backup_id.manifest.sig" manifest-signature "$signature_sha256"
 record_phase triplet_committed true
 if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
-  printf 'backup_id=%s\ncreated_at=%s\nsource_cluster_sha256=%s\nmanifest_sha256=%s\nmanifest_signature_sha256=%s\nsigning_key_id=%s\nmigration_count=%s\nmigration_digest=%s\n' \
+  printf 'backup_id=%s\ncreated_at=%s\nsource_cluster_sha256=%s\nmanifest_sha256=%s\nmanifest_signature_sha256=%s\nsigning_key_id=%s\napplied_migration_count=%s\napplied_migration_digest=%s\napplied_migration_head=%s\ntarget_migration_count=%s\ntarget_migration_digest=%s\ntarget_migration_head=%s\n' \
     "$backup_id" "$created_at" "$source_cluster_sha256" "$manifest_sha256" "$signature_sha256" \
-    "$BACKUP_MANIFEST_SIGNING_KEY_ID" "$migration_count" "$migration_digest" >> "$GITHUB_OUTPUT"
+    "$BACKUP_MANIFEST_SIGNING_KEY_ID" "$applied_migration_count" "$applied_migration_digest" \
+    "$applied_migration_head" "$target_migration_count" "$target_migration_digest" \
+    "$target_migration_head" >> "$GITHUB_OUTPUT"
 fi
 
-printf 'backup_id=%s\ncreated_at=%s\nsource_cluster_sha256=%s\nmanifest_sha256=%s\nmanifest_signature_sha256=%s\nsigning_key_id=%s\nmigration_count=%s\nmigration_digest=%s\nresult=success\n' \
+printf 'backup_id=%s\ncreated_at=%s\nsource_cluster_sha256=%s\nmanifest_sha256=%s\nmanifest_signature_sha256=%s\nsigning_key_id=%s\napplied_migration_count=%s\napplied_migration_digest=%s\napplied_migration_head=%s\ntarget_migration_count=%s\ntarget_migration_digest=%s\ntarget_migration_head=%s\nresult=success\n' \
   "$backup_id" "$created_at" "$source_cluster_sha256" "$manifest_sha256" "$signature_sha256" \
-  "$BACKUP_MANIFEST_SIGNING_KEY_ID" "$migration_count" "$migration_digest"
+  "$BACKUP_MANIFEST_SIGNING_KEY_ID" "$applied_migration_count" "$applied_migration_digest" \
+  "$applied_migration_head" "$target_migration_count" "$target_migration_digest" "$target_migration_head"
 printf 'runtime_versions=%s\n' "${BACKUP_RUNTIME_VERSIONS:-unknown}"

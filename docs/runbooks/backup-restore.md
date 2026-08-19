@@ -21,9 +21,11 @@ Each backup is a triplet:
    documents, and reviews.
 3. `<id>.manifest.sig`: detached signature over the exact manifest bytes.
 
-Manifest v4 has exactly these ordered fields and no others: `manifest_version`, `backup_id`,
+Manifest v5 has exactly these ordered fields and no others: `manifest_version`, `backup_id`,
 `created_at`, `signing_key_id`, `encrypted_object`, both SHA-256 fields, `postgres_version`, complete
-sorted migration `migration_count`/`migration_digest`/`migration_head`, and the five core table counts.
+sorted applied migration count/digest/head, complete sorted packaged-target migration
+count/digest/head, and the five core table counts. The applied list must be an exact ordered prefix
+of the packaged target; only an ordered pending suffix is allowed.
 `created_at` is canonical second-resolution UTC (`YYYY-MM-DDTHH:MM:SSZ`) and
 must equal the timestamp embedded in `backup_id`.
 
@@ -74,7 +76,7 @@ Malformed truncation state, absent/repeated tokens, duplicate keys, key-count di
 JSON, or a failed page aborts before any inventory is returned. `prune-backups.sh` treats that
 complete object listing only as discovery. A complete triplet enters retention
 selection only after downloading its manifest/signature, verifying the detached signature, validating
-the exact manifest v4 contract, and matching allowlisted key ID, manifest ID, and signed `created_at`. GFS buckets
+the exact manifest v5 contract, and matching allowlisted key ID, manifest ID, and signed `created_at`. GFS buckets
 use only that authenticated `created_at`. Invalid complete triplets print `QUARANTINE` and cannot
 cause another backup to be retained or pruned. The script retains the newest backup in each selected
 UTC day/week/month bucket, unions the 14/8/12 sets, and always retains verified triplets younger than
@@ -105,15 +107,22 @@ Review every daily workflow result. Alert if no successful signed triplet has be
 5. Keep the snapshot under the normal GFS policy; create a separately governed legal hold only when required.
 
 The successful independent finalizer also emits `migration-backup-<run>.evidence` and its detached
-signature. It binds backup time/ID, exact workflow release SHA, SHA-256 of the verified PostgreSQL
-system identifier, committed success, artifact digests, complete migration count/digest, and key IDs.
+signature. Evidence v3 binds backup time/ID, exact workflow release SHA, SHA-256 of the verified
+PostgreSQL system identifier, committed success, artifact digests, exact pre-migration applied
+count/digest/head, intended packaged-target count/digest/head, and key IDs.
 Materialize evidence, signature, and finalizer public key as canonical base64 Railway secrets
 `MIGRATION_BACKUP_EVIDENCE_B64`, `MIGRATION_BACKUP_EVIDENCE_SIGNATURE_B64`, and
-`MIGRATION_BACKUP_EVIDENCE_PUBLIC_KEY_B64`. Set `MIGRATION_BACKUP_EVIDENCE_KEY_ID`, secret
-`MIGRATION_BACKUP_EXPECTED_CLUSTER_ID`, and `MIGRATION_BACKUP_MAX_AGE_SECONDS` from 1 through 3600.
+`MIGRATION_BACKUP_EVIDENCE_PUBLIC_KEY_B64`. Set `MIGRATION_BACKUP_EVIDENCE_KEY_ID` and
+`MIGRATION_BACKUP_MAX_AGE_SECONDS` from 1 through 3600.
 Dispatch backup from the exact release SHA exposed by Railway as `RAILWAY_GIT_COMMIT_SHA`.
-Absent, malformed, unsigned, stale, future, unsuccessful, uncommitted, wrong-key, wrong-cluster, or
-wrong-release evidence blocks predeploy before DB access. Local test evidence never authorizes it.
+Before DB access, predeploy validates signature, freshness, release, and the local image's exact
+packaged target. After taking the migration advisory lock, it derives `system_identifier` and the
+ordered applied `SequelizeMeta` set from the actual `DATABASE_URL`; both must match signed evidence,
+and applied must remain an exact target prefix. Identity/meta query failure, absent/malformed evidence,
+or any mismatch blocks `sequelize-cli`. Do not configure an operator-supplied expected cluster ID.
+The migration role needs only its existing lock/schema privileges, `SELECT` on `SequelizeMeta`, and
+permission to execute `pg_control_system()`; do not grant backup-table read access for this gate.
+Local test evidence never authorizes it.
 
 ## Restore Drill
 
@@ -127,8 +136,9 @@ The monthly workflow creates a fresh PostgreSQL 16.4 database named `emaslaxat_r
 3. Approve access to the separate `restore-drill` environment.
 4. Confirm manifest/signature/archive HEAD identity and size limits, allowlisted key-ID selection, signature verification, encrypted checksum, decryption, plaintext checksum, and `pg_restore --list` all pass.
 5. Confirm `pg_restore --exit-on-error --no-owner --no-acl` succeeds.
-6. Confirm restored sorted migration count, digest, and head exactly match the signed complete source
-   set and the A1 assertion reports no pending, unknown, duplicate, or unavailable migration state.
+6. Confirm restored sorted migration count, digest, and head exactly match the signed applied source
+   set. The signed packaged target may have a pending ordered suffix because this is a pre-migration
+   backup; the restored snapshot must not claim that suffix was already applied.
 7. Confirm restored counts exactly match all five signed source counts.
 8. Confirm the lifecycle-owned HTTP/Socket application starts against the restore database without
    production jobs, reaches ready only after PostgreSQL, Redis, R2, and migration probes pass, and

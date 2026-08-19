@@ -55,14 +55,18 @@ test('successful backup finalizer emits signed canonical predeploy evidence', ()
     BACKUP_FINALIZED_MANIFEST_SHA256: 'c'.repeat(64),
     BACKUP_FINALIZED_SIGNATURE_SHA256: 'd'.repeat(64),
     BACKUP_FINALIZED_SIGNING_KEY_ID: 'backup-2026q3',
-    BACKUP_FINALIZED_MIGRATION_COUNT: '42',
-    BACKUP_FINALIZED_MIGRATION_DIGEST: 'e'.repeat(64),
+    BACKUP_FINALIZED_APPLIED_MIGRATION_COUNT: '40',
+    BACKUP_FINALIZED_APPLIED_MIGRATION_DIGEST: 'e'.repeat(64),
+    BACKUP_FINALIZED_APPLIED_MIGRATION_HEAD: '20260823000000-before.js',
+    BACKUP_FINALIZED_TARGET_MIGRATION_COUNT: '42',
+    BACKUP_FINALIZED_TARGET_MIGRATION_DIGEST: 'f'.repeat(64),
+    BACKUP_FINALIZED_TARGET_MIGRATION_HEAD: '20260824000000-after.js',
   };
   const result = spawnSync('bash', [script], { cwd: repoRoot, encoding: 'utf8', env });
   expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
   const evidencePath = path.join(output, 'migration-backup-556.evidence');
   expect(fs.readFileSync(evidencePath, 'utf8')).toBe([
-    'evidence_version=2',
+    'evidence_version=3',
     'created_at=2026-08-19T11:30:00Z',
     'backup_id=20260819T113000Z-aaaaaaaaaaaa',
     `release_sha=${'a'.repeat(40)}`,
@@ -72,8 +76,12 @@ test('successful backup finalizer emits signed canonical predeploy evidence', ()
     `manifest_sha256=${'c'.repeat(64)}`,
     `manifest_signature_sha256=${'d'.repeat(64)}`,
     'backup_signing_key_id=backup-2026q3',
-    'migration_count=42',
-    `migration_digest=${'e'.repeat(64)}`,
+    'applied_migration_count=40',
+    `applied_migration_digest=${'e'.repeat(64)}`,
+    'applied_migration_head=20260823000000-before.js',
+    'target_migration_count=42',
+    `target_migration_digest=${'f'.repeat(64)}`,
+    'target_migration_head=20260824000000-after.js',
     'evidence_signing_key_id=backup-finalizer-2026q3',
     '',
   ].join('\n'));

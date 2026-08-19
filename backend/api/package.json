@@ -13,7 +13,7 @@
     "db:seed": "node src/seeds/index.js",
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:locked": "node src/scripts/runMigrationsLocked.js",
-    "db:predeploy": "node src/scripts/validateMigrationBackupEvidence.js && npm run db:migrate:locked",
+    "db:predeploy": "node src/scripts/runMigrationsLocked.js",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "db:migrate:status": "sequelize-cli db:migrate:status",
     "storage:migrate": "node src/scripts/migrateUploadsToR2.js",

@@ -42,8 +42,12 @@ jobs:
       manifest_sha256: ${{ steps.backup.outputs.manifest_sha256 }}
       manifest_signature_sha256: ${{ steps.backup.outputs.manifest_signature_sha256 }}
       signing_key_id: ${{ steps.backup.outputs.signing_key_id }}
-      migration_count: ${{ steps.backup.outputs.migration_count }}
-      migration_digest: ${{ steps.backup.outputs.migration_digest }}
+      applied_migration_count: ${{ steps.backup.outputs.applied_migration_count }}
+      applied_migration_digest: ${{ steps.backup.outputs.applied_migration_digest }}
+      applied_migration_head: ${{ steps.backup.outputs.applied_migration_head }}
+      target_migration_count: ${{ steps.backup.outputs.target_migration_count }}
+      target_migration_digest: ${{ steps.backup.outputs.target_migration_digest }}
+      target_migration_head: ${{ steps.backup.outputs.target_migration_head }}
     env:
       DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
       BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
@@ -147,8 +151,12 @@ jobs:
           BACKUP_FINALIZED_MANIFEST_SHA256: ${{ needs.backup.outputs.manifest_sha256 }}
           BACKUP_FINALIZED_SIGNATURE_SHA256: ${{ needs.backup.outputs.manifest_signature_sha256 }}
           BACKUP_FINALIZED_SIGNING_KEY_ID: ${{ needs.backup.outputs.signing_key_id }}
-          BACKUP_FINALIZED_MIGRATION_COUNT: ${{ needs.backup.outputs.migration_count }}
-          BACKUP_FINALIZED_MIGRATION_DIGEST: ${{ needs.backup.outputs.migration_digest }}
+          BACKUP_FINALIZED_APPLIED_MIGRATION_COUNT: ${{ needs.backup.outputs.applied_migration_count }}
+          BACKUP_FINALIZED_APPLIED_MIGRATION_DIGEST: ${{ needs.backup.outputs.applied_migration_digest }}
+          BACKUP_FINALIZED_APPLIED_MIGRATION_HEAD: ${{ needs.backup.outputs.applied_migration_head }}
+          BACKUP_FINALIZED_TARGET_MIGRATION_COUNT: ${{ needs.backup.outputs.target_migration_count }}
+          BACKUP_FINALIZED_TARGET_MIGRATION_DIGEST: ${{ needs.backup.outputs.target_migration_digest }}
+          BACKUP_FINALIZED_TARGET_MIGRATION_HEAD: ${{ needs.backup.outputs.target_migration_head }}
           BACKUP_FINALIZER_EVIDENCE_DIR: ${{ runner.temp }}/backup-finalizer
           BACKUP_FINALIZER_SIGNING_KEY_ID: ${{ vars.BACKUP_FINALIZER_SIGNING_KEY_ID }}
         run: bash .github/scripts/backup-evidence-finalizer.sh

@@ -12,9 +12,12 @@ const FIELDS = Object.freeze([
   'encrypted_sha256',
   'plaintext_sha256',
   'postgres_version',
-  'migration_count',
-  'migration_digest',
-  'migration_head',
+  'applied_migration_count',
+  'applied_migration_digest',
+  'applied_migration_head',
+  'target_migration_count',
+  'target_migration_digest',
+  'target_migration_head',
   'users_count',
   'consultations_count',
   'payments_count',
@@ -51,7 +54,7 @@ function validateManifest(text, expectedBackupId) {
   if (keys.length !== FIELDS.length || keys.some((key, index) => key !== FIELDS[index])) {
     fail('manifest field set is not exact or canonical');
   }
-  if (values.manifest_version !== '4') fail('manifest_version is unsupported');
+  if (values.manifest_version !== '5') fail('manifest_version is unsupported');
   if (!/^\d{8}T\d{6}Z-[A-Za-z0-9._-]+$/.test(values.backup_id)) fail('backup_id is invalid');
   if (expectedBackupId && values.backup_id !== expectedBackupId) fail('backup identity mismatch');
   if (values.encrypted_object !== `${values.backup_id}.dump.age`) fail('encrypted_object identity mismatch');
@@ -68,9 +71,15 @@ function validateManifest(text, expectedBackupId) {
   if (!/^\d+\.\d+(?:\.\d+)?(?:[-+][A-Za-z0-9._-]+)?$/.test(values.postgres_version)) {
     fail('postgres_version is invalid');
   }
-  if (!/^[A-Za-z0-9._-]+$/.test(values.migration_head)) fail('migration_head is invalid');
-  if (!/^\d+$/.test(values.migration_count) || Number(values.migration_count) < 1) fail('migration_count is invalid');
-  if (!/^[a-f0-9]{64}$/.test(values.migration_digest)) fail('migration_digest is invalid');
+  for (const prefix of ['applied', 'target']) {
+    if (!/^[A-Za-z0-9._-]+\.js$/.test(values[`${prefix}_migration_head`])) fail(`${prefix}_migration_head is invalid`);
+    if (!/^\d+$/.test(values[`${prefix}_migration_count`])
+        || Number(values[`${prefix}_migration_count`]) < 1) fail(`${prefix}_migration_count is invalid`);
+    if (!/^[a-f0-9]{64}$/.test(values[`${prefix}_migration_digest`])) fail(`${prefix}_migration_digest is invalid`);
+  }
+  if (Number(values.applied_migration_count) > Number(values.target_migration_count)) {
+    fail('applied migration count exceeds target migration count');
+  }
   for (const field of FIELDS.filter((name) => name.endsWith('_count'))) {
     if (!/^\d+$/.test(values[field])) fail(`${field} is invalid`);
   }

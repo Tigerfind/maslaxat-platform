@@ -239,7 +239,9 @@ if ! validated_manifest="$(bounded "$CRYPTO_TIMEOUT_SECONDS" node "$script_dir/v
   die "$EX_INTEGRITY" "$validated_manifest"
 fi
 IFS=$'\t' read -r _manifest_version _manifest_backup_id source_created_at signing_key_id _encrypted_object \
-  expected_encrypted_sha expected_plaintext_sha postgres_version expected_migration_count expected_migration_digest expected_migration_head \
+  expected_encrypted_sha expected_plaintext_sha postgres_version \
+  expected_applied_migration_count expected_applied_migration_digest expected_applied_migration_head \
+  expected_target_migration_count expected_target_migration_digest expected_target_migration_head \
   expected_users_count expected_consultations_count expected_payments_count expected_documents_count \
   expected_reviews_count <<< "$validated_manifest"
 
@@ -292,8 +294,10 @@ LC_ALL=C sort -c "$restored_migrations" >/dev/null 2>&1 || die "$EX_INTEGRITY" '
 migration_count="$(wc -l < "$restored_migrations" | tr -d '[:space:]')"
 migration_digest="$(sha256sum "$restored_migrations" | cut -d ' ' -f 1)"
 migration_head="$(tail -n 1 "$restored_migrations")"
-[[ "$migration_count" == "$expected_migration_count" && "$migration_digest" == "$expected_migration_digest" \
-  && "$migration_head" == "$expected_migration_head" ]] || die "$EX_INTEGRITY" 'restored complete migration set mismatch'
+[[ "$migration_count" == "$expected_applied_migration_count" \
+  && "$migration_digest" == "$expected_applied_migration_digest" \
+  && "$migration_head" == "$expected_applied_migration_head" ]] ||
+  die "$EX_INTEGRITY" 'restored applied migration set mismatch'
 migration_match=true
 
 count_restored_table() {

@@ -114,9 +114,9 @@ cp .env.example .env
   `RAILWAY_DEPLOYMENT_ID`, `RAILWAY_SERVICE_ID`
 - predeploy backup gate: canonical base64 `MIGRATION_BACKUP_EVIDENCE_B64`,
   `MIGRATION_BACKUP_EVIDENCE_SIGNATURE_B64`, `MIGRATION_BACKUP_EVIDENCE_PUBLIC_KEY_B64`, exact
-  `MIGRATION_BACKUP_EVIDENCE_KEY_ID`, secret `MIGRATION_BACKUP_EXPECTED_CLUSTER_ID`, and
-  `MIGRATION_BACKUP_MAX_AGE_SECONDS=3600`. Evidence must come from the fresh successful independent
-  backup finalizer for this exact `RAILWAY_GIT_COMMIT_SHA`; local/test evidence is invalid.
+  `MIGRATION_BACKUP_EVIDENCE_KEY_ID`, and `MIGRATION_BACKUP_MAX_AGE_SECONDS=3600`. Evidence must
+  come from the fresh successful independent backup finalizer for this exact
+  `RAILWAY_GIT_COMMIT_SHA`; local/test evidence is invalid.
 - `AUTHORIZATION_METADATA_TOKEN` — отдельный неплейсхолдерный секрет минимум 32 символа
 - `AUTHORIZATION_EVIDENCE_*` и три approval public-key tuples оставить пустыми/absent до отдельно
   одобренного capability-only cutover; private signing keys никогда не передавать приложению
@@ -192,9 +192,14 @@ does not perform that removal. `--schedule-deletion` only creates idempotent R2 
 
 Текущий A1 production-контракт миграций:
 - Docker image содержит `migrations/`, `.sequelizerc` и локальный production `sequelize-cli`.
-- Railway до старта вызывает `npm run db:predeploy`: local fail-closed validator checks signed fresh
-  backup/cluster/release evidence before DB migration access, then `npm run db:migrate:locked` holds
-  one PostgreSQL advisory-session lock for the CLI process.
+- Railway до старта вызывает `npm run db:predeploy`. До соединения local fail-closed validator
+  проверяет подпись, freshness, release SHA и exact packaged target plan. Затем одна PostgreSQL
+  advisory-session lock охватывает live `pg_control_system()`/`SequelizeMeta` verification и весь
+  CLI-процесс. Actual `DATABASE_URL` system identifier обязан совпасть с signed backup cluster hash;
+  operator-provided cluster ID не используется.
+- Migration role получает только существующие migration/lock privileges, `SELECT` на
+  `SequelizeMeta` и возможность выполнить `pg_control_system()`. Ошибка/запрет identity query
+  останавливает predeploy до запуска `sequelize-cli`.
 - Production startup выполняет authenticate и exact packaged/applied `SequelizeMeta` assertion.
   Pending, unknown, duplicate или отсутствующее состояние останавливает старт; production schema
   никогда не создаётся и не изменяется через model sync.

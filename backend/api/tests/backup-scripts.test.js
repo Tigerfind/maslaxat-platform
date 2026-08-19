@@ -17,6 +17,7 @@ const MIGRATIONS = fs.readdirSync(path.join(repoRoot, 'backend/api/migrations'))
   .filter((name) => name.endsWith('.js')).sort();
 const MIGRATION_TEXT = `${MIGRATIONS.join('\n')}\n`;
 const MIGRATION_DIGEST = crypto.createHash('sha256').update(MIGRATION_TEXT).digest('hex');
+const migrationDigest = (names) => crypto.createHash('sha256').update(`${names.join('\n')}\n`).digest('hex');
 
 const readScript = (name) => fs.readFileSync(path.join(scriptsDir, name), 'utf8');
 
@@ -222,11 +223,14 @@ const backupEnv = (harness, overrides = {}) => ({
 
 const manifestText = (overrides = {}) => {
   const values = {
-    manifest_version: '4', backup_id: BACKUP_ID, created_at: SOURCE_CREATED_AT,
+    manifest_version: '5', backup_id: BACKUP_ID, created_at: SOURCE_CREATED_AT,
     signing_key_id: 'release-2026q3',
     encrypted_object: `${BACKUP_ID}.dump.age`, encrypted_sha256: B_SHA, plaintext_sha256: A_SHA,
-    postgres_version: '16.4', migration_count: String(MIGRATIONS.length), migration_digest: MIGRATION_DIGEST,
-    migration_head: MIGRATIONS.at(-1),
+    postgres_version: '16.4',
+    applied_migration_count: String(MIGRATIONS.length), applied_migration_digest: MIGRATION_DIGEST,
+    applied_migration_head: MIGRATIONS.at(-1),
+    target_migration_count: String(MIGRATIONS.length), target_migration_digest: MIGRATION_DIGEST,
+    target_migration_head: MIGRATIONS.at(-1),
     users_count: '11', consultations_count: '12', payments_count: '13', documents_count: '14', reviews_count: '15',
     ...overrides,
   };
@@ -452,12 +456,29 @@ describe('PostgreSQL backup scripts', () => {
     const manifest = fs.readFileSync(path.join(harness.objectsDir, 'postgres', `${BACKUP_ID}.manifest`), 'utf8');
     expect(manifest).toContain(`plaintext_sha256=${A_SHA}`);
     expect(manifest).toContain(`encrypted_sha256=${B_SHA}`);
-    expect(manifest).toContain('manifest_version=4');
-    expect(manifest).toContain(`migration_count=${MIGRATIONS.length}`);
-    expect(manifest).toContain(`migration_digest=${MIGRATION_DIGEST}`);
-    expect(manifest).toContain(`migration_head=${MIGRATIONS.at(-1)}`);
+    expect(manifest).toContain('manifest_version=5');
+    expect(manifest).toContain(`applied_migration_count=${MIGRATIONS.length}`);
+    expect(manifest).toContain(`applied_migration_digest=${MIGRATION_DIGEST}`);
+    expect(manifest).toContain(`target_migration_count=${MIGRATIONS.length}`);
+    expect(manifest).toContain(`target_migration_digest=${MIGRATION_DIGEST}`);
     expect(manifest).toContain('users_count=11');
     expect(manifest).toContain('reviews_count=15');
+  });
+
+  test('backup signs an exact applied prefix and the intended packaged target with a pending suffix', () => {
+    const harness = createHarness();
+    const applied = MIGRATIONS.slice(0, -2);
+    const result = runScript('backup-postgres.sh', harness, backupEnv(harness, {
+      FAKE_SOURCE_MIGRATIONS: `${applied.join('\n')}\n`,
+    }));
+    expect({ status: result.status, stderr: result.stderr }).toEqual({ status: 0, stderr: '' });
+    const manifest = fs.readFileSync(path.join(harness.objectsDir, 'postgres', `${BACKUP_ID}.manifest`), 'utf8');
+    expect(manifest).toContain(`applied_migration_count=${applied.length}`);
+    expect(manifest).toContain(`applied_migration_digest=${migrationDigest(applied)}`);
+    expect(manifest).toContain(`applied_migration_head=${applied.at(-1)}`);
+    expect(manifest).toContain(`target_migration_count=${MIGRATIONS.length}`);
+    expect(manifest).toContain(`target_migration_digest=${MIGRATION_DIGEST}`);
+    expect(manifest).toContain(`target_migration_head=${MIGRATIONS.at(-1)}`);
   });
 
   test.each([

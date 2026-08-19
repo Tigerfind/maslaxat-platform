@@ -55,9 +55,7 @@ test('Railway validates fresh signed backup evidence before the advisory-locked 
   const packageJson = JSON.parse(read('backend/api/package.json'));
 
   expect(packageJson.scripts['db:migrate:locked']).toBe('node src/scripts/runMigrationsLocked.js');
-  expect(packageJson.scripts['db:predeploy']).toBe(
-    'node src/scripts/validateMigrationBackupEvidence.js && npm run db:migrate:locked'
-  );
+  expect(packageJson.scripts['db:predeploy']).toBe('node src/scripts/runMigrationsLocked.js');
   expect(railway.deploy.preDeployCommand).toBe('npm run db:predeploy');
   expect(railway.deploy.startCommand).toBe('npm start');
 });

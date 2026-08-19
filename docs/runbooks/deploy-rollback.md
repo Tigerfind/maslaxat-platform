@@ -22,6 +22,8 @@ branch:
 staging_backend_deployment:
 staging_frontend_deployment:
 migration_head:
+pre_backup_applied_migration_count_digest:
+packaged_target_migration_count_digest:
 empty_migration_workflow_url:
 representative_migration_workflow_url:
 backup_id:
@@ -67,11 +69,13 @@ Any missing checkbox blocks deployment. Local mocks, dry runs, test discovery, a
 ## Deployment
 
 1. Freeze unrelated production changes and record the start time.
-2. Confirm backup ID, complete migration count/digest, finalizer key ID, source-cluster binding,
-   release SHA, and freshness. Materialize only that approved signed evidence tuple.
+2. Confirm backup ID, exact applied prefix count/digest/head, exact packaged target
+   count/digest/head, finalizer key ID, source-cluster binding, release SHA, and freshness.
+   Materialize only that approved signed evidence tuple.
 3. Deploy the approved backend SHA through the reviewed Railway configuration. `npm run db:predeploy`
-   must validate evidence before `db:migrate:locked`; missing or rejected evidence is a stop condition,
-   not a reason to bypass the gate.
+   validates static evidence before connection, then validates actual `DATABASE_URL` cluster and
+   applied prefix under the migration advisory lock before spawning `sequelize-cli`. Missing,
+   unreadable, or rejected live identity is a stop condition, not a reason to bypass the gate.
 4. Wait for backend liveness and readiness. Stop if readiness does not become green within the approved window.
 5. Run backend smoke: synthetic login, catalog, socket connection, and one small private upload/download/delete cycle.
 6. Deploy the frontend built from the same approved SHA.

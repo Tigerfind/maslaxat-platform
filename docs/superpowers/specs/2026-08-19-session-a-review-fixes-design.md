@@ -14,13 +14,16 @@ committed-backup selection both consume that inventory.
 
 The production predeploy command first runs a local signed-evidence validator and only then invokes
 the advisory-locked migration wrapper. Evidence must be canonical, signed by the configured key,
-fresh, successful, and bound to the effective source cluster and exact Railway release SHA. Missing,
-malformed, stale, mismatched, or unverifiable evidence blocks migration before database access.
+fresh, successful, and bound to the effective source cluster and exact Railway release SHA. Static
+evidence failures block database access; live cluster or applied-state failures block migration under
+the advisory lock before the migration CLI starts.
 
-Before `pg_dump`, backup verifies that the sorted packaged migration filenames exactly equal the
-sorted names applied in the exported snapshot. Their deterministic newline-delimited count and
-SHA-256 digest are included in the signed manifest and propagated into evidence. Restore verifies the
-complete restored set, not only its highest filename.
+Before `pg_dump`, backup verifies that the sorted names applied in the exported snapshot are an exact
+ordered prefix of the release's sorted packaged migration filenames. Only a pending packaged suffix
+is allowed. Deterministic applied and target count/digest/head identities are included in the signed
+manifest and evidence. Predeploy compares the target identity to the local image, then under the
+migration advisory lock compares the actual `DATABASE_URL` system identifier and applied set to the
+signed source before spawning migrations. Restore verifies the signed applied snapshot set.
 
 The snapshot holder is an explicitly controlled PostgreSQL session rather than a fixed sleep. Backup
 checks its liveness throughout every snapshot-dependent operation, sends rollback after the final
