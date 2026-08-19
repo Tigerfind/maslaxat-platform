@@ -1,0 +1,162 @@
+name: Encrypted database backup
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-backup-mutation
+  cancel-in-progress: false
+
+jobs:
+  validate-images:
+    runs-on: ubuntu-24.04
+    outputs:
+      tool_image: ${{ steps.images.outputs.tool_image }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - id: images
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: |
+          node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+          printf 'tool_image=%s\n' "$BACKUP_TOOL_IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+  backup:
+    needs: validate-images
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ needs.validate-images.outputs.tool_image }}
+    timeout-minutes: 45
+    environment: production-backup
+    outputs:
+      last_phase: ${{ steps.backup.outputs.last_phase }}
+      committed_triplet: ${{ steps.backup.outputs.committed_triplet }}
+      backup_id: ${{ steps.backup.outputs.backup_id }}
+      created_at: ${{ steps.backup.outputs.created_at }}
+      source_cluster_sha256: ${{ steps.backup.outputs.source_cluster_sha256 }}
+      manifest_sha256: ${{ steps.backup.outputs.manifest_sha256 }}
+      manifest_signature_sha256: ${{ steps.backup.outputs.manifest_signature_sha256 }}
+      signing_key_id: ${{ steps.backup.outputs.signing_key_id }}
+      migration_count: ${{ steps.backup.outputs.migration_count }}
+      migration_digest: ${{ steps.backup.outputs.migration_digest }}
+    env:
+      DATABASE_URL: ${{ secrets.BACKUP_DATABASE_URL }}
+      BACKUP_AGE_RECIPIENT: ${{ vars.BACKUP_AGE_RECIPIENT }}
+      BACKUP_BUCKET: ${{ vars.BACKUP_BUCKET }}
+      BACKUP_PREFIX: postgres
+      BACKUP_R2_ENDPOINT: ${{ vars.BACKUP_R2_ENDPOINT }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_PUBLISH_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_PUBLISH_SECRET_ACCESS_KEY }}
+      AWS_DEFAULT_REGION: auto
+      BACKUP_MANIFEST_SIGNING_KEY_ID: ${{ vars.BACKUP_MANIFEST_SIGNING_KEY_ID }}
+      BACKUP_EXPECTED_SERVER_ADDR: ${{ vars.BACKUP_EXPECTED_SERVER_ADDR }}
+      BACKUP_EXPECTED_SERVER_PORT: ${{ vars.BACKUP_EXPECTED_SERVER_PORT }}
+      BACKUP_EXPECTED_DATABASE: ${{ vars.BACKUP_EXPECTED_DATABASE }}
+      BACKUP_EXPECTED_CLUSTER_ID: ${{ secrets.BACKUP_EXPECTED_CLUSTER_ID }}
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate immutable execution image
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: |
+          node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+          versions="$(psql --version);$(age --version 2>&1 | head -n 1);$(openssl version);$(aws --version);node $(node --version)"
+          printf 'BACKUP_RUNTIME_VERSIONS=%s\n' "$versions" >> "$GITHUB_ENV"
+      - name: Materialize manifest signing key
+        env:
+          BACKUP_MANIFEST_SIGNING_KEY_B64: ${{ secrets.BACKUP_MANIFEST_SIGNING_KEY_B64 }}
+          BACKUP_MANIFEST_VERIFY_KEYRING_JSON: ${{ secrets.BACKUP_MANIFEST_VERIFY_KEYRING_JSON }}
+          BACKUP_MANIFEST_ALLOWED_KEY_IDS: ${{ vars.BACKUP_MANIFEST_ALLOWED_KEY_IDS }}
+        run: |
+          key_file="$RUNNER_TEMP/backup-manifest-signing.pem"
+          keyring="$RUNNER_TEMP/backup-manifest-keyring"
+          derived_verify="$RUNNER_TEMP/derived-current-verify.pem"
+          printf '%s' "$BACKUP_MANIFEST_SIGNING_KEY_B64" | base64 --decode > "$key_file"
+          node deployment/scripts/materialize-backup-keyring.js "$keyring" \
+            "$BACKUP_MANIFEST_ALLOWED_KEY_IDS" "$BACKUP_MANIFEST_VERIFY_KEYRING_JSON"
+          openssl pkey -pubout -in "$key_file" -out "$derived_verify"
+          cmp "$derived_verify" "$keyring/$BACKUP_MANIFEST_SIGNING_KEY_ID.pem"
+          chmod 600 "$key_file"
+          printf 'BACKUP_MANIFEST_SIGNING_KEY_FILE=%s\n' "$key_file" >> "$GITHUB_ENV"
+          printf 'BACKUP_MANIFEST_VERIFY_KEYRING_DIR=%s\n' "$keyring" >> "$GITHUB_ENV"
+          printf 'BACKUP_MANIFEST_ALLOWED_KEY_IDS=%s\n' "$BACKUP_MANIFEST_ALLOWED_KEY_IDS" >> "$GITHUB_ENV"
+      - name: Create encrypted signed backup
+        id: backup
+        env:
+          BACKUP_PHASE_STATE_FILE: ${{ runner.temp }}/backup-phase.evidence
+        run: bash deployment/scripts/backup-postgres.sh | tee "$RUNNER_TEMP/backup-report.txt"
+      - name: Preview retention
+        env:
+          FAIL_ON_QUARANTINE: '1'
+        run: bash deployment/scripts/prune-backups.sh | tee "$RUNNER_TEMP/prune-dry-run.txt"
+      - name: Upload non-secret reports
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: database-backup-report-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/backup-report.txt
+            ${{ runner.temp }}/prune-dry-run.txt
+            ${{ runner.temp }}/backup-phase.evidence
+          if-no-files-found: ignore
+          retention-days: 90
+      - name: Remove signing key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/backup-manifest-signing.pem" "$RUNNER_TEMP/backup-manifest-keyring" "$RUNNER_TEMP/derived-current-verify.pem"
+
+  finalize-evidence:
+    needs: [validate-images, backup]
+    if: ${{ always() }}
+    runs-on: ubuntu-24.04
+    container:
+      image: ${{ needs.validate-images.outputs.tool_image }}
+    timeout-minutes: 10
+    environment: production-backup-finalization
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Validate immutable execution image
+        env:
+          BACKUP_TOOL_IMAGE_DIGEST: ${{ vars.BACKUP_TOOL_IMAGE_DIGEST }}
+        run: node deployment/scripts/validate-image-reference.js "$BACKUP_TOOL_IMAGE_DIGEST"
+      - name: Materialize finalizer signing key
+        env:
+          BACKUP_FINALIZER_SIGNING_KEY_B64: ${{ secrets.BACKUP_FINALIZER_SIGNING_KEY_B64 }}
+        run: |
+          key="$RUNNER_TEMP/backup-finalizer-signing.pem"
+          printf '%s' "$BACKUP_FINALIZER_SIGNING_KEY_B64" | base64 --decode > "$key"
+          chmod 600 "$key"
+          printf 'BACKUP_FINALIZER_SIGNING_KEY_FILE=%s\n' "$key" >> "$GITHUB_ENV"
+      - name: Write signed independent backup evidence
+        env:
+          BACKUP_JOB_RESULT: ${{ needs.backup.result }}
+          BACKUP_RUN_ID: ${{ github.run_id }}
+          BACKUP_RUN_ATTEMPT: ${{ github.run_attempt }}
+          BACKUP_REPOSITORY: ${{ github.repository }}
+          BACKUP_GIT_REF: ${{ github.ref }}
+          BACKUP_COMMIT_SHA: ${{ github.sha }}
+          BACKUP_LAST_SUCCESSFUL_PHASE: ${{ needs.backup.outputs.last_phase }}
+          BACKUP_COMMITTED_TRIPLET: ${{ needs.backup.outputs.committed_triplet }}
+          BACKUP_FINALIZED_ID: ${{ needs.backup.outputs.backup_id }}
+          BACKUP_FINALIZED_CREATED_AT: ${{ needs.backup.outputs.created_at }}
+          BACKUP_FINALIZED_SOURCE_CLUSTER_SHA256: ${{ needs.backup.outputs.source_cluster_sha256 }}
+          BACKUP_FINALIZED_MANIFEST_SHA256: ${{ needs.backup.outputs.manifest_sha256 }}
+          BACKUP_FINALIZED_SIGNATURE_SHA256: ${{ needs.backup.outputs.manifest_signature_sha256 }}
+          BACKUP_FINALIZED_SIGNING_KEY_ID: ${{ needs.backup.outputs.signing_key_id }}
+          BACKUP_FINALIZED_MIGRATION_COUNT: ${{ needs.backup.outputs.migration_count }}
+          BACKUP_FINALIZED_MIGRATION_DIGEST: ${{ needs.backup.outputs.migration_digest }}
+          BACKUP_FINALIZER_EVIDENCE_DIR: ${{ runner.temp }}/backup-finalizer
+          BACKUP_FINALIZER_SIGNING_KEY_ID: ${{ vars.BACKUP_FINALIZER_SIGNING_KEY_ID }}
+        run: bash .github/scripts/backup-evidence-finalizer.sh
+      - name: Upload independent backup finalizer evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backup-finalizer-evidence-${{ github.run_id }}
+          path: ${{ runner.temp }}/backup-finalizer/*
+          if-no-files-found: warn
+          retention-days: 365

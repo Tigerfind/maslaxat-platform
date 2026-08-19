@@ -1,0 +1,307 @@
+name: Release foundation CI
+
+on:
+  pull_request:
+  push:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  NODE_ENV: test
+
+defaults:
+  run:
+    shell: bash --noprofile --norc -eo pipefail {0}
+
+jobs:
+  secrets:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/secret-scan.txt gitleaks-ff98106
+      - id: secret_scan
+        uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/secret-scan.txt "scan:${{ steps.secret_scan.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: secret-scan-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  backend:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: emaslaxat_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U postgres -d emaslaxat_test"
+          --health-interval=10s --health-timeout=5s --health-retries=5
+      redis:
+        image: redis:7.2.5
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping" --health-interval=10s
+          --health-timeout=5s --health-retries=5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      TEST_DB_NAME: emaslaxat_test
+      REDIS_URL: redis://localhost:6379
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/backend.txt node-22.18.0
+      - id: backend_install
+        run: npm ci
+        working-directory: backend/api
+      - id: backend_test
+        run: npm test -- --runInBand --testTimeout=120000 2>&1 | tee ../../artifacts/backend-tests.txt
+        working-directory: backend/api
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/backend.txt "install:${{ steps.backend_install.outcome }},test:${{ steps.backend_test.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: backend-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  frontend:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/frontend.txt node-22.18.0
+      - id: frontend_install
+        run: npm ci
+        working-directory: frontend
+      - id: frontend_lint
+        run: npm run lint 2>&1 | tee ../artifacts/frontend-lint.txt
+        working-directory: frontend
+      - id: frontend_test
+        run: CI=true npm test -- --watchAll=false --runInBand 2>&1 | tee ../artifacts/frontend-tests.txt
+        working-directory: frontend
+      - id: frontend_build
+        run: CI=true npm run build 2>&1 | tee ../artifacts/frontend-build.txt
+        working-directory: frontend
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/frontend.txt "install:${{ steps.frontend_install.outcome }},lint:${{ steps.frontend_lint.outcome }},test:${{ steps.frontend_test.outcome }},build:${{ steps.frontend_build.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: frontend-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  migration-empty:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      TEST_DB_NAME: emaslaxat_session_a_a1_ci_empty
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/migration-empty.txt postgresql-16.4
+      - id: empty_install
+        run: npm ci
+        working-directory: backend/api
+      - id: empty_migration
+        run: npm test -- --runInBand --testTimeout=120000 tests/migration-foundation.test.js tests/migration-state.test.js 2>&1 | tee ../../artifacts/migration-empty-tests.txt
+        working-directory: backend/api
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/migration-empty.txt "install:${{ steps.empty_install.outcome }},migration:${{ steps.empty_migration.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: migration-empty-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  migration-representative:
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U postgres" --health-interval=10s --health-timeout=5s --health-retries=5
+    env:
+      DB_HOST: localhost
+      DB_PORT: 5432
+      DB_USER: postgres
+      DB_PASSWORD: postgres
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      TEST_DB_NAME: emaslaxat_session_a_a1_ci_representative
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: backend/api/package-lock.json
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/migration-representative.txt postgresql-16.4-sync-era
+      - id: representative_install
+        run: npm ci
+        working-directory: backend/api
+      - id: representative_migration
+        run: npm test -- --runInBand --testTimeout=120000 tests/representative-db-migration.test.js tests/representative-db-scale.test.js 2>&1 | tee ../../artifacts/migration-representative-tests.txt
+        working-directory: backend/api
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/migration-representative.txt "install:${{ steps.representative_install.outcome }},migration:${{ steps.representative_migration.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: migration-representative-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  dependency-audit:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/audit.txt npm-audit-high
+      - id: audit_backend_install
+        run: npm ci
+        working-directory: backend/api
+      - id: audit_frontend_install
+        run: npm ci
+        working-directory: frontend
+      - id: dependency_audit
+        run: |
+          set +e
+          npm --prefix backend/api audit --audit-level=high --json > artifacts/backend-audit.json
+          backend_status=$?
+          npm --prefix frontend audit --audit-level=high --json > artifacts/frontend-audit.json
+          frontend_status=$?
+          test "$backend_status" -eq 0 && test "$frontend_status" -eq 0
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/audit.txt "backend_install:${{ steps.audit_backend_install.outcome }},frontend_install:${{ steps.audit_frontend_install.outcome }},audit:${{ steps.dependency_audit.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: dependency-audit-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  image:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/image.txt docker
+      - id: image_build
+        run: docker build --tag maslaxat-api:${GITHUB_SHA} backend/api 2>&1 | tee artifacts/image-build.txt
+      - id: image_smoke
+        run: |
+          docker run --rm maslaxat-api:${GITHUB_SHA} sh -ec '
+            test -d /app/migrations
+            test -f /app/.sequelizerc
+            test -f /app/Dockerfile
+            test -f /app/docker-entrypoint.sh
+            test "$(id -u)" -ne 0
+            ./node_modules/.bin/sequelize-cli --version
+            clamscan --version
+            qpdf --version
+            pdftotext -v
+            nsjail --help >/dev/null
+            timeout --signal=KILL 60s prlimit --as=536870912 --cpu=30 --nproc=32 -- /usr/bin/freshclam --quiet
+            node /app/src/scripts/checkPdfDefinitions.js
+            node /app/src/workers/pdfSandboxSelfTest.js
+            /app/pdf-toolchain/p3.5-smoke.sh
+          ' 2>&1 | tee artifacts/image-smoke.txt
+      - id: image_inspect
+        run: docker image inspect --format='sha=${{ github.sha }} image_id={{.Id}} repo_digests={{json .RepoDigests}}' maslaxat-api:${GITHUB_SHA} > artifacts/image-digest.txt
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/image.txt "build:${{ steps.image_build.outcome }},smoke:${{ steps.image_smoke.outcome }},inspect:${{ steps.image_inspect.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: image-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
+
+  gate:
+    if: always()
+    needs: [secrets, backend, frontend, migration-empty, migration-representative, dependency-audit, image]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - run: bash .github/scripts/ci-evidence.sh start artifacts/gate.txt release-gate
+      - id: required_gate
+        run: |
+          printf 'secrets=%s\nbackend=%s\nfrontend=%s\nmigration_empty=%s\nmigration_representative=%s\ndependency_audit=%s\nimage=%s\n' \
+            '${{ needs.secrets.result }}' '${{ needs.backend.result }}' '${{ needs.frontend.result }}' \
+            "${{ needs['migration-empty'].result }}" "${{ needs['migration-representative'].result }}" \
+            "${{ needs['dependency-audit'].result }}" '${{ needs.image.result }}' | tee -a artifacts/gate.txt
+          test '${{ needs.secrets.result }}' = success
+          test '${{ needs.backend.result }}' = success
+          test '${{ needs.frontend.result }}' = success
+          test "${{ needs['migration-empty'].result }}" = success
+          test "${{ needs['migration-representative'].result }}" = success
+          test "${{ needs['dependency-audit'].result }}" = success
+          test '${{ needs.image.result }}' = success
+      - if: always()
+        run: bash .github/scripts/ci-evidence.sh finish artifacts/gate.txt "gate:${{ steps.required_gate.outcome }}" "${{ job.status }}"
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-gate-${{ github.sha }}
+          path: artifacts/
+          retention-days: 14
