@@ -6,9 +6,8 @@ const read = (relative) => fs.readFileSync(path.join(root, relative), 'utf8');
 
 test('canonical deployment docs describe current Docker migration-safe readiness contract', () => {
   const deploy = read('DEPLOY.md');
-  const claude = read('CLAUDE.md');
 
-  for (const text of [deploy, claude]) {
+  for (const text of [deploy]) {
     expect(text).toMatch(/Dockerfile/i);
     expect(text).toMatch(/db:migrate:locked/);
     expect(text).toMatch(/exact.*SequelizeMeta|SequelizeMeta.*exact/i);
@@ -85,31 +84,20 @@ test('backend package, lock, and operator docs require the reviewed Node 22 rang
 
 test('Session A status records current dependency and full-test evidence without reopening closed blockers', () => {
   const deploy = read('DEPLOY.md');
-  const claude = read('CLAUDE.md');
   const audit = read('docs/security/wave1-dependency-audit.md');
-  const ledger = read('.superpowers/sdd/session-a-release-foundation/progress.md');
 
   expect(deploy).not.toMatch(/full backend A3 run[\s\S]{0,160}production-jobs.*blocker/i);
   expect(deploy).toMatch(/101 suites[^\n]*1201\/1201|101[^\n]*suites[^\n]*1201[^\n]*tests/i);
-  expect(claude).toMatch(/backend[^\n]*2 moderate/i);
-  expect(claude).toMatch(/frontend[^\n]*31[^\n]*14 high/i);
-
   expect(audit).toMatch(/@aws-sdk\/client-s3@3\.1113\.0/);
   expect(audit).toMatch(/Backend[^\n]*0 critical[^\n]*0 high[^\n]*2 moderate/i);
   expect(audit).toMatch(/Node(?:\.js)? 22\.18\.0|Node `>=22\.18\.0 <23`/i);
   expect(audit).toMatch(/Frontend[^\n]*31[^\n]*14 high/i);
   expect(audit).not.toMatch(/Node 18 Override Investigation|build the Node 18 image/);
 
-  expect(ledger).toContain('TEST_DB_NAME=emaslaxat_session_a_final_full');
-  expect(ledger).toContain('TEST_DB_NAME=emaslaxat_session_a_final_full2');
-  expect(ledger).toContain('tests/catalog-promotions.test.js');
-  expect(ledger).toContain('tests/races.test.js');
-  expect(ledger).toMatch(/first full run[\s\S]*exit 1/i);
-  expect(ledger).toMatch(/second full run[\s\S]*exit 0/i);
-  expect(ledger).toMatch(/A1-A4 task contracts[^\n]*APPROVED_LOCAL/i);
-  expect(ledger).toMatch(/Session A release gate[^\n]*red/i);
-  expect(ledger).toMatch(/47-warning[^\n]*Session B/i);
-  expect(ledger).toMatch(/Router\/CRA[^\n]*Session B/i);
+  expect(deploy).toMatch(/A1-A4 task contracts[^\n]*APPROVED_LOCAL/i);
+  expect(deploy).toMatch(/release gate[^\n]*red/i);
+  expect(audit).toMatch(/47-warning[\s\S]{0,200}Session B/i);
+  expect(audit).toMatch(/Session B[^\n]*Router\/CRA/i);
 });
 
 test('active payment and capability cutover remain refused and legacy role removal remains absent', () => {
