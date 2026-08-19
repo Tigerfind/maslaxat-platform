@@ -112,11 +112,21 @@ const LawyerProfilePage = () => {
             ? p.specializations
             : (p.specialization ? [p.specialization] : []),
           experience: p.experience || 0,
-          region: p.location || '',
+          location: p.location || '',
+          region: p.region || '',
           priceFrom: p.price || 0,
           bio: p.description || '',
-          education: Array.isArray(p.education) ? p.education : [],
-          certifications: Array.isArray(p.certificates) ? p.certificates : [],
+          professionalTitle: p.professionalTitle || '',
+          linkedinUrl: p.linkedinUrl || '',
+          licenseNumber: p.licenseNumber || '',
+          licenseIssuer: p.licenseIssuer || '',
+          licenseIssuedAt: p.licenseIssuedAt || null,
+          licenseExpiresAt: p.licenseExpiresAt || null,
+          consultationFormats: Array.isArray(p.consultationFormats) ? p.consultationFormats : [],
+          consultationDurations: Array.isArray(p.consultationDurations) ? p.consultationDurations : [],
+          experiences: Array.isArray(l.lawyerExperiences) ? l.lawyerExperiences : [],
+          education: Array.isArray(l.lawyerEducations) && l.lawyerEducations.length ? l.lawyerEducations : (Array.isArray(p.education) ? p.education : []),
+          certifications: Array.isArray(l.lawyerCertificates) && l.lawyerCertificates.length ? l.lawyerCertificates : (Array.isArray(p.certificates) ? p.certificates : []),
           languages: Array.isArray(p.languages) ? p.languages : [],
           isAvailable: p.isAvailable === true,
           online: l.presence?.online == null ? null : l.presence.online === true,
@@ -228,7 +238,7 @@ const LawyerProfilePage = () => {
     { value: lawyer.experience, label: t('lawyerProfile.mExperience') },
     { value: lawyer.completedConsultations, label: t('lawyerProfile.mConsultations') },
     { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: t('lawyerProfile.mRating') },
-    { value: lawyer.region || '—', label: t('lawyerProfile.mRegion') },
+    { value: [lawyer.location, lawyer.region].filter(Boolean).join(', ') || '—', label: t('lawyerProfile.mRegion') },
   ];
 
   const portfolioMetrics = [
@@ -287,6 +297,7 @@ const LawyerProfilePage = () => {
               )}
             </div>
             <h1 style={{ fontSize: 22, fontWeight: 400, color: 'var(--text)', margin: 0 }}>{lawyer.name}</h1>
+            {lawyer.professionalTitle && <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 5 }}>{lawyer.professionalTitle}</div>}
             {specText && (
               <div style={{ fontSize: 13, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4 }}>{specText}</div>
             )}
@@ -354,6 +365,21 @@ const LawyerProfilePage = () => {
                   {lawyer.bio || t('lawyerProfile.noBio')}
                 </p>
 
+                {lawyer.experiences.length > 0 && (
+                  <div style={{ marginBottom: 24 }}>
+                    <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 14 }}>Опыт работы</div>
+                    <div style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 18, display: 'grid', gap: 16 }}>
+                      {lawyer.experiences.map((item) => (
+                        <div key={item.id}>
+                          <strong>{item.position}</strong> · {item.organization}
+                          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>{item.startDate} — {item.isCurrent ? 'по настоящее время' : item.endDate}</div>
+                          {item.description && <p style={{ margin: '6px 0 0', color: 'var(--text2)' }}>{item.description}</p>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {(lawyer.education.length > 0 || langText) && (
                   <div className="lp-about-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
                     {lawyer.education.length > 0 && (
@@ -363,7 +389,7 @@ const LawyerProfilePage = () => {
                         </div>
                         <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>
                           {lawyer.education.map((edu, i) => (
-                            <div key={i}>{typeof edu === 'string' ? edu : (edu.title || edu.name || '')}</div>
+                             <div key={edu.id || i}>{typeof edu === 'string' ? edu : `${edu.university || edu.title || edu.name || ''}${edu.specialty ? ` — ${edu.specialty}` : ''}${edu.degree ? ` (${edu.degree})` : ''}`}</div>
                           ))}
                         </div>
                       </div>
@@ -388,7 +414,7 @@ const LawyerProfilePage = () => {
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} className="lp-ach">
                       {lawyer.certifications.map((ach, i) => {
                         const title = typeof ach === 'string' ? ach : (ach.title || ach.name || '');
-                        const sub = typeof ach === 'string' ? '' : (ach.sub || ach.description || '');
+                        const sub = typeof ach === 'string' ? '' : (ach.organization || ach.sub || ach.description || '');
                         return (
                           <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, background: 'rgba(184,149,110,0.06)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: '16px 18px' }}>
                             <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, rgba(184,149,110,0.22), rgba(154,123,90,0.14))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--accent)' }}>
@@ -404,6 +430,13 @@ const LawyerProfilePage = () => {
                       })}
                     </div>
                   </>
+                )}
+                {(lawyer.licenseNumber || lawyer.linkedinUrl || lawyer.consultationFormats.length > 0) && (
+                  <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'grid', gap: 8 }}>
+                    {lawyer.licenseNumber && <div><strong>Лицензия:</strong> {lawyer.licenseNumber}{lawyer.licenseIssuer ? ` · ${lawyer.licenseIssuer}` : ''}</div>}
+                    {lawyer.consultationFormats.length > 0 && <div><strong>Форматы:</strong> {lawyer.consultationFormats.join(', ')} · {lawyer.consultationDurations.join('/')} мин</div>}
+                    {lawyer.linkedinUrl && <a href={lawyer.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>LinkedIn</a>}
+                  </div>
                 )}
               </div>
             )}

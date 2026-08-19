@@ -145,7 +145,7 @@ const translations = {
       loginSuccess: 'Вход выполнен успешно',
       loginError: 'Ошибка входа',
       twoFA: { title: 'Двухфакторная аутентификация', subtitle: 'Введите 6-значный код из приложения-аутентификатора или резервный код', codeLabel: 'Код подтверждения', submit: 'Подтвердить', checking: 'Проверка…', back: 'Назад ко входу', error: 'Неверный код' },
-      social: { or: 'или войти через', acceptLegal: 'Принимаю', terms: 'условия', privacy: 'конфиденциальность' },
+      social: { or: 'или войти через', acceptLegal: 'Принимаю', terms: 'условия', privacy: 'конфиденциальность', linkedin: 'Продолжить с LinkedIn', linkedinCompleting: 'Завершаем вход через LinkedIn…', linkedinErrorTitle: 'Не удалось войти через LinkedIn', linkedinFailed: 'LinkedIn авторизация не завершена', linkedinAccountExists: 'Аккаунт с таким email уже существует. Войдите и привяжите LinkedIn в настройках.', linkedinTwoFactor: 'Для существующего аккаунта завершите вход с 2FA.' },
       invalidCredentials: 'Неверный email или пароль',
 
       // Footer
@@ -197,7 +197,7 @@ const translations = {
       loginSuccess: 'Кириш муваффақиятли бажарилди',
       loginError: 'Кириш хатоси',
       twoFA: { title: 'Икки босқичли аутентификация', subtitle: 'Аутентификатор иловасидан 6 рақамли код ёки заҳира кодини киритинг', codeLabel: 'Тасдиқлаш коди', submit: 'Тасдиқлаш', checking: 'Текширилмоқда…', back: 'Кириш саҳифасига', error: 'Нотўғри код' },
-      social: { or: 'ёки орқали киринг', acceptLegal: 'Қабул қиламан', terms: 'шартлар', privacy: 'махфийлик' },
+      social: { or: 'ёки орқали киринг', acceptLegal: 'Қабул қиламан', terms: 'шартлар', privacy: 'махфийлик', linkedin: 'LinkedIn орқали давом этиш', linkedinCompleting: 'LinkedIn орқали кириш якунланмоқда…', linkedinErrorTitle: 'LinkedIn орқали кириб бўлмади', linkedinFailed: 'LinkedIn авторизацияси якунланмади', linkedinAccountExists: 'Бу email билан аккаунт мавжуд. Кириб, созламаларда LinkedIn ни боғланг.', linkedinTwoFactor: 'Мавжуд аккаунт учун 2FA киришини якунланг.' },
       invalidCredentials: 'Нотўғри email ёки парол',
 
       // Footer
@@ -249,7 +249,7 @@ const translations = {
       loginSuccess: 'Login successful',
       loginError: 'Login error',
       twoFA: { title: 'Two-factor authentication', subtitle: 'Enter the 6-digit code from your authenticator app or a backup code', codeLabel: 'Verification code', submit: 'Verify', checking: 'Checking…', back: 'Back to login', error: 'Invalid code' },
-      social: { or: 'or continue with', acceptLegal: 'I accept', terms: 'terms', privacy: 'privacy' },
+      social: { or: 'or continue with', acceptLegal: 'I accept', terms: 'terms', privacy: 'privacy', linkedin: 'Continue with LinkedIn', linkedinCompleting: 'Completing LinkedIn sign-in…', linkedinErrorTitle: 'LinkedIn sign-in failed', linkedinFailed: 'LinkedIn authorization was not completed', linkedinAccountExists: 'An account with this email exists. Sign in and link LinkedIn in Settings.', linkedinTwoFactor: 'Complete 2FA sign-in for the existing account.' },
       invalidCredentials: 'Invalid email or password',
 
       // Footer
@@ -824,6 +824,7 @@ const translations = {
 
   onboarding: {
     ru: {
+      title: 'Заполните профессиональный профиль', profile: 'Основное', specialization: 'Специализация',
       steps: ['Профиль','Специализация','Расписание','Прайс','Документы'],
       metaTitles: ['Расскажите о себе','Специализация','Расписание','Стоимость','Документы для проверки'],
       metaSubs: ['Фото, описание и опыт работы','Выберите области права — минимум одна','Рабочие дни и часы — минимум 3 дня','Цена за одну консультацию','Загрузите диплом/лицензию — минимум один документ'],
@@ -839,6 +840,7 @@ const translations = {
       savedToast: 'Профиль заполнен!', verifyHint: 'Следующий шаг: загрузите документы (диплом/лицензию) в редакторе профиля и отправьте на проверку — после одобрения вы появитесь в каталоге.', saveError: 'Ошибка сохранения',
     },
     uz: {
+      title: 'Профессионал профилни тўлдиринг', profile: 'Асосий', specialization: 'Ихтисослик',
       steps: ['Профил','Ихтисослик','Жадвал','Нарх','Ҳужжатлар'],
       metaTitles: ['Ўзингиз ҳақингизда','Ихтисослик','Жадвал','Нархи','Текширув учун ҳужжатлар'],
       metaSubs: ['Фото, тавсиф ва иш тажрибаси','Ҳуқуқ соҳаларини танланг — камида битта','Иш кунлари ва соатлари — камида 3 кун','Битта консультация нархи','Диплом/лицензияни юкланг — камида битта ҳужжат'],
@@ -854,6 +856,7 @@ const translations = {
       savedToast: 'Профил тўлдирилди!', verifyHint: 'Кейинги қадам: профиль таҳриридан ҳужжатларни (диплом/лицензия) юкланг ва текширувга юборинг — тасдиқлангач каталогда пайдо бўласиз.', saveError: 'Сақлашда хатолик',
     },
     en: {
+      title: 'Complete your professional profile', profile: 'Profile', specialization: 'Specialization',
       steps: ['Profile','Specialization','Schedule','Price','Documents'],
       metaTitles: ['Tell about yourself','Specialization','Schedule','Price','Verification documents'],
       metaSubs: ['Photo, description and work experience','Choose areas of law — at least one','Working days and hours — at least 3 days','Price per consultation','Upload your diploma/license — at least one document'],
@@ -1463,6 +1466,7 @@ const translations = {
       favRemoved: 'Удалено из избранного',
       favError: 'Ошибка при изменении избранного', favLoadError: 'Не удалось загрузить избранное', favoritesUnavailable: 'Избранное временно недоступно',
       onlineNow: 'Онлайн', onlineOnly: 'Только онлайн', city: 'Город', language: 'Язык', allCities: 'Все города', allLanguages: 'Все языки',
+      zoomAvailable: 'Доступна консультация Zoom',
       presetOnline: '⚡ Онлайн сейчас', presetTop: '⭐ Высокий рейтинг', presetCheap: 'Недорого', presetExperienced: '🎓 Опытные',
       presetTopHint: 'Рейтинг от {n}',
       pickTitle: 'Подберите под себя', pickBudget: 'По карману', pickStatus: 'По статусу', pickAny: 'Любой',
@@ -1528,6 +1532,7 @@ const translations = {
       favRemoved: 'Танланганлардан олиб ташланди',
       favError: 'Танланганларни ўзгартиришда хатолик', favLoadError: 'Танланганларни юклаб бўлмади', favoritesUnavailable: 'Танланганлар вақтинча мавжуд эмас',
       onlineNow: 'Онлайн', onlineOnly: 'Фақат онлайн', city: 'Шаҳар', language: 'Тил', allCities: 'Барча шаҳарлар', allLanguages: 'Барча тиллар',
+      zoomAvailable: 'Zoom консультацияси мавжуд',
       presetOnline: '⚡ Ҳозир онлайн', presetTop: '⭐ Юқори рейтинг', presetCheap: 'Арзон', presetExperienced: '🎓 Тажрибали',
       presetTopHint: 'Рейтинг {n} дан',
       pickTitle: 'Ўзингизга мослаб танланг', pickBudget: 'Бюджет бўйича', pickStatus: 'Даража бўйича', pickAny: 'Ҳар қандай',
@@ -1593,6 +1598,7 @@ const translations = {
       favRemoved: 'Removed from favorites',
       favError: 'Error updating favorites', favLoadError: 'Failed to load favorites', favoritesUnavailable: 'Favorites are temporarily unavailable',
       onlineNow: 'Online', onlineOnly: 'Online only', city: 'City', language: 'Language', allCities: 'All cities', allLanguages: 'All languages',
+      zoomAvailable: 'Zoom consultation available',
       presetOnline: '⚡ Online now', presetTop: '⭐ Top rated', presetCheap: 'Affordable', presetExperienced: '🎓 Experienced',
       presetTopHint: 'Rating from {n}',
       pickTitle: 'Find your match', pickBudget: 'By budget', pickStatus: 'By standing', pickAny: 'Any',

@@ -29,6 +29,7 @@ import { useSelector } from 'react-redux';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
 import clientService from '../../services/clientService';
+import { launchConsultation } from '../../services/meetingLauncher';
 import { clientLawyerService } from '../../services/clientService';
 import RatingDialog from '../../components/UI/RatingDialog';
 import BookingModal from '../../components/BookingModal';
@@ -172,14 +173,16 @@ const ConsultationsPageGlass = () => {
     }
   };
 
-  const handleJoinConsultation = (consultation) => {
+  const handleJoinConsultation = async (consultation) => {
     // Просто открываем комнату. В in_progress переводим только когда стороны
     // реально соединились (видео — по peer-connect на странице звонка), чтобы
     // «дозвон без ответа» не завершал консультацию и не выплачивал юристу.
-    if (consultation.type === 'video') {
-      navigate(`/consultations/video/${consultation.id}`);
-    } else {
-      navigate(`/consultations/chat/${consultation.id}`);
+    try {
+      await launchConsultation(consultation, navigate);
+    } catch (error) {
+      toast.info(error.code === 'POPUP_BLOCKED'
+        ? 'Разрешите всплывающие окна, чтобы открыть Zoom'
+        : error.response?.data?.error || 'Zoom-встреча ещё создаётся');
     }
   };
 

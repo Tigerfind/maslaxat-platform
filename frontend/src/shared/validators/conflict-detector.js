@@ -177,8 +177,9 @@ export const detectCapacityConflict = (lawyerId, date, existingConsultations = [
 /**
  * Проверка бизнес-правил (минимальное время до консультации)
  */
-export const detectBusinessRuleViolation = (date, time, minHoursAhead = 2) => {
-  const requestedDateTime = new Date(`${date}T${time}`);
+export const detectBusinessRuleViolation = (date, time, minHoursAhead = 2, startsAt) => {
+  const absolute = startsAt ? new Date(startsAt) : null;
+  const requestedDateTime = absolute && !Number.isNaN(absolute.getTime()) ? absolute : new Date(`${date}T${time}`);
   const now = new Date();
   const hoursDiff = (requestedDateTime - now) / (1000 * 60 * 60);
 
@@ -239,7 +240,8 @@ export const validateConsultationBooking = (bookingData, context = {}) => {
   const businessRule = detectBusinessRuleViolation(
     bookingData.preferredDate,
     bookingData.preferredTime,
-    minHoursAhead
+    minHoursAhead,
+    bookingData.startsAt,
   );
   if (businessRule) conflicts.push(businessRule);
 

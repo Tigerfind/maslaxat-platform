@@ -25,7 +25,7 @@ function loadGoogleScript() {
   return gisPromise;
 }
 
-const SocialLogin = ({ onSuccess, onError }) => {
+const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
   const { t } = useTranslation();
   const [config, setConfig] = useState(null);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
@@ -87,7 +87,20 @@ const SocialLogin = ({ onSuccess, onError }) => {
 
   const googleOn = config && config.google && config.google.enabled;
   const telegramOn = config && config.telegram && config.telegram.enabled;
-  if (!googleOn && !telegramOn) return null;
+  const linkedinOn = role === 'lawyer' && config?.linkedin?.enabled;
+  if (!googleOn && !telegramOn && !linkedinOn) return null;
+
+  const startLinkedIn = async () => {
+    try {
+      const { data } = await api.post('/auth/linkedin/start', {
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
+      });
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      if (onError) onError(error);
+    }
+  };
 
   return (
     <div style={{ marginTop: 24 }}>
@@ -103,6 +116,19 @@ const SocialLogin = ({ onSuccess, onError }) => {
         </label>
         {acceptedTerms && googleOn && <div ref={googleBtnRef} />}
         {acceptedTerms && telegramOn && <div ref={tgRef} />}
+        {acceptedTerms && linkedinOn && (
+          <button
+            type="button"
+            onClick={startLinkedIn}
+            style={{
+              width: 300, minHeight: 44, border: '1px solid #0A66C2', borderRadius: 10,
+              background: '#0A66C2', color: '#fff', fontFamily: 'inherit', fontWeight: 600,
+              cursor: 'pointer', fontSize: 14,
+            }}
+          >
+            {t('login.social.linkedin')}
+          </button>
+        )}
       </div>
     </div>
   );

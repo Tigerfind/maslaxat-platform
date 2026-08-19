@@ -9,6 +9,7 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import { launchConsultation } from '../../services/meetingLauncher';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
@@ -127,10 +128,17 @@ const LawyerConsultationsPage = () => {
     } catch { toast.error(t('lawyerPanel.rejectError')); }
     finally { setActing(null); }
   };
-  const start = async (id) => {
-    setActing(id);
-    try { await lawyerService.consultation.startConsultation(id); await load(); }
-    catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
+  const start = async (consultation) => {
+    setActing(consultation.id);
+    try {
+      if (consultation.meetingProvider === 'zoom' || consultation.type === 'video') {
+        await launchConsultation(consultation, navigate);
+      } else {
+        await lawyerService.consultation.startConsultation(consultation.id);
+      }
+      await load();
+    }
+    catch (error) { toast.error(error.code === 'POPUP_BLOCKED' ? 'Разрешите всплывающие окна, чтобы открыть Zoom' : t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
   const finish = async (id) => {
     if (!window.confirm(t('lawyerConsult.finishConfirm'))) return;
@@ -327,7 +335,7 @@ const LawyerConsultationsPage = () => {
                       </>
                     )}
                     {c.status === 'accepted' && (
-                      <button disabled={busy} onClick={() => start(c.id)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
+                      <button disabled={busy} onClick={() => start(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
                         <PlayArrowOutlined sx={{ fontSize: 17 }} /> {t('lawyerConsult.start')}
                       </button>
                     )}

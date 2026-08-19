@@ -45,18 +45,24 @@ function tokenFor(user) {
 }
 
 // Быстрые фабрики тестовых записей
+let lawyerSequence = 0;
 async function makeClient(email = 'client@test.uz', overrides = {}) {
   // isVerified:true по умолчанию — тестовый клиент «с подтверждённым контактом»
   // (гейт бронирования требует верификацию). Тест на гейт передаёт isVerified:false.
   return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true, isVerified: true, ...overrides });
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
-  const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
+  lawyerSequence += 1;
+  const phone = `+998${String(900000000 + lawyerSequence).slice(-9)}`;
+  const user = await User.create({ name: 'Test Lawyer', email, phone, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
   // verificationStatus по умолчанию 'approved' — большинство тестов ждут, что юрист
   // сразу виден в каталоге и бронируется. Тест на модерацию передаёт своё значение.
   const lp = await LawyerProfile.create({
     userId: user.id, balance: 0, pendingBalance: 0, price: 100000,
     specialization: 'Гражданское право', specializations: ['Гражданское право'],
+    professionalTitle: 'Тестовый адвокат', location: 'Ташкент', languages: ['ru', 'uz'],
+    licenseNumber: `TEST-${lawyerSequence}`, licenseIssuer: 'Тестовая палата', licenseIssuedAt: '2020-01-01',
+    timezone: 'Asia/Tashkent', consultationFormats: ['chat', 'audio', 'webrtc', 'zoom'], consultationDurations: [30, 60, 90],
     // description + schedule заполнены по умолчанию, чтобы профиль был «полным» для
     // гейта отправки на проверку (не хватает лишь документа — его тест грузит сам).
     description: 'Опытный юрист с многолетней практикой в различных областях права и судов.',

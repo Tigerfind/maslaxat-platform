@@ -1,9 +1,11 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Consultation, User, LawyerProfile, Review, Promo } = require('../models');
+const { Consultation, ConsultationMeeting, User, LawyerProfile, Review, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+const availabilityService = require('../services/availabilityService');
+const zoomMeetingService = require('../services/zoomMeetingService');
 
 // GET /api/consultations — мои консультации
 router.get('/', authenticate, async (req, res, next) => {
@@ -30,6 +32,7 @@ router.get('/', authenticate, async (req, res, next) => {
         // Единственный источник правды по оценке консультации — таблица Review.
         // Его наличие = консультация оценена (клиент видит это как «Архив»).
         { model: Review, as: 'consultationReview', attributes: ['id', 'rating', 'text'] },
+        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'lastError'] },
       ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
@@ -228,16 +231,28 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
     if (!['payment_pending', 'pending', 'accepted'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Эту консультацию нельзя перенести' });
     }
-    // Не в прошлое
-    const start = new Date(`${preferredDate}T${preferredTime}:00`);
-    if (isNaN(start.getTime()) || start < new Date()) {
-      return res.status(400).json({ error: 'Выберите время в будущем' });
+    const profile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
+    let window;
+    try { window = availabilityService.validateWindow(profile, preferredDate, preferredTime, consultation.duration); }
+    catch (error) { return res.status(error.status || 400).json({ error: error.message, code: error.code }); }
+    try {
+      await Consultation.sequelize.transaction(async (transaction) => {
+        await availabilityService.lockBookingParticipants(consultation.lawyerId, consultation.clientId, transaction);
+        await availabilityService.assertAvailable({
+          lawyerId: consultation.lawyerId, clientId: consultation.clientId, window,
+          excludeConsultationId: consultation.id, transaction,
+        });
+        await consultation.update({
+          preferredDate, preferredTime, scheduledStartAt: window.start.toJSDate(),
+          scheduledEndAt: window.end.toJSDate(), scheduleTimezone: window.timezone,
+          reminderSent: false,
+        }, { transaction });
+      });
+    } catch (error) {
+      if (error.code === 'SLOT_UNAVAILABLE') return res.status(409).json({ error: error.message, code: error.code });
+      throw error;
     }
-
-    consultation.preferredDate = preferredDate;
-    consultation.preferredTime = preferredTime;
-    consultation.reminderSent = false; // напоминание сработает на новое время
-    await consultation.save();
+    if (consultation.meetingProvider === 'zoom') zoomMeetingService.updateMeeting(consultation.id).catch(() => {});
 
     // Уведомляем другую сторону
     const isClient = consultation.clientId === req.userId;
@@ -294,6 +309,7 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
     const canceller = await User.findByPk(req.userId, { attributes: ['name'] });
     const otherUserId = consultation.clientId === req.userId ? consultation.lawyerId : consultation.clientId;
     notificationService.notifyConsultationCancelled(otherUserId, canceller?.name || 'Пользователь', consultation);
+    if (consultation.meetingProvider === 'zoom') zoomMeetingService.cancelMeeting(consultation.id).catch(() => {});
 
     res.json({ message: 'Консультация отменена', consultation });
   } catch (err) {

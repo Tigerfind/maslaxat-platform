@@ -9,6 +9,7 @@ const { User, LawyerProfile, PhoneOtp } = require('../models');
 const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
 const LEGAL_VERSION = '2026-08-13';
+router.use('/linkedin', require('./linkedin-auth'));
 
 // Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
 // (считаем все попытки, не только неудачные).
@@ -95,13 +96,14 @@ router.post('/register', emailLimiter, async (req, res, next) => {
         ? specializations
         : (specialization ? [specialization] : []);
       const specs = [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))].slice(0, 12);
-      const primary = specs[0] || 'Общее право';
+      const primary = specs[0] || 'Не указана';
       await LawyerProfile.create({
         userId: user.id,
         specialization: primary,
-        specializations: specs.length ? specs : [primary],
-        price: 200000,
+        specializations: specs,
+        price: 0,
         isAvailable: false, // скрыт до завершения онбординга
+        verificationStatus: 'draft',
       });
     }
 

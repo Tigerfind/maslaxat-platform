@@ -35,12 +35,15 @@ async function main() {
   });
   const lawyer = await User.create({
     email: 'lawyer.e2e@maslaxat.uz', password: 'E2eLawyer123!', name: 'E2E Lawyer',
-    role: 'lawyer', isVerified: true, isActive: true,
+    phone: '+998900000002', role: 'lawyer', isVerified: true, isActive: true,
     legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
   });
   await LawyerProfile.create({
     userId: lawyer.id, specialization: 'Гражданское право', specializations: ['Гражданское право'],
     description: 'Тестовый юрист Playwright с заполненным профилем для проверки каталога и бронирования.',
+    professionalTitle: 'Адвокат по гражданскому праву', location: 'Ташкент', region: 'Ташкент',
+    licenseNumber: 'E2E-LICENSE', licenseIssuer: 'Палата адвокатов', licenseIssuedAt: '2020-01-01',
+    timezone: 'Asia/Tashkent', consultationFormats: ['chat', 'audio', 'webrtc'], consultationDurations: [30, 60, 90],
     experience: 10, price: 100000,
     schedule: { mon: { enabled: true, from: '09:00', to: '18:00' } },
     isAvailable: true, verificationStatus: 'approved', balance: 300000, pendingBalance: 0,

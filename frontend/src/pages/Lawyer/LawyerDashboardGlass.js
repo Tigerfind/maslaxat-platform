@@ -17,6 +17,7 @@ import {
   ErrorOutlineOutlined,
 } from '@mui/icons-material';
 import lawyerService from '../../services/lawyerService';
+import { launchConsultation } from '../../services/meetingLauncher';
 import OnboardingWizard from '../../components/Lawyer/OnboardingWizard';
 import DashboardExtras from '../../components/Lawyer/DashboardExtras';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -143,11 +144,11 @@ const LawyerDashboardGlass = () => {
     }
   };
 
-  const handleStartConsultation = (consultation) => {
-    if (consultation.type === 'video') {
-      navigate(`/consultations/video/${consultation.id}`);
-    } else {
-      navigate(`/consultations/chat/${consultation.id}`);
+  const handleStartConsultation = async (consultation) => {
+    try {
+      await launchConsultation(consultation, navigate);
+    } catch (error) {
+      toast.error(error.code === 'POPUP_BLOCKED' ? 'Разрешите всплывающие окна, чтобы открыть Zoom' : error.response?.data?.error || t('lawyerPanel.genericError'));
     }
   };
 
@@ -207,7 +208,7 @@ const LawyerDashboardGlass = () => {
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
         {/* Баннер модерации: на проверке / отклонён. Одобрен — баннера нет. */}
-        {stats?.verificationStatus === 'pending' && (
+        {stats?.verificationStatus === 'pending_review' && (
           <div style={{
             display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18,
             padding: '14px 18px', borderRadius: 'var(--radius)',

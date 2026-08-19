@@ -19,7 +19,12 @@ async function consultationInMinutes(mins, status = 'accepted') {
   const pad = (n) => String(n).padStart(2, '0');
   const date = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
   const time = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
-  const c = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status, price: 100000, preferredDate: date, preferredTime: time, reminderSent: false });
+  const c = await Consultation.create({
+    clientId: client.id, lawyerId: lawyer.id, question: 'q', status, price: 100000,
+    preferredDate: date, preferredTime: time, scheduledStartAt: when,
+    scheduledEndAt: new Date(when.getTime() + 60 * 60 * 1000), scheduleTimezone: 'Asia/Tashkent',
+    reminderSent: false,
+  });
   return { client, lawyer, c };
 }
 

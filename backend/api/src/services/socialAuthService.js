@@ -15,6 +15,7 @@ function config() {
   return {
     google: { enabled: !!GOOGLE_CLIENT_ID, clientId: GOOGLE_CLIENT_ID || null },
     telegram: { enabled: !!TELEGRAM_BOT_TOKEN, botUsername: TELEGRAM_BOT_USERNAME || null },
+    linkedin: { enabled: Boolean(process.env.LINKEDIN_CLIENT_ID && process.env.LINKEDIN_CLIENT_SECRET && process.env.LINKEDIN_REDIRECT_URI) },
   };
 }
 

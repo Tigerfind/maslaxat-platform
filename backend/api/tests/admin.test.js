@@ -129,13 +129,13 @@ describe('admin: достоверность списков (Фаза 1)', () => 
       name: 'На проверке', email: 'pendinglawyer@count.uz', password: 'x12345678', role: 'lawyer',
     });
     await models.LawyerProfile.create({
-      userId: lawyer.id, specialization: 'Гражданское право', verificationStatus: 'pending',
+      userId: lawyer.id, specialization: 'Гражданское право', verificationStatus: 'pending_review',
     });
 
-    const pending = await request(app).get('/api/admin/lawyers?status=pending')
+    const pending = await request(app).get('/api/admin/lawyers?status=pending_review')
       .set('Authorization', `Bearer ${token}`);
     expect(pending.status).toBe(200);
-    expect(pending.body.lawyers.every((l) => l.profile.verificationStatus === 'pending')).toBe(true);
+    expect(pending.body.lawyers.every((l) => l.profile.verificationStatus === 'pending_review')).toBe(true);
     expect(pending.body.counts.pending).toBeGreaterThanOrEqual(1);
 
     const approved = await request(app).get('/api/admin/lawyers?status=approved')

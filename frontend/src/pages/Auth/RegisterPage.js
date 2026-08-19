@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import {
@@ -11,6 +12,7 @@ import {
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
 import { loginSuccess } from '../../store/slices/authSlice';
+import SocialLogin from '../../components/Auth/SocialLogin';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -105,6 +107,15 @@ const RegisterPage = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleLinkedInSuccess = (data) => {
+    if (data.twoFactorRequired) {
+      toast.error(t('login.twoFA.required'));
+      return;
+    }
+    dispatch(loginSuccess({ user: data.user, token: data.token, role: data.role }));
+    navigate('/lawyer/dashboard', { replace: true });
   };
 
   const inputStyles = {
@@ -210,6 +221,13 @@ const RegisterPage = () => {
                 {t('register.and')} <Box component="a" href="/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
               </Typography>
             </Box>
+            {role === 'lawyer' && (
+              <SocialLogin
+                role="lawyer"
+                onSuccess={handleLinkedInSuccess}
+                onError={(socialError) => toast.error(socialError.response?.data?.error || t('login.social.linkedinFailed'))}
+              />
+            )}
           </Box>
         </Box>
       );

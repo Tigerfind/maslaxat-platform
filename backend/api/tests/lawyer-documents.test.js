@@ -120,7 +120,7 @@ describe('юрист управляет верификационными док�
     expect(res.status).toBe(200);
 
     await lp.reload();
-    expect(lp.verificationStatus).toBe('pending');
+    expect(lp.verificationStatus).toBe('pending_review');
     expect(lp.rejectionReason).toBeNull();
   });
 

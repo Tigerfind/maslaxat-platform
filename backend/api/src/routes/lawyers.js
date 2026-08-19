@@ -1,20 +1,30 @@
 const router = require('express').Router();
 const { Op, fn, col, literal, where: sqlWhere } = require('sequelize');
-const { sequelize, User, LawyerProfile, Review, Consultation } = require('../models');
+const {
+  sequelize, User, LawyerProfile, LawyerExperience, LawyerEducation, LawyerCertificate,
+  ZoomConnection, Review, Consultation,
+} = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const tiers = require('../services/lawyerTiers');
 const presenceService = require('../services/presenceService');
+const availabilityService = require('../services/availabilityService');
 
 // Пороги быстрых фильтров каталога. Держим в одном месте, чтобы подпись чипа
 // («Опытные») и условие выборки не разъезжались.
 const HIGH_RATING_FROM = 4.5;
 const EXPERIENCED_FROM = 10;
 const PUBLIC_PROFILE_ATTRIBUTES = [
-  'specialization', 'specializations', 'description', 'experience', 'price',
+  'professionalTitle', 'specialization', 'specializations', 'description', 'experience', 'price',
   'rating', 'reviewsCount', 'completedCases', 'location', 'languages',
-  'education', 'certificates', 'schedule', 'isAvailable',
+  'region', 'linkedinUrl', 'licenseNumber', 'licenseIssuer', 'licenseIssuedAt', 'licenseExpiresAt',
+  'consultationFormats', 'consultationDurations', 'timezone', 'isAvailable',
+];
+const CATALOG_PROFILE_ATTRIBUTES = [
+  'professionalTitle', 'specialization', 'specializations', 'experience', 'price',
+  'rating', 'reviewsCount', 'completedCases', 'location', 'region', 'languages',
+  'education', 'consultationFormats', 'consultationDurations', 'isAvailable',
 ];
 const PUBLIC_REVIEW_ATTRIBUTES = [
   'id', 'rating', 'text', 'replyText', 'repliedAt', 'helpfulCount', 'createdAt',
@@ -108,7 +118,7 @@ async function catalogFacets(baseUserWhere, onlineUserIds = []) {
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, sortBy, location, language, minPrice, maxPrice, onlineOnly, experience, budget, status, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, minExperience, sortBy, location, language, minPrice, maxPrice, onlineOnly, availableOnly, zoomAvailable, experience, budget, status, page = 1, limit = 20 } = req.query;
     const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
     const limitNumber = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
     const offset = (pageNumber - 1) * limitNumber;
@@ -147,6 +157,13 @@ router.get('/', async (req, res, next) => {
     // вообще — пилюли «Опыт» в сайдбаре были декоративными.
     const expRange = parseExperienceRange(experience);
     if (expRange) profileWhere.experience = expRange;
+    if (!expRange && Number.isFinite(Number(minExperience)) && Number(minExperience) >= 0) {
+      profileWhere.experience = { [Op.gte]: Number(minExperience) };
+    }
+    if (availableOnly === 'true' || availableOnly === true) profileWhere.isAvailable = true;
+    if (zoomAvailable === 'true' || zoomAvailable === true) {
+      profileWhere.consultationFormats = { [Op.contains]: ['zoom'] };
+    }
 
     // Подбор «по карману»: сегмент цены считается от терцилей реальных цен
     // каталога, а не от константы.
@@ -177,6 +194,7 @@ router.get('/', async (req, res, next) => {
       const pattern = `%${escapedTerm}%`;
       profileWhere[Op.or] = [
         { specialization: { [Op.iLike]: pattern } },
+        { professionalTitle: { [Op.iLike]: pattern } },
         sqlWhere(fn('array_to_string', col('profile.specializations'), ' '), { [Op.iLike]: pattern }),
         sqlWhere(col('User.name'), { [Op.iLike]: pattern }),
       ];
@@ -203,9 +221,15 @@ router.get('/', async (req, res, next) => {
       include: [{
         model: LawyerProfile,
         as: 'profile',
-        attributes: PUBLIC_PROFILE_ATTRIBUTES,
+        attributes: CATALOG_PROFILE_ATTRIBUTES,
         where: profileWhere,
         required: true,
+      }, {
+        model: ZoomConnection,
+        as: 'zoomConnection',
+        attributes: ['id'],
+        where: { status: 'connected' },
+        required: zoomAvailable === 'true' || zoomAvailable === true,
       }],
       order,
       distinct: true,
@@ -226,7 +250,14 @@ router.get('/', async (req, res, next) => {
       const profile = plain.profile && typeof plain.profile.toJSON === 'function'
         ? plain.profile.toJSON()
         : plain.profile;
-      if (profile) plain.profile = { ...profile, status: tiers.statusOf(profile) };
+      const hasZoom = Boolean(plain.zoomConnection);
+      delete plain.zoomConnection;
+      if (profile) plain.profile = {
+        ...profile,
+        status: tiers.statusOf(profile),
+        zoomAvailable: hasZoom,
+        consultationFormats: (profile.consultationFormats || []).filter((format) => format !== 'zoom' || hasZoom),
+      };
       plain.presence = presenceService.getPresenceFromSnapshot(u.id, presenceSnapshot);
       return plain;
     });
@@ -268,6 +299,14 @@ router.get('/filter-options', async (req, res, next) => {
   }
 });
 
+router.get('/:id/available-slots', async (req, res, next) => {
+  try {
+    return res.json(await availabilityService.listAvailableSlots(req.params.id, req.query));
+  } catch (error) {
+    return res.status(error.status || 500).json({ error: error.message, code: error.code });
+  }
+});
+
 // GET /api/lawyers/:id — профиль юриста
 router.get('/:id', async (req, res, next) => {
   try {
@@ -283,6 +322,10 @@ router.get('/:id', async (req, res, next) => {
           where: { verificationStatus: 'approved' },
           required: true,
         },
+        { model: LawyerExperience, as: 'lawyerExperiences', attributes: ['id', 'organization', 'position', 'startDate', 'endDate', 'isCurrent', 'description'], separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerEducation, as: 'lawyerEducations', attributes: ['id', 'university', 'faculty', 'specialty', 'degree', 'startYear', 'endYear', 'country', 'city'], separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerCertificate, as: 'lawyerCertificates', attributes: ['id', 'title', 'organization', 'issuedAt', 'credentialUrl'], separate: true, order: [['displayOrder', 'ASC']] },
+        { model: ZoomConnection, as: 'zoomConnection', attributes: ['id'], where: { status: 'connected' }, required: false },
         {
           model: Review,
           as: 'receivedReviews',
@@ -303,6 +346,11 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const plainLawyer = lawyer.toJSON();
+    const hasZoom = Boolean(plainLawyer.zoomConnection);
+    delete plainLawyer.zoomConnection;
+    plainLawyer.profile.zoomAvailable = hasZoom;
+    plainLawyer.profile.consultationFormats = (plainLawyer.profile.consultationFormats || [])
+      .filter((format) => format !== 'zoom' || hasZoom);
     const presenceSnapshot = await presenceService.getSnapshot('lawyer');
     plainLawyer.presence = presenceService.getPresenceFromSnapshot(lawyer.id, presenceSnapshot);
     res.json({ lawyer: plainLawyer });
@@ -342,7 +390,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     }
 
     const lawyer = await User.findOne({
-      where: { id: req.params.id, role: 'lawyer' },
+      where: { id: req.params.id, role: 'lawyer', isActive: true },
       include: [{ model: LawyerProfile, as: 'profile' }],
     });
 
@@ -359,13 +407,16 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
 
     // Длительность (30/60/90 мин) масштабирует цену — считаем на сервере так же,
     // как показывает UI (base * duration / 60). Клиентской сумме не доверяем.
-    const ALLOWED_DURATIONS = [30, 60, 90];
+    const ALLOWED_DURATIONS = lawyer.profile.consultationDurations?.length
+      ? lawyer.profile.consultationDurations : [30, 60, 90];
     let duration = parseInt(req.body.duration, 10);
-    if (!ALLOWED_DURATIONS.includes(duration)) duration = 60;
+    if (req.body.duration === undefined) duration = 60;
+    if (!ALLOWED_DURATIONS.includes(duration)) return res.status(400).json({ error: 'Недопустимая длительность консультации' });
 
     // Валидация формата даты/времени, если переданы (как в reschedule) — иначе
     // мусорные значения молча игнорировались напоминаниями/календарём.
     const { preferredDate, preferredTime } = req.body;
+    if (Boolean(preferredDate) !== Boolean(preferredTime)) return res.status(400).json({ error: 'Укажите и дату, и время консультации' });
     if (preferredDate && !/^\d{4}-\d{2}-\d{2}$/.test(preferredDate)) {
       return res.status(400).json({ error: 'Неверный формат даты (YYYY-MM-DD)' });
     }
@@ -373,17 +424,12 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       return res.status(400).json({ error: 'Неверный формат времени (HH:mm)' });
     }
 
-    // Слот должен попадать в рабочие часы юриста (если расписание задано). Раньше
-    // валидировался только формат — клиент мог забронировать закрытый день/время.
-    const sched = lawyer.profile.schedule;
-    const scheduled = sched && typeof sched === 'object' && Object.values(sched).some((day) => day && day.enabled);
-    if (scheduled && preferredDate && preferredTime) {
-      const DK = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay() → ключ расписания
-      const key = DK[new Date(`${preferredDate}T00:00:00`).getDay()];
-      const day = sched[key];
-      // Строки HH:mm сравниваются лексикографически корректно (нули впереди).
-      if (!day || !day.enabled || preferredTime < day.from || preferredTime >= day.to) {
-        return res.status(400).json({ error: 'Выбранное время вне рабочих часов юриста' });
+    let scheduledWindow = null;
+    if (preferredDate && preferredTime) {
+      try {
+        scheduledWindow = availabilityService.validateWindow(lawyer.profile, preferredDate, preferredTime, duration);
+      } catch (error) {
+        return res.status(error.status || 400).json({ error: error.message, code: error.code, minLeadMinutes: error.minLeadMinutes });
       }
     }
 
@@ -417,10 +463,24 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
     // не доверяем). Базовая (платная) цена — по длительности.
     const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
+    const requestedFormat = req.body.consultationType || 'webrtc';
+    if (!['chat', 'audio', 'webrtc', 'video', 'zoom'].includes(requestedFormat)) return res.status(400).json({ error: 'Некорректный формат консультации' });
+    const normalizedFormat = requestedFormat === 'video' ? 'webrtc' : requestedFormat;
+    if (normalizedFormat === 'zoom' && !scheduledWindow) return res.status(400).json({ error: 'Для Zoom выберите свободное время' });
+    if (!lawyer.profile.consultationFormats?.includes(normalizedFormat)) return res.status(400).json({ error: 'Юрист не поддерживает выбранный формат' });
+    const assertZoomConnected = async (transaction) => {
+      if (normalizedFormat !== 'zoom') return;
+      await availabilityService.lockZoomConnection(lawyer.id, transaction);
+      const zoom = await ZoomConnection.findOne({
+        where: { userId: lawyer.id, status: 'connected' }, transaction, lock: transaction.LOCK.UPDATE,
+      });
+      if (!zoom) throw availabilityService.slotError('ZOOM_NOT_CONNECTED', 'Zoom юриста не подключён', 409);
+    };
     const baseFields = {
       clientId: req.userId,
       lawyerId: lawyer.id,
-      type: req.body.consultationType || 'video',
+      type: normalizedFormat === 'chat' ? 'chat' : normalizedFormat === 'audio' ? 'phone' : 'video',
+      meetingProvider: normalizedFormat === 'zoom' ? 'zoom' : normalizedFormat === 'webrtc' ? 'webrtc' : 'none',
       question: problems[0].text,
       problems,
       // Основная категория записи = первая категория первой проблемы (для фильтров/списков).
@@ -429,6 +489,9 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       preferredDate: req.body.preferredDate,
       preferredTime: req.body.preferredTime,
       duration,
+      scheduledStartAt: scheduledWindow?.start.toJSDate() || null,
+      scheduledEndAt: scheduledWindow?.end.toJSDate() || null,
+      scheduleTimezone: scheduledWindow?.timezone || null,
       legalAcceptedAt: new Date(),
       legalVersion: req.body.legalVersion,
     };
@@ -458,11 +521,17 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     const paidFields = () => ({
       ...baseFields, price, isFree: false, freeSource: null, notes,
       promoCode: appliedPromo ? appliedPromo.code : null,
-      status: 'pending', billingStatus: 'held',
+      status: normalizedFormat === 'zoom' ? 'payment_pending' : 'pending',
+      billingStatus: normalizedFormat === 'zoom' ? 'none' : 'held',
     });
 
     if (!wantsFree) {
-      consultation = await Consultation.create(paidFields());
+      await Consultation.sequelize.transaction(async (transaction) => {
+        await availabilityService.lockBookingParticipants(lawyer.id, req.userId, transaction);
+        await assertZoomConnected(transaction);
+        if (scheduledWindow) await availabilityService.assertAvailable({ lawyerId: lawyer.id, clientId: req.userId, window: scheduledWindow, transaction });
+        consultation = await Consultation.create(paidFields(), { transaction });
+      });
     } else {
       // ГОНКА #3: право на бесплатное пересчитываем и создаём бронь ПОД per-client
       // advisory-локом в одной транзакции. Лок сериализует брони ТОЛЬКО этого клиента
@@ -471,11 +540,9 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       // hard-гарантия для loyalty (defense-in-depth).
       try {
         await Consultation.sequelize.transaction(async (t) => {
-          await Consultation.sequelize.query(
-            'SELECT pg_advisory_xact_lock(hashtext(:k))',
-            { replacements: { k: `booking:${req.userId}` }, transaction: t }
-          );
-
+          await availabilityService.lockBookingParticipants(lawyer.id, req.userId, t);
+          await assertZoomConnected(t);
+          if (scheduledWindow) await availabilityService.assertAvailable({ lawyerId: lawyer.id, clientId: req.userId, window: scheduledWindow, transaction: t });
           let fields = paidFields(); // если право не подтвердится под локом — платно
           if (req.body.useFreePromo) {
             const { computeLoyalty } = require('../services/loyaltyService');
@@ -499,7 +566,12 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
         // (лок не спас в экзотическом случае) — бронируем как ПЛАТНУЮ, не роняем запрос.
         if (e.name === 'SequelizeUniqueConstraintError') {
           isFree = false; freeSource = null;
-          consultation = await Consultation.create(paidFields());
+          await Consultation.sequelize.transaction(async (transaction) => {
+            await availabilityService.lockBookingParticipants(lawyer.id, req.userId, transaction);
+            await assertZoomConnected(transaction);
+            if (scheduledWindow) await availabilityService.assertAvailable({ lawyerId: lawyer.id, clientId: req.userId, window: scheduledWindow, transaction });
+            consultation = await Consultation.create(paidFields(), { transaction });
+          });
         } else {
           throw e;
         }
@@ -524,10 +596,11 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     res.status(201).json({
       success: true,
       message: 'Запрос отправлен юристу',
-      requiresPayment: false,
+      requiresPayment: consultation.status === 'payment_pending',
       consultation,
     });
   } catch (err) {
+    if (err.code === 'SLOT_UNAVAILABLE') return res.status(409).json({ error: err.message, code: err.code });
     next(err);
   }
 });

@@ -91,7 +91,7 @@ const LawyerProfileEditPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [verificationStatus, setVerificationStatus] = useState('pending');
+  const [verificationStatus, setVerificationStatus] = useState('draft');
   const [meta, setMeta] = useState({ rating: 0, cases: 0 }); // для мини-статистики шапки
 
   const [form, setForm] = useState({
@@ -127,7 +127,7 @@ const LawyerProfileEditPage = () => {
           avatarFile: null,
           avatarPreview: res.data.user?.avatar || null,
         });
-        setVerificationStatus(p.verificationStatus || 'pending');
+        setVerificationStatus(p.verificationStatus || 'draft');
         setMeta({ rating: p.rating || 0, cases: p.completedCases || 0 });
       } catch {
         setError('lawyerPanel.loadProfileError');

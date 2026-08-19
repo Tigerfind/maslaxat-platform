@@ -4,6 +4,13 @@ const { Op } = require('sequelize');
 const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal, FinancialEvent } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { isPaymentReservationExpired } = require('../services/availabilityService');
+
+const expireReservation = async (consultation, transaction) => {
+  if (!isPaymentReservationExpired(consultation)) return false;
+  await consultation.update({ status: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
+  return true;
+};
 
 // ─── Payme JSON-RPC Error Codes ───────────────────────────────
 const ERRORS = {
@@ -61,6 +68,9 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
     }
     if (consultation.status !== 'payment_pending') {
       return res.status(400).json({ error: 'Консультация уже оплачена или отменена' });
+    }
+    if (await expireReservation(consultation)) {
+      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
     }
 
     const existingPayment = await Payment.findOne({ where: { consultationId } });
@@ -126,6 +136,9 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
     }
     if (consultation.status !== 'payment_pending') {
       return res.status(400).json({ error: 'Консультацию нельзя оплатить (уже оплачена или отменена)' });
+    }
+    if (await expireReservation(consultation)) {
+      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
     }
 
     let payment = await Payment.findOne({ where: { consultationId } });
@@ -196,6 +209,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
 
         if (payment.status !== 'pending') return replyError(ERRORS.CANT_PERFORM);
+        if (!payment.Consultation || isPaymentReservationExpired(payment.Consultation)) return replyError(ERRORS.CANT_PERFORM);
 
         return reply({ allow: true });
       }
@@ -219,6 +233,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (params.amount !== Number(payment.amount) * 100) return { error: ERRORS.INVALID_AMOUNT };
           if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') return { error: ERRORS.CANT_PERFORM };
+          if (await expireReservation(consultation, transaction)) return { error: ERRORS.CANT_PERFORM };
           if (payment.transactionId && payment.transactionId !== params.id) return { error: ERRORS.CANT_PERFORM };
 
           const createTime = payment.providerResponse?.createTime || params.time;
@@ -265,6 +280,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') {
             return { error: ERRORS.CANT_PERFORM };
           }
+          if (await expireReservation(consultation, transaction)) return { error: ERRORS.CANT_PERFORM };
 
           const lawyerProfile = await LawyerProfile.findOne({
             where: { userId: consultation.lawyerId },

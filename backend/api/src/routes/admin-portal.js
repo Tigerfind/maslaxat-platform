@@ -1,7 +1,11 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
 const fs = require('fs');
-const { User, LawyerProfile, Consultation, Review, Specialization, SupportTicket, Promo, LawyerDocument, Withdrawal, Payment, FinancialEvent } = require('../models');
+const {
+  sequelize, User, LawyerProfile, LawyerExperience, LawyerEducation, LawyerCertificate,
+  LawyerProfileStatusHistory, Consultation, Review, Specialization, SupportTicket,
+  Promo, LawyerDocument, Withdrawal, Payment, FinancialEvent,
+} = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
 const { withLawyerCounts } = require('../services/specializationStats');
@@ -172,12 +176,12 @@ router.get('/lawyers', async (req, res, next) => {
     // Фильтр по статусу модерации (на профиле). status — основной параметр
     // (pending/approved/rejected); verified=true/false оставлен для совместимости.
     const profileWhere = {};
-    if (['pending', 'approved', 'rejected'].includes(status)) {
+    if (['draft', 'pending_review', 'approved', 'rejected', 'suspended'].includes(status)) {
       profileWhere.verificationStatus = status;
     } else if (verified === 'true') {
       profileWhere.verificationStatus = 'approved';
     } else if (verified === 'false') {
-      profileWhere.verificationStatus = 'pending';
+      profileWhere.verificationStatus = 'pending_review';
     }
 
     // Счётчики очереди модерации — по всей таблице, а не по текущей странице.
@@ -196,7 +200,7 @@ router.get('/lawyers', async (req, res, next) => {
       }),
       User.count({ where: { role: 'lawyer' } }),
       LawyerProfile.count({ where: { verificationStatus: 'approved' } }),
-      LawyerProfile.count({ where: { verificationStatus: 'pending' } }),
+      LawyerProfile.count({ where: { verificationStatus: 'pending_review' } }),
       LawyerProfile.count({ where: { verificationStatus: 'rejected' } }),
     ]);
 
@@ -217,6 +221,31 @@ router.get('/lawyers', async (req, res, next) => {
   }
 });
 
+router.get('/lawyers/:id/moderation', async (req, res, next) => {
+  try {
+    const lawyer = await User.findOne({
+      where: { id: req.params.id, role: 'lawyer' },
+      attributes: ['id', 'name', 'email', 'phone', 'avatar', 'isVerified', 'isActive'],
+      include: [
+        { model: LawyerProfile, as: 'profile' },
+        { model: LawyerExperience, as: 'lawyerExperiences', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerEducation, as: 'lawyerEducations', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerCertificate, as: 'lawyerCertificates', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerDocument, as: 'lawyerDocuments', separate: true, attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'] },
+      ],
+    });
+    if (!lawyer?.profile) return res.status(404).json({ error: 'Юрист не найден' });
+    const history = await LawyerProfileStatusHistory.findAll({
+      where: { lawyerProfileId: lawyer.profile.id },
+      include: [{ model: User, as: 'actor', attributes: ['id', 'name', 'role'] }],
+      order: [['createdAt', 'DESC']],
+    });
+    return res.json({ lawyer, history, completeness: await computeProfileCompleteness(lawyer.id) });
+  } catch (error) {
+    return next(error);
+  }
+});
+
 // POST /lawyers/:id/approve — approve lawyer verification
 router.post('/lawyers/:id/approve', async (req, res, next) => {
   try {
@@ -228,19 +257,22 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    const completeness = await computeProfileCompleteness(user.id);
-    if (!completeness.complete) {
-      return res.status(400).json({
-        error: 'Профиль юриста заполнен не полностью',
-        missing: completeness.missing,
-      });
-    }
-
-    // Модерация — на профиле; user.isActive держим true (isActive = блокировка).
-    user.profile.verificationStatus = 'approved';
-    user.profile.rejectionReason = null;
-    await user.profile.save();
-    if (!user.isActive) { user.isActive = true; await user.save(); }
+    if (!['pending_review', 'pending'].includes(user.profile.verificationStatus)) return res.status(409).json({ error: 'Профиль не ожидает проверки' });
+    await sequelize.transaction(async (transaction) => {
+      const profile = await LawyerProfile.findByPk(user.profile.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!['pending_review', 'pending'].includes(profile.verificationStatus)) throw Object.assign(new Error('STALE_MODERATION'), { status: 409 });
+      const completeness = await computeProfileCompleteness(user.id, { transaction });
+      if (!completeness.complete) throw Object.assign(new Error('PROFILE_INCOMPLETE'), { status: 400, missing: completeness.missing });
+      const fromStatus = profile.verificationStatus;
+      profile.verificationStatus = 'approved';
+      profile.rejectionReason = null;
+      profile.isAvailable = true;
+      await profile.save({ transaction });
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id, actorUserId: req.userId,
+        fromStatus, toStatus: 'approved', metadata: { source: 'admin_review' },
+      }, { transaction });
+    });
     disconnectUserSockets(user.id);
 
     // Уведомляем юриста об одобрении (fail-safe: ошибка уведомления не валит запрос)
@@ -253,8 +285,11 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
       );
     } catch (e) { /* notification is best-effort */ }
 
+    await user.reload({ include: [{ model: LawyerProfile, as: 'profile' }] });
     res.json({ success: true, message: 'Юрист одобрен', user });
   } catch (err) {
+    if (err.message === 'PROFILE_INCOMPLETE') return res.status(400).json({ error: 'Профиль юриста заполнен не полностью', missing: err.missing });
+    if (err.status) return res.status(err.status).json({ error: 'Решение уже принято другим администратором' });
     next(err);
   }
 });
@@ -263,6 +298,7 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
 router.post('/lawyers/:id/reject', async (req, res, next) => {
   try {
     const reason = (req.body && typeof req.body.reason === 'string') ? req.body.reason.trim().slice(0, 500) : '';
+    if (!reason) return res.status(400).json({ error: 'Укажите причину отклонения' });
     const user = await User.findOne({
       where: { id: req.params.id, role: 'lawyer' },
       include: [{ model: LawyerProfile, as: 'profile' }],
@@ -271,11 +307,20 @@ router.post('/lawyers/:id/reject', async (req, res, next) => {
       return res.status(404).json({ error: 'Юрист не найден' });
     }
 
-    // Отклонение убирает из каталога, но НЕ блокирует аккаунт — юрист может
-    // исправить документы и подать снова (isActive трогаем только при блокировке).
-    user.profile.verificationStatus = 'rejected';
-    user.profile.rejectionReason = reason || null;
-    await user.profile.save();
+    if (!['pending_review', 'pending'].includes(user.profile.verificationStatus)) return res.status(409).json({ error: 'Профиль не ожидает проверки' });
+    await sequelize.transaction(async (transaction) => {
+      const profile = await LawyerProfile.findByPk(user.profile.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!['pending_review', 'pending'].includes(profile.verificationStatus)) throw Object.assign(new Error('STALE_MODERATION'), { status: 409 });
+      const fromStatus = profile.verificationStatus;
+      profile.verificationStatus = 'rejected';
+      profile.rejectionReason = reason;
+      profile.isAvailable = false;
+      await profile.save({ transaction });
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id, actorUserId: req.userId,
+        fromStatus, toStatus: 'rejected', reason, metadata: { source: 'admin_review' },
+      }, { transaction });
+    });
     disconnectUserSockets(user.id);
 
     try {
@@ -289,8 +334,10 @@ router.post('/lawyers/:id/reject', async (req, res, next) => {
       );
     } catch (e) { /* notification is best-effort */ }
 
+    await user.reload({ include: [{ model: LawyerProfile, as: 'profile' }] });
     res.json({ success: true, message: 'Юрист отклонён', user });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: 'Решение уже принято другим администратором' });
     next(err);
   }
 });

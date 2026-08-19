@@ -8,6 +8,7 @@ const WINDOW_MIN = 60; // напоминаем, когда до старта ≤
 
 // Собирает дату+время консультации в объект Date. Возвращает null, если данных нет.
 function startDateTime(consultation) {
+  if (consultation.scheduledStartAt) return new Date(consultation.scheduledStartAt);
   if (!consultation.preferredDate || !consultation.preferredTime) return null;
   // preferredDate: 'YYYY-MM-DD', preferredTime: 'HH:mm'
   const iso = `${consultation.preferredDate}T${String(consultation.preferredTime).slice(0, 5)}:00`;
@@ -18,6 +19,11 @@ function startDateTime(consultation) {
 async function sendReminderEmail(user, partnerName, consultation) {
   if (!user?.email) return;
   try {
+    const timezone = consultation.scheduleTimezone || 'Asia/Tashkent';
+    const startsAt = startDateTime(consultation);
+    const displayedStart = startsAt?.toLocaleString('ru-RU', {
+      timeZone: timezone, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit',
+    });
     await sendMail({
       to: user.email,
       subject: 'Напоминание: скоро консультация — MaslaXat',
@@ -26,8 +32,8 @@ async function sendReminderEmail(user, partnerName, consultation) {
           <h2 style="color:#8B7355">Скоро консультация</h2>
           <p>Здравствуйте, ${user.name || ''}!</p>
           <p>Напоминаем: ваша ${consultation.type === 'video' ? 'видео' : 'чат'}-консультация
-          с <b>${partnerName}</b> начнётся примерно через час — сегодня в
-          <b>${consultation.preferredTime}</b>.</p>
+          с <b>${partnerName}</b> начнётся примерно через час —
+          <b>${displayedStart || consultation.preferredTime} (${timezone})</b>.</p>
           <p>Пожалуйста, будьте готовы вовремя.</p>
           <p style="color:#8a7a66;font-size:13px">— Команда MaslaXat</p>
         </div>`,
@@ -42,19 +48,12 @@ async function checkUpcomingReminders() {
   try {
     const now = new Date();
     const horizon = new Date(now.getTime() + WINDOW_MIN * 60 * 1000);
-    // ЛОКАЛЬНАЯ дата (preferredDate + preferredTime трактуются как локальное время сервера).
-    // Раньше здесь была UTC-дата → рассинхрон у сервера не в UTC и промахи около полуночи.
-    const localDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-    const today = localDate(now);
-    const tomorrow = localDate(new Date(now.getTime() + 24 * 60 * 60 * 1000));
-
-    // Кандидаты: подтверждённые/ожидающие, ещё не напомненные, на сегодня/завтра
-    // (завтра — чтобы поймать окно, пересекающее полночь). Точное окно — по времени ниже.
+    // scheduledStartAt is UTC and avoids server/lawyer timezone drift around midnight.
     const candidates = await Consultation.findAll({
       where: {
         status: { [Op.in]: ['accepted', 'pending'] },
         reminderSent: false,
-        preferredDate: { [Op.in]: [today, tomorrow] },
+        scheduledStartAt: { [Op.gt]: now, [Op.lte]: horizon },
       },
       include: [
         { model: User, as: 'client', attributes: ['id', 'name', 'email'] },

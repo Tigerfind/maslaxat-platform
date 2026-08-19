@@ -43,6 +43,8 @@ const AdminLawyersPage = () => {
   const [docsLoading, setDocsLoading] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // документ для предпросмотра
+  const [moderation, setModeration] = useState(null);
+  const [moderationLoading, setModerationLoading] = useState(false);
 
   // Blob документа для предпросмотра (тот же эндпоинт, что и скачивание).
   const previewFetch = React.useCallback(async () => {
@@ -70,6 +72,13 @@ const AdminLawyersPage = () => {
       setDocsLoading(false);
     }
   };
+  const openModeration = async (lawyer) => {
+    setModerationLoading(true);
+    setModeration({ lawyer });
+    try { setModeration(await adminLawyerService.getModeration(lawyer.id)); }
+    catch { toast.error(t('adminManage.loadError')); setModeration(null); }
+    finally { setModerationLoading(false); }
+  };
 
   const download = async (docId, name) => {
     setDownloading(docId);
@@ -85,6 +94,7 @@ const AdminLawyersPage = () => {
   const DOC_TYPE_LABEL = {
     diploma: t('adminManage.docDiploma'),
     license: t('adminManage.docLicense'),
+    certificate: 'Сертификат',
     id: t('adminManage.docId'),
     other: t('adminManage.docOther'),
   };
@@ -153,12 +163,12 @@ const AdminLawyersPage = () => {
   };
 
   // Статус модерации — источник истины на профиле (не User.isVerified, тот про email).
-  const stOf = (l) => l.profile?.verificationStatus || 'pending';
+  const stOf = (l) => l.profile?.verificationStatus || 'draft';
 
   // Очередь проверки: pending → rejected → approved, внутри — новые сверху.
   // Сортировка клиентская и действует только в пределах страницы — поэтому
   // для работы с очередью есть серверный фильтр по статусу (чипы ниже).
-  const ORDER = { pending: 0, rejected: 1, approved: 2 };
+  const ORDER = { pending_review: 0, rejected: 1, draft: 2, approved: 3, suspended: 4 };
   const sortedLawyers = [...lawyers].sort((a, b) => {
     const d = (ORDER[stOf(a)] ?? 3) - (ORDER[stOf(b)] ?? 3);
     if (d !== 0) return d;
@@ -238,7 +248,7 @@ const AdminLawyersPage = () => {
           />
           {[
             { key: 'all', label: t('common.all') },
-            { key: 'pending', label: t('adminManage.stPending'), count: counts?.pending },
+            { key: 'pending_review', label: t('adminManage.stPending'), count: counts?.pending },
             { key: 'approved', label: t('adminManage.stApproved'), count: counts?.approved },
             { key: 'rejected', label: t('adminManage.stRejected'), count: counts?.rejected },
           ].map((f) => (
@@ -292,7 +302,7 @@ const AdminLawyersPage = () => {
                         {stOf(l) === 'approved' && (
                           <Chip size="small" icon={<CheckCircle sx={{ fontSize: 15 }} />} label={t('adminManage.stApproved')} sx={{ background: axelionColors.successLight, color: axelionColors.success, fontWeight: 600, border: `1px solid ${axelionColors.success}`, '& .MuiChip-icon': { color: axelionColors.success } }} />
                         )}
-                        {stOf(l) === 'pending' && (
+                        {stOf(l) === 'pending_review' && (
                           <Chip size="small" icon={<HourglassEmpty sx={{ fontSize: 15 }} />} label={t('adminManage.stPending')} sx={{ background: axelionColors.bgBeige, color: axelionColors.bronze, fontWeight: 600, border: `1px solid ${axelionColors.goldMuted}`, '& .MuiChip-icon': { color: axelionColors.bronze } }} />
                         )}
                         {stOf(l) === 'rejected' && (
@@ -321,14 +331,15 @@ const AdminLawyersPage = () => {
                             sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.bronze, background: axelionColors.bgBeige } }}>
                             {t('adminManage.docs')}
                           </Button>
-                          {stOf(l) !== 'approved' && (
+                          <Button size="small" variant="outlined" onClick={() => openModeration(l)} startIcon={<VisibilityOutlined sx={{ fontSize: 16 }} />}>Резюме</Button>
+                          {stOf(l) === 'pending_review' && (
                             <Button size="small" variant="contained" disabled={acting === l.id || !l.profileCompleteness?.complete} onClick={() => setConfirmApprove(l)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
                               sx={{ background: axelionColors.success, color: '#fff', textTransform: 'none', boxShadow: 'none', borderRadius: '8px', '&:hover': { background: '#1F7A4A', boxShadow: 'none' } }}>
                               {t('adminManage.approve')}
                             </Button>
                           )}
-                          {stOf(l) !== 'rejected' && (
+                          {stOf(l) === 'pending_review' && (
                             <Button size="small" variant="outlined" disabled={acting === l.id} onClick={() => setConfirmReject(l)}
                               startIcon={<Block sx={{ fontSize: 16 }} />}
                               sx={{ color: axelionColors.error, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.error, background: axelionColors.errorLight } }}>
@@ -357,6 +368,29 @@ const AdminLawyersPage = () => {
           </Box>
         )}
       </Container>
+
+      <Dialog open={!!moderation} onClose={() => setModeration(null)} maxWidth="md" fullWidth>
+        <DialogTitle>Проверка резюме{moderation?.lawyer?.name ? ` — ${moderation.lawyer.name}` : ''}</DialogTitle>
+        <DialogContent dividers>
+          {moderationLoading ? <CircularProgress /> : moderation?.lawyer && (
+            <Box sx={{ display: 'grid', gap: 2 }}>
+              <Typography variant="h6">{moderation.lawyer.profile?.professionalTitle}</Typography>
+              <Typography>{moderation.lawyer.profile?.description}</Typography>
+              <Typography><b>Лицензия:</b> {moderation.lawyer.profile?.licenseNumber} · {moderation.lawyer.profile?.licenseIssuer}</Typography>
+              <Typography><b>Специализации:</b> {(moderation.lawyer.profile?.specializations || []).join(', ')}</Typography>
+              <Typography variant="subtitle1">Опыт работы</Typography>
+              {(moderation.lawyer.lawyerExperiences || []).map((item) => <Typography key={item.id}>{item.position} — {item.organization} ({item.startDate} — {item.isCurrent ? 'сейчас' : item.endDate})</Typography>)}
+              <Typography variant="subtitle1">Образование</Typography>
+              {(moderation.lawyer.lawyerEducations || []).map((item) => <Typography key={item.id}>{item.university} — {item.specialty}</Typography>)}
+              <Typography variant="subtitle1">Сертификаты</Typography>
+              {(moderation.lawyer.lawyerCertificates || []).map((item) => <Typography key={item.id}>{item.title} · {item.organization}</Typography>)}
+              <Typography variant="subtitle1">История статусов</Typography>
+              {(moderation.history || []).map((item) => <Typography key={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.fromStatus || '—'} → {item.toStatus}{item.reason ? ` · ${item.reason}` : ''}</Typography>)}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setModeration(null)}>Закрыть</Button></DialogActions>
+      </Dialog>
 
       {/* Диалог верификационных документов юриста */}
       <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} maxWidth="sm" fullWidth>

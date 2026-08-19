@@ -478,6 +478,11 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- LinkedIn/профиль/Zoom: OIDC с PKCE/state/nonce и one-use tickets; структурированное резюме и
+  модерация; timezone-aware слоты с client/lawyer locks; Zoom OAuth с AES-GCM токенами,
+  signed/idempotent webhook, безопасным disconnect и WebRTC fallback при deauthorization.
+  Миграции `20260825000000..2` проверены на legacy-копии БД с backfill education/certificates;
+  DB audit без drift. Zoom webhook не высвобождает escrow без клиентского completion.
 - CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 19 Chromium E2E
   (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
 - Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;

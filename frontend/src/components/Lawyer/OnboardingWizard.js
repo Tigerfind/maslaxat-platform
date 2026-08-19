@@ -1,448 +1,193 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
-import { specLabel } from '../../utils/specLabel';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
+import { specLabel } from '../../utils/specLabel';
 
-/*
-  ─────────────────────────────────────────────────────────────
-  LAWYER ONBOARDING WIZARD — fullscreen overlay
-  Re-skinned 1:1 from ClaudeDesign → lawyer/_full.html "ONBOARDING WIZARD".
-  Fullscreen dark overlay (does NOT use GlassShell). 4 steps:
-    Профиль → Специализация → Расписание → Прайс.
-  Keeps the original step validation + PUT /lawyer/profile (multipart) submit.
-  Colours use glass.css vars (var(--accent) / var(--accent-dark)); the dark
-  overlay surface is intentional and fixed (matches the mockup).
-  ─────────────────────────────────────────────────────────────
-*/
+const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const emptyExperience = { organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' };
+const emptyEducation = { university: '', faculty: '', specialty: '', degree: '', startYear: '', endYear: '', country: '', city: '' };
+const emptyCertificate = { title: '', organization: '', issuedAt: '', credentialUrl: '' };
+const field = { width: '100%', minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)', boxSizing: 'border-box' };
+const card = { background: 'var(--card-glass)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: 18 };
 
-const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
-
-// Единый справочник специализаций (тот же, что в брони и редакторе профиля).
-const SPECIALIZATIONS = SPECIALIZATION_NAMES;
-
-// ── shared dark-overlay styles ────────────────────────────────
-const label = {
-  fontSize: 12, letterSpacing: '0.04em', color: 'rgba(255,255,255,0.5)', marginBottom: 8,
-};
-const inputStyle = {
-  width: '100%', padding: '15px 16px', borderRadius: 'var(--radius)',
-  border: '1px solid rgba(255,255,255,0.18)', background: 'rgba(255,255,255,0.06)',
-  fontSize: 15, color: '#FFFFFF', fontFamily: 'inherit', boxSizing: 'border-box',
-};
-const chipStyle = (selected) => ({
-  padding: '10px 16px', borderRadius: 'var(--radius)', fontSize: 13, fontFamily: 'inherit',
-  cursor: 'pointer', transition: 'all 0.2s',
-  background: selected ? 'var(--accent)' : 'rgba(255,255,255,0.06)',
-  color: selected ? '#FFFFFF' : 'rgba(255,255,255,0.75)',
-  border: `1px solid ${selected ? 'var(--accent)' : 'rgba(255,255,255,0.18)'}`,
-});
-
-const fmtSum = (n) => Number(n || 0).toLocaleString('ru-RU');
-
-// ── Step 1: Photo + Description + Experience ──────────────────
-const StepProfile = ({ data, onChange, t }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
-    <div>
-      <div style={label}>{t('onboarding.photoLabel')}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{
-          width: 64, height: 64, borderRadius: '50%', overflow: 'hidden',
-          background: 'rgba(255,255,255,0.08)', border: '1px solid rgba(255,255,255,0.18)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--accent)', fontSize: 22,
-        }}>
-          {data.avatarPreview
-            ? <img src={data.avatarPreview} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            : '＋'}
-        </div>
-        <label style={{
-          padding: '11px 20px', borderRadius: 'var(--radius)', border: '1px solid var(--accent)',
-          color: 'var(--accent)', fontSize: 13, fontWeight: 500, letterSpacing: '0.04em',
-          cursor: 'pointer', fontFamily: 'inherit',
-        }}>
-          {t('onboarding.uploadPhoto')}
-          <input
-            hidden type="file" accept="image/*"
-            onChange={(e) => {
-              const file = e.target.files[0];
-              if (file) onChange('avatarFile', file, URL.createObjectURL(file));
-            }}
-          />
-        </label>
-      </div>
-    </div>
-
-    <div>
-      <div style={label}>{t('onboarding.about')} <span style={{ color: 'var(--accent)' }}>*</span></div>
-      <textarea
-        rows={4}
-        placeholder={t('onboarding.aboutPlaceholder')}
-        value={data.description}
-        onChange={(e) => onChange('description', e.target.value)}
-        maxLength={500}
-        style={{ ...inputStyle, resize: 'none' }}
-      />
-      <div style={{
-        fontSize: 12, marginTop: 6,
-        color: data.description.length > 0 && data.description.length < 50 ? 'var(--accent)' : 'rgba(255,255,255,0.4)',
-      }}>
-        {data.description.length > 0 && data.description.length < 50
-          ? t('onboarding.minChars', { n: data.description.length })
-          : `${data.description.length}/500`}
-      </div>
-    </div>
-
-    <div>
-      <div style={label}>{t('onboarding.experience')}: {data.experience === 0 ? t('onboarding.noExperience') : `${data.experience} ${t('onboarding.years')}`}</div>
-      <input
-        type="range" min={0} max={40} step={1}
-        value={data.experience}
-        onChange={(e) => onChange('experience', Number(e.target.value))}
-        style={{ width: '100%', accentColor: 'var(--accent)' }}
-      />
-    </div>
-  </div>
-);
-
-// ── Step 2: Specialization (мультивыбор) ──────────────────────
-// Бэкенд хранит массив specializations (TEXT[]); можно выбрать сколько угодно
-// областей права. specialization (основная) = первая в массиве.
-const StepSpecializations = ({ data, onChange, t }) => {
-  const toggle = (spec) => {
-    const cur = data.specializations || [];
-    const next = cur.includes(spec) ? cur.filter((s) => s !== spec) : [...cur, spec];
-    onChange('specializations', next);
-  };
-  return (
-    <div>
-      <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.55)', marginBottom: 14 }}>
-        {t('onboarding.specMultiHint')} {data.specializations.length > 0 && `· ${t('onboarding.selected', { n: data.specializations.length })}`}
-      </div>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10 }}>
-        {SPECIALIZATIONS.map((spec) => {
-          const selected = (data.specializations || []).includes(spec);
-          return (
-            <button key={spec} onClick={() => toggle(spec)} style={chipStyle(selected)}>
-              {selected && '✓ '}{specLabel(t, spec)}
-            </button>
-          );
-        })}
-      </div>
-    </div>
-  );
-};
-
-// ── Step 3: Schedule ──────────────────────────────────────────
-const StepSchedule = ({ data, onChange, times, setTimes, t }) => {
-  const DAYS = t('onboarding.days');
-  // Единый формат {enabled, from, to} (как в редакторе «Часы приёма»).
-  const toggleDay = (key) => {
-    const current = data.schedule[key];
-    onChange('schedule', {
-      ...data.schedule,
-      [key]: current?.enabled
-        ? { ...current, enabled: false }
-        : { enabled: true, from: times.start, to: times.end },
-    });
-  };
-
-  // field: 'from' | 'to' — общие часы применяются ко всем включённым дням.
-  const applyTime = (field, value) => {
-    setTimes((t) => ({ ...t, [field === 'from' ? 'start' : 'end']: value }));
-    const next = { ...data.schedule };
-    Object.keys(next).forEach((k) => {
-      if (next[k]?.enabled) next[k] = { ...next[k], [field]: value };
-    });
-    onChange('schedule', next);
-  };
-
-  const activeCount = Object.values(data.schedule).filter((d) => d?.enabled).length;
-
-  return (
-    <div>
-      <div style={label}>{t('onboarding.workDays')} {activeCount > 0 && <span style={{ color: 'var(--accent)' }}>· {t('onboarding.selected', { n: activeCount })}</span>}</div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-        {DAY_KEYS.map((key, idx) => (
-          <button key={key} onClick={() => toggleDay(key)} style={{ ...chipStyle(!!data.schedule[key]?.enabled), minWidth: 52, textAlign: 'center' }}>
-            {DAYS[idx]}
-          </button>
-        ))}
-      </div>
-
-      <div style={{ display: 'flex', gap: 16, marginTop: 26 }}>
-        <div style={{ flex: 1 }}>
-          <div style={label}>{t('onboarding.start')}</div>
-          <input type="time" value={times.start} onChange={(e) => applyTime('from', e.target.value)} style={inputStyle} />
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={label}>{t('onboarding.end')}</div>
-          <input type="time" value={times.end} onChange={(e) => applyTime('to', e.target.value)} style={inputStyle} />
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// ── Step 4: Price + Location ──────────────────────────────────
-const StepPrice = ({ data, onChange, t }) => (
-  <div style={{ display: 'flex', flexDirection: 'column', gap: 22 }}>
-    <div style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', borderRadius: 'var(--radius)', padding: 32 }}>
-      <div style={{ textAlign: 'center', marginBottom: 26 }}>
-        <div style={{ fontSize: 40, fontWeight: 200, color: 'var(--accent)' }}>{fmtSum(data.price)} {t('onboarding.sum')}</div>
-        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginTop: 6 }}>{t('onboarding.perConsultation')}</div>
-      </div>
-      <input
-        type="range" min={50000} max={2000000} step={25000}
-        value={data.price}
-        onChange={(e) => onChange('price', Number(e.target.value))}
-        style={{ width: '100%', accentColor: 'var(--accent)' }}
-      />
-      <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 10 }}>
-        <span>50 000 {t('onboarding.sum')}</span><span>2 000 000 {t('onboarding.sum')}</span>
-      </div>
-    </div>
-
-    <div>
-      <div style={label}>{t('onboarding.city')}</div>
-      <input placeholder={t('onboarding.cityPlaceholder')} value={data.location} onChange={(e) => onChange('location', e.target.value)} style={inputStyle} />
-    </div>
-  </div>
-);
-
-// ── Step 5: verification documents ────────────────────────────
-const StepDocuments = ({ docs, uploading, onUpload, onRemove, docType, setDocType, t }) => {
-  const DOC_TYPES = [
-    { key: 'diploma', label: t('verification.typeDiploma') },
-    { key: 'license', label: t('verification.typeLicense') },
-    { key: 'id', label: t('verification.typeId') },
-    { key: 'other', label: t('verification.typeOther') },
-  ];
-  const label = { fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)', marginBottom: 10 };
-  return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-      <div style={{ fontSize: 14, color: 'rgba(255,255,255,0.65)', lineHeight: 1.5 }}>{t('verification.hint')}</div>
-      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-        <select value={docType} onChange={(e) => setDocType(e.target.value)}
-          style={{ padding: '12px 14px', borderRadius: 10, border: '1px solid rgba(255,255,255,0.15)', background: 'rgba(255,255,255,0.06)', color: '#fff', fontFamily: 'inherit', fontSize: 14, minWidth: 200 }}>
-          {DOC_TYPES.map((d) => <option key={d.key} value={d.key} style={{ color: '#000' }}>{d.label}</option>)}
-        </select>
-        <label style={{
-          display: 'inline-flex', alignItems: 'center', gap: 8, cursor: uploading ? 'default' : 'pointer',
-          padding: '12px 20px', borderRadius: 10, border: '1px solid var(--accent)', color: 'var(--accent)',
-          fontSize: 13, fontWeight: 600, opacity: uploading ? 0.6 : 1,
-        }}>
-          {uploading ? t('onboarding.saving') : t('verification.upload')}
-          <input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" disabled={uploading}
-            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) onUpload(f); }}
-            style={{ display: 'none' }} />
-        </label>
-      </div>
-      <div>
-        <div style={label}>{t('onboarding.uploadedDocs')} · {docs.length}</div>
-        {docs.length === 0 ? (
-          <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>{t('verification.empty')}</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {docs.map((d) => (
-              <div key={d.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 14px', borderRadius: 10, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
-                <span style={{ flex: 1, fontSize: 13.5, color: '#fff', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</span>
-                <button onClick={() => onRemove(d.id)} style={{ background: 'transparent', border: 'none', color: '#E0876F', cursor: 'pointer', fontSize: 13, fontFamily: 'inherit' }}>✕</button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-// ── Main Wizard ───────────────────────────────────────────────
 const OnboardingWizard = ({ onComplete }) => {
   const { t } = useTranslation();
-  const STEPS = t('onboarding.steps');
-  const STEP_META = t('onboarding.metaTitles').map((title, i) => ({ title, sub: t('onboarding.metaSubs')[i] }));
   const [step, setStep] = useState(0);
+  const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [times, setTimes] = useState({ start: '09:00', end: '18:00' });
-  // Верификационные документы (шаг 5) — грузятся сразу (аккаунт уже существует).
+  const [savedAt, setSavedAt] = useState(null);
   const [docs, setDocs] = useState([]);
-  const [docType, setDocType] = useState('diploma');
-  const [uploading, setUploading] = useState(false);
+  const [docType, setDocType] = useState('license');
+  const hydrated = useRef(false);
+  const saveSequence = useRef(0);
+  const saveQueue = useRef(Promise.resolve());
+  const skipNextAutosave = useRef(false);
   const [data, setData] = useState({
-    description: '',
-    experience: 3,
-    avatarFile: null,
-    avatarPreview: null,
-    specializations: [],
-    schedule: {},
-    price: 200000,
-    location: 'Ташкент',
+    name: '', email: '', phone: '', avatar: '', professionalTitle: '', description: '',
+    location: '', region: '', languages: ['ru', 'uz'], linkedinUrl: '', specializations: [],
+    licenseNumber: '', licenseIssuer: '', licenseIssuedAt: '', licenseExpiresAt: '',
+    experience: 0, price: 100000, consultationFormats: ['chat', 'webrtc'],
+    consultationDurations: [30, 60], timezone: 'Asia/Tashkent', schedule: {},
+    experiences: [], educations: [], certificates: [],
   });
 
-  const handleChange = (field, value, extra) => {
-    setData((prev) => ({
-      ...prev,
-      [field]: value,
-      ...(field === 'avatarFile' ? { avatarPreview: extra } : {}),
-    }));
-  };
-
-  // Подгружаем уже загруженные документы (если юрист вернулся в мастер).
   useEffect(() => {
-    lawyerService.verification.getDocuments()
-      .then((r) => setDocs(r.documents || []))
-      .catch(() => {});
-  }, []);
+    Promise.all([api.get('/lawyer/profile'), lawyerService.verification.getDocuments()])
+      .then(([profileResponse, documentResponse]) => {
+        const { user, profile, experiences, educations, certificates } = profileResponse.data;
+        skipNextAutosave.current = true;
+        setData((current) => ({
+          ...current, ...profile, name: user?.name || '', email: user?.email || '', phone: user?.phone || '', avatar: user?.avatar || '',
+          experiences: experiences || [], educations: educations || [], certificates: certificates || [],
+          licenseIssuedAt: profile?.licenseIssuedAt || '', licenseExpiresAt: profile?.licenseExpiresAt || '',
+        }));
+        setStep(Math.min(5, Number(profile?.onboardingStep || 0)));
+        setDocs(documentResponse.documents || []);
+        hydrated.current = true;
+      })
+      .catch(() => toast.error(t('onboarding.saveError')))
+      .finally(() => setLoading(false));
+  }, [t]);
 
-  const uploadDoc = async (file) => {
-    setUploading(true);
-    try {
-      const r = await lawyerService.verification.uploadDocument(file, docType);
-      setDocs((prev) => [r.document, ...prev]);
-    } catch (err) {
-      toast.error(err.response?.data?.error || t('verification.error'));
-    } finally {
-      setUploading(false);
-    }
-  };
-
-  const removeDoc = async (id) => {
-    try {
-      await lawyerService.verification.deleteDocument(id);
-      setDocs((prev) => prev.filter((d) => d.id !== id));
-    } catch {
-      toast.error(t('verification.error'));
-    }
-  };
-
-  const canProceed = () => {
-    if (step === 0) return data.description.length >= 50;
-    if (step === 1) return data.specializations.length >= 1;
-    if (step === 2) return Object.values(data.schedule).filter((d) => d?.enabled).length >= 3;
-    if (step === 3) return data.price >= 50000;
-    if (step === 4) return docs.length >= 1; // хотя бы один документ на проверку
-    return false;
-  };
-
-  const handleFinish = async () => {
+  const saveDraft = (nextStep = step) => {
+    const sequence = ++saveSequence.current;
+    const payload = { ...data, step: nextStep };
+    delete payload.avatar;
+    delete payload.email;
     setSaving(true);
+    const save = async () => {
+      try {
+        const { data: response } = await api.patch('/lawyer/profile/draft', payload);
+        if (sequence === saveSequence.current) setSavedAt(response.savedAt);
+        return true;
+      } catch (error) {
+        toast.error(error.response?.data?.error || t('onboarding.saveError'));
+        return false;
+      } finally {
+        if (sequence === saveSequence.current) setSaving(false);
+      }
+    };
+    const queued = saveQueue.current.catch(() => false).then(save);
+    saveQueue.current = queued;
+    return queued;
+  };
+
+  useEffect(() => {
+    if (!hydrated.current) return undefined;
+    if (skipNextAutosave.current) { skipNextAutosave.current = false; return undefined; }
+    const timer = setTimeout(() => saveDraft(step), 700);
+    return () => clearTimeout(timer);
+  }, [data]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const update = (name, value) => setData((current) => ({ ...current, [name]: value }));
+  const updateRow = (name, index, value) => setData((current) => ({
+    ...current,
+    [name]: current[name].map((row, rowIndex) => (rowIndex === index ? { ...row, ...value } : row)),
+  }));
+  const removeRow = (name, index) => setData((current) => ({ ...current, [name]: current[name].filter((_, rowIndex) => rowIndex !== index) }));
+
+  const uploadAvatar = async (file) => {
     try {
-      const formData = new FormData();
-      formData.append('description', data.description);
-      formData.append('experience', String(data.experience));
-      formData.append('specializations', JSON.stringify(data.specializations));
-      formData.append('languages', JSON.stringify(['uz', 'ru']));
-      formData.append('schedule', JSON.stringify(data.schedule));
-      formData.append('price', String(data.price));
-      formData.append('location', data.location);
-      if (data.avatarFile) formData.append('avatar', data.avatarFile);
-
-      await api.put('/lawyer/profile', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' },
-      });
-
-      // Документы загружены в мастере → сразу отправляем профиль на проверку админу.
-      try { await lawyerService.verification.submitForReview(); } catch (e) { /* не блокируем финиш */ }
-
-      toast.success(t('onboarding.savedToast'));
-      toast.info(t('onboarding.submittedHint'), { autoClose: 7000 });
-      onComplete();
-    } catch (err) {
-      toast.error(err.response?.data?.error || t('onboarding.saveError'));
-    } finally {
-      setSaving(false);
+      const form = new FormData(); form.append('avatar', file);
+      const { data: response } = await api.put('/lawyer/profile', form, { headers: { 'Content-Type': 'multipart/form-data' } });
+      update('avatar', response.user?.avatar || '');
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('onboarding.saveError'));
+    }
+  };
+  const uploadDocument = async (file) => {
+    try {
+      const response = await lawyerService.verification.uploadDocument(file, docType);
+      setDocs((current) => [response.document, ...current]);
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('onboarding.saveError'));
     }
   };
 
-  const meta = STEP_META[step];
+  const next = async () => {
+    if (await saveDraft(Math.min(5, step + 1))) setStep((current) => Math.min(5, current + 1));
+  };
+  const submit = async () => {
+    if (!(await saveDraft(5))) return;
+    try {
+      await lawyerService.verification.submitForReview();
+      toast.success(t('onboarding.submittedHint'));
+      onComplete();
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('onboarding.saveError'));
+    }
+  };
+
+  if (loading) return <div style={{ padding: 40 }}>{t('common.loading')}</div>;
+  const steps = [
+    t('onboarding.profile'), t('onboarding.specialization'), t('onboarding.experience'),
+    t('lawyerProfile.education'), t('lawyerProfile.achievements'), t('lawyerProfile.headerTitle'),
+  ];
 
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 800,
-      background: 'radial-gradient(circle at 25% 15%, #2D2820, #1A1A1A 60%)',
-      display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 40, overflowY: 'auto',
-    }}>
-      <div style={{ width: '100%', maxWidth: 620, display: 'flex', flexDirection: 'column', margin: 'auto' }}>
+    <div style={{ position: 'fixed', inset: 0, zIndex: 1400, overflowY: 'auto', background: 'var(--canvas)', color: 'var(--text)', padding: '24px 16px 80px' }}>
+      <div style={{ maxWidth: 900, margin: '0 auto' }}>
+        <h1 style={{ fontWeight: 400 }}>{t('onboarding.title')}</h1>
+        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 24 }}>
+          {steps.map((title, index) => <button key={title} type="button" onClick={() => setStep(index)} style={{ minHeight: 44, padding: '8px 14px', whiteSpace: 'nowrap', borderRadius: 999, border: '1px solid var(--border)', background: index === step ? 'var(--accent)' : 'var(--surface)', color: index === step ? '#fff' : 'var(--text2)' }}>{index + 1}. {title}</button>)}
+        </div>
 
-        {/* Brand */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 34 }}>
-          <div style={{
-            width: 40, height: 40, border: '1.5px solid var(--accent)', display: 'flex',
-            alignItems: 'center', justifyContent: 'center', color: 'var(--accent)', fontWeight: 300, fontSize: 22,
-          }}>M</div>
-          <div style={{ lineHeight: 1.1 }}>
-            <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.15em', textTransform: 'uppercase', color: '#FFFFFF' }}>eMaslaXat</div>
-            <div style={{ fontSize: 9, fontWeight: 500, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--accent)', marginTop: 3 }}>{t('onboarding.brandSub')}</div>
+        {step === 0 && <div style={{ ...card, display: 'grid', gap: 14 }}>
+          <input style={field} value={data.name} onChange={(e) => update('name', e.target.value)} placeholder={t('register.fullName')} />
+          <input style={field} value={data.professionalTitle || ''} onChange={(e) => update('professionalTitle', e.target.value)} placeholder="Адвокат по семейному праву" />
+          <textarea style={{ ...field, minHeight: 120 }} value={data.description || ''} onChange={(e) => update('description', e.target.value)} placeholder={t('onboarding.aboutPlaceholder')} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+            <input style={field} value={data.location || ''} onChange={(e) => update('location', e.target.value)} placeholder={t('onboarding.city')} />
+            <input style={field} value={data.region || ''} onChange={(e) => update('region', e.target.value)} placeholder="Регион" />
+            <input style={field} value={data.phone || ''} onChange={(e) => update('phone', e.target.value)} placeholder="+998..." />
+            <input style={field} value={data.email || ''} readOnly aria-label="Email" />
           </div>
-        </div>
+          <input style={field} value={data.linkedinUrl || ''} onChange={(e) => update('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/in/..." />
+          <label><span>{t('onboarding.photoLabel')}</span><input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && uploadAvatar(e.target.files[0])} /></label>
+        </div>}
 
-        {/* Numbered stepper */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 38 }}>
-          {STEPS.map((s, i) => {
-            const done = i <= step;
-            return (
-              <React.Fragment key={s}>
-                <div style={{
-                  width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  fontSize: 13, fontWeight: 500, transition: 'all 0.25s',
-                  background: done ? 'var(--accent)' : 'rgba(255,255,255,0.08)',
-                  color: done ? '#FFFFFF' : 'rgba(255,255,255,0.4)',
-                }}>{i + 1}</div>
-                {i < STEPS.length - 1 && (
-                  <div style={{ flex: 1, height: 2, borderRadius: 1, background: i < step ? 'var(--accent)' : 'rgba(255,255,255,0.12)', transition: 'background 0.25s' }} />
-                )}
-              </React.Fragment>
-            );
-          })}
-        </div>
+        {step === 1 && <div style={{ ...card, display: 'grid', gap: 16 }}>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{SPECIALIZATION_NAMES.map((spec) => <button type="button" key={spec} onClick={() => update('specializations', data.specializations.includes(spec) ? data.specializations.filter((item) => item !== spec) : [...data.specializations, spec])} style={{ minHeight: 44, borderRadius: 999, border: '1px solid var(--border)', background: data.specializations.includes(spec) ? 'var(--accent)' : 'var(--surface)', color: data.specializations.includes(spec) ? '#fff' : 'var(--text)' }}>{specLabel(t, spec)}</button>)}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
+            <input style={field} value={data.licenseNumber || ''} onChange={(e) => update('licenseNumber', e.target.value)} placeholder="Номер лицензии" />
+            <input style={field} value={data.licenseIssuer || ''} onChange={(e) => update('licenseIssuer', e.target.value)} placeholder="Кем выдана" />
+            <input style={field} type="date" value={data.licenseIssuedAt || ''} onChange={(e) => update('licenseIssuedAt', e.target.value)} />
+            <input style={field} type="date" value={data.licenseExpiresAt || ''} onChange={(e) => update('licenseExpiresAt', e.target.value)} />
+            <input style={field} type="number" min="0" max="80" value={data.experience} onChange={(e) => update('experience', Number(e.target.value))} placeholder={t('onboarding.experience')} />
+            <input style={field} type="number" min="0" value={data.price} onChange={(e) => update('price', Number(e.target.value))} placeholder={t('lawyerProfile.priceLabel')} />
+            <input style={field} value={(data.languages || []).join(', ')} onChange={(e) => update('languages', e.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="ru, uz, en" />
+            <input style={field} value={data.timezone || ''} onChange={(e) => update('timezone', e.target.value)} placeholder="Asia/Tashkent" />
+          </div>
+          <div>{['chat', 'audio', 'webrtc', 'zoom'].map((format) => <label key={format} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationFormats.includes(format)} onChange={() => update('consultationFormats', data.consultationFormats.includes(format) ? data.consultationFormats.filter((item) => item !== format) : [...data.consultationFormats, format])} /> {format}</label>)}</div>
+          <div>{[30, 60, 90].map((duration) => <label key={duration} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationDurations.includes(duration)} onChange={() => update('consultationDurations', data.consultationDurations.includes(duration) ? data.consultationDurations.filter((item) => item !== duration) : [...data.consultationDurations, duration])} /> {duration} мин</label>)}</div>
+          <div style={{ display: 'grid', gap: 8 }}>{DAYS.map((day) => <div key={day} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 1fr', gap: 8, alignItems: 'center' }}><label><input type="checkbox" checked={Boolean(data.schedule?.[day]?.enabled)} onChange={(e) => update('schedule', { ...data.schedule, [day]: { enabled: e.target.checked, from: data.schedule?.[day]?.from || '09:00', to: data.schedule?.[day]?.to || '18:00' } })} /> {day}</label><input style={field} type="time" value={data.schedule?.[day]?.from || '09:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: e.target.value, to: data.schedule?.[day]?.to || '18:00' } })} /><input style={field} type="time" value={data.schedule?.[day]?.to || '18:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: data.schedule?.[day]?.from || '09:00', to: e.target.value } })} /></div>)}</div>
+        </div>}
 
-        {/* Title + subtitle */}
-        <div style={{ fontSize: 30, fontWeight: 300, letterSpacing: '0.01em', color: '#FFFFFF', marginBottom: 8 }}>{meta.title}</div>
-        <div style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', marginBottom: 32 }}>{meta.sub}</div>
+        {step === 2 && <Repeatable title="Опыт работы" rows={data.experiences} empty={emptyExperience} add={() => update('experiences', [...data.experiences, emptyExperience])} remove={(index) => removeRow('experiences', index)} render={(row, index) => <><input style={field} value={row.organization} onChange={(e) => updateRow('experiences', index, { organization: e.target.value })} placeholder="Организация" /><input style={field} value={row.position} onChange={(e) => updateRow('experiences', index, { position: e.target.value })} placeholder="Должность" /><input style={field} type="date" value={row.startDate || ''} onChange={(e) => updateRow('experiences', index, { startDate: e.target.value })} /><input style={field} type="date" disabled={row.isCurrent} value={row.endDate || ''} onChange={(e) => updateRow('experiences', index, { endDate: e.target.value })} /><label><input type="checkbox" checked={row.isCurrent} onChange={(e) => updateRow('experiences', index, { isCurrent: e.target.checked, endDate: '' })} /> Работаю сейчас</label><textarea style={{ ...field, minHeight: 80 }} value={row.description || ''} onChange={(e) => updateRow('experiences', index, { description: e.target.value })} placeholder="Обязанности и достижения" /></>} />}
+        {step === 3 && <Repeatable title="Образование" rows={data.educations} empty={emptyEducation} add={() => update('educations', [...data.educations, emptyEducation])} remove={(index) => removeRow('educations', index)} render={(row, index) => <>{['university', 'faculty', 'specialty', 'degree', 'startYear', 'endYear', 'country', 'city'].map((key) => <input key={key} style={field} type={key.includes('Year') ? 'number' : 'text'} value={row[key] || ''} onChange={(e) => updateRow('educations', index, { [key]: key.includes('Year') ? Number(e.target.value) : e.target.value })} placeholder={key} />)}</>} />}
+        {step === 4 && <div style={{ display: 'grid', gap: 16 }}><Repeatable title="Сертификаты" rows={data.certificates} empty={emptyCertificate} add={() => update('certificates', [...data.certificates, emptyCertificate])} remove={(index) => removeRow('certificates', index)} render={(row, index) => <>{['title', 'organization', 'issuedAt', 'credentialUrl'].map((key) => <input key={key} style={field} type={key === 'issuedAt' ? 'date' : 'text'} value={row[key] || ''} onChange={(e) => updateRow('certificates', index, { [key]: e.target.value })} placeholder={key} />)}</>} /><div style={card}><select value={docType} onChange={(e) => setDocType(e.target.value)} style={field}><option value="license">Лицензия</option><option value="diploma">Диплом</option><option value="certificate">Сертификат</option><option value="id">Удостоверение</option></select><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => Promise.all([...e.target.files].map(uploadDocument)).then(() => lawyerService.verification.getDocuments()).then((response) => setDocs(response.documents || []))} /><p>Загружено документов: {docs.length}</p></div></div>}
+        {step === 5 && <div style={{ ...card, display: 'grid', gap: 12 }}><h2>{data.name}</h2><strong>{data.professionalTitle}</strong><p>{data.description}</p><p>{data.specializations.join(' · ')}</p><p>{data.location}{data.region ? `, ${data.region}` : ''} · {data.languages.join(', ')}</p><p>{Number(data.price).toLocaleString()} сум · {data.experience} лет</p><h3>Опыт</h3>{data.experiences.map((item) => <p key={`${item.organization}-${item.position}`}>{item.position} — {item.organization}</p>)}<h3>Образование</h3>{data.educations.map((item) => <p key={`${item.university}-${item.specialty}`}>{item.university}, {item.specialty}</p>)}</div>}
 
-        {/* Step content */}
-        <div style={{ minHeight: 220 }}>
-          {step === 0 && <StepProfile data={data} onChange={handleChange} t={t} />}
-          {step === 1 && <StepSpecializations data={data} onChange={handleChange} t={t} />}
-          {step === 2 && <StepSchedule data={data} onChange={handleChange} times={times} setTimes={setTimes} t={t} />}
-          {step === 3 && <StepPrice data={data} onChange={handleChange} t={t} />}
-          {step === 4 && <StepDocuments docs={docs} uploading={uploading} onUpload={uploadDoc} onRemove={removeDoc} docType={docType} setDocType={setDocType} t={t} />}
-        </div>
-
-        {/* Actions */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 38 }}>
-          {step > 0 && (
-            <button
-              onClick={() => setStep((s) => s - 1)}
-              style={{
-                padding: '15px 28px', background: 'transparent', border: '1px solid rgba(255,255,255,0.2)',
-                color: 'rgba(255,255,255,0.8)', fontSize: 13, fontWeight: 500, letterSpacing: '0.05em',
-                textTransform: 'uppercase', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >{t('onboarding.back')}</button>
-          )}
-          <button
-            onClick={() => (step < STEPS.length - 1 ? setStep((s) => s + 1) : handleFinish())}
-            disabled={!canProceed() || saving}
-            style={{
-              flex: 1, padding: 16,
-              background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
-              border: 'none', color: '#FFFFFF', fontSize: 13, fontWeight: 600, letterSpacing: '0.08em',
-              textTransform: 'uppercase', borderRadius: 'var(--radius)', fontFamily: 'inherit',
-              cursor: (!canProceed() || saving) ? 'default' : 'pointer',
-              opacity: (!canProceed() || saving) ? 0.5 : 1, transition: 'opacity 0.2s',
-            }}
-          >
-            {step < STEPS.length - 1 ? t('onboarding.next') : (saving ? t('onboarding.saving') : t('onboarding.publish'))}
-          </button>
+        <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
+          {step > 0 && <button type="button" onClick={() => setStep((current) => current - 1)}>{t('onboarding.back')}</button>}
+          <button type="button" disabled={saving} onClick={() => saveDraft(step)}>{saving ? t('onboarding.saving') : 'Сохранить черновик'}</button>
+          {step < 5 ? <button type="button" onClick={next}>{t('onboarding.next')}</button> : <button type="button" onClick={submit}>Отправить на проверку</button>}
+          {savedAt && <span style={{ color: 'var(--text3)', alignSelf: 'center' }}>Сохранено {new Date(savedAt).toLocaleTimeString()}</span>}
         </div>
       </div>
     </div>
   );
 };
+
+const Repeatable = ({ title, rows, add, remove, render }) => (
+  <div style={{ display: 'grid', gap: 14 }}>
+    <div style={{ display: 'flex', justifyContent: 'space-between' }}><h2>{title}</h2><button type="button" onClick={add}>+ Добавить</button></div>
+    {rows.map((row, index) => <div key={index} style={{ ...card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 10 }}>{render(row, index)}<button type="button" onClick={() => remove(index)}>Удалить</button></div>)}
+    {!rows.length && <div style={card}>Раздел пока не заполнен</div>}
+  </div>
+);
 
 export default OnboardingWizard;

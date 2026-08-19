@@ -21,6 +21,9 @@
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
 | `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` | @BotFather (токен бота и его username без `@`) | Кнопка «Войти через Telegram» скрыта |
+| `LINKEDIN_CLIENT_ID/SECRET/REDIRECT_URI` | LinkedIn Developer Portal → OpenID Connect | Регистрация/привязка LinkedIn для юристов скрыта |
+| `ZOOM_CLIENT_ID/SECRET/REDIRECT_URI` + `ZOOM_WEBHOOK_SECRET` | Zoom App Marketplace → General OAuth app | Zoom нельзя подключить; WebRTC продолжает работать |
+| `OAUTH_TOKEN_ENCRYPTION_KEY` | `openssl rand -base64 32` | Zoom OAuth fail-closed; ключ нельзя менять после подключения аккаунтов |
 | `SENTRY_DSN` / `VITE_SENTRY_DSN` | sentry.io → Project Settings → Client Keys | Ошибки остаются только в Railway/Winston logs |
 
 > ⚠️ **Никогда не коммить `.env`** — он уже в `.gitignore`. Реальные секреты вносите
@@ -66,6 +69,10 @@ cp .env.example .env
 - **Соц-вход**: `GOOGLE_CLIENT_ID` показывает кнопку Google; `TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_BOT_USERNAME` — кнопку Telegram. Прод-примечание: для внешних скриптов в CSP фронта
   разрешить `accounts.google.com` и `telegram.org`.
+- **LinkedIn для юристов**: после настройки OIDC появляется регистрация/привязка LinkedIn.
+- **Zoom**: после настройки OAuth юрист подключает свой аккаунт в настройках; webhook URL:
+  `https://<backend>/api/zoom/webhook`. Полная настройка и API описаны в
+  `docs/LAWYER_LINKEDIN_ZOOM.md`.
 
 ---
 
@@ -94,7 +101,8 @@ npm run db:migrate:undo     # откатить последнюю
 Порядок обычного обновления существующего production:
 1. Сделать резервную копию PostgreSQL.
 2. Выполнить `NODE_ENV=production npm run db:migrate`.
-3. Запустить новую версию API и проверить `/api/health`.
+3. Выполнить `NODE_ENV=production npm run db:audit` и убедиться, что `drift`/`unsafeData` пусты.
+4. Запустить новую версию API и проверить `/api/health`.
 
 Правовая база AI загружается отдельно только из разрешённой выгрузки:
 `npm run legal:import -- /path/corpus.json`. Формат и лицензионные ограничения описаны в

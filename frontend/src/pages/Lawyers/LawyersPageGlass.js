@@ -199,6 +199,7 @@ const LawyersPageGlass = () => {
     experience: '',
     sortBy: 'rating',
     onlineOnly: false,
+    zoomAvailable: false,
     location: '',
     language: '',
     // Подбор «под себя»: ценовой сегмент и ступень юриста. Сортировка отвечает
@@ -357,6 +358,7 @@ const LawyersPageGlass = () => {
       experience: '',
       sortBy: 'rating',
       onlineOnly: false,
+      zoomAvailable: false,
       location: '',
       language: '',
       budget: '',
@@ -643,6 +645,15 @@ const LawyersPageGlass = () => {
 
       <button
         type="button"
+        aria-pressed={filters.zoomAvailable}
+        onClick={() => handleFilterChange('zoomAvailable', !filters.zoomAvailable)}
+        style={{ width: '100%', minHeight: 44, padding: '11px 14px', marginBottom: 24, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, color: 'var(--text)', border: `1px solid ${filters.zoomAvailable ? 'var(--accent)' : 'var(--border)'}`, background: filters.zoomAvailable ? 'rgba(10,102,194,0.08)' : 'transparent' }}
+      >
+        {t('lawyers.zoomAvailable')}
+      </button>
+
+      <button
+        type="button"
         onClick={() => { handleClearFilters(); if (isMobile) setFilterDrawerOpen(false); }}
         style={{
           width: '100%', minHeight: 44, marginTop: 6, padding: '11px 16px', background: 'transparent',
@@ -674,6 +685,7 @@ const LawyersPageGlass = () => {
     const isFav = favoriteLawyers.has(lawyer.id);
     const reviews = lawyer.reviewsCount ?? 0;
     const tags = lawyer.specializations || [];
+    const languages = lawyer.languages || [];
     const grad = AV_BG[index % AV_BG.length];
     const rating = Number(lawyer.rating) || 0;
     return (
@@ -775,6 +787,7 @@ const LawyersPageGlass = () => {
               </span>
             )}
           </div>
+          {lawyer.professionalTitle && <div style={{ fontSize: 13, color: 'var(--text2)', margin: '-4px 0 9px' }}>{lawyer.professionalTitle}</div>}
 
           {/* rating + meta */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 12, fontSize: 12.5, color: 'var(--text3)' }}>
@@ -793,6 +806,13 @@ const LawyersPageGlass = () => {
             ) : <strong style={{ color: 'var(--text3)', fontWeight: 500 }}>{t('lawyers.noRating')}</strong>}
             <span>· {t('lawyers.reviewsLabel')}: {reviews} · {t('lawyers.experienceYearsLabel')}: {lawyer.experience || 0} · {t('lawyers.solved')}: {lawyer.completedConsultations || 0}</span>
           </div>
+          {(lawyer.primaryEducation || languages.length > 0) && (
+            <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 }}>
+              {lawyer.primaryEducation && <span>{lawyer.primaryEducation.university || lawyer.primaryEducation.title}{lawyer.primaryEducation.degree ? ` · ${lawyer.primaryEducation.degree}` : ''}</span>}
+              {lawyer.primaryEducation && languages.length > 0 && <span> · </span>}
+              {languages.length > 0 && <span>{languages.join(', ')}</span>}
+            </div>
+          )}
 
           {/* specializations */}
           {tags.length > 0 && (
@@ -818,6 +838,8 @@ const LawyersPageGlass = () => {
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
               {t('lawyers.from')} <strong style={{ fontSize: 17, color: 'var(--text)', fontWeight: 600 }}>{(lawyer.priceFrom || 0).toLocaleString()}</strong> {t('lawyers.sum')}
             </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => handleViewProfile(lawyer.id)} style={{ minHeight: 44, padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>{t('lawyers.viewProfile')}</button>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
@@ -834,6 +856,7 @@ const LawyersPageGlass = () => {
             >
               {lawyer.isAvailable ? t('lawyers.bookConsultation') : t('lawyers.unavailable')}
             </button>
+            </div>
           </div>
         </div>
       </div>
@@ -861,6 +884,9 @@ const LawyersPageGlass = () => {
     });
     if (filters.onlineOnly) chips.push({
       key: 'online', label: t('lawyers.fltOnline'), clear: () => handleFilterChange('onlineOnly', false),
+    });
+    if (filters.zoomAvailable) chips.push({
+      key: 'zoom', label: t('lawyers.zoomAvailable'), clear: () => handleFilterChange('zoomAvailable', false),
     });
     if (filters.minRating > 0) chips.push({
       key: 'rating', label: fmt('fltRating', filters.minRating), clear: () => handleFilterChange('minRating', 0),

@@ -130,13 +130,15 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       // Профиль настроен? Признак = заполнено описание (его ставит онбординг/редактор
       // профиля и НЕ трогает переключатель онлайн/офлайн — в отличие от isAvailable).
       // Нужен фронту, чтобы показывать мастер онбординга только пока профиль не заполнен.
-      profileComplete: !!(profile && profile.description && String(profile.description).trim()),
+      profileComplete: Boolean(profile && ['pending_review', 'approved'].includes(profile.verificationStatus)),
       // Реальный онлайн/офлайн — чтобы пилюля статуса отражала состояние после загрузки,
       // а не всегда «онлайн».
       isAvailable: profile ? Boolean(profile.isAvailable) : false,
       // Статус модерации админом — для баннера в кабинете (на проверке/одобрен/отклонён).
-      verificationStatus: profile?.verificationStatus || 'pending',
+      verificationStatus: profile?.verificationStatus || 'draft',
       rejectionReason: profile?.rejectionReason || null,
+      onboardingStep: profile?.onboardingStep || 0,
+      verificationSubmittedAt: profile?.verificationSubmittedAt || null,
     });
   } catch (err) {
     next(err);

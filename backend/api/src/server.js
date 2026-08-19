@@ -64,6 +64,9 @@ app.use('/api/auth', rateLimit({
 }));
 
 // Body parsing
+app.post('/api/zoom/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res, next) => {
+  require('./services/zoomWebhookService').handle(req, res).catch(next);
+});
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -120,6 +123,7 @@ app.use('/api/2fa', require('./routes/twofa'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/client/chat', require('./routes/chat'));
 app.use('/api/video', require('./routes/video'));
+app.use('/api/zoom', require('./routes/zoom'));
 app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/client/favorites', require('./routes/favorites'));
 app.use('/api/payments', require('./routes/payments'));
@@ -242,6 +246,8 @@ async function start() {
       require('./services/reminderService').startReminderJob();
       // Фоновая задача: захват оплаты через 5 минут разговора (модель B)
       require('./services/billingService').startBillingJob();
+      // Reconcile Zoom operations after transient provider/DB failures.
+      require('./services/zoomMeetingService').startReconciliationJob();
     });
   } catch (error) {
     logger.error('Failed to start server', { stack: error.stack });

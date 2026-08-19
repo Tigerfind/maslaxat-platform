@@ -24,6 +24,7 @@ import { axelionTheme } from './theme/axelionTheme';
 // Pages
 const LoginPage = lazy(() => import('./pages/Auth/LoginPage'));
 const RegisterPage = lazy(() => import('./pages/Auth/RegisterPage'));
+const LinkedInCallbackPage = lazy(() => import('./pages/Auth/LinkedInCallbackPage'));
 const DashboardPageGlass = lazy(() => import('./pages/Dashboard/DashboardPageGlass'));
 const LawyerDashboard = lazy(() => import('./pages/Lawyer/LawyerDashboardGlass'));
 const LawyerSchedulePage = lazy(() => import('./pages/Lawyer/LawyerSchedulePage'));
@@ -118,6 +119,7 @@ const AppContent = () => {
 
         <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />} />
         <Route path="/register" element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/oauth/linkedin" element={<LinkedInCallbackPage />} />
         <Route path="/forgot-password" element={!isAuthenticated ? <ForgotPasswordPage /> : <Navigate to="/dashboard" />} />
         <Route path="/reset-password" element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />

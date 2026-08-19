@@ -95,7 +95,7 @@ describe('бронирование гейтится модерацией (POST /
 describe('админ approve/reject', () => {
   test('approve делает юриста видимым + уведомление', async () => {
     const admin = await makeAdmin('vs-admin1@test.uz');
-    const { user: lawyer } = await makeLawyer('vs-p4@test.uz', { verificationStatus: 'pending' });
+    const { user: lawyer } = await makeLawyer('vs-p4@test.uz', { verificationStatus: 'pending_review' });
     await lawyer.update({ avatar: '/uploads/lawyer.png' });
     await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
 
@@ -118,7 +118,7 @@ describe('админ approve/reject', () => {
 
   test('админ не может одобрить неполный профиль', async () => {
     const admin = await makeAdmin('vs-admin-incomplete@test.uz');
-    const { user: lawyer } = await makeLawyer('vs-incomplete@test.uz', { verificationStatus: 'pending' });
+    const { user: lawyer } = await makeLawyer('vs-incomplete@test.uz', { verificationStatus: 'pending_review' });
 
     const res = await request(app)
       .post(`/api/admin/lawyers/${lawyer.id}/approve`)
@@ -130,7 +130,7 @@ describe('админ approve/reject', () => {
 
   test('reject с причиной убирает из каталога + пишет причину + уведомление', async () => {
     const admin = await makeAdmin('vs-admin2@test.uz');
-    const { user: lawyer } = await makeLawyer('vs-a4@test.uz', { verificationStatus: 'approved' });
+    const { user: lawyer } = await makeLawyer('vs-a4@test.uz', { verificationStatus: 'pending_review' });
 
     const res = await request(app)
       .post(`/api/admin/lawyers/${lawyer.id}/reject`)

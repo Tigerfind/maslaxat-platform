@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import {
   Container,
@@ -41,6 +41,7 @@ import PhoneAuth from '../../components/Auth/PhoneAuth';
  */
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useDispatch();
   const { loading, error } = useSelector((state) => state.auth);
   const { t } = useTranslation();
@@ -55,7 +56,12 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [rememberMe, setRememberMe] = useState(Boolean(localStorage.getItem('rememberedEmail')));
   const [touched, setTouched] = useState({ email: false, password: false });
-  const [twoFA, setTwoFA] = useState({ required: false, tempToken: null, code: '', error: '', loading: false, email: '' });
+  const [twoFA, setTwoFA] = useState(() => ({
+    required: Boolean(location.state?.twoFactor?.tempToken),
+    tempToken: location.state?.twoFactor?.tempToken || null,
+    code: '', error: '', loading: false,
+    email: location.state?.twoFactor?.email || '',
+  }));
   const [phoneMode, setPhoneMode] = useState(false); // вход по номеру телефона
 
   // Демо-креды нужны только для локальной разработки. Раньше они были вшиты в
@@ -487,6 +493,7 @@ const LoginPage = () => {
           {/* Соц-вход (кнопки видны только если провайдер включён на сервере) */}
           {!twoFA.required && !phoneMode && (
             <SocialLogin
+              role={currentUserType.role}
               onSuccess={(data) => finishLogin(data, data.user?.email)}
               onError={(err) => dispatch(loginFailure(err.response?.data?.error || t('login.loginError')))}
             />

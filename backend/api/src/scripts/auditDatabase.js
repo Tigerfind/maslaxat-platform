@@ -5,9 +5,11 @@ sequelize.options.logging = false;
 const EXPECTED_TABLES = [
   'a_i_conversations', 'a_i_messages', 'case_documents', 'consultations', 'documents',
   'favorite_lawyers', 'financial_events', 'lawyer_documents', 'lawyer_profiles',
+  'lawyer_experiences', 'lawyer_educations', 'lawyer_certificates', 'lawyer_oauth_accounts',
   'legal_chunks', 'legal_documents', 'messages', 'notifications', 'payments',
   'phone_otps', 'promos', 'push_subscriptions', 'reviews', 'specializations',
-  'subscriptions', 'support_tickets', 'users', 'withdrawals',
+  'subscriptions', 'support_tickets', 'users', 'withdrawals', 'zoom_connections',
+  'consultation_meetings', 'zoom_webhook_events', 'lawyer_profile_status_histories',
 ];
 
 const REQUIRED_INDEXES = [
@@ -26,6 +28,14 @@ const REQUIRED_INDEXES = [
   { name: 'legal_documents_source_version_unique', table: 'legal_documents', unique: true, fields: ['source_url', 'version'] },
   { name: 'legal_chunks_document_ordinal_unique', table: 'legal_chunks', unique: true, fields: ['document_id', 'ordinal'] },
   { name: 'legal_chunks_fts_idx', table: 'legal_chunks', unique: false, fields: [], method: 'gin', expression: true },
+  { name: 'lawyer_oauth_provider_subject_unique', table: 'lawyer_oauth_accounts', unique: true, fields: ['provider', 'provider_account_id'] },
+  { name: 'lawyer_oauth_user_provider_unique', table: 'lawyer_oauth_accounts', unique: true, fields: ['user_id', 'provider'] },
+  { name: 'zoom_connections_user_unique', table: 'zoom_connections', unique: true, fields: ['user_id'] },
+  { name: 'zoom_connections_zoom_user_connected_unique', table: 'zoom_connections', unique: true, fields: ['zoom_user_id'], partial: true },
+  { name: 'consultation_meetings_consultation_unique', table: 'consultation_meetings', unique: true, fields: ['consultation_id'] },
+  { name: 'consultation_meetings_provider_external_unique', table: 'consultation_meetings', unique: true, fields: ['provider', 'external_meeting_id'] },
+  { name: 'zoom_webhook_events_request_unique', table: 'zoom_webhook_events', unique: true, fields: ['request_id'] },
+  { name: 'consultations_lawyer_scheduled_window_idx', table: 'consultations', unique: false, fields: ['lawyer_id', 'status', 'scheduled_start_at', 'scheduled_end_at'] },
 ];
 
 async function main() {

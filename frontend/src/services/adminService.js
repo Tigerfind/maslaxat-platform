@@ -60,6 +60,10 @@ export const adminLawyerService = {
     const response = await api.get('/admin/lawyers', { params: filters });
     return response.data;
   },
+  getModeration: async (lawyerId) => {
+    const response = await api.get(`/admin/lawyers/${lawyerId}/moderation`);
+    return response.data;
+  },
 
   // Approve lawyer
   approveLawyer: async (lawyerId) => {

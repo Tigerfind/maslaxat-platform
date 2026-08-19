@@ -140,6 +140,26 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   greeting: {
     type: DataTypes.TEXT,
   },
+  professionalTitle: { type: DataTypes.STRING(180) },
+  region: { type: DataTypes.STRING(120) },
+  linkedinUrl: { type: DataTypes.TEXT },
+  licenseNumber: { type: DataTypes.STRING(120) },
+  licenseIssuer: { type: DataTypes.STRING(255) },
+  licenseIssuedAt: { type: DataTypes.DATEONLY },
+  licenseExpiresAt: { type: DataTypes.DATEONLY },
+  timezone: { type: DataTypes.STRING(64), allowNull: false, defaultValue: 'Asia/Tashkent' },
+  consultationFormats: {
+    type: DataTypes.ARRAY(DataTypes.STRING),
+    allowNull: false,
+    defaultValue: ['chat', 'audio', 'webrtc'],
+  },
+  consultationDurations: {
+    type: DataTypes.ARRAY(DataTypes.INTEGER),
+    allowNull: false,
+    defaultValue: [30, 60, 90],
+  },
+  onboardingStep: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  verificationSubmittedAt: { type: DataTypes.DATE },
   experience: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
@@ -196,8 +216,8 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   // approved → одобрен админом (виден, бронируется, галочка «Проверенный»);
   // rejected → отклонён (с причиной в rejectionReason), может подать снова.
   verificationStatus: {
-    type: DataTypes.ENUM('pending', 'approved', 'rejected'),
-    defaultValue: 'pending',
+    type: DataTypes.ENUM('draft', 'pending_review', 'approved', 'rejected', 'suspended'),
+    defaultValue: 'draft',
   },
   // Причина отклонения — показывается юристу, чтобы он исправил и подал снова.
   rejectionReason: {
@@ -306,6 +326,10 @@ const Consultation = sequelize.define('Consultation', {
   },
   legalAcceptedAt: { type: DataTypes.DATE },
   legalVersion: { type: DataTypes.STRING },
+  scheduledStartAt: { type: DataTypes.DATE },
+  scheduledEndAt: { type: DataTypes.DATE },
+  scheduleTimezone: { type: DataTypes.STRING(64) },
+  meetingProvider: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'webrtc' },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
@@ -445,7 +469,7 @@ const LawyerDocument = sequelize.define('LawyerDocument', {
   },
   // Тип документа для проверки админом.
   type: {
-    type: DataTypes.ENUM('diploma', 'license', 'id', 'other'),
+    type: DataTypes.ENUM('diploma', 'license', 'certificate', 'id', 'other'),
     defaultValue: 'other',
   },
   name: {
@@ -462,6 +486,122 @@ const LawyerDocument = sequelize.define('LawyerDocument', {
   size: {
     type: DataTypes.INTEGER,
   },
+});
+
+const LawyerExperience = sequelize.define('LawyerExperience', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  organization: { type: DataTypes.STRING(255), allowNull: false },
+  position: { type: DataTypes.STRING(255), allowNull: false },
+  startDate: { type: DataTypes.DATEONLY, allowNull: false },
+  endDate: { type: DataTypes.DATEONLY },
+  isCurrent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  description: { type: DataTypes.TEXT },
+  displayOrder: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 0 },
+}, { indexes: [{ name: 'lawyer_experiences_user_order_idx', fields: ['user_id', 'display_order'] }] });
+
+const LawyerEducation = sequelize.define('LawyerEducation', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  university: { type: DataTypes.STRING(255), allowNull: false },
+  faculty: { type: DataTypes.STRING(255) },
+  specialty: { type: DataTypes.STRING(255), allowNull: false },
+  degree: { type: DataTypes.STRING(120) },
+  startYear: { type: DataTypes.INTEGER },
+  endYear: { type: DataTypes.INTEGER },
+  country: { type: DataTypes.STRING(120) },
+  city: { type: DataTypes.STRING(120) },
+  displayOrder: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 0 },
+}, { indexes: [{ name: 'lawyer_educations_user_order_idx', fields: ['user_id', 'display_order'] }] });
+
+const LawyerCertificate = sequelize.define('LawyerCertificate', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  documentId: { type: DataTypes.UUID },
+  title: { type: DataTypes.STRING(255), allowNull: false },
+  organization: { type: DataTypes.STRING(255) },
+  issuedAt: { type: DataTypes.DATEONLY },
+  credentialUrl: { type: DataTypes.TEXT },
+  displayOrder: { type: DataTypes.SMALLINT, allowNull: false, defaultValue: 0 },
+}, { indexes: [{ name: 'lawyer_certificates_user_order_idx', fields: ['user_id', 'display_order'] }] });
+
+const LawyerOAuthAccount = sequelize.define('LawyerOAuthAccount', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  provider: { type: DataTypes.STRING(32), allowNull: false },
+  providerAccountId: { type: DataTypes.STRING(255), allowNull: false },
+  providerEmail: { type: DataTypes.STRING(255) },
+  lastLoginAt: { type: DataTypes.DATE },
+}, {
+  tableName: 'lawyer_oauth_accounts',
+  indexes: [
+    { name: 'lawyer_oauth_provider_subject_unique', unique: true, fields: ['provider', 'provider_account_id'] },
+    { name: 'lawyer_oauth_user_provider_unique', unique: true, fields: ['user_id', 'provider'] },
+  ],
+});
+
+const ZoomConnection = sequelize.define('ZoomConnection', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  userId: { type: DataTypes.UUID, allowNull: false },
+  zoomUserId: { type: DataTypes.STRING(255), allowNull: false },
+  zoomAccountId: { type: DataTypes.STRING(255) },
+  zoomEmail: { type: DataTypes.STRING(255) },
+  accessTokenEncrypted: { type: DataTypes.TEXT, allowNull: false },
+  refreshTokenEncrypted: { type: DataTypes.TEXT, allowNull: false },
+  tokenExpiresAt: { type: DataTypes.DATE, allowNull: false },
+  scopes: { type: DataTypes.ARRAY(DataTypes.STRING), allowNull: false, defaultValue: [] },
+  status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'connected' },
+  lastError: { type: DataTypes.TEXT },
+  connectedAt: { type: DataTypes.DATE, allowNull: false, defaultValue: DataTypes.NOW },
+  disconnectedAt: { type: DataTypes.DATE },
+}, { indexes: [
+  { name: 'zoom_connections_user_unique', unique: true, fields: ['user_id'] },
+  { name: 'zoom_connections_zoom_user_connected_unique', unique: true, fields: ['zoom_user_id'], where: { status: 'connected' } },
+] });
+
+const ConsultationMeeting = sequelize.define('ConsultationMeeting', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  consultationId: { type: DataTypes.UUID, allowNull: false },
+  zoomConnectionId: { type: DataTypes.UUID },
+  provider: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'zoom' },
+  externalMeetingId: { type: DataTypes.STRING(255) },
+  status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'creating' },
+  joinUrlEncrypted: { type: DataTypes.TEXT },
+  startUrlEncrypted: { type: DataTypes.TEXT },
+  passcodeEncrypted: { type: DataTypes.TEXT },
+  scheduledAt: { type: DataTypes.DATE },
+  duration: { type: DataTypes.INTEGER },
+  lastError: { type: DataTypes.TEXT },
+  startedAt: { type: DataTypes.DATE },
+  endedAt: { type: DataTypes.DATE },
+  cancelledAt: { type: DataTypes.DATE },
+}, {
+  indexes: [
+    { name: 'consultation_meetings_consultation_unique', unique: true, fields: ['consultation_id'] },
+    { name: 'consultation_meetings_provider_external_unique', unique: true, fields: ['provider', 'external_meeting_id'] },
+  ],
+});
+
+const ZoomWebhookEvent = sequelize.define('ZoomWebhookEvent', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  requestId: { type: DataTypes.STRING(255), allowNull: false },
+  event: { type: DataTypes.STRING(120), allowNull: false },
+  payload: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+  status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'processed' },
+  processedAt: { type: DataTypes.DATE },
+}, { indexes: [{ name: 'zoom_webhook_events_request_unique', unique: true, fields: ['request_id'] }] });
+
+const LawyerProfileStatusHistory = sequelize.define('LawyerProfileStatusHistory', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  lawyerProfileId: { type: DataTypes.UUID, allowNull: false },
+  actorUserId: { type: DataTypes.UUID },
+  fromStatus: { type: DataTypes.STRING(32) },
+  toStatus: { type: DataTypes.STRING(32), allowNull: false },
+  reason: { type: DataTypes.TEXT },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, {
+  updatedAt: false,
+  indexes: [{ name: 'lawyer_profile_status_history_profile_created_idx', fields: ['lawyer_profile_id', 'created_at'] }],
 });
 
 // ─── CASE DOCUMENT (рабочие документы по консультации) ──────
@@ -856,6 +996,19 @@ const PushSubscription = sequelize.define('PushSubscription', {
 // User <-> LawyerProfile (1:1 for lawyers)
 User.hasOne(LawyerProfile, { foreignKey: 'userId', as: 'profile' });
 LawyerProfile.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasMany(LawyerExperience, { foreignKey: 'userId', as: 'lawyerExperiences', onDelete: 'CASCADE' });
+LawyerExperience.belongsTo(User, { foreignKey: 'userId', as: 'lawyer' });
+User.hasMany(LawyerEducation, { foreignKey: 'userId', as: 'lawyerEducations', onDelete: 'CASCADE' });
+LawyerEducation.belongsTo(User, { foreignKey: 'userId', as: 'lawyer' });
+User.hasMany(LawyerCertificate, { foreignKey: 'userId', as: 'lawyerCertificates', onDelete: 'CASCADE' });
+LawyerCertificate.belongsTo(User, { foreignKey: 'userId', as: 'lawyer' });
+User.hasMany(LawyerOAuthAccount, { foreignKey: 'userId', as: 'lawyerOAuthAccounts', onDelete: 'CASCADE' });
+LawyerOAuthAccount.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+User.hasOne(ZoomConnection, { foreignKey: 'userId', as: 'zoomConnection', onDelete: 'CASCADE' });
+ZoomConnection.belongsTo(User, { foreignKey: 'userId', as: 'lawyer' });
+LawyerProfile.hasMany(LawyerProfileStatusHistory, { foreignKey: 'lawyerProfileId', as: 'statusHistory', onDelete: 'CASCADE' });
+LawyerProfileStatusHistory.belongsTo(LawyerProfile, { foreignKey: 'lawyerProfileId', as: 'profile' });
+LawyerProfileStatusHistory.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
 
 // Client <-> Consultation
 User.hasMany(Consultation, { foreignKey: 'clientId', as: 'clientConsultations' });
@@ -864,6 +1017,10 @@ Consultation.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
 // Lawyer <-> Consultation
 User.hasMany(Consultation, { foreignKey: 'lawyerId', as: 'lawyerConsultations' });
 Consultation.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
+Consultation.hasOne(ConsultationMeeting, { foreignKey: 'consultationId', as: 'meeting', onDelete: 'CASCADE' });
+ConsultationMeeting.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
+ZoomConnection.hasMany(ConsultationMeeting, { foreignKey: 'zoomConnectionId', as: 'meetings' });
+ConsultationMeeting.belongsTo(ZoomConnection, { foreignKey: 'zoomConnectionId', as: 'zoomConnection' });
 
 // User <-> AIConversation
 User.hasMany(AIConversation, { foreignKey: 'userId', as: 'conversations' });
@@ -883,6 +1040,8 @@ Document.belongsTo(User, { foreignKey: 'userId' });
 // Lawyer (User) <-> LawyerDocument (верификационные документы)
 User.hasMany(LawyerDocument, { foreignKey: 'userId', as: 'lawyerDocuments' });
 LawyerDocument.belongsTo(User, { foreignKey: 'userId' });
+LawyerCertificate.belongsTo(LawyerDocument, { foreignKey: 'documentId', as: 'document' });
+LawyerDocument.hasOne(LawyerCertificate, { foreignKey: 'documentId', as: 'certificate' });
 
 // Consultation <-> CaseDocument (рабочие документы по делу); uploader — автор загрузки
 Consultation.hasMany(CaseDocument, { foreignKey: 'consultationId', as: 'caseDocuments' });
@@ -949,6 +1108,14 @@ module.exports = {
   sequelize,
   User,
   LawyerProfile,
+  LawyerExperience,
+  LawyerEducation,
+  LawyerCertificate,
+  LawyerOAuthAccount,
+  ZoomConnection,
+  ConsultationMeeting,
+  ZoomWebhookEvent,
+  LawyerProfileStatusHistory,
   Consultation,
   AIConversation,
   AIMessage,

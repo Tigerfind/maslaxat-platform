@@ -3,10 +3,16 @@ const { Op, fn, col } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
-const { Consultation, User, LawyerProfile, Review, Notification, Payment, LawyerDocument, Message } = require('../models');
+const { DateTime, IANAZone } = require('luxon');
+const {
+  sequelize, Consultation, User, LawyerProfile, LawyerExperience, LawyerEducation,
+  LawyerCertificate, LawyerProfileStatusHistory, Review, Notification, Payment,
+  LawyerDocument, Message,
+} = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+const zoomMeetingService = require('../services/zoomMeetingService');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
@@ -35,6 +41,27 @@ function normalizeSchedule(raw) {
   }
   return out;
 }
+const invalidScheduleDays = (schedule) => Object.entries(schedule)
+  .filter(([, value]) => value.enabled && value.from >= value.to)
+  .map(([day]) => day);
+
+const cleanText = (value, max = 2000) => (typeof value === 'string' ? value.trim().slice(0, max) : '');
+const validLinkedInUrl = (value) => {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || !['linkedin.com', 'www.linkedin.com'].includes(url.hostname.toLowerCase())
+      || !/^\/in\/[^/]+\/?$/.test(url.pathname)) return false;
+    return `https://www.linkedin.com${url.pathname.replace(/\/$/, '')}`;
+  } catch { return false; }
+};
+const validDateRange = (start, end, current = false) => {
+  const from = DateTime.fromISO(String(start || ''));
+  if (!from.isValid) return false;
+  if (current) return !end;
+  const to = DateTime.fromISO(String(end || ''));
+  return to.isValid && to >= from;
+};
 
 // Avatar upload config (reuse same setup as users.js)
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -75,7 +102,7 @@ const docUpload = multer({
     else cb(new Error('Поддерживаются PDF и изображения (jpg, png, webp)'));
   },
 });
-const VERIF_DOC_TYPES = ['diploma', 'license', 'id', 'other'];
+const VERIF_DOC_TYPES = ['diploma', 'license', 'certificate', 'id', 'other'];
 
 // All routes require lawyer authentication
 router.use(authenticate, authorize('lawyer'));
@@ -179,6 +206,7 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
     if (!wasAlreadyAccepted) {
       const lawyer = await User.findByPk(req.userId, { attributes: ['name'] });
       notificationService.notifyBookingAccepted(consultation.clientId, lawyer?.name || 'Юрист', consultation);
+      if (consultation.meetingProvider === 'zoom') zoomMeetingService.maybeProvision(consultation.id).catch(() => {});
     }
 
     res.json({ success: true, message: 'Запрос принят', consultation });
@@ -253,6 +281,7 @@ router.get('/consultations/pending', async (req, res, next) => {
       date: c.preferredDate,
       time: c.preferredTime,
       type: c.type,
+      meetingProvider: c.meetingProvider,
       status: c.status,
       price: c.price,
     }));
@@ -289,6 +318,7 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
     if (!wasAlreadyAccepted) {
       const lawyerConfirm = await User.findByPk(req.userId, { attributes: ['name'] });
       notificationService.notifyBookingAccepted(consultation.clientId, lawyerConfirm?.name || 'Юрист', consultation);
+      if (consultation.meetingProvider === 'zoom') zoomMeetingService.maybeProvision(consultation.id).catch(() => {});
     }
 
     res.json({ success: true, message: 'Консультация подтверждена', consultation });
@@ -686,9 +716,178 @@ router.get('/profile', async (req, res, next) => {
     const profileOut = user.profile
       ? { ...user.profile.toJSON(), schedule: normalizeSchedule(user.profile.schedule) }
       : null;
-    res.json({ user, profile: profileOut });
+    const [experiences, educations, certificates, statusHistory] = await Promise.all([
+      LawyerExperience.findAll({ where: { userId: req.userId }, order: [['displayOrder', 'ASC']] }),
+      LawyerEducation.findAll({ where: { userId: req.userId }, order: [['displayOrder', 'ASC']] }),
+      LawyerCertificate.findAll({ where: { userId: req.userId }, order: [['displayOrder', 'ASC']] }),
+      LawyerProfileStatusHistory.findAll({ where: { lawyerProfileId: user.profile?.id }, order: [['createdAt', 'DESC']], limit: 20 }),
+    ]);
+    res.json({ user, profile: profileOut, experiences, educations, certificates, statusHistory });
   } catch (err) {
     next(err);
+  }
+});
+
+// PATCH /profile/draft — server-backed autosave for the professional profile wizard.
+router.patch('/profile/draft', async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
+
+    const experienceYears = Number(body.experience);
+    const price = Number(body.price);
+    const step = Number(body.step);
+    if (body.experience !== undefined && (!Number.isInteger(experienceYears) || experienceYears < 0 || experienceYears > 80)) {
+      return res.status(400).json({ error: 'Некорректный общий стаж' });
+    }
+    if (body.price !== undefined && (!Number.isInteger(price) || price < 0 || price > 10000000)) {
+      return res.status(400).json({ error: 'Некорректная стоимость консультации' });
+    }
+    if (body.timezone !== undefined && !IANAZone.isValidZone(body.timezone)) {
+      return res.status(400).json({ error: 'Некорректный часовой пояс' });
+    }
+    const linkedIn = body.linkedinUrl !== undefined ? validLinkedInUrl(body.linkedinUrl) : undefined;
+    if (linkedIn === false) return res.status(400).json({ error: 'Укажите ссылку вида https://www.linkedin.com/in/...' });
+    if (body.phone !== undefined && !/^\+998\d{9}$/.test(String(body.phone).replace(/\s/g, ''))) {
+      return res.status(400).json({ error: 'Телефон должен быть в формате +998XXXXXXXXX' });
+    }
+    const formats = body.consultationFormats;
+    if (formats !== undefined && (!Array.isArray(formats)
+      || formats.some((format) => !['chat', 'audio', 'webrtc', 'zoom'].includes(format)))) {
+      return res.status(400).json({ error: 'Некорректные форматы консультации' });
+    }
+    const durations = body.consultationDurations;
+    if (durations !== undefined && (!Array.isArray(durations)
+      || durations.some((duration) => ![30, 60, 90].includes(Number(duration))))) {
+      return res.status(400).json({ error: 'Допустимая длительность: 30, 60 или 90 минут' });
+    }
+    const experiences = body.experiences;
+    if (experiences !== undefined && (!Array.isArray(experiences) || experiences.some((item) => (
+      !cleanText(item.organization, 255) || !cleanText(item.position, 255)
+      || !validDateRange(item.startDate, item.endDate, item.isCurrent)
+    )))) return res.status(400).json({ error: 'Проверьте даты и обязательные поля опыта работы' });
+    const educations = body.educations;
+    const currentYear = new Date().getFullYear() + 10;
+    if (educations !== undefined && (!Array.isArray(educations) || educations.some((item) => (
+      !cleanText(item.university, 255) || !cleanText(item.specialty, 255)
+      || (item.startYear && (item.startYear < 1900 || item.startYear > currentYear))
+      || (item.endYear && (item.endYear < Number(item.startYear || 1900) || item.endYear > currentYear))
+    )))) return res.status(400).json({ error: 'Проверьте данные образования' });
+    const certificates = body.certificates;
+    if (certificates !== undefined && (!Array.isArray(certificates) || certificates.length > 30 || certificates.some((item) => (
+      !cleanText(item.title, 255) || (item.credentialUrl && (() => {
+        try { return new URL(item.credentialUrl).protocol !== 'https:'; } catch { return true; }
+      })())
+    )))) {
+      return res.status(400).json({ error: 'Название сертификата обязательно' });
+    }
+    if (experiences?.length > 30 || educations?.length > 20) return res.status(400).json({ error: 'Слишком много записей в резюме' });
+    if (body.languages !== undefined && (!Array.isArray(body.languages) || body.languages.length > 10)) {
+      return res.status(400).json({ error: 'Некорректный список языков' });
+    }
+    const normalizedSchedule = body.schedule !== undefined ? normalizeSchedule(body.schedule) : undefined;
+    if (normalizedSchedule && invalidScheduleDays(normalizedSchedule).length) {
+      return res.status(400).json({ error: 'Время окончания приёма должно быть позже времени начала' });
+    }
+
+    await sequelize.transaction(async (transaction) => {
+      const lockedProfile = await LawyerProfile.findByPk(profile.id, { transaction, lock: transaction.LOCK.UPDATE });
+      if (body.name !== undefined || body.phone !== undefined) {
+        await User.update({
+          ...(body.name !== undefined ? { name: cleanText(body.name, 180) } : {}),
+          ...(body.phone !== undefined ? { phone: String(body.phone).replace(/\s/g, '') } : {}),
+        }, { where: { id: req.userId }, transaction });
+      }
+      const fields = {
+        professionalTitle: body.professionalTitle,
+        description: body.description,
+        location: body.location,
+        region: body.region,
+        linkedinUrl: linkedIn,
+        licenseNumber: body.licenseNumber,
+        licenseIssuer: body.licenseIssuer,
+        licenseIssuedAt: Object.prototype.hasOwnProperty.call(body, 'licenseIssuedAt') ? (body.licenseIssuedAt || null) : undefined,
+        licenseExpiresAt: Object.prototype.hasOwnProperty.call(body, 'licenseExpiresAt') ? (body.licenseExpiresAt || null) : undefined,
+        timezone: body.timezone,
+        consultationFormats: formats,
+        consultationDurations: durations?.map(Number),
+        experience: body.experience !== undefined ? experienceYears : undefined,
+        price: body.price !== undefined ? price : undefined,
+        languages: body.languages,
+        schedule: normalizedSchedule,
+        onboardingStep: Number.isInteger(step) ? Math.max(0, Math.min(5, step)) : undefined,
+      };
+      if (body.specializations !== undefined) {
+        const specializations = [...new Set((Array.isArray(body.specializations) ? body.specializations : [])
+          .map((value) => cleanText(value, 120)).filter(Boolean))].slice(0, 12);
+        fields.specializations = specializations;
+        fields.specialization = specializations[0] || 'Не указана';
+      }
+      if (educations !== undefined) lockedProfile.education = educations.map((item) => ({
+        university: cleanText(item.university, 255), specialty: cleanText(item.specialty, 255),
+        degree: cleanText(item.degree, 120), startYear: item.startYear || null, endYear: item.endYear || null,
+      }));
+      if (certificates !== undefined) lockedProfile.certificates = certificates.map((item) => ({
+        title: cleanText(item.title, 255), organization: cleanText(item.organization, 255), issuedAt: item.issuedAt || null,
+      }));
+      Object.entries(fields).forEach(([key, value]) => { if (value !== undefined) lockedProfile[key] = value; });
+      if (lockedProfile.verificationStatus !== 'draft') {
+        const fromStatus = lockedProfile.verificationStatus;
+        lockedProfile.verificationStatus = 'draft';
+        lockedProfile.verificationSubmittedAt = null;
+        lockedProfile.isAvailable = false;
+        await LawyerProfileStatusHistory.create({
+          lawyerProfileId: lockedProfile.id, actorUserId: req.userId, fromStatus, toStatus: 'draft',
+          metadata: { source: 'profile_edit' },
+        }, { transaction });
+      }
+      await lockedProfile.save({ transaction });
+
+      const replaceRows = async (Model, rows, mapper) => {
+        if (rows === undefined) return;
+        await Model.destroy({ where: { userId: req.userId }, transaction });
+        if (rows.length) await Model.bulkCreate(rows.map((row, index) => ({ userId: req.userId, displayOrder: index, ...mapper(row) })), { transaction });
+      };
+      await replaceRows(LawyerExperience, experiences, (item) => ({
+        organization: cleanText(item.organization, 255), position: cleanText(item.position, 255),
+        startDate: item.startDate, endDate: item.isCurrent ? null : item.endDate,
+        isCurrent: Boolean(item.isCurrent), description: cleanText(item.description, 3000),
+      }));
+      await replaceRows(LawyerEducation, educations, (item) => ({
+        university: cleanText(item.university, 255), faculty: cleanText(item.faculty, 255),
+        specialty: cleanText(item.specialty, 255), degree: cleanText(item.degree, 120),
+        startYear: item.startYear || null, endYear: item.endYear || null,
+        country: cleanText(item.country, 120), city: cleanText(item.city, 120),
+      }));
+      await replaceRows(LawyerCertificate, certificates, (item) => ({
+        title: cleanText(item.title, 255), organization: cleanText(item.organization, 255),
+        issuedAt: item.issuedAt || null, credentialUrl: cleanText(item.credentialUrl, 1000) || null,
+      }));
+    });
+
+    const updated = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    return res.json({ success: true, savedAt: new Date().toISOString(), profile: updated });
+  } catch (err) {
+    return next(err);
+  }
+});
+
+router.get('/profile/preview', async (req, res, next) => {
+  try {
+    const user = await User.findByPk(req.userId, {
+      attributes: ['id', 'name', 'avatar'],
+      include: [
+        { model: LawyerProfile, as: 'profile' },
+        { model: LawyerExperience, as: 'lawyerExperiences', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerEducation, as: 'lawyerEducations', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerCertificate, as: 'lawyerCertificates', separate: true, order: [['displayOrder', 'ASC']] },
+      ],
+    });
+    if (!user) return res.status(404).json({ error: 'Профиль не найден' });
+    return res.json({ lawyer: user });
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -762,9 +961,18 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
       profile.schedule = normalizeSchedule(parsed); // единый формат {enabled,from,to}
     }
 
-    // After onboarding wizard completes — make profile visible
-    if (description && experience && price) {
-      profile.isAvailable = true;
+    if (profile.verificationStatus !== 'draft') {
+      const fromStatus = profile.verificationStatus;
+      profile.verificationStatus = 'draft';
+      profile.verificationSubmittedAt = null;
+      profile.isAvailable = false;
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id,
+        actorUserId: req.userId,
+        fromStatus,
+        toStatus: 'draft',
+        metadata: { source: 'legacy_profile_edit' },
+      });
     }
 
     await profile.save();
@@ -829,7 +1037,9 @@ router.put('/availability', async (req, res, next) => {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
 
-    profile.schedule = normalizeSchedule(schedule); // единый формат + валидация HH:mm
+    const normalized = normalizeSchedule(schedule);
+    if (invalidScheduleDays(normalized).length) return res.status(400).json({ error: 'Время окончания приёма должно быть позже времени начала' });
+    profile.schedule = normalized;
     await profile.save();
     res.json({ success: true, schedule: profile.schedule });
   } catch (err) {
@@ -896,6 +1106,20 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
     // Удаляем файл с диска (не валим запрос, если файла уже нет)
     if (doc.path) { try { fs.unlinkSync(doc.path); } catch (e) { /* файл мог быть удалён */ } }
     await doc.destroy();
+    const remaining = await LawyerDocument.count({ where: { userId: req.userId } });
+    if (remaining === 0) {
+      await sequelize.transaction(async (transaction) => {
+        const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (profile && ['pending_review', 'approved'].includes(profile.verificationStatus)) {
+          const fromStatus = profile.verificationStatus;
+          await profile.update({ verificationStatus: 'draft', verificationSubmittedAt: null, isAvailable: false }, { transaction });
+          await LawyerProfileStatusHistory.create({
+            lawyerProfileId: profile.id, actorUserId: req.userId, fromStatus, toStatus: 'draft',
+            metadata: { source: 'verification_document_removed' },
+          }, { transaction });
+        }
+      });
+    }
     res.json({ success: true });
   } catch (err) {
     next(err);
@@ -907,7 +1131,7 @@ router.get('/verification/checklist', async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['verificationStatus'] });
     const { complete, missing } = await computeProfileCompleteness(req.userId);
-    res.json({ complete, missing, verificationStatus: profile ? profile.verificationStatus : 'pending' });
+    res.json({ complete, missing, verificationStatus: profile ? profile.verificationStatus : 'draft' });
   } catch (err) {
     next(err);
   }
@@ -920,16 +1144,27 @@ router.post('/verification/submit', async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
-    if (profile.verificationStatus === 'approved') {
-      return res.status(400).json({ error: 'Профиль уже одобрен' });
-    }
+    if (profile.verificationStatus === 'approved') return res.status(400).json({ error: 'Профиль уже одобрен' });
+    if (profile.verificationStatus === 'pending_review') return res.status(409).json({ error: 'Профиль уже ожидает проверки' });
+    if (profile.verificationStatus === 'suspended') return res.status(403).json({ error: 'Профиль приостановлен администратором' });
     const { complete, missing } = await computeProfileCompleteness(req.userId);
     if (!complete) {
       return res.status(400).json({ error: 'Профиль заполнен не полностью', missing });
     }
-    profile.verificationStatus = 'pending';
-    profile.rejectionReason = null;
-    await profile.save();
+    const fromStatus = profile.verificationStatus;
+    await sequelize.transaction(async (transaction) => {
+      profile.verificationStatus = 'pending_review';
+      profile.verificationSubmittedAt = new Date();
+      profile.rejectionReason = null;
+      await profile.save({ transaction });
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id,
+        actorUserId: req.userId,
+        fromStatus,
+        toStatus: 'pending_review',
+        metadata: { source: 'lawyer_submission' },
+      }, { transaction });
+    });
 
     // Уведомляем всех админов, что появился юрист на проверке (fail-safe).
     try {
