@@ -120,6 +120,8 @@ packaged target. After taking the migration advisory lock, it derives `system_id
 ordered applied `SequelizeMeta` set from the actual `DATABASE_URL`; both must match signed evidence,
 and applied must remain an exact target prefix. Identity/meta query failure, absent/malformed evidence,
 or any mismatch blocks `sequelize-cli`. Do not configure an operator-supplied expected cluster ID.
+`DATABASE_URL` must be present and nonblank before evidence validation; this gate never falls back to
+`DB_*` or localhost. Separate explicit non-production commands may retain their own DB configuration.
 The migration role needs only its existing lock/schema privileges, `SELECT` on `SequelizeMeta`, and
 permission to execute `pg_control_system()`; do not grant backup-table read access for this gate.
 Local test evidence never authorizes it.

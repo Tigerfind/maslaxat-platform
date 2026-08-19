@@ -15,18 +15,14 @@ function delay(milliseconds) {
 }
 
 function connectionConfig(env = process.env) {
-  const ssl = env.DB_SSL === '1' || /sslmode=require/.test(env.DATABASE_URL || '')
+  if (typeof env.DATABASE_URL !== 'string' || env.DATABASE_URL.trim() === '') {
+    throw new Error('DATABASE_URL is required for migration predeploy');
+  }
+  const databaseUrl = env.DATABASE_URL.trim();
+  const ssl = env.DB_SSL === '1' || /sslmode=require/.test(databaseUrl)
     ? { rejectUnauthorized: false }
     : undefined;
-  if (env.DATABASE_URL) return { connectionString: env.DATABASE_URL, ssl };
-  return {
-    host: env.DB_HOST || 'localhost',
-    port: Number(env.DB_PORT || 5432),
-    database: env.DB_NAME,
-    user: env.DB_USER,
-    password: env.DB_PASSWORD || undefined,
-    ssl,
-  };
+  return { connectionString: databaseUrl, ssl };
 }
 
 function runChild(child) {
@@ -57,8 +53,9 @@ async function runLockedMigrations({
   }
 
   const apiRoot = path.resolve(__dirname, '../..');
+  const databaseConfig = connectionConfig(env);
   const preparedBackupGate = prepareBackupGate({ env, migrationsDir: path.join(apiRoot, 'migrations') });
-  const client = new ClientClass(connectionConfig(env));
+  const client = new ClientClass(databaseConfig);
   let acquired = false;
   let child;
   const forwardSignal = (signal) => {

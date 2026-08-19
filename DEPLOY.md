@@ -97,7 +97,8 @@ cp .env.example .env
 Заполнить (минимум для production-запуска; процесс завершится до импорта интеграций при ошибке):
 - `NODE_ENV=production`
 - `JWT_SECRET` — неплейсхолдерный, минимум 32 символа (`openssl rand -base64 48`)
-- `DATABASE_URL` или полный tuple `DB_HOST/PORT/NAME/USER/PASSWORD`
+- non-empty `DATABASE_URL` обязателен для production/Railway predeploy; `DB_*` не является fallback
+  release gate и допустим только для отдельных local/non-production команд
 - `REDIS_URL` — `redis://` или `rediss://`
 - `CORS_ORIGINS` и `FRONTEND_URL` — HTTPS; wildcard запрещён, frontend обязан быть в CORS
 - `R2_ACCOUNT_ID` (32 hex), `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_PRIVATE_BUCKET`

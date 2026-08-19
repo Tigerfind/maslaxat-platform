@@ -4,7 +4,9 @@ function loadRunner() {
   return require('../src/scripts/runMigrationsLocked');
 }
 
+const DATABASE_URL = 'postgres://migration@database.internal/emaslaxat';
 const gateOptions = {
+  env: { DATABASE_URL },
   prepareBackupGate: () => ({}),
   verifyBackupTarget: async () => {},
 };
@@ -21,6 +23,35 @@ function childThatExits(code, delay = 0, activity) {
   });
   return child;
 }
+
+test.each([
+  ['missing', {}],
+  ['empty', { DATABASE_URL: '' }],
+  ['blank', { DATABASE_URL: '   ' }],
+])('predeploy connection config rejects %s DATABASE_URL', (_label, env) => {
+  const { connectionConfig } = loadRunner();
+  expect(() => connectionConfig(env)).toThrow(/DATABASE_URL.*required/i);
+});
+
+test('predeploy connection config uses the explicit DATABASE_URL and never DB fallback fields', () => {
+  const { connectionConfig } = loadRunner();
+  expect(connectionConfig({
+    DATABASE_URL,
+    DB_HOST: 'wrong.internal',
+    DB_NAME: 'wrong',
+    DB_USER: 'wrong',
+  })).toEqual({ connectionString: DATABASE_URL, ssl: undefined });
+});
+
+test('missing DATABASE_URL fails before evidence preparation or client construction', async () => {
+  const { runLockedMigrations } = loadRunner();
+  const prepareBackupGate = jest.fn();
+  const Client = jest.fn();
+  await expect(runLockedMigrations({ env: {}, prepareBackupGate, Client }))
+    .rejects.toThrow(/DATABASE_URL.*required/i);
+  expect(prepareBackupGate).not.toHaveBeenCalled();
+  expect(Client).not.toHaveBeenCalled();
+});
 
 test('two attempts hold one advisory session lock across the complete child migration', async () => {
   const { runLockedMigrations } = loadRunner();
@@ -144,6 +175,7 @@ test('predeploy prepares evidence before connecting and verifies the live target
     }
   }
   await expect(runLockedMigrations({
+    env: { DATABASE_URL },
     Client: FakeClient,
     prepareBackupGate: () => { events.push('prepare'); return { signed: true }; },
     verifyBackupTarget: async (_client, prepared) => {
@@ -170,6 +202,7 @@ test('live target verification failure releases the lock without spawning migrat
     }
   }
   await expect(runLockedMigrations({
+    env: { DATABASE_URL },
     Client: FakeClient,
     prepareBackupGate: () => ({}),
     verifyBackupTarget: async () => { throw new Error('migration target cluster does not match signed backup'); },
