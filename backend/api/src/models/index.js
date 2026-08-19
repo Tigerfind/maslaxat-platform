@@ -216,7 +216,7 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   // approved → одобрен админом (виден, бронируется, галочка «Проверенный»);
   // rejected → отклонён (с причиной в rejectionReason), может подать снова.
   verificationStatus: {
-    type: DataTypes.ENUM('draft', 'pending_review', 'approved', 'rejected', 'suspended'),
+    type: DataTypes.ENUM('pending', 'draft', 'pending_review', 'approved', 'rejected', 'suspended'),
     defaultValue: 'draft',
   },
   // Причина отклонения — показывается юристу, чтобы он исправил и подал снова.
