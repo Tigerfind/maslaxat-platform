@@ -69,6 +69,14 @@ describe('load-test safety contracts', () => {
     expect(() => assertLoadTestEnvironment(replacedDenylist, 'api.maslaxat.uz'))
       .toThrow('production');
   });
+
+  test('seed accepts HTTP only for the isolated loopback load service', () => {
+    const { assertLoadSeedEnvironment } = require(seedPath);
+    const loopback = approvedEnv({ LOAD_TEST_ALLOWED_HOSTS: '127.0.0.1' });
+
+    expect(assertLoadSeedEnvironment(loopback, 'http://127.0.0.1:3002')).toBe('http://127.0.0.1:3002');
+    expect(() => assertLoadSeedEnvironment(approvedEnv(), 'http://api.staging.example.test')).toThrow('HTTPS');
+  });
 });
 
 describe('load seed and manifest contracts', () => {

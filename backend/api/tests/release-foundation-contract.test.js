@@ -156,3 +156,27 @@ test('CI evidence helper writes only the consistent start and final metadata con
     fs.rmSync(directory, { recursive: true, force: true });
   }
 });
+
+test('quality workflow is reusable, immutable-action-pinned, and serializes one staging database', () => {
+  const quality = read('.github/workflows/quality-gates.yml');
+  const staging = read('.github/workflows/staging-gates.yml');
+  const actionUses = [...quality.matchAll(/uses:\s+([^\s]+)/g)].map((match) => match[1]);
+
+  expect(quality).toMatch(/workflow_call:/);
+  expect(quality).toContain('node-version: 22.18.0');
+  expect(quality).toMatch(/group:\s*quality-staging-\$\{\{ vars\.QUALITY_STAGING_DATABASE_NAME \}\}/);
+  expect(quality).toMatch(/cancel-in-progress:\s*false/);
+  expect(quality).toContain('E2E_RUN_ID: q-${{ github.run_id }}-${{ github.run_attempt }}');
+  expect(quality).toContain('LOAD_TEST_RUN_ID: q-${{ github.run_id }}-${{ github.run_attempt }}');
+  expect(quality).toContain('E2E_CONFIRM_DATABASE: ${{ vars.QUALITY_STAGING_DATABASE_NAME }}');
+  expect(quality).toContain('npm --prefix e2e audit --audit-level=high');
+  expect(quality).toContain('node load/internal-server.js');
+  expect(quality).toContain('BASE_URL: http://127.0.0.1:3002');
+  for (const value of actionUses) {
+    if (value.startsWith('./')) continue;
+    expect(value).toMatch(/@[a-f0-9]{40}$/);
+  }
+  expect(staging).toContain('uses: ./.github/workflows/quality-gates.yml');
+  expect(staging).toContain('secrets: inherit');
+  expect(staging).not.toContain('Session B Playwright/load staging gates are not integrated');
+});

@@ -3,6 +3,10 @@ const { authenticate } = require('../middleware/auth');
 const { PushSubscription } = require('../models');
 const pushService = require('../services/pushService');
 
+async function deleteOwnedSubscription(model, endpoint, userId) {
+  return model.destroy({ where: { endpoint, userId } });
+}
+
 // GET /api/push/vapid-public-key — публичный VAPID-ключ (или null если выключено)
 router.get('/vapid-public-key', (req, res) => {
   res.json({ publicKey: pushService.getPublicKey(), enabled: pushService.isEnabled() });
@@ -35,11 +39,15 @@ router.post('/unsubscribe', authenticate, async (req, res, next) => {
   try {
     const { endpoint } = req.body || {};
     if (!endpoint) return res.status(400).json({ error: 'endpoint обязателен' });
-    await PushSubscription.destroy({ where: { endpoint, userId: req.userId } });
-    res.json({ success: true });
+    const deleted = await deleteOwnedSubscription(PushSubscription, endpoint, req.userId);
+    if (deleted !== 1) {
+      return res.status(409).json({ success: false, deleted: 0, code: 'PUSH_BINDING_NOT_OWNED' });
+    }
+    return res.json({ success: true, deleted });
   } catch (err) {
     next(err);
   }
 });
 
 module.exports = router;
+module.exports.deleteOwnedSubscription = deleteOwnedSubscription;

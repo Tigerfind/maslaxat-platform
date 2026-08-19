@@ -41,7 +41,7 @@ test('authenticated session unbind reaches the server before local unsubscribe a
   const subscription = makeSubscription(events);
   installPushBrowser(subscription);
   localStorage.setItem(accountPreferenceKey('user-a'), '1');
-  api.post.mockImplementation(async () => { events.push('server-unbind'); });
+  api.post.mockImplementation(async () => { events.push('server-unbind'); return { data: { deleted: 1 } }; });
 
   await pushService.unbindSession({ accountId: 'user-a' });
 
@@ -70,7 +70,7 @@ test('explicit disable clears push preference while session unbind does not', as
   const subscription = makeSubscription();
   installPushBrowser(subscription);
   localStorage.setItem(accountPreferenceKey('user-a'), '1');
-  api.post.mockResolvedValue({});
+  api.post.mockResolvedValue({ data: { deleted: 1 } });
 
   await pushService.disable('user-a');
 
@@ -83,7 +83,7 @@ test('login rebinds an opted-in browser and ignores users without saved consent'
   const pushManager = installPushBrowser(null);
   pushManager.subscribe.mockResolvedValue(subscription);
   api.get.mockResolvedValue({ data: { enabled: true, publicKey: 'AQID' } });
-  api.post.mockResolvedValue({});
+  api.post.mockResolvedValue({ data: { deleted: 1 } });
 
   await expect(pushService.rebindSession('user-a')).resolves.toBe(false);
   expect(pushManager.subscribe).not.toHaveBeenCalled();
@@ -117,7 +117,7 @@ test('a failed local unsubscribe reports an incomplete unbind after the server c
   subscription.unsubscribe.mockRejectedValue(new Error('browser refused'));
   installPushBrowser(subscription);
   localStorage.setItem(accountPreferenceKey('user-a'), '1');
-  api.post.mockResolvedValue({});
+  api.post.mockResolvedValue({ data: { deleted: 1 } });
 
   await expect(pushService.unbindSession({ accountId: 'user-a' })).resolves.toBe(false);
 
@@ -154,16 +154,31 @@ test('a service worker that never becomes ready times out instead of hanging log
   jest.useRealTimers();
 });
 
-test('failed server unbind is persisted and drained after a later session', async () => {
+test('failed server unbind is persisted and drained only by the same account', async () => {
   const subscription = makeSubscription();
   installPushBrowser(subscription);
   localStorage.setItem(accountPreferenceKey('user-a'), '1');
-  api.post.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({});
+  api.post.mockRejectedValueOnce(new Error('offline')).mockResolvedValue({ data: { deleted: 1 } });
 
   await expect(pushService.unbindSession({ accountId: 'user-a' })).resolves.toBe(false);
   expect(localStorage.getItem('maslaxatPushPendingUnbind')).toContain(subscription.endpoint);
 
-  await expect(pushService.drainPendingUnbind()).resolves.toBe(true);
+  await expect(pushService.drainPendingUnbind('user-b')).resolves.toBe(false);
+  expect(api.post).toHaveBeenCalledTimes(1);
+  expect(localStorage.getItem('maslaxatPushPendingUnbind')).toContain(subscription.endpoint);
+
+  await expect(pushService.drainPendingUnbind('user-a')).resolves.toBe(true);
   expect(api.post).toHaveBeenCalledTimes(2);
   expect(localStorage.getItem('maslaxatPushPendingUnbind')).toBeNull();
+});
+
+test('zero-row owned deletion preserves pending unbind evidence', async () => {
+  localStorage.setItem('maslaxatPushPendingUnbind', JSON.stringify({
+    endpoint: 'https://push.test/subscription-a', accountId: 'user-a',
+  }));
+  api.post.mockResolvedValue({ data: { deleted: 0 } });
+
+  await expect(pushService.drainPendingUnbind('user-a')).resolves.toBe(false);
+
+  expect(localStorage.getItem('maslaxatPushPendingUnbind')).toContain('subscription-a');
 });

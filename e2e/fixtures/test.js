@@ -2,9 +2,29 @@ const base = require('@playwright/test');
 const { authenticatePage } = require('../helpers/auth');
 const { installFakeMedia } = require('../helpers/fake-media');
 const { validateSeedState } = require('./contracts');
+const { allocateRemoteFixture, cleanupRemoteFixture } = require('../helpers/remote-fixtures');
+
+const remoteConfig = (apiUrl) => ({
+  apiUrl,
+  runId: process.env.E2E_RUN_ID,
+  cleanupToken: process.env.E2E_FIXTURE_CLEANUP_TOKEN,
+  token: process.env.E2E_TEST_API_TOKEN,
+  secret: process.env.E2E_TEST_API_SECRET,
+  nonce: process.env.E2E_SAFETY_ATTESTATION_NONCE,
+});
 
 const test = base.test.extend({
-  seedState: async ({}, use) => {
+  seedState: async ({ request, apiUrl }, use, testInfo) => {
+    if (process.env.E2E_TEST_API_ENABLED === '1') {
+      const config = remoteConfig(apiUrl);
+      const fixture = await allocateRemoteFixture(request, config, testInfo);
+      try {
+        await use(validateSeedState(fixture.seedState));
+      } finally {
+        await cleanupRemoteFixture(request, config, fixture.scope);
+      }
+      return;
+    }
     let state;
     try { state = JSON.parse(process.env.E2E_SEED_STATE || ''); }
     catch { throw new Error('E2E blocked: global seed state is missing or malformed'); }

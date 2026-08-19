@@ -224,7 +224,7 @@ test('replacement upload invalidates the stale aborted operation before it can r
   await flushFileRead();
   selectFile(view.host, new File(['new-pdf'], 'linkedin.pdf', { type: 'application/pdf' }));
   await flushFileRead();
-  await act(async () => {});
+  await waitForCalls(service.poll, 1);
 
   expect(service.current).toHaveBeenCalledTimes(1);
   expect(service.poll).toHaveBeenCalledTimes(1);

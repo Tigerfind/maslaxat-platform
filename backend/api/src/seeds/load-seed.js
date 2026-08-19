@@ -68,7 +68,10 @@ function assertLoadSeedEnvironment(env = process.env, targetUrl = env.LOAD_TEST_
   } catch {
     throw new Error('LOAD_TEST_TARGET_URL must be a valid HTTPS URL');
   }
-  if (target.protocol !== 'https:') throw new Error('LOAD_TEST_TARGET_URL must use HTTPS');
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(target.hostname);
+  if (target.protocol !== 'https:' && !(loopback && target.protocol === 'http:')) {
+    throw new Error('LOAD_TEST_TARGET_URL must use HTTPS outside loopback');
+  }
   const allowed = hostSet(env.LOAD_TEST_ALLOWED_HOSTS);
   const production = new Set([
     ...hostSet(PRODUCTION_HOSTS),

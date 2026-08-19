@@ -7,8 +7,7 @@ module.exports = async function globalTeardown() {
   const api = (process.env.E2E_API_URL || 'http://127.0.0.1:3001/api').replace(/\/$/, '');
   if (process.env.E2E_TEST_API_ENABLED === '1') {
     const runId = process.env.E2E_RUN_ID;
-    const scope = process.env.E2E_FIXTURE_SCOPE;
-    const response = await fetch(`${api}/e2e/runs/${encodeURIComponent(runId)}/fixtures/${encodeURIComponent(scope)}`, {
+    const response = await fetch(`${api}/e2e/runs/${encodeURIComponent(runId)}`, {
       method: 'DELETE',
       headers: {
         authorization: `Bearer ${process.env.E2E_TEST_API_TOKEN}`,

@@ -4,14 +4,14 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
 
-test('package and lock pin Playwright exactly to 1.55.0', () => {
+test('package and lock pin the audited Playwright release exactly to 1.62.1', () => {
   const root = path.resolve(__dirname, '../..');
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-  assert.equal(manifest.devDependencies['@playwright/test'], '1.55.0');
-  assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.55.0');
-  assert.equal(lock.packages['node_modules/playwright'].version, '1.55.0');
-  assert.equal(lock.packages['node_modules/playwright-core'].version, '1.55.0');
+  assert.equal(manifest.devDependencies['@playwright/test'], '1.62.1');
+  assert.equal(lock.packages['node_modules/@playwright/test'].version, '1.62.1');
+  assert.equal(lock.packages['node_modules/playwright'].version, '1.62.1');
+  assert.equal(lock.packages['node_modules/playwright-core'].version, '1.62.1');
 });
 
 test('Playwright success and retry artifacts are ignored by git', () => {

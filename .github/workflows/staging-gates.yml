@@ -10,13 +10,10 @@ jobs:
   release-foundation:
     uses: ./.github/workflows/ci.yml
 
-  # Session B replaces this refusal with its Playwright and load reusable jobs.
-  # Keeping the named patch point fail-closed prevents local A1 evidence from
-  # being misrepresented as complete staging quality evidence.
   session-b-quality-gates:
     needs: release-foundation
-    runs-on: ubuntu-24.04
-    steps:
-      - run: |
-          printf '%s\n' 'Session B Playwright/load staging gates are not integrated.'
-          exit 1
+    uses: ./.github/workflows/quality-gates.yml
+    with:
+      run_staging: true
+      confirm_non_production: STAGING-ONLY
+    secrets: inherit

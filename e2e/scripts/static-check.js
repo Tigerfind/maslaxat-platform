@@ -17,8 +17,8 @@ function inspectSpecSource(file, source) {
 function checkHarness(root = path.resolve(__dirname, '..')) {
   const manifest = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
   const lock = JSON.parse(fs.readFileSync(path.join(root, 'package-lock.json'), 'utf8'));
-  if (manifest.devDependencies['@playwright/test'] !== '1.55.0' || lock.packages['node_modules/@playwright/test'].version !== '1.55.0') {
-    throw new Error('Playwright must remain pinned exactly to 1.55.0');
+  if (manifest.devDependencies['@playwright/test'] !== '1.62.1' || lock.packages['node_modules/@playwright/test'].version !== '1.62.1') {
+    throw new Error('Playwright must remain pinned exactly to 1.62.1');
   }
   process.env.E2E_DISABLE_LIFECYCLE = '1';
   const config = require(path.join(root, 'playwright.config'));

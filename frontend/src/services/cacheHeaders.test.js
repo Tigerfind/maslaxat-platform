@@ -47,7 +47,7 @@ test('nginx revalidates the worker and shell while caching hashed static assets 
   for (const asset of ['sw.js', 'index.html', 'manifest.json']) {
     expect(config).toMatch(new RegExp(`location = /${asset.replace('.', '\\.')}`));
   }
-  expect(config.match(/Cache-Control "no-cache, no-store, must-revalidate" always/g)).toHaveLength(3);
+  expect(config.match(/Cache-Control "no-cache, no-store, must-revalidate" always/g)).toHaveLength(4);
   expect(config).toMatch(/location \/static\/[^\n]*\{[\s\S]*Cache-Control "public, max-age=31536000, immutable" always/);
   expect(config).toMatch(/location \/ \{[\s\S]*try_files \$uri \$uri\/ \/index\.html/);
 });

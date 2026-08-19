@@ -2,6 +2,16 @@ name: Quality gates
 
 on:
   pull_request:
+  workflow_call:
+    inputs:
+      run_staging:
+        required: false
+        default: false
+        type: boolean
+      confirm_non_production:
+        required: false
+        default: ''
+        type: string
   workflow_dispatch:
     inputs:
       run_staging:
@@ -17,19 +27,15 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: quality-gates-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   static-contracts:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 18
+          node-version: 22.18.0
           cache: npm
           cache-dependency-path: |
             backend/api/package-lock.json
@@ -48,6 +54,7 @@ jobs:
         run: npm --prefix frontend test -- --runInBand src/services/serviceWorker.test.js src/services/pushService.test.js src/services/sessionRuntime.test.js src/store/slices/authSlice.test.js
       - name: Playwright unit and static contracts
         run: |
+          npm --prefix e2e audit --audit-level=high
           npm --prefix e2e run test:unit
           npm --prefix e2e run test:static
           npm --prefix e2e run test:list
@@ -59,13 +66,15 @@ jobs:
 
   staging-critical:
     if: >-
-      github.event_name == 'workflow_dispatch' &&
       inputs.run_staging == true &&
       inputs.confirm_non_production == 'STAGING-ONLY'
     needs: static-contracts
     runs-on: ubuntu-latest
     timeout-minutes: 75
     environment: quality-staging
+    concurrency:
+      group: quality-staging-${{ vars.QUALITY_STAGING_DATABASE_NAME }}
+      cancel-in-progress: false
     env:
       CI: true
       NODE_ENV: staging
@@ -73,10 +82,11 @@ jobs:
       E2E_ALLOW_REMOTE: '1'
       E2E_CONFIRM_TARGET: ${{ vars.QUALITY_STAGING_E2E_CONFIRM_TARGET }}
       E2E_TEST_API_ENABLED: '1'
-      E2E_RUN_ID: ${{ vars.QUALITY_STAGING_E2E_RUN_ID }}
+      E2E_RUN_ID: q-${{ github.run_id }}-${{ github.run_attempt }}
       E2E_BASE_URL: ${{ vars.QUALITY_STAGING_WEB_URL }}
       E2E_API_URL: ${{ vars.QUALITY_STAGING_API_URL }}
       E2E_DATABASE_URL: ${{ secrets.QUALITY_STAGING_DATABASE_URL }}
+      E2E_CONFIRM_DATABASE: ${{ vars.QUALITY_STAGING_DATABASE_NAME }}
       DATABASE_URL: ${{ secrets.QUALITY_STAGING_DATABASE_URL }}
       E2E_TEST_API_TOKEN: ${{ secrets.QUALITY_STAGING_E2E_TEST_API_TOKEN }}
       E2E_TEST_API_SECRET: ${{ secrets.QUALITY_STAGING_E2E_TEST_API_SECRET }}
@@ -86,15 +96,17 @@ jobs:
       E2E_TEST_HOST_CONFIRM: ${{ vars.QUALITY_STAGING_DATABASE_HOST }}
       E2E_PRODUCTION_DB_HOSTS: ${{ vars.QUALITY_PRODUCTION_DB_HOSTS }}
       E2E_PRODUCTION_DB_FINGERPRINTS: ${{ secrets.QUALITY_PRODUCTION_DB_FINGERPRINTS }}
-      LOAD_TEST_TARGET_URL: ${{ vars.QUALITY_STAGING_LOAD_URL }}
-      BASE_URL: ${{ vars.QUALITY_STAGING_LOAD_URL }}
+      LOAD_TEST_TARGET_URL: http://127.0.0.1:3002
+      BASE_URL: http://127.0.0.1:3002
+      LOAD_TEST_BIND_HOST: 127.0.0.1
+      LOAD_TEST_PORT: '3002'
       APP_ENV: staging
       LOAD_TEST_ENABLED: 'true'
       K6_LOAD_APPROVED: 'true'
       PAYMENT_SANDBOX_ENABLED: 'true'
-      LOAD_TEST_ALLOWED_HOSTS: ${{ vars.QUALITY_STAGING_LOAD_HOST }}
+      LOAD_TEST_ALLOWED_HOSTS: 127.0.0.1
       LOAD_TEST_PRODUCTION_HOSTS: ${{ vars.QUALITY_PRODUCTION_HOSTS }}
-      LOAD_TEST_RUN_ID: ${{ vars.QUALITY_STAGING_E2E_RUN_ID }}
+      LOAD_TEST_RUN_ID: q-${{ github.run_id }}-${{ github.run_attempt }}
       LOAD_TEST_PASSWORD: ${{ secrets.QUALITY_STAGING_LOAD_PASSWORD }}
       LOAD_TEST_COMMIT_SHA: ${{ github.sha }}
       LOAD_TEST_MANIFEST: ${{ runner.temp }}/load-manifest.json
@@ -103,15 +115,18 @@ jobs:
       LOAD_DB_ATTESTATION_SECRET: ${{ secrets.QUALITY_STAGING_DB_ATTESTATION_SECRET }}
       LOAD_DATABASE_ROLE_CONFIRM: ${{ vars.QUALITY_STAGING_LOAD_DATABASE_ROLE }}
       LOAD_TEST_PRODUCTION_DB_FINGERPRINTS: ${{ secrets.QUALITY_PRODUCTION_DB_FINGERPRINTS }}
+      RATE_LIMIT_WINDOW_MS: '900000'
+      RATE_LIMIT_MAX: '18027'
+      AUTH_RATE_LIMIT_MAX: '60'
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
-          node-version: 18
+          node-version: 22.18.0
       - name: Require protected configuration
         shell: bash
         run: |
-          required=(E2E_RUN_ID E2E_BASE_URL E2E_API_URL E2E_CONFIRM_TARGET E2E_DATABASE_URL E2E_TEST_API_TOKEN E2E_TEST_API_SECRET E2E_SAFETY_ATTESTATION_NONCE E2E_DB_ATTESTATION_SECRET E2E_TEST_DB_CONFIRM E2E_TEST_HOST_CONFIRM E2E_PRODUCTION_DB_HOSTS E2E_PRODUCTION_DB_FINGERPRINTS BASE_URL LOAD_TEST_ALLOWED_HOSTS LOAD_TEST_PASSWORD LOAD_DATABASE_ROLE_CONFIRM)
+          required=(E2E_RUN_ID E2E_BASE_URL E2E_API_URL E2E_CONFIRM_TARGET E2E_DATABASE_URL E2E_CONFIRM_DATABASE E2E_TEST_API_TOKEN E2E_TEST_API_SECRET E2E_SAFETY_ATTESTATION_NONCE E2E_DB_ATTESTATION_SECRET E2E_TEST_DB_CONFIRM E2E_TEST_HOST_CONFIRM E2E_PRODUCTION_DB_HOSTS E2E_PRODUCTION_DB_FINGERPRINTS BASE_URL LOAD_TEST_ALLOWED_HOSTS LOAD_TEST_PASSWORD LOAD_DATABASE_ROLE_CONFIRM)
           for name in "${required[@]}"; do
             if [[ -z "${!name:-}" ]]; then echo "missing: $name"; exit 1; fi
             echo "configured: $name"
@@ -141,8 +156,9 @@ jobs:
         run: |
           npm --prefix backend/api ci
           npm --prefix e2e ci
+          npm --prefix e2e audit --audit-level=high
           npm --prefix e2e exec playwright install -- --with-deps chromium firefox webkit
-      - uses: grafana/setup-k6-action@v1
+      - uses: grafana/setup-k6-action@db07bd9765aac508ef18982e52ab937fe633a065
       - name: Seed fingerprint-bound database
         run: |
           install -d -m 700 "$LOAD_TEST_ARTIFACT_DIR"
@@ -150,6 +166,17 @@ jobs:
           node backend/api/src/seeds/load-seed.js seed "$LOAD_TEST_MANIFEST"
       - name: Run Playwright matrix with actual-app fixture lifecycle
         run: npm --prefix e2e test
+      - name: Start isolated internal load service
+        shell: bash
+        run: |
+          node load/internal-server.js > "$RUNNER_TEMP/internal-load-service.log" 2>&1 &
+          echo "LOAD_SERVER_PID=$!" >> "$GITHUB_ENV"
+          for attempt in {1..30}; do
+            if curl --silent --fail --max-time 2 http://127.0.0.1:3002/api/live >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          printf '%s\n' 'Internal load service did not become live'
+          exit 1
       - name: Inspect and run approved baseline
         run: |
           k6 inspect load/k6/baseline.js
@@ -159,10 +186,15 @@ jobs:
         run: node backend/api/src/seeds/load-seed.js verify
       - name: Clean fingerprint-bound fixtures
         if: always()
-        run: node backend/api/src/seeds/load-seed.js cleanup
+        run: |
+          if [[ -n "${LOAD_SERVER_PID:-}" ]]; then
+            kill "$LOAD_SERVER_PID" 2>/dev/null || true
+            wait "$LOAD_SERVER_PID" 2>/dev/null || true
+          fi
+          node backend/api/src/seeds/load-seed.js cleanup
       - name: Upload failure-only browser and sanitized load artifacts
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: quality-failures-${{ github.run_id }}
           path: |

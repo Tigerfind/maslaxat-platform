@@ -68,7 +68,10 @@ export function assertApprovedTarget() {
   if (__ENV.PAYMENT_SANDBOX_ENABLED !== 'true') fail('PAYMENT_SANDBOX_ENABLED must be true');
 
   const target = new URL(required('BASE_URL'));
-  if (target.protocol !== 'https:') fail('BASE_URL must use HTTPS');
+  const loopback = ['127.0.0.1', 'localhost', '::1'].includes(target.hostname);
+  if (target.protocol !== 'https:' && !(loopback && target.protocol === 'http:')) {
+    fail('BASE_URL must use HTTPS outside loopback');
+  }
   const allowed = hostSet(required('LOAD_TEST_ALLOWED_HOSTS'));
   const production = new Set([
     ...hostSet(DEFAULT_PRODUCTION_HOSTS),

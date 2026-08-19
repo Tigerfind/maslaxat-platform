@@ -60,11 +60,13 @@ const clearPendingUnbind = (endpoint) => {
   } catch (error) { /* cleanup can retry later */ }
 };
 
-async function drainPendingUnbind() {
+async function drainPendingUnbind(accountId) {
   const pending = readPendingUnbind();
   if (!pending) return true;
+  if (!accountId || pending.accountId !== String(accountId)) return false;
   try {
-    await api.post('/push/unsubscribe', { endpoint: pending.endpoint }, { skipSessionRevocation: true });
+    const response = await api.post('/push/unsubscribe', { endpoint: pending.endpoint }, { skipSessionRevocation: true });
+    if (response?.data?.deleted !== 1) return false;
     clearPendingUnbind(pending.endpoint);
     return true;
   } catch (error) {
@@ -166,7 +168,8 @@ async function unbindSession({ accountId, preservePreference = true } = {}) {
   persistPendingUnbind(sub.endpoint, accountId);
   let serverUnbound = true;
   try {
-    await api.post('/push/unsubscribe', { endpoint: sub.endpoint }, { skipSessionRevocation: true });
+    const response = await api.post('/push/unsubscribe', { endpoint: sub.endpoint }, { skipSessionRevocation: true });
+    serverUnbound = response?.data?.deleted === 1;
   } catch (error) {
     serverUnbound = false;
   }
@@ -189,7 +192,7 @@ async function disable(accountId) {
 async function rebindSession(accountId) {
   if (!pushPreference.enabled(accountId) || !isSupported() || Notification.permission !== 'granted') return false;
   try {
-    await drainPendingUnbind();
+    if (readPendingUnbind() && !await drainPendingUnbind(accountId)) return false;
     const { data } = await api.get('/push/vapid-public-key');
     if (!data.enabled || !data.publicKey) return false;
     const reg = await getRegistration();
