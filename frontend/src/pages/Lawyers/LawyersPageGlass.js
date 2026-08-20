@@ -39,6 +39,9 @@ import {
   ArrowUpwardRounded,
   ArrowDownwardRounded,
   AccessTimeRounded,
+  VideocamRounded,
+  CallRounded,
+  ForumRounded,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import api from '../../services/api';
@@ -688,6 +691,34 @@ const LawyersPageGlass = () => {
     const languages = lawyer.languages || [];
     const grad = AV_BG[index % AV_BG.length];
     const rating = Number(lawyer.rating) || 0;
+
+    // Форматы консультации в понятных клиенту словах: 'webrtc' и 'audio' ему
+    // ничего не говорят, а «Видео» и «Аудио» — говорят.
+    const FORMAT_LABEL = {
+      webrtc: { key: 'webrtc', label: t('lawyers.fmtVideo'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> },
+      video: { key: 'video', label: t('lawyers.fmtVideo'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> },
+      audio: { key: 'audio', label: t('lawyers.fmtAudio'), icon: <CallRounded sx={{ fontSize: 13 }} /> },
+      chat: { key: 'chat', label: t('lawyers.fmtChat'), icon: <ForumRounded sx={{ fontSize: 13 }} /> },
+    };
+    const seenFormats = new Set();
+    const formats = (lawyer.consultationFormats || [])
+      .map((f) => FORMAT_LABEL[f])
+      .filter((f) => f && !seenFormats.has(f.label) && seenFormats.add(f.label));
+    if (lawyer.zoomAvailable) {
+      formats.push({ key: 'zoom', label: t('lawyers.fmtZoom'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> });
+    }
+
+    // Минимальная длительность — то, к чему привязана цена «от».
+    const durations = (lawyer.consultationDurations || []).map(Number).filter((n) => n > 0);
+    const baseDuration = durations.length ? Math.min(...durations) : null;
+
+    // Часы приёма из расписания. Пустое расписание — не повод молчать: клиенту
+    // честнее сказать, что время согласуют при записи, чем не сказать ничего.
+    const days = Object.values(lawyer.schedule || {}).filter((d) => d && d.enabled && d.from && d.to);
+    const hoursText = days.length
+      ? `${t('lawyers.hoursLabel')} ${days[0].from}–${days[0].to}`
+      : t('lawyers.hoursNotSet');
+
     return (
       <div
         key={lawyer.id}
@@ -803,8 +834,19 @@ const LawyersPageGlass = () => {
                 />
                 <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{rating.toFixed(1)}</strong>
               </>
-            ) : <strong style={{ color: 'var(--text3)', fontWeight: 500 }}>{t('lawyers.noRating')}</strong>}
-            <span>· {t('lawyers.reviewsLabel')}: {reviews} · {t('lawyers.experienceYearsLabel')}: {lawyer.experience || 0} · {t('lawyers.solved')}: {lawyer.completedConsultations || 0}</span>
+            ) : (
+              /* «Нет оценок · Отзывы: 0 · Решено дел: 0» — три нуля подряд у всех
+                 карточек одинаково: выбирать не по чему, и платформа выглядит
+                 мёртвой. У новой платформы истории и не может быть — говорим об
+                 этом прямо, а нули с нулевым значением не печатаем вовсе. */
+              <strong style={{ color: 'var(--text3)', fontWeight: 500 }}>{t('lawyers.newOnPlatform')}</strong>
+            )}
+            <span>
+              {reviews > 0 && <>· {t('lawyers.reviewsLabel')}: {reviews} </>}
+              · {t('lawyers.experienceYearsLabel')}: {lawyer.experience || 0}
+              {lawyer.completedConsultations > 0 && <> · {t('lawyers.solved')}: {lawyer.completedConsultations}</>}
+              {lawyer.region && <> · {lawyer.region}</>}
+            </span>
           </div>
           {(lawyer.primaryEducation || languages.length > 0) && (
             <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 }}>
@@ -833,10 +875,42 @@ const LawyersPageGlass = () => {
             </div>
           )}
 
+          {/* КАК ПРОЙДЁТ КОНСУЛЬТАЦИЯ.
+              Форматы и длительности лежат в профиле, но на карточке их не было:
+              клиент видел цену и не понимал, что за неё получит — видеозвонок,
+              переписку или час в офисе. Это первый вопрос перед оплатой. */}
+          {(formats.length > 0 || hoursText) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12, fontSize: 11.5, color: 'var(--text3)' }}>
+              {formats.map((f) => (
+                <span
+                  key={f.key}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    border: '1px solid var(--border)', borderRadius: 8, padding: '4px 9px', color: 'var(--text2)',
+                  }}
+                >
+                  {f.icon}{f.label}
+                </span>
+              ))}
+              {hoursText && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <AccessTimeRounded sx={{ fontSize: 13 }} />{hoursText}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* footer: price + CTA */}
           <div className="lawyer-card-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
               {t('lawyers.from')} <strong style={{ fontSize: 17, color: 'var(--text)', fontWeight: 600 }}>{(lawyer.priceFrom || 0).toLocaleString()}</strong> {t('lawyers.sum')}
+              {/* Цена без единицы измерения не отвечает на «за что?» —
+                  показываем минимальную длительность из профиля. */}
+              {baseDuration && (
+                <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
+                  {t('lawyers.perMin').replace('{n}', baseDuration)}
+                </span>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button type="button" onClick={() => handleViewProfile(lawyer.id)} style={{ minHeight: 44, padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>{t('lawyers.viewProfile')}</button>
