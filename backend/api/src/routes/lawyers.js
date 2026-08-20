@@ -10,6 +10,9 @@ const { recomputeLawyerRating } = require('../services/ratingService');
 const tiers = require('../services/lawyerTiers');
 const presenceService = require('../services/presenceService');
 const availabilityService = require('../services/availabilityService');
+const { recommendedScoreSql } = require('../services/lawyerRecommendation');
+const { verifiedTypesByUserIds } = require('../services/lawyerDocumentTrust');
+const { responseTimesByLawyerIds } = require('../services/lawyerResponseTime');
 
 // Пороги быстрых фильтров каталога. Держим в одном месте, чтобы подпись чипа
 // («Опытные») и условие выборки не разъезжались.
@@ -200,14 +203,15 @@ router.get('/', async (req, res, next) => {
       ];
     }
 
-    // Онлайн-юристы всегда ВЫШЕ — клиенту удобнее видеть тех, с кем можно поговорить
-    // сейчас. Внутри — выбранная сортировка (по умолчанию новизна).
+    // Онлайн и доступность остаются первыми операционными сигналами. Внутри них
+    // рекомендуем по проверяемому качеству, а не по нулевому рейтингу/случайной дате.
     const onlineFirst = onlineUserIds.length
       ? [[literal(`CASE WHEN "User"."id" IN (${onlineUserIds.map((id) => sequelize.escape(id)).join(',')}) THEN 0 ELSE 1 END`), 'ASC']]
       : [];
     const acceptingBookingsFirst = [[{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC']];
     const orderPrefix = [...onlineFirst, ...acceptingBookingsFirst];
-    let order = [...orderPrefix, ['createdAt', 'DESC']];
+    let order = [...orderPrefix, [literal(recommendedScoreSql()), 'DESC']];
+    if (sortBy === 'recommended') order = [...orderPrefix, [literal(recommendedScoreSql()), 'DESC']];
     if (sortBy === 'rating') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']];
     if (sortBy === 'price_low') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']];
     if (sortBy === 'price_high') order = [...orderPrefix, [{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']];
@@ -243,6 +247,8 @@ router.get('/', async (req, res, next) => {
 
     // Ступень считаем тем же правилом, что и фильтр: карточка и фильтр не должны
     // расходиться в том, кто «топ».
+    const documentTypes = await verifiedTypesByUserIds(rows.map((user) => user.id));
+    const responseTimes = await responseTimesByLawyerIds(rows.map((user) => user.id));
     const lawyers = rows.map((u) => {
       // User.toJSON копирует поля поверхностно, поэтому profile остаётся моделью
       // Sequelize: дописанное в неё поле терялось бы при сериализации ответа.
@@ -257,6 +263,8 @@ router.get('/', async (req, res, next) => {
         status: tiers.statusOf(profile),
         zoomAvailable: hasZoom,
         consultationFormats: (profile.consultationFormats || []).filter((format) => format !== 'zoom' || hasZoom),
+        verifiedDocumentTypes: documentTypes.get(u.id) || [],
+        medianResponseMinutes: responseTimes.get(u.id),
       };
       plain.presence = presenceService.getPresenceFromSnapshot(u.id, presenceSnapshot);
       return plain;
@@ -346,11 +354,20 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const plainLawyer = lawyer.toJSON();
+    const plainProfile = plainLawyer.profile && typeof plainLawyer.profile.toJSON === 'function'
+      ? plainLawyer.profile.toJSON()
+      : plainLawyer.profile;
     const hasZoom = Boolean(plainLawyer.zoomConnection);
     delete plainLawyer.zoomConnection;
-    plainLawyer.profile.zoomAvailable = hasZoom;
-    plainLawyer.profile.consultationFormats = (plainLawyer.profile.consultationFormats || [])
-      .filter((format) => format !== 'zoom' || hasZoom);
+    const documentTypes = await verifiedTypesByUserIds([lawyer.id]);
+    const responseTimes = await responseTimesByLawyerIds([lawyer.id]);
+    plainLawyer.profile = {
+      ...plainProfile,
+      zoomAvailable: hasZoom,
+      consultationFormats: (plainProfile.consultationFormats || []).filter((format) => format !== 'zoom' || hasZoom),
+      verifiedDocumentTypes: documentTypes.get(lawyer.id) || [],
+      medianResponseMinutes: responseTimes.get(lawyer.id),
+    };
     const presenceSnapshot = await presenceService.getSnapshot('lawyer');
     plainLawyer.presence = presenceService.getPresenceFromSnapshot(lawyer.id, presenceSnapshot);
     res.json({ lawyer: plainLawyer });

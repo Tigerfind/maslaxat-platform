@@ -5,6 +5,7 @@ import {
   TranslateOutlined,
   WorkspacePremiumOutlined,
   ChevronRightOutlined,
+  CheckCircleOutline,
 } from '@mui/icons-material';
 import { Rating } from '@mui/material';
 import clientService, { resolvePublicAssetUrl } from '../../services/clientService';
@@ -124,6 +125,9 @@ const LawyerProfilePage = () => {
           licenseExpiresAt: p.licenseExpiresAt || null,
           consultationFormats: Array.isArray(p.consultationFormats) ? p.consultationFormats : [],
           consultationDurations: Array.isArray(p.consultationDurations) ? p.consultationDurations : [],
+          verifiedDocumentTypes: Array.isArray(p.verifiedDocumentTypes) ? p.verifiedDocumentTypes : [],
+          medianResponseMinutes: p.medianResponseMinutes != null && Number.isFinite(Number(p.medianResponseMinutes))
+            ? Number(p.medianResponseMinutes) : null,
           experiences: Array.isArray(l.lawyerExperiences) ? l.lawyerExperiences : [],
           education: Array.isArray(l.lawyerEducations) && l.lawyerEducations.length ? l.lawyerEducations : (Array.isArray(p.education) ? p.education : []),
           certifications: Array.isArray(l.lawyerCertificates) && l.lawyerCertificates.length ? l.lawyerCertificates : (Array.isArray(p.certificates) ? p.certificates : []),
@@ -305,6 +309,17 @@ const LawyerProfilePage = () => {
               <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#5AA06A', fontSize: 12, fontWeight: 600, marginTop: 8 }}>
                 <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
                 {t('lawyerProfile.onlineNow')}
+              </div>
+            )}
+            {lawyer.verifiedDocumentTypes.length > 0 && (
+              <div tabIndex={0} aria-label={t('lawyerProfile.verifiedDocumentsHint')} title={t('lawyerProfile.verifiedDocumentsHint')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 10, padding: '7px 10px', borderRadius: 10, background: 'rgba(122,154,107,0.12)', color: '#4F815B', fontSize: 12, fontWeight: 600 }}>
+                <CheckCircleOutline sx={{ fontSize: 17 }} />
+                {t('lawyerProfile.verifiedDocuments').replace('{documents}', lawyer.verifiedDocumentTypes.map((type) => t(`lawyerProfile.doc_${type}`)).join(', '))}
+              </div>
+            )}
+            {lawyer.medianResponseMinutes && (
+              <div style={{ marginTop: 9, color: 'var(--text2)', fontSize: 12 }}>
+                {t('lawyerProfile.responseTime').replace('{hours}', Math.max(1, Math.ceil(lawyer.medianResponseMinutes / 60)))}
               </div>
             )}
             <div aria-label={lawyer.rating ? t('lawyerProfile.ratingAria').replace('{rating}', lawyer.rating.toFixed(1)).replace('{count}', lawyer.reviewsCount) : t('lawyerProfile.noRating')} style={{ color: 'var(--accent)', fontSize: 17, margin: '14px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, flexWrap: 'wrap' }}>

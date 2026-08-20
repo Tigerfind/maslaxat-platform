@@ -1,4 +1,5 @@
 const { User, LawyerProfile, LawyerDocument } = require('../models');
+const { MIN_WEEKLY_SLOTS, countWeeklySlots } = require('./schedulePolicy');
 
 const PLACEHOLDER_SPECIALIZATIONS = new Set(['Не указана', 'Общее право', 'General law', 'Umumiy huquq']);
 
@@ -26,13 +27,18 @@ async function computeProfileCompleteness(userId, { transaction } = {}) {
   const realSpecs = specs.filter((spec) => spec && !PLACEHOLDER_SPECIALIZATIONS.has(String(spec).trim()));
   if (realSpecs.length === 0) missing.push('specialization');
 
-  const schedule = profile?.schedule;
-  const hasDay = schedule && typeof schedule === 'object'
-    && Object.values(schedule).some((day) => day?.enabled);
-  if (!hasDay) missing.push('schedule');
+  // Нужна измеримая доступность, а не просто включённый день: короткое окно
+  // без единого 30-минутного слота не позволяет клиенту реально записаться.
+  const scheduleSlots = countWeeklySlots(profile?.schedule);
+  if (scheduleSlots < MIN_WEEKLY_SLOTS) missing.push('schedule');
   if (docCount < 1) missing.push('documents');
 
-  return { complete: missing.length === 0, missing };
+  return {
+    complete: missing.length === 0,
+    missing,
+    scheduleSlots,
+    requiredScheduleSlots: MIN_WEEKLY_SLOTS,
+  };
 }
 
 module.exports = { computeProfileCompleteness };

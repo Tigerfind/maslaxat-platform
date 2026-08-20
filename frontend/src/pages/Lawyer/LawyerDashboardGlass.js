@@ -207,6 +207,15 @@ const LawyerDashboardGlass = () => {
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+        {stats?.scheduleComplete === false && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18, padding: '16px 18px', borderRadius: 'var(--radius)', background: 'rgba(192,73,47,0.10)', border: '1px solid rgba(192,73,47,0.30)' }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{t('lawyerPanel.scheduleRequiredTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)' }}>{t('lawyerPanel.scheduleRequiredText', { count: stats.scheduleSlots || 0, required: stats.requiredScheduleSlots || 3 })}</div>
+            </div>
+            <button type="button" onClick={() => navigate('/lawyer/schedule')} style={{ minHeight: 44, padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(192,73,47,0.4)', background: 'rgba(192,73,47,0.14)', color: '#B23D28', fontWeight: 600, cursor: 'pointer' }}>{t('lawyerPanel.scheduleRequiredCta')}</button>
+          </div>
+        )}
         {/* Баннер модерации: на проверке / отклонён. Одобрен — баннера нет. */}
         {stats?.verificationStatus === 'pending_review' && (
           <div style={{

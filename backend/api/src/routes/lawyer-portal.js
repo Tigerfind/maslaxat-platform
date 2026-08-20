@@ -14,6 +14,7 @@ const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
 const zoomMeetingService = require('../services/zoomMeetingService');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
+const { scheduleMeetsMinimum } = require('../services/schedulePolicy');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
 // Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
@@ -184,7 +185,7 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
     const wasAlreadyAccepted = consultation.status === 'accepted';
     if (!wasAlreadyAccepted) {
       const [affected] = await Consultation.update(
-        { status: 'accepted' },
+        { status: 'accepted', acceptedAt: new Date() },
         { where: { id: consultation.id, status: { [Op.in]: ACCEPTABLE_FROM } } }
       );
       if (affected === 0) return res.status(400).json({ error: 'Запрос нельзя принять в текущем статусе' });
@@ -308,7 +309,7 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
     const wasAlreadyAccepted = consultation.status === 'accepted';
     if (!wasAlreadyAccepted) {
       const [affected] = await Consultation.update(
-        { status: 'accepted' },
+        { status: 'accepted', acceptedAt: new Date() },
         { where: { id: consultation.id, status: { [Op.in]: ACCEPTABLE_FROM } } }
       );
       if (affected === 0) return res.status(400).json({ error: 'Консультацию нельзя подтвердить в текущем статусе' });
@@ -1039,6 +1040,9 @@ router.put('/availability', async (req, res, next) => {
 
     const normalized = normalizeSchedule(schedule);
     if (invalidScheduleDays(normalized).length) return res.status(400).json({ error: 'Время окончания приёма должно быть позже времени начала' });
+    if (profile.verificationStatus === 'approved' && profile.schedulePolicyAcceptedAt && !scheduleMeetsMinimum(normalized)) {
+      return res.status(400).json({ error: 'Для одобренного профиля требуется минимум 3 получасовых слота в неделю', code: 'SCHEDULE_MINIMUM_REQUIRED' });
+    }
     profile.schedule = normalized;
     await profile.save();
     res.json({ success: true, schedule: profile.schedule });
@@ -1106,8 +1110,11 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
     // Удаляем файл с диска (не валим запрос, если файла уже нет)
     if (doc.path) { try { fs.unlinkSync(doc.path); } catch (e) { /* файл мог быть удалён */ } }
     await doc.destroy();
-    const remaining = await LawyerDocument.count({ where: { userId: req.userId } });
-    if (remaining === 0) {
+    const [remaining, verifiedRemaining] = await Promise.all([
+      LawyerDocument.count({ where: { userId: req.userId } }),
+      LawyerDocument.count({ where: { userId: req.userId, verifiedAt: { [Op.ne]: null } } }),
+    ]);
+    if (remaining === 0 || (doc.verifiedAt && verifiedRemaining === 0)) {
       await sequelize.transaction(async (transaction) => {
         const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, transaction, lock: transaction.LOCK.UPDATE });
         if (profile && ['pending_review', 'approved'].includes(profile.verificationStatus)) {
@@ -1130,8 +1137,8 @@ router.delete('/verification-documents/:id', async (req, res, next) => {
 router.get('/verification/checklist', async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['verificationStatus'] });
-    const { complete, missing } = await computeProfileCompleteness(req.userId);
-    res.json({ complete, missing, verificationStatus: profile ? profile.verificationStatus : 'draft' });
+    const completeness = await computeProfileCompleteness(req.userId);
+    res.json({ ...completeness, verificationStatus: profile ? profile.verificationStatus : 'draft' });
   } catch (err) {
     next(err);
   }
@@ -1147,9 +1154,9 @@ router.post('/verification/submit', async (req, res, next) => {
     if (profile.verificationStatus === 'approved') return res.status(400).json({ error: 'Профиль уже одобрен' });
     if (profile.verificationStatus === 'pending_review') return res.status(409).json({ error: 'Профиль уже ожидает проверки' });
     if (profile.verificationStatus === 'suspended') return res.status(403).json({ error: 'Профиль приостановлен администратором' });
-    const { complete, missing } = await computeProfileCompleteness(req.userId);
+    const { complete, missing, scheduleSlots, requiredScheduleSlots } = await computeProfileCompleteness(req.userId);
     if (!complete) {
-      return res.status(400).json({ error: 'Профиль заполнен не полностью', missing });
+      return res.status(400).json({ error: 'Профиль заполнен не полностью', missing, scheduleSlots, requiredScheduleSlots });
     }
     const fromStatus = profile.verificationStatus;
     await sequelize.transaction(async (transaction) => {

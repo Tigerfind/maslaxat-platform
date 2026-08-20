@@ -5,6 +5,7 @@ import lawyerService from '../../services/lawyerService';
 import { useTranslation } from '../../i18n';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 import { specLabel } from '../../utils/specLabel';
+import { MIN_WEEKLY_SLOTS, countWeeklySlots } from '../../utils/schedulePolicy';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const emptyExperience = { organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' };
@@ -126,6 +127,7 @@ const OnboardingWizard = ({ onComplete }) => {
     t('onboarding.profile'), t('onboarding.specialization'), t('onboarding.experience'),
     t('lawyerProfile.education'), t('lawyerProfile.achievements'), t('lawyerProfile.headerTitle'),
   ];
+  const weeklySlots = countWeeklySlots(data.schedule);
 
   return (
     <div style={{ position: 'fixed', inset: 0, zIndex: 1400, overflowY: 'auto', background: 'var(--canvas)', color: 'var(--text)', padding: '24px 16px 80px' }}>
@@ -163,6 +165,9 @@ const OnboardingWizard = ({ onComplete }) => {
           </div>
           <div>{['chat', 'audio', 'webrtc', 'zoom'].map((format) => <label key={format} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationFormats.includes(format)} onChange={() => update('consultationFormats', data.consultationFormats.includes(format) ? data.consultationFormats.filter((item) => item !== format) : [...data.consultationFormats, format])} /> {format}</label>)}</div>
           <div>{[30, 60, 90].map((duration) => <label key={duration} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationDurations.includes(duration)} onChange={() => update('consultationDurations', data.consultationDurations.includes(duration) ? data.consultationDurations.filter((item) => item !== duration) : [...data.consultationDurations, duration])} /> {duration} мин</label>)}</div>
+          <div style={{ padding: '12px 14px', borderRadius: 10, background: weeklySlots >= MIN_WEEKLY_SLOTS ? 'rgba(122,154,107,0.12)' : 'rgba(196,163,90,0.14)', color: 'var(--text2)' }}>
+            {t('onboarding.scheduleProgress', { count: weeklySlots, required: MIN_WEEKLY_SLOTS })}
+          </div>
           <div style={{ display: 'grid', gap: 8 }}>{DAYS.map((day) => <div key={day} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 1fr', gap: 8, alignItems: 'center' }}><label><input type="checkbox" checked={Boolean(data.schedule?.[day]?.enabled)} onChange={(e) => update('schedule', { ...data.schedule, [day]: { enabled: e.target.checked, from: data.schedule?.[day]?.from || '09:00', to: data.schedule?.[day]?.to || '18:00' } })} /> {day}</label><input style={field} type="time" value={data.schedule?.[day]?.from || '09:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: e.target.value, to: data.schedule?.[day]?.to || '18:00' } })} /><input style={field} type="time" value={data.schedule?.[day]?.to || '18:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: data.schedule?.[day]?.from || '09:00', to: e.target.value } })} /></div>)}</div>
         </div>}
 

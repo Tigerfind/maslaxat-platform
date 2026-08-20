@@ -231,7 +231,7 @@ router.get('/lawyers/:id/moderation', async (req, res, next) => {
         { model: LawyerExperience, as: 'lawyerExperiences', separate: true, order: [['displayOrder', 'ASC']] },
         { model: LawyerEducation, as: 'lawyerEducations', separate: true, order: [['displayOrder', 'ASC']] },
         { model: LawyerCertificate, as: 'lawyerCertificates', separate: true, order: [['displayOrder', 'ASC']] },
-        { model: LawyerDocument, as: 'lawyerDocuments', separate: true, attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'] },
+        { model: LawyerDocument, as: 'lawyerDocuments', separate: true, attributes: ['id', 'type', 'name', 'mimeType', 'size', 'verifiedAt', 'createdAt'] },
       ],
     });
     if (!lawyer?.profile) return res.status(404).json({ error: 'Юрист не найден' });
@@ -267,7 +267,14 @@ router.post('/lawyers/:id/approve', async (req, res, next) => {
       profile.verificationStatus = 'approved';
       profile.rejectionReason = null;
       profile.isAvailable = true;
+      profile.schedulePolicyAcceptedAt = new Date();
       await profile.save({ transaction });
+      // Публично подтверждаем только те файлы, которые существовали в момент
+      // решения администратора; последующие загрузки не наследуют доверие автоматически.
+      await LawyerDocument.update(
+        { verifiedAt: new Date(), verifiedBy: req.userId },
+        { where: { userId: user.id, verifiedAt: null }, transaction },
+      );
       await LawyerProfileStatusHistory.create({
         lawyerProfileId: profile.id, actorUserId: req.userId,
         fromStatus, toStatus: 'approved', metadata: { source: 'admin_review' },
@@ -347,12 +354,23 @@ router.get('/lawyers/:id/verification-documents', async (req, res, next) => {
   try {
     const docs = await LawyerDocument.findAll({
       where: { userId: req.params.id },
-      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'createdAt'],
+      attributes: ['id', 'type', 'name', 'mimeType', 'size', 'verifiedAt', 'createdAt'],
       order: [['createdAt', 'DESC']],
     });
     res.json({ documents: docs });
   } catch (err) {
     next(err);
+  }
+});
+
+router.patch('/lawyers/:id/verification-documents/:docId/verify', async (req, res, next) => {
+  try {
+    const doc = await LawyerDocument.findOne({ where: { id: req.params.docId, userId: req.params.id } });
+    if (!doc) return res.status(404).json({ error: 'Документ не найден' });
+    await doc.update({ verifiedAt: doc.verifiedAt || new Date(), verifiedBy: req.userId });
+    return res.json({ document: { id: doc.id, type: doc.type, verifiedAt: doc.verifiedAt } });
+  } catch (error) {
+    return next(error);
   }
 });
 

@@ -19,6 +19,7 @@ const monthKey = (date) => {
 };
 const { authenticate, authorize } = require('../middleware/auth');
 const { withLawyerCounts } = require('../services/specializationStats');
+const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 
 // GET /api/dashboard/client/stats
 router.get('/client/stats', authenticate, authorize('client'), async (req, res, next) => {
@@ -55,6 +56,7 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
     ]);
 
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    const profileCompleteness = await computeProfileCompleteness(req.userId);
 
     // Weekly activity: consultations per day for last 7 days
     const sevenDaysAgo = new Date();
@@ -139,6 +141,9 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
       rejectionReason: profile?.rejectionReason || null,
       onboardingStep: profile?.onboardingStep || 0,
       verificationSubmittedAt: profile?.verificationSubmittedAt || null,
+      scheduleComplete: !profileCompleteness.missing.includes('schedule'),
+      scheduleSlots: profileCompleteness.scheduleSlots,
+      requiredScheduleSlots: profileCompleteness.requiredScheduleSlots,
     });
   } catch (err) {
     next(err);

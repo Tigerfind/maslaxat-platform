@@ -13,6 +13,7 @@ import {
   Pagination,
   Drawer,
   useMediaQuery,
+  Tooltip,
 } from '@mui/material';
 import {
   SearchOutlined,
@@ -42,6 +43,7 @@ import {
   VideocamRounded,
   CallRounded,
   ForumRounded,
+  WorkspacePremiumOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import api from '../../services/api';
@@ -114,6 +116,7 @@ const EXPERIENCED_PRESET = '10+';
 
 // Опции сортировки с иконками
 const SORT_OPTS = [
+  { v: 'recommended', k: 'sortRecommended', icon: <WorkspacePremiumOutlined sx={{ fontSize: 18 }} /> },
   { v: 'rating', k: 'sortRating', icon: <StarRounded sx={{ fontSize: 18 }} /> },
   { v: 'price_low', k: 'sortPriceAsc', icon: <ArrowUpwardRounded sx={{ fontSize: 18 }} /> },
   { v: 'price_high', k: 'sortPriceDesc', icon: <ArrowDownwardRounded sx={{ fontSize: 18 }} /> },
@@ -200,7 +203,7 @@ const LawyersPageGlass = () => {
     minRating: 0,
     priceRange: [0, MAX_PRICE],
     experience: '',
-    sortBy: 'rating',
+    sortBy: 'recommended',
     onlineOnly: false,
     zoomAvailable: false,
     location: '',
@@ -359,7 +362,7 @@ const LawyersPageGlass = () => {
       minRating: 0,
       priceRange: [0, MAX_PRICE],
       experience: '',
-      sortBy: 'rating',
+      sortBy: 'recommended',
       onlineOnly: false,
       zoomAvailable: false,
       location: '',
@@ -689,6 +692,9 @@ const LawyersPageGlass = () => {
     const reviews = lawyer.reviewsCount ?? 0;
     const tags = lawyer.specializations || [];
     const languages = lawyer.languages || [];
+    const verifiedDocumentTypes = Array.isArray(lawyer.verifiedDocumentTypes) ? lawyer.verifiedDocumentTypes : [];
+    const verifiedDocumentsText = verifiedDocumentTypes.map((type) => t(`lawyers.doc_${type}`)).join(', ');
+    const responseHours = lawyer.medianResponseMinutes ? Math.max(1, Math.ceil(lawyer.medianResponseMinutes / 60)) : null;
     const grad = AV_BG[index % AV_BG.length];
     const rating = Number(lawyer.rating) || 0;
 
@@ -819,6 +825,14 @@ const LawyersPageGlass = () => {
             )}
           </div>
           {lawyer.professionalTitle && <div style={{ fontSize: 13, color: 'var(--text2)', margin: '-4px 0 9px' }}>{lawyer.professionalTitle}</div>}
+          {verifiedDocumentTypes.length > 0 && (
+            <Tooltip title={t('lawyers.verifiedDocumentsHint')} arrow>
+              <div tabIndex={0} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 9, color: '#4F815B', fontSize: 12, fontWeight: 600 }}>
+                <CheckRounded sx={{ fontSize: 16 }} /> {t('lawyers.verifiedDocuments').replace('{documents}', verifiedDocumentsText)}
+              </div>
+            </Tooltip>
+          )}
+          {responseHours && <div style={{ marginBottom: 9, color: 'var(--text2)', fontSize: 12 }}>{t('lawyers.responseTime').replace('{hours}', responseHours)}</div>}
 
           {/* rating + meta */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 12, fontSize: 12.5, color: 'var(--text3)' }}>
@@ -1128,6 +1142,7 @@ const LawyersPageGlass = () => {
 
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <Select
+                inputProps={{ 'aria-label': t('lawyers.sortLabel') }}
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
                 sx={glassSelectSx}
@@ -1178,7 +1193,8 @@ const LawyersPageGlass = () => {
           {/* Быстрые фильтры.
               Раньше три из четырёх были ярлыками СОРТИРОВКИ: перезаписывали друг
               друга, не выключались и дублировали выпадающий список, а «Высокий
-              рейтинг» горел всегда (сортировка по умолчанию — rating). Теперь это
+              рейтинг» горел всегда. Теперь сортировка по умолчанию — рекомендуемая,
+              а это
               настоящие независимые фильтры: комбинируются, снимаются повторным
               нажатием, показывают, сколько юристов под них попадает, и гаснут,
               если таких нет. Пороги приходят с сервера (фасеты) — «недорого»

@@ -92,6 +92,10 @@ export const adminLawyerService = {
     const response = await api.get(`/admin/lawyers/${lawyerId}/verification-documents`);
     return response.data;
   },
+  verifyDocument: async (lawyerId, docId) => {
+    const response = await api.patch(`/admin/lawyers/${lawyerId}/verification-documents/${docId}/verify`);
+    return response.data;
+  },
 
   // Blob документа для предпросмотра (без скачивания на диск)
   getVerificationDocumentBlob: async (lawyerId, docId) => {

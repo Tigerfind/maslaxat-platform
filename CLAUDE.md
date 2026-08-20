@@ -478,6 +478,11 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Каталог доверия: новые/повторно модерируемые юристы обязаны иметь минимум 3
+  получасовых слота, существующие approved-профили grandfathered и получают предупреждение;
+  default-сортировка «Рекомендуем» считает реальные документы/полноту/стаж/отзывы;
+  публично отдаются только типы индивидуально проверенных документов; медиана ответа
+  появляется только после 3 консультаций с сохранённым acceptedAt.
 - LinkedIn/профиль/Zoom: OIDC с PKCE/state/nonce и one-use tickets; структурированное резюме и
   модерация; timezone-aware слоты с client/lawyer locks; Zoom OAuth с AES-GCM токенами,
   signed/idempotent webhook, безопасным disconnect и WebRTC fallback при deauthorization.

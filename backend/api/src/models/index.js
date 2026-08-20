@@ -160,6 +160,7 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
   },
   onboardingStep: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   verificationSubmittedAt: { type: DataTypes.DATE },
+  schedulePolicyAcceptedAt: { type: DataTypes.DATE },
   experience: {
     type: DataTypes.INTEGER,
     defaultValue: 0,
@@ -329,6 +330,7 @@ const Consultation = sequelize.define('Consultation', {
   scheduledStartAt: { type: DataTypes.DATE },
   scheduledEndAt: { type: DataTypes.DATE },
   scheduleTimezone: { type: DataTypes.STRING(64) },
+  acceptedAt: { type: DataTypes.DATE },
   meetingProvider: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'webrtc' },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
@@ -485,6 +487,12 @@ const LawyerDocument = sequelize.define('LawyerDocument', {
   },
   size: {
     type: DataTypes.INTEGER,
+  },
+  verifiedAt: { type: DataTypes.DATE },
+  verifiedBy: {
+    type: DataTypes.UUID,
+    references: { model: 'users', key: 'id' },
+    onDelete: 'SET NULL',
   },
 });
 

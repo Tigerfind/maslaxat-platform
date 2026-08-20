@@ -36,6 +36,8 @@ const REQUIRED_INDEXES = [
   { name: 'consultation_meetings_provider_external_unique', table: 'consultation_meetings', unique: true, fields: ['provider', 'external_meeting_id'] },
   { name: 'zoom_webhook_events_request_unique', table: 'zoom_webhook_events', unique: true, fields: ['request_id'] },
   { name: 'consultations_lawyer_scheduled_window_idx', table: 'consultations', unique: false, fields: ['lawyer_id', 'status', 'scheduled_start_at', 'scheduled_end_at'] },
+  { name: 'lawyer_documents_verified_user_idx', table: 'lawyer_documents', unique: false, fields: ['user_id', 'verified_at'] },
+  { name: 'consultations_lawyer_accepted_at_idx', table: 'consultations', unique: false, fields: ['lawyer_id', 'accepted_at'] },
 ];
 
 async function main() {

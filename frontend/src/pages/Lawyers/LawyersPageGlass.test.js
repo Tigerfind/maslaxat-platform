@@ -125,7 +125,7 @@ test('избранное обновляется локально и откаты
   expect(toast.error).toHaveBeenCalledWith('Ошибка при изменении избранного');
 });
 
-test('Онлайн показывается только при явном isAvailable=true, отсутствие рейтинга не подменяется нулём', async () => {
+test('Онлайн показывается только при явном isAvailable=true, новый профиль не получает фальшивую оценку', async () => {
   clientService.lawyers.searchLawyers.mockResolvedValueOnce(result([
     lawyer('1', 'Нет Статуса', { rating: 0, isAvailable: false }),
     lawyer('2', 'Доступный Юрист', { isAvailable: true, online: true }),
@@ -133,8 +133,18 @@ test('Онлайн показывается только при явном isAva
   renderPage();
   await screen.findByText('Нет Статуса');
   expect(screen.getAllByText('Онлайн', { exact: true })).toHaveLength(1);
-  expect(screen.getByText('Нет оценок')).toBeVisible();
+  expect(screen.getByText('Новый на платформе')).toBeVisible();
   expect(screen.getByRole('button', { name: 'Недоступен для записи' })).toBeDisabled();
+});
+
+test('по умолчанию запрашивает объяснимую сортировку «Рекомендуем»', async () => {
+  renderPage();
+  await screen.findByText('Иван Иванов');
+  expect(clientService.lawyers.searchLawyers).toHaveBeenCalledWith(
+    expect.objectContaining({ sortBy: 'recommended' }),
+    expect.objectContaining({ signal: expect.any(AbortSignal) }),
+  );
+  expect(screen.getAllByText('Рекомендуем').length).toBeGreaterThan(0);
 });
 
 test('presence event обновляет онлайн независимо от booking availability', async () => {

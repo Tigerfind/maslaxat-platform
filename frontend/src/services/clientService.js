@@ -100,6 +100,9 @@ export const clientLawyerService = {
         consultationFormats: l.profile?.consultationFormats || [],
         zoomAvailable: l.profile?.zoomAvailable === true,
         consultationDurations: l.profile?.consultationDurations || [],
+        verifiedDocumentTypes: Array.isArray(l.profile?.verifiedDocumentTypes) ? l.profile.verifiedDocumentTypes : [],
+        medianResponseMinutes: l.profile?.medianResponseMinutes != null && Number.isFinite(Number(l.profile.medianResponseMinutes))
+          ? Number(l.profile.medianResponseMinutes) : null,
         schedule: l.profile?.schedule || {},
         isAvailable: l.profile?.isAvailable === true,
         online: l.presence?.online == null ? null : l.presence.online === true,

@@ -42,6 +42,7 @@ const AdminLawyersPage = () => {
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [verifyingDoc, setVerifyingDoc] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // документ для предпросмотра
   const [moderation, setModeration] = useState(null);
   const [moderationLoading, setModerationLoading] = useState(false);
@@ -88,6 +89,18 @@ const AdminLawyersPage = () => {
       toast.error(t('adminManage.docsError'));
     } finally {
       setDownloading(null);
+    }
+  };
+  const verifyDocument = async (docId) => {
+    setVerifyingDoc(docId);
+    try {
+      const data = await adminLawyerService.verifyDocument(docsFor.id, docId);
+      setDocs((current) => current.map((doc) => (doc.id === docId ? { ...doc, verifiedAt: data.document.verifiedAt } : doc)));
+      toast.success(t('adminManage.docVerified'));
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('adminManage.actionError'));
+    } finally {
+      setVerifyingDoc(null);
     }
   };
 
@@ -378,6 +391,9 @@ const AdminLawyersPage = () => {
               <Typography>{moderation.lawyer.profile?.description}</Typography>
               <Typography><b>Лицензия:</b> {moderation.lawyer.profile?.licenseNumber} · {moderation.lawyer.profile?.licenseIssuer}</Typography>
               <Typography><b>Специализации:</b> {(moderation.lawyer.profile?.specializations || []).join(', ')}</Typography>
+              <Typography sx={{ color: moderation.completeness?.missing?.includes('schedule') ? axelionColors.error : axelionColors.success }}>
+                <b>{t('adminManage.scheduleStatus')}:</b> {t('adminManage.scheduleSlots', { count: moderation.completeness?.scheduleSlots || 0, required: moderation.completeness?.requiredScheduleSlots || 3 })}
+              </Typography>
               <Typography variant="subtitle1">Опыт работы</Typography>
               {(moderation.lawyer.lawyerExperiences || []).map((item) => <Typography key={item.id}>{item.position} — {item.organization} ({item.startDate} — {item.isCurrent ? 'сейчас' : item.endDate})</Typography>)}
               <Typography variant="subtitle1">Образование</Typography>
@@ -420,6 +436,11 @@ const AdminLawyersPage = () => {
                         sx={{ textTransform: 'none', color: axelionColors.bronze }}>
                         {t('adminManage.docDownload')}
                       </Button>
+                      {!d.verifiedAt && (
+                        <Button size="small" variant="text" disabled={verifyingDoc === d.id} onClick={() => verifyDocument(d.id)} sx={{ textTransform: 'none', color: axelionColors.success }}>
+                          {t('adminManage.docVerify')}
+                        </Button>
+                      )}
                     </Box>
                   }
                 >
@@ -427,7 +448,7 @@ const AdminLawyersPage = () => {
                     primary={d.name}
                     // Размер бэкенд отдавал всегда, но он не выводился: нельзя было
                     // отличить настоящий скан от мусорного файла до скачивания.
-                    secondary={[DOC_TYPE_LABEL[d.type] || d.type, fmtSize(d.size)].filter(Boolean).join(' · ')}
+                    secondary={[DOC_TYPE_LABEL[d.type] || d.type, fmtSize(d.size), d.verifiedAt ? t('adminManage.docVerified') : null].filter(Boolean).join(' · ')}
                     primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }}
                     secondaryTypographyProps={{ fontSize: 12 }}
                   />

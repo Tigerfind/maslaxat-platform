@@ -141,6 +141,9 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
     }
 
     consultation.status = req.body.status;
+    if (req.userRole === 'lawyer' && req.body.status === 'accepted' && !consultation.acceptedAt) {
+      consultation.acceptedAt = new Date();
+    }
     if (req.body.notes) consultation.notes = req.body.notes;
     await consultation.save();
 
