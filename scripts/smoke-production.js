@@ -25,6 +25,10 @@ async function main() {
   if (!bundles.some((bundle) => bundle.includes('Public offer and terms of use') && bundle.includes('Privacy policy'))) {
     throw new Error('Legal page chunk not found in deployed asset manifest');
   }
+  const apiOrigin = new URL(API).origin;
+  if (new URL(FRONTEND).origin !== apiOrigin && !bundles.some((bundle) => bundle.includes(apiOrigin))) {
+    throw new Error(`Frontend build does not contain configured API origin: ${apiOrigin}`);
+  }
 
   await expectStatus(`${API}/health`, 200);
   await expectStatus(`${API}/lawyers?limit=1`, 200);
