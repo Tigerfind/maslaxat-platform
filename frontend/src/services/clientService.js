@@ -159,6 +159,17 @@ export const clientLawyerService = {
     const response = await api.post('/payments/create', { consultationId });
     return response.data;
   },
+  // Единый retryable flow: в dev завершает simulation, в production возвращает Payme URL.
+  payConsultation: async (consultationId) => {
+    try {
+      const result = await clientLawyerService.simulatePayment(consultationId);
+      return { completed: true, ...result };
+    } catch (error) {
+      if (error.response?.status !== 403) throw error;
+      const result = await clientLawyerService.createPayment(consultationId);
+      return { completed: false, redirectUrl: result.checkoutUrl, ...result };
+    }
+  },
 
   // Get lawyer reviews
   getReviews: async (lawyerId) => {
@@ -181,15 +192,17 @@ export const clientLawyerService = {
 // Client Consultations Service
 export const clientConsultationService = {
   // Get all consultations
-  getConsultations: async (status = 'all') => {
-    try {
-      const response = await api.get('/client/consultations', { params: { status } });
-      const data = response.data;
-      return Array.isArray(data) ? data : (data.consultations || []);
-    } catch (error) {
-      console.error('Error fetching consultations:', error);
-      return [];
-    }
+  getConsultations: async (params = {}, options = {}) => {
+    const normalized = typeof params === 'string' ? { bucket: params } : params;
+    const response = await api.get('/client/consultations', { params: normalized, signal: options.signal });
+    const data = response.data;
+    return Array.isArray(data)
+      ? { consultations: data, total: data.length, page: 1, limit: data.length, totalPages: 1, counts: {} }
+      : data;
+  },
+  getConsultationDetails: async (consultationId) => {
+    const response = await api.get(`/client/consultations/${consultationId}`);
+    return response.data;
   },
 
   // Перенос времени консультации

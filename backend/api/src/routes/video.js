@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
+const { consultationAccess } = require('../services/consultationAccessService');
 
 function buildIceServers(userId) {
   const servers = [
@@ -54,7 +55,8 @@ router.get('/consultation/:id', async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    const canUseVideo = consultation.type === 'video' && ['accepted', 'in_progress'].includes(consultation.status);
+    const access = consultationAccess(consultation);
+    const canUseVideo = consultation.type === 'video' && access.canJoin;
 
     res.json({
       id: consultation.id,
@@ -76,6 +78,7 @@ router.get('/consultation/:id', async (req, res, next) => {
       iceServersExpiresAt: canUseVideo && process.env.TURN_SECRET
         ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
         : null,
+      access,
     });
   } catch (err) {
     next(err);
@@ -97,6 +100,8 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    const access = consultationAccess(consultation);
+    if (!access.canJoin) return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
 
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.

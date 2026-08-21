@@ -142,8 +142,11 @@ const LawyerConsultationsPage = () => {
   };
   const finish = async (id) => {
     if (!window.confirm(t('lawyerConsult.finishConfirm'))) return;
+    const summary = window.prompt(t('lawyerConsult.summaryPrompt'));
+    if (summary === null) return;
+    if (!summary.trim()) { toast.error(t('lawyerConsult.summaryRequired')); return; }
     setActing(id);
-    try { await lawyerService.consultation.endConsultation(id, ''); toast.success(t('lawyerConsult.finished')); await load(); }
+    try { await lawyerService.consultation.endConsultation(id, summary.trim()); toast.success(t('lawyerConsult.finished')); await load(); }
     catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
 

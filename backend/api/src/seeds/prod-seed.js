@@ -16,6 +16,7 @@ const lawyers = [
   { name: 'Юнусова Зарина', email: 'yunusova@maslaxat.uz', spec: 'Земельное право', exp: 7, price: 190000, rating: 4.9, reviews: 68, cases: 123, location: 'Ташкент, Шайхантахурский район' },
   { name: 'Алимов Фаррух', email: 'alimov@maslaxat.uz', spec: 'Интеллектуальная собственность', exp: 13, price: 450000, rating: 4.8, reviews: 54, cases: 156, location: 'Ташкент, Учтепинский район' },
   { name: 'Иванов Иван', email: 'ivanov@maslaxat.uz', spec: 'Корпоративное право', exp: 16, price: 380000, rating: 4.9, reviews: 142, cases: 289, location: 'Ташкент, Яккасарайский район' },
+  { name: 'Юладшев Абдулазиз', email: 'yuladshev@maslaxat.uz', spec: 'Налоговое право', exp: 10, price: 725000, rating: 0, reviews: 0, cases: 0, location: 'Ташкент' },
 ];
 
 const specializations = [
@@ -35,7 +36,7 @@ async function runProdSeed() {
   // Только проверяем соединение — НЕ дропаем и НЕ alter'им схему.
   await sequelize.authenticate();
 
-  let created = 0, skipped = 0;
+  let created = 0, skipped = 0, updated = 0;
 
     // Демо клиент и админ
     const demoUsers = [
@@ -74,6 +75,28 @@ async function runProdSeed() {
         },
       });
       profCreated ? created++ : skipped++;
+
+      // Профиль мог быть создан регистрацией (тогда он в 'draft' и в каталог не
+      // попадает) — приводим демо-юриста к тому же виду, что и остальных.
+      // Трогаем ТОЛЬКО аккаунты из этого списка: это демо-записи, которыми
+      // владеет сид, а не профили настоящих юристов.
+      if (!profCreated) {
+        const profile = await LawyerProfile.findOne({ where: { userId: user.id } });
+        if (profile && profile.verificationStatus !== 'approved') {
+          await profile.update({
+            specialization: l.spec,
+            specializations: [l.spec],
+            experience: l.exp,
+            price: l.price,
+            location: l.location,
+            languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
+            description: `Опытный юрист. Специализация: ${l.spec}`,
+            isAvailable: true,
+            verificationStatus: 'approved',
+          });
+          updated++;
+        }
+      }
     }
 
     // Специализации
@@ -91,8 +114,8 @@ async function runProdSeed() {
       console.log('промокоды пропущены:', e.message);
     }
 
-    console.log(`\nГотово. Создано: ${created}, уже было (пропущено): ${skipped}`);
-  return { created, skipped };
+    console.log(`\nГотово. Создано: ${created}, обновлено: ${updated}, уже было (пропущено): ${skipped}`);
+  return { created, skipped, updated };
 }
 
 module.exports = { runProdSeed };

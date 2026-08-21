@@ -6,8 +6,11 @@ import {
   DialogContent,
   DialogActions,
   TextField,
+  InputAdornment,
   IconButton,
   Button,
+  Pagination,
+  Tooltip,
 } from '@mui/material';
 import {
   CalendarMonthOutlined,
@@ -24,6 +27,9 @@ import {
   AutorenewRounded,
   CancelOutlined,
   FolderOpenOutlined,
+  PaymentOutlined,
+  EventAvailableOutlined,
+  SearchOutlined,
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
@@ -37,6 +43,8 @@ import { SkeletonCard } from '../../components/UI/Skeleton';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
+import ErrorState from '../../components/UI/ErrorState';
+import EmptyState from '../../components/UI/EmptyState';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -78,17 +86,27 @@ const STATUS = {
   completed: { key: 'statusCompleted', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)', icon: CheckCircleOutlined },
   rejected: { key: 'statusRejected', color: '#B07070', bg: 'rgba(176,112,112,0.14)', icon: CancelOutlined },
   cancelled: { key: 'statusCancelled', color: '#B07070', bg: 'rgba(176,112,112,0.14)', icon: CancelOutlined },
+  payment_pending: { key: 'statusPaymentPending', color: '#B06A35', bg: 'rgba(176,106,53,0.14)', icon: PaymentOutlined },
 };
 
 const ConsultationsPageGlass = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   // Начальная вкладка может прийти из навигации (напр. с карточек дашборда):
   // navigate('/consultations', { state: { tab: 1 } }). Иначе — «Все» (0).
-  const [currentTab, setCurrentTab] = useState(Number.isInteger(location.state?.tab) ? location.state.tab : 0);
+  const legacyTab = Number.isInteger(location.state?.tab) ? ['all', 'upcoming', 'completed', 'cancelled', 'archived'][location.state.tab] : null;
+  const [currentTab, setCurrentTab] = useState(legacyTab || 'all');
   const [consultations, setConsultations] = useState([]);
+  const [counts, setCounts] = useState({ all: 0, payment_pending: 0, upcoming: 0, completed: 0, cancelled: 0, archived: 0 });
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [period, setPeriod] = useState('all');
+  const [paymentLoading, setPaymentLoading] = useState(null);
+  const [now, setNow] = useState(Date.now());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -106,22 +124,32 @@ const ConsultationsPageGlass = () => {
   const [rsLoading, setRsLoading] = useState(false);
 
   useEffect(() => {
+    const timer = setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 350);
+    return () => clearTimeout(timer);
+  }, [search]);
+
+  useEffect(() => {
     fetchConsultations();
-    // Initial load only; consultation actions refresh explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentTab, page, debouncedSearch, period]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 30000);
+    return () => clearInterval(timer);
   }, []);
 
   const fetchConsultations = async () => {
     try {
       setLoading(true);
       setError(null);
-      const data = await clientService.consultations.getConsultations('all');
-      // Дедупликация по id: hasOne-include (consultationReview) при дублирующихся
-      // Review-строках может задвоить консультацию — держим по одной записи на id.
-      const list = Array.isArray(data) ? data : [];
-      const seen = new Set();
-      const unique = list.filter((c) => (seen.has(c.id) ? false : seen.add(c.id)));
-      setConsultations(unique);
+      const data = await clientService.consultations.getConsultations({
+        bucket: currentTab, page, limit: 10,
+        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        ...(period !== 'all' ? { period } : {}),
+      });
+      setConsultations(data.consultations || []);
+      setCounts(data.counts || {});
+      setTotalPages(data.totalPages || 1);
     } catch (err) {
       console.error('Error fetching consultations:', err);
       setError(t('consultations.loadError'));
@@ -135,22 +163,7 @@ const ConsultationsPageGlass = () => {
   // (association consultationReview). Consultation.rating не используется (всегда NULL).
   const isRated = (c) => Boolean(c.consultationReview);
 
-  const getFilteredConsultations = () => {
-    switch (currentTab) {
-      case 0: // Все
-        return consultations;
-      case 1: // Предстоящие
-        return consultations.filter((c) => ['accepted', 'pending', 'in_progress'].includes(c.status));
-      case 2: // Завершённые — завершено, но ещё не оценено (очередь на «Оценить»)
-        return consultations.filter((c) => c.status === 'completed' && !isRated(c));
-      case 3: // Отменённые
-        return consultations.filter((c) => ['cancelled', 'rejected'].includes(c.status));
-      case 4: // Архив — завершено и уже оценено
-        return consultations.filter((c) => c.status === 'completed' && isRated(c));
-      default:
-        return consultations;
-    }
-  };
+  const locale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
 
   const handleCancelConsultation = async () => {
     if (!selectedConsultation || !cancelReason.trim()) {
@@ -248,23 +261,13 @@ const ConsultationsPageGlass = () => {
     fetchConsultations();
   };
 
-  const getTabCounts = () => ({
-    all: consultations.length,
-    upcoming: consultations.filter((c) => ['accepted', 'pending', 'in_progress'].includes(c.status)).length,
-    completed: consultations.filter((c) => c.status === 'completed' && !isRated(c)).length,
-    cancelled: consultations.filter((c) => ['cancelled', 'rejected'].includes(c.status)).length,
-    archived: consultations.filter((c) => c.status === 'completed' && isRated(c)).length,
-  });
-
-  const tabCounts = getTabCounts();
-  const filteredConsultations = getFilteredConsultations();
-
   const tabs = [
-    `${t('consultations.tabAll')} (${tabCounts.all})`,
-    `${t('consultations.tabUpcoming')} (${tabCounts.upcoming})`,
-    `${t('consultations.tabCompleted')} (${tabCounts.completed})`,
-    `${t('consultations.tabCancelled')} (${tabCounts.cancelled})`,
-    `${t('consultations.tabArchive')} (${tabCounts.archived})`,
+    { key: 'all', label: t('consultations.tabAll') },
+    { key: 'payment_pending', label: t('consultations.tabPaymentPending') },
+    { key: 'upcoming', label: t('consultations.tabUpcoming') },
+    { key: 'completed', label: t('consultations.tabCompleted') },
+    { key: 'cancelled', label: t('consultations.tabCancelled') },
+    { key: 'archived', label: t('consultations.tabArchive') },
   ];
 
   const tabBtn = (active) => ({
@@ -283,6 +286,60 @@ const ConsultationsPageGlass = () => {
     transition: 'background 0.2s, color 0.2s',
   });
 
+  const handlePay = async (consultation) => {
+    setPaymentLoading(consultation.id);
+    try {
+      const result = await clientService.lawyers.payConsultation(consultation.id);
+      if (result.redirectUrl) { window.location.assign(result.redirectUrl); return; }
+      toast.success(t('consultations.paymentSuccess'));
+      await fetchConsultations();
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('consultations.paymentError'));
+    } finally {
+      setPaymentLoading(null);
+    }
+  };
+
+  const addToCalendar = (consultation) => {
+    const start = new Date(consultation.scheduledStartAt);
+    const end = new Date(consultation.scheduledEndAt);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
+    const fmt = (value) => value.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const esc = (value) => String(value || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+    const content = [
+      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//eMaslaXat//Consultation//RU', 'CALSCALE:GREGORIAN',
+      'BEGIN:VEVENT', `UID:${consultation.id}@maslaxat.uz`, `DTSTAMP:${fmt(new Date())}`,
+      `DTSTART:${fmt(start)}`, `DTEND:${fmt(end)}`,
+      `SUMMARY:${esc(`${t('consultations.calendarTitle')} — ${consultation.lawyer?.name || ''}`)}`,
+      `DESCRIPTION:${esc(consultation.question || '')}`, 'END:VEVENT', 'END:VCALENDAR', '',
+    ].join('\r\n');
+    const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
+    const anchor = document.createElement('a');
+    anchor.href = url; anchor.download = `consultation-${consultation.id}.ics`;
+    document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+  };
+
+  const countdownText = (consultation) => {
+    if (consultation.status === 'payment_pending' && consultation.paymentExpiresAt) {
+      const remaining = new Date(consultation.paymentExpiresAt).getTime() - now;
+      return remaining <= 0
+        ? t('consultations.paymentExpired')
+        : t('consultations.paymentExpiresIn', { minutes: Math.max(1, Math.ceil(remaining / 60000)) });
+    }
+    const start = new Date(consultation.scheduledStartAt).getTime();
+    const end = new Date(consultation.scheduledEndAt).getTime();
+    if (!Number.isFinite(start)) return '';
+    if (Number.isFinite(end) && now >= start && now <= end) return t('consultations.countdownNow');
+    const diff = start - now;
+    if (diff <= 0) return '';
+    const hours = Math.ceil(diff / 3600000);
+    if (hours <= 24) return t('consultations.countdownHours', { hours });
+    return t('consultations.countdownDate', {
+      date: new Date(start).toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
+      time: new Date(start).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
+    });
+  };
+
   const renderCard = (c, i) => {
     const name = c.lawyer?.name || t('consultations.lawyer');
     const st = STATUS[c.status] || STATUS.pending;
@@ -290,18 +347,24 @@ const ConsultationsPageGlass = () => {
     const rating = c.lawyer?.profile?.rating || c.lawyer?.rating || 0;
     const question = c.question || c.topic || '';
     const isVideo = c.type === 'video';
-    const dateStr = new Date(c.preferredDate || c.date || c.createdAt).toLocaleDateString('ru-RU');
+    const dateValue = c.scheduledStartAt || c.preferredDate || c.date || c.createdAt;
+    const dateStr = new Date(dateValue).toLocaleDateString(locale);
     const timeStr = c.preferredTime || c.time || '';
     const when = timeStr ? `${dateStr} · ${timeStr}` : dateStr;
-    const price = (c.price || 0).toLocaleString('ru-RU');
+    const price = (c.price || 0).toLocaleString(locale);
 
     const rated = isRated(c);
-    const canJoin = ['accepted', 'in_progress'].includes(c.status);
+    const canJoin = ['accepted', 'in_progress'].includes(c.status) && c.access?.canJoin === true;
+    const joinDisabledReason = c.access?.reason === 'TOO_EARLY' && c.access?.retryAt
+      ? t('consultations.joinOpensAt', { time: new Date(c.access.retryAt).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' }) })
+      : t('consultations.joinUnavailable');
     const canComplete = ['accepted', 'in_progress'].includes(c.status);
-    const canCancel = ['accepted', 'pending', 'in_progress'].includes(c.status);
+    const canCancel = ['payment_pending', 'accepted', 'pending'].includes(c.status);
+    const paymentExpired = c.status === 'payment_pending' && c.paymentExpiresAt && new Date(c.paymentExpiresAt).getTime() <= now;
+    const canPay = c.status === 'payment_pending' && !paymentExpired;
     // Оценивать можно только завершённую и ещё не оценённую (признак — Review, не c.rating).
     const canRate = c.status === 'completed' && !rated;
-    const canRebook = c.status === 'completed' && Boolean(c.lawyer);
+    const canRebook = (c.status === 'completed' || paymentExpired) && Boolean(c.lawyer);
     // История переписки доступна после завершения/отмены (read-only)
     const canChatHistory = ['completed', 'cancelled', 'rejected'].includes(c.status);
     // Перенос — пока консультация не началась/не завершена
@@ -309,7 +372,8 @@ const ConsultationsPageGlass = () => {
     // Документы по делу — доступны с момента подтверждения и в архиве (общая папка)
     const canDocs = ['accepted', 'in_progress', 'completed'].includes(c.status);
 
-    const hasActions = canJoin || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule || canDocs;
+    const canCalendar = ['payment_pending', 'pending', 'accepted'].includes(c.status) && c.scheduledStartAt && c.scheduledEndAt;
+    const hasActions = canPay || canJoin || ['accepted', 'in_progress'].includes(c.status) || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule || canDocs || canCalendar;
     const StatusIcon = st.icon;
 
     return (
@@ -323,7 +387,7 @@ const ConsultationsPageGlass = () => {
           </span>
         </div>
 
-        <div style={{ padding: '16px 20px' }}>
+        <div role="button" tabIndex={0} onClick={() => navigate(`/consultations/${c.id}`)} onKeyDown={(event) => { if (event.key === 'Enter') navigate(`/consultations/${c.id}`); }} style={{ padding: '16px 20px', cursor: 'pointer' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 15, flexWrap: 'wrap' }}>
             <div
               style={{
@@ -355,6 +419,8 @@ const ConsultationsPageGlass = () => {
                   {isVideo ? t('consultations.typeVideo') : t('consultations.typeChat')}
                 </span>
                 <span style={{ color: 'var(--text)', fontWeight: 500 }}>{price} {t('consultations.sum')}</span>
+                <span>{t(`consultations.payment_${c.payment?.status || 'unpaid'}`)}</span>
+                {c.payment?.paidAt && <span>{new Date(c.payment.paidAt).toLocaleDateString(locale)}</span>}
                 {c.actualDuration > 0 && (
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
                     <AccessTimeRounded sx={{ fontSize: 16 }} />
@@ -362,6 +428,7 @@ const ConsultationsPageGlass = () => {
                   </span>
                 )}
               </div>
+              {countdownText(c) && <div style={{ marginTop: 10, color: 'var(--accent-dark)', fontSize: 13, fontWeight: 600 }}>{countdownText(c)}</div>}
 
               {/* Архив: показываем оценку, которую поставил клиент (звёзды + текст) */}
               {rated && c.consultationReview && (
@@ -393,10 +460,24 @@ const ConsultationsPageGlass = () => {
 
         {hasActions && (
           <div style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
-            {canJoin && (
-              <button className="cons-foot-btn" onClick={() => handleJoinConsultation(c)} disabled={actionLoading} style={{ color: '#C0492F' }}>
+            {canPay && (
+              <button className="cons-foot-btn" onClick={() => handlePay(c)} disabled={paymentLoading === c.id} style={{ color: '#B06A35' }}>
+                <PaymentOutlined sx={{ fontSize: 17 }} /> {paymentLoading === c.id ? t('consultations.paying') : t('consultations.pay')}
+              </button>
+            )}
+            {['accepted', 'in_progress'].includes(c.status) && (
+              <Tooltip title={canJoin ? '' : joinDisabledReason}>
+                <span style={{ flex: 1, display: 'flex' }}>
+              <button className="cons-foot-btn" onClick={() => handleJoinConsultation(c)} disabled={actionLoading || !canJoin} style={{ color: '#C0492F', width: '100%' }}>
                 {isVideo ? <CallOutlined sx={{ fontSize: 17 }} /> : <ChatBubbleOutline sx={{ fontSize: 17 }} />}
                 {isVideo ? (c.status === 'in_progress' ? t('consultations.joinCall') : t('consultations.call')) : t('consultations.openChat')}
+              </button>
+                </span>
+              </Tooltip>
+            )}
+            {canCalendar && (
+              <button className="cons-foot-btn" onClick={() => addToCalendar(c)} style={{ color: 'var(--text2)' }}>
+                <EventAvailableOutlined sx={{ fontSize: 17 }} /> {t('consultations.addCalendar')}
               </button>
             )}
             {canComplete && (
@@ -445,6 +526,18 @@ const ConsultationsPageGlass = () => {
     );
   };
 
+  const emptyStates = {
+    all: { title: t('consultations.emptyAllTitle'), sub: t('consultations.emptyAllSub'), action: true },
+    payment_pending: { title: t('consultations.emptyPaymentTitle'), sub: t('consultations.emptyPaymentSub') },
+    upcoming: { title: t('consultations.emptyUpcomingTitle'), sub: t('consultations.emptyUpcomingSub'), action: true },
+    completed: { title: t('consultations.emptyCompletedTitle'), sub: t('consultations.emptyCompletedSub') },
+    cancelled: { title: t('consultations.emptyCancelledTitle'), sub: t('consultations.emptyCancelledSub') },
+    archived: { title: t('consultations.emptyArchiveTitle'), sub: t('consultations.emptyArchiveSub') },
+  };
+  const empty = debouncedSearch
+    ? { title: t('consultations.emptySearchTitle'), sub: t('consultations.emptySearchSub') }
+    : emptyStates[currentTab];
+
   return (
     <GlassShell active="/consultations" title={t('consultations.title')} subtitle={t('consultations.subtitle')}>
       <div style={{ maxWidth: 980, margin: '0 auto' }}>
@@ -457,9 +550,9 @@ const ConsultationsPageGlass = () => {
               maxWidth: '100%', overflowX: 'auto', scrollbarWidth: 'none',
             }}
           >
-            {tabs.map((label, idx) => (
-              <button key={idx} onClick={() => setCurrentTab(idx)} style={tabBtn(currentTab === idx)}>
-                {label}
+            {tabs.map((tab) => (
+              <button key={tab.key} onClick={() => { setCurrentTab(tab.key); setPage(1); }} style={tabBtn(currentTab === tab.key)}>
+                {tab.label} ({counts[tab.key] || 0})
               </button>
             ))}
           </div>
@@ -476,38 +569,34 @@ const ConsultationsPageGlass = () => {
           </button>
         </div>
 
+        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
+          <TextField
+            size="small" value={search} onChange={(event) => setSearch(event.target.value)}
+            placeholder={t('consultations.searchPlaceholder')}
+            InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18 }} /></InputAdornment> }}
+            sx={{ flex: '1 1 260px' }}
+          />
+          <select value={period} onChange={(event) => { setPeriod(event.target.value); setPage(1); }} aria-label={t('consultations.periodLabel')} style={{ minHeight: 40, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
+            <option value="all">{t('consultations.periodAll')}</option>
+            <option value="30d">{t('consultations.period30')}</option>
+            <option value="365d">{t('consultations.period365')}</option>
+          </select>
+        </div>
+
         {/* Content */}
         {loading ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} avatar={false} lines={3} />)}
           </div>
         ) : error ? (
-          <div style={{ ...glassCard, padding: 32, textAlign: 'center', color: '#B07070', fontSize: 14 }}>
-            {error}
-          </div>
-        ) : filteredConsultations.length > 0 ? (
+          <ErrorState error={error} onRetry={fetchConsultations} />
+        ) : consultations.length > 0 ? (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {filteredConsultations.map((c, i) => renderCard(c, i))}
+            {consultations.map((c, i) => renderCard(c, i))}
+            {totalPages > 1 && <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} sx={{ alignSelf: 'center', mt: 1 }} />}
           </div>
         ) : (
-          <div style={{ ...glassCard, padding: '56px 24px', textAlign: 'center' }}>
-            <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>
-              {t('consultations.emptyTitle')}
-            </div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-              {t('consultations.emptySub')}
-            </div>
-            <button
-              onClick={() => navigate('/lawyers')}
-              style={{
-                background: 'var(--accent)', color: '#FFFFFF', border: 'none',
-                fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase',
-                padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
-              }}
-            >
-              {t('consultations.findLawyer')} →
-            </button>
-          </div>
+          <EmptyState title={empty.title} subtitle={empty.sub} actionLabel={empty.action ? t('consultations.findLawyer') : undefined} onAction={empty.action ? () => navigate('/lawyers') : undefined} />
         )}
       </div>
 
@@ -557,7 +646,7 @@ const ConsultationsPageGlass = () => {
                 {selectedConsultation.lawyer?.name || t('consultations.lawyer')}
               </div>
               <div style={{ color: 'var(--text3)', fontSize: 13, marginTop: 2 }}>
-                {new Date(selectedConsultation.preferredDate || selectedConsultation.date || selectedConsultation.createdAt).toLocaleDateString('ru-RU')}
+                {new Date(selectedConsultation.scheduledStartAt || selectedConsultation.preferredDate || selectedConsultation.date || selectedConsultation.createdAt).toLocaleDateString(locale)}
                 {(selectedConsultation.preferredTime || selectedConsultation.time) ? ` · ${selectedConsultation.preferredTime || selectedConsultation.time}` : ''}
               </div>
             </div>

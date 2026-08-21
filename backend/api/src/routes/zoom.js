@@ -6,6 +6,7 @@ const store = require('../services/oauthTransactionStore');
 const secretBox = require('../services/secretBox');
 const zoomApi = require('../services/zoomApiService');
 const zoomConnectionService = require('../services/zoomConnectionService');
+const { consultationAccess } = require('../services/consultationAccessService');
 
 const hash = (value) => crypto.createHash('sha256').update(String(value)).digest('base64url');
 
@@ -90,9 +91,8 @@ router.post('/consultations/:id/access', authenticate, async (req, res, next) =>
     }
     if (consultation.meetingProvider !== 'zoom' || !consultation.meeting || !['ready', 'started'].includes(consultation.meeting.status)) return res.status(409).json({ error: 'Zoom-встреча ещё не готова', code: 'MEETING_NOT_READY' });
     if (!['accepted', 'in_progress'].includes(consultation.status)) return res.status(409).json({ error: 'Консультация недоступна для подключения' });
-    const opensAt = new Date(consultation.scheduledStartAt).getTime() - 15 * 60 * 1000;
-    const closesAt = new Date(consultation.scheduledEndAt).getTime() + 120 * 60 * 1000;
-    if (Date.now() < opensAt || Date.now() > closesAt) return res.status(403).json({ error: 'Подключение пока недоступно', code: 'OUTSIDE_ACCESS_WINDOW', opensAt: new Date(opensAt) });
+    const access = consultationAccess(consultation);
+    if (!access.canJoin) return res.status(403).json({ error: 'Подключение пока недоступно', code: access.reason, ...access });
     res.set('Cache-Control', 'no-store');
     if (req.userId === consultation.lawyerId) {
       const connection = await ZoomConnection.findByPk(consultation.meeting.zoomConnectionId);

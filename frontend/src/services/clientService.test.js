@@ -1,6 +1,6 @@
 import { vi } from 'vitest';
 import api from './api';
-import { clientLawyerService, LAWYER_MAX_PRICE, resolvePublicAssetUrl } from './clientService';
+import { clientConsultationService, clientLawyerService, LAWYER_MAX_PRICE, resolvePublicAssetUrl } from './clientService';
 
 vi.mock('./api', () => ({
   default: {
@@ -66,5 +66,28 @@ describe('clientLawyerService.searchLawyers', () => {
 describe('resolvePublicAssetUrl', () => {
   test('оставляет абсолютный URL без изменений', () => {
     expect(resolvePublicAssetUrl('https://cdn.example/avatar.jpg')).toBe('https://cdn.example/avatar.jpg');
+  });
+});
+
+describe('consultation pagination and payment recovery', () => {
+  beforeEach(() => { api.get.mockReset(); api.post.mockReset(); });
+
+  test('сохраняет серверные counts и pagination metadata', async () => {
+    const envelope = { consultations: [{ id: 'c1' }], counts: { all: 25 }, total: 25, page: 2, totalPages: 3 };
+    api.get.mockResolvedValueOnce({ data: envelope });
+    const controller = new AbortController();
+    await expect(clientConsultationService.getConsultations({ bucket: 'all', page: 2 }, { signal: controller.signal })).resolves.toEqual(envelope);
+    expect(api.get).toHaveBeenCalledWith('/client/consultations', {
+      params: { bucket: 'all', page: 2 }, signal: controller.signal,
+    });
+  });
+
+  test('production fallback после запрещённой simulation возвращает checkout URL', async () => {
+    api.post.mockRejectedValueOnce({ response: { status: 403 } });
+    api.post.mockResolvedValueOnce({ data: { paymentId: 'p1', checkoutUrl: 'https://checkout.test/pay' } });
+    const result = await clientLawyerService.payConsultation('c1');
+    expect(result).toMatchObject({ completed: false, redirectUrl: 'https://checkout.test/pay', paymentId: 'p1' });
+    expect(api.post).toHaveBeenNthCalledWith(1, '/payments/simulate', { consultationId: 'c1' });
+    expect(api.post).toHaveBeenNthCalledWith(2, '/payments/create', { consultationId: 'c1' });
   });
 });

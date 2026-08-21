@@ -300,6 +300,7 @@ const Consultation = sequelize.define('Consultation', {
   lawyerNote: {
     type: DataTypes.TEXT,
   },
+  lawyerSummary: { type: DataTypes.TEXT },
   // Напоминание за 1 час отправлено (чтобы не слать повторно)
   reminderSent: {
     type: DataTypes.BOOLEAN,

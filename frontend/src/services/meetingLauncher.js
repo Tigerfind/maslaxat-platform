@@ -6,6 +6,7 @@ export const launchConsultation = async (consultation, navigate) => {
     if (!popup) throw Object.assign(new Error('POPUP_BLOCKED'), { code: 'POPUP_BLOCKED' });
     popup.opener = null;
     try {
+      await api.post(`/client/consultations/${consultation.id}/join`);
       const { data } = await api.post(`/zoom/consultations/${consultation.id}/access`);
       popup.location.replace(data.url);
     } catch (error) {
@@ -14,6 +15,7 @@ export const launchConsultation = async (consultation, navigate) => {
     }
     return;
   }
+  await api.post(`/client/consultations/${consultation.id}/join`);
   navigate(consultation.type === 'video'
     ? `/consultations/video/${consultation.id}`
     : `/consultations/chat/${consultation.id}`);

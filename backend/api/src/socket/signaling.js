@@ -3,6 +3,7 @@ const { User, LawyerProfile, Consultation, Message } = require('../models');
 const logger = require('../config/logger');
 const presenceService = require('../services/presenceService');
 const { isRedisAdapterAttached } = require('./redisAdapter');
+const { consultationAccess } = require('../services/consultationAccessService');
 
 /**
  * WebRTC Signaling Server
@@ -86,6 +87,8 @@ function initSignaling(io) {
         if (!isParticipant) {
           return socket.emit('error', { message: 'Access denied' });
         }
+        const access = consultationAccess(consultation);
+        if (!access.canJoin) return socket.emit('error', { message: 'Consultation access unavailable', code: access.reason, ...access });
 
         const roomId = `consultation:${consultationId}`;
         socket.join(roomId);
@@ -173,10 +176,8 @@ function initSignaling(io) {
         const isParticipant =
           consultation.clientId === socket.userId || consultation.lawyerId === socket.userId;
         if (!isParticipant) return;
-        // Звонок доступен только по подтверждённой/идущей консультации
-        if (!['accepted', 'in_progress'].includes(consultation.status)) {
-          return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации' });
-        }
+        const access = consultationAccess(consultation);
+        if (!access.canJoin) return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации', code: access.reason, ...access });
         const calleeId =
           consultation.clientId === socket.userId ? consultation.lawyerId : consultation.clientId;
 

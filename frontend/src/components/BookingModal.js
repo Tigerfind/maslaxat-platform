@@ -340,8 +340,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       // проверка конфликтов была фиктивной). Берём активные/предстоящие с сервера.
       let existingConsultations = [];
       try {
-        const all = await clientService.consultations.getConsultations('all');
-        existingConsultations = (Array.isArray(all) ? all : []).filter((c) =>
+        const all = await clientService.consultations.getConsultations({ bucket: 'all', limit: 100 });
+        existingConsultations = (all.consultations || []).filter((c) =>
           ['payment_pending', 'pending', 'accepted', 'in_progress'].includes(c.status)
         );
       } catch (e) {
@@ -380,19 +380,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       const consultationId = booking?.consultation?.id;
       if (!freeBooking && booking?.requiresPayment && consultationId) {
         try {
-          // dev/test-режим: имитация оплаты
-          await clientService.lawyers.simulatePayment(consultationId);
-        } catch (payErr) {
-          // прод (заданы ключи Payme): тест-оплата отключена (403) → реальный Payme-редирект
-          if (payErr.response?.status === 403) {
-            const { checkoutUrl } = await clientService.lawyers.createPayment(consultationId);
-            if (checkoutUrl) {
-              window.location.href = checkoutUrl;
-              return;
-            }
-          }
-          throw payErr;
-        }
+          const payment = await clientService.lawyers.payConsultation(consultationId);
+          if (payment.redirectUrl) { window.location.href = payment.redirectUrl; return; }
+        } catch (payErr) { throw payErr; }
       }
 
       // Запоминаем выбор для следующей брони (тип/длительность/оплата).

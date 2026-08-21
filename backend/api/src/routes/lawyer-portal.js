@@ -416,8 +416,12 @@ router.post('/consultations/:id/end', async (req, res, next) => {
       return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
     }
 
+    const lawyerSummary = typeof req.body.notes === 'string' ? req.body.notes.trim().slice(0, 5000) : '';
+    if (!lawyerSummary) return res.status(400).json({ error: 'Добавьте итог консультации для клиента' });
+    await consultation.update({ lawyerSummary });
+
     // Единый идемпотентный путь: завершение + высвобождение эскроу
-    const { consultation: updated } = await completeConsultation(consultation.id, req.body.notes);
+    const { consultation: updated } = await completeConsultation(consultation.id);
 
     // Notify client that consultation completed
     const lawyerEnd = await User.findByPk(req.userId, { attributes: ['name'] });

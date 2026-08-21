@@ -27,6 +27,7 @@ const paymeConfigured = () => {
   const merchant = String(process.env.PAYME_MERCHANT_ID || '').trim();
   return Boolean(key && key !== 'CHANGE_ME' && merchant && merchant !== 'CHANGE_ME');
 };
+const paymentError = (status, error, code) => Object.assign(new Error(error), { status, code });
 
 // ─── Payme Basic Auth Middleware ─────────────────────────────
 const verifyPayme = (req, res, next) => {
@@ -58,47 +59,34 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
       return res.status(503).json({ error: 'Оплата Payme временно недоступна' });
     }
 
-    const consultation = await Consultation.findOne({
-      where: { id: consultationId, clientId: req.userId },
-      include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile' }] }],
+    const result = await sequelize.transaction(async (transaction) => {
+      const consultation = await Consultation.findOne({
+        where: { id: consultationId, clientId: req.userId }, transaction, lock: transaction.LOCK.UPDATE,
+      });
+      if (!consultation) throw paymentError(404, 'Консультация не найдена');
+      if (consultation.status !== 'payment_pending') throw paymentError(400, 'Консультация уже оплачена или отменена');
+      let payment = await Payment.findOne({
+        where: { consultationId, provider: 'payme' }, order: [['createdAt', 'ASC']], transaction, lock: transaction.LOCK.UPDATE,
+      });
+      if (await expireReservation(consultation, transaction)) {
+        if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
+        throw paymentError(410, 'Время резервирования слота истекло. Забронируйте заново.', 'PAYMENT_RESERVATION_EXPIRED');
+      }
+      if (payment?.status === 'paid') throw paymentError(400, 'Консультация уже оплачена');
+      const amount = consultation.price;
+      const reused = Boolean(payment);
+      if (payment?.status === 'failed') {
+        await payment.update({ status: 'pending', amount, transactionId: null, providerResponse: null }, { transaction });
+      } else if (!payment) {
+        payment = await Payment.create({
+          consultationId, userId: req.userId, amount, currency: 'UZS', provider: 'payme', status: 'pending',
+        }, { transaction });
+      }
+      return { payment, amount, reused };
     });
 
-    if (!consultation) {
-      return res.status(404).json({ error: 'Консультация не найдена' });
-    }
-    if (consultation.status !== 'payment_pending') {
-      return res.status(400).json({ error: 'Консультация уже оплачена или отменена' });
-    }
-    if (await expireReservation(consultation)) {
-      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
-    }
-
-    const existingPayment = await Payment.findOne({ where: { consultationId } });
-    if (existingPayment && existingPayment.status === 'paid') {
-      return res.status(400).json({ error: 'Консультация уже оплачена' });
-    }
-
-    const amount = consultation.price; // в сумах
+    const { payment, amount, reused } = result;
     const amountTiyin = amount * 100;  // Payme работает в тийинах
-
-    // Создаём или обновляем платёж
-    let payment = existingPayment;
-    if (payment) {
-      // Прошлая попытка не удалась/отменена (failed) — сбрасываем в pending,
-      // иначе повторная оплата навсегда блокировалась (webhook требует pending).
-      if (payment.status === 'failed') {
-        await payment.update({ status: 'pending', amount, transactionId: null, providerResponse: null });
-      }
-    } else {
-      payment = await Payment.create({
-        consultationId,
-        userId: req.userId,
-        amount,
-        currency: 'UZS',
-        provider: 'payme',
-        status: 'pending',
-      });
-    }
 
     // Payme checkout URL
     // Формат: account[consultation_id]=ID&amount=TIYIN
@@ -108,8 +96,9 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
 
     const checkoutUrl = `https://checkout.paycom.uz/${params}`;
 
-    res.json({ paymentId: payment.id, checkoutUrl, amount, amountTiyin });
+    res.json({ paymentId: payment.id, checkoutUrl, amount, amountTiyin, reused });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     next(err);
   }
 });
@@ -128,59 +117,53 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
     }
 
     const { consultationId } = req.body;
-    const consultation = await Consultation.findOne({
-      where: { id: consultationId, clientId: req.userId },
-    });
-    if (!consultation) {
-      return res.status(404).json({ error: 'Консультация не найдена' });
-    }
-    if (consultation.status !== 'payment_pending') {
-      return res.status(400).json({ error: 'Консультацию нельзя оплатить (уже оплачена или отменена)' });
-    }
-    if (await expireReservation(consultation)) {
-      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
-    }
-
-    let payment = await Payment.findOne({ where: { consultationId } });
-    if (payment && payment.status === 'paid') {
-      return res.status(400).json({ error: 'Консультация уже оплачена' });
-    }
-    if (!payment) {
-      payment = await Payment.create({
-        consultationId,
-        userId: req.userId,
-        amount: consultation.price,
-        currency: 'UZS',
-        provider: 'payme',
-        status: 'pending',
+    const outcome = await sequelize.transaction(async (transaction) => {
+      const consultation = await Consultation.findOne({
+        where: { id: consultationId, clientId: req.userId }, transaction, lock: transaction.LOCK.UPDATE,
       });
-    }
-
-    await payment.update({
-      status: 'paid',
-      providerResponse: { test: true, paidAt: Date.now() },
+      if (!consultation) throw paymentError(404, 'Консультация не найдена');
+      let payment = await Payment.findOne({
+        where: { consultationId, provider: 'payme' }, order: [['createdAt', 'ASC']], transaction, lock: transaction.LOCK.UPDATE,
+      });
+      if (consultation.status !== 'payment_pending') {
+        if (consultation.status === 'pending' && payment?.status === 'paid') return { consultation, payment, performed: false };
+        throw paymentError(400, 'Консультацию нельзя оплатить (уже оплачена или отменена)');
+      }
+      if (await expireReservation(consultation, transaction)) {
+        if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
+        throw paymentError(410, 'Время резервирования слота истекло. Забронируйте заново.', 'PAYMENT_RESERVATION_EXPIRED');
+      }
+      if (!payment) {
+        payment = await Payment.create({
+          consultationId, userId: req.userId, amount: consultation.price,
+          currency: 'UZS', provider: 'payme', status: 'pending',
+        }, { transaction });
+      }
+      if (payment.status === 'paid') {
+        await consultation.update({ status: 'pending' }, { transaction });
+        return { consultation, payment, performed: false };
+      }
+      const lawyerProfile = await LawyerProfile.findOne({
+        where: { userId: consultation.lawyerId }, transaction, lock: transaction.LOCK.UPDATE,
+      });
+      await payment.update({ status: 'paid', providerResponse: { test: true, paidAt: Date.now() } }, { transaction });
+      await consultation.update({ status: 'pending' }, { transaction });
+      if (lawyerProfile) await lawyerProfile.increment('pendingBalance', { by: payment.amount, transaction });
+      return { consultation, payment, performed: true };
     });
-
-    // Консультация ждёт подтверждения юриста
-    await consultation.update({ status: 'pending' });
-
-    // Эскроу: деньги резервируются на pendingBalance юриста
-    const lawyerProfile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
-    if (lawyerProfile) {
-      await lawyerProfile.increment('pendingBalance', { by: payment.amount });
-    }
 
     // Уведомляем юриста об оплаченной консультации
-    await notificationService.createNotification(
-      consultation.lawyerId,
-      'new_booking',
-      'Новая консультация',
-      'Клиент оплатил консультацию. Подтвердите или отклоните.',
-      { consultationId: consultation.id }
-    );
+    if (outcome.performed) {
+      await notificationService.createNotification(
+        outcome.consultation.lawyerId, 'new_booking', 'Новая консультация',
+        'Клиент оплатил консультацию. Подтвердите или отклоните.',
+        { consultationId: outcome.consultation.id },
+      );
+    }
 
-    res.json({ success: true, message: 'Оплата прошла', paymentId: payment.id });
+    res.json({ success: true, message: 'Оплата прошла', paymentId: outcome.payment.id, alreadyPaid: !outcome.performed });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, ...(err.code ? { code: err.code } : {}) });
     next(err);
   }
 });

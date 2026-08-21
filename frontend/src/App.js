@@ -35,6 +35,7 @@ const LawyerProfileEditPage = lazy(() => import('./pages/Lawyer/LawyerProfileEdi
 const AdminDashboard = lazy(() => import('./pages/Admin/AdminDashboardGlass'));
 const AIChatPageGlass = lazy(() => import('./pages/AI/AIChatPageGlass'));
 const ConsultationsPageGlass = lazy(() => import('./pages/Consultations/ConsultationsPageGlass'));
+const ConsultationDetailsPage = lazy(() => import('./pages/Consultations/ConsultationDetailsPage'));
 const VideoCallPage = lazy(() => import('./pages/Consultations/VideoCallPage'));
 const ChatPage = lazy(() => import('./pages/Consultations/ChatPage'));
 const LawyersPageGlass = lazy(() => import('./pages/Lawyers/LawyersPageGlass'));
@@ -135,6 +136,7 @@ const AppContent = () => {
           <Route path="dashboard" element={<DashboardPageGlass />} />
           <Route path="ai-chat" element={<AIChatPageGlass />} />
           <Route path="consultations" element={<ConsultationsPageGlass />} />
+          <Route path="consultations/:consultationId" element={<ConsultationDetailsPage />} />
           <Route path="lawyers" element={<LawyersPageGlass />} />
           <Route path="lawyers/:lawyerId" element={<LawyerProfilePage />} />
           <Route path="documents" element={<DocumentsPageGlass />} />

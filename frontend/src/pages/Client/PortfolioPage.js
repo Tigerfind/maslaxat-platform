@@ -99,13 +99,13 @@ const PortfolioPage = () => {
       setLoading(true);
       const [docsData, consData, aiData, favsData] = await Promise.all([
         clientService.documents.getDocuments(),
-        clientService.consultations.getConsultations('all'),
+        clientService.consultations.getConsultations({ bucket: 'all', limit: 100 }),
         clientService.aiChat.getConversations(),
         clientService.favorites.getFavorites(),
       ]);
 
       setDocuments(Array.isArray(docsData) ? docsData : []);
-      setConsultations(Array.isArray(consData) ? consData : []);
+      setConsultations(Array.isArray(consData?.consultations) ? consData.consultations : []);
       setAiConversations(Array.isArray(aiData) ? aiData : []);
       setFavorites(Array.isArray(favsData) ? favsData : []);
     } catch (error) {
