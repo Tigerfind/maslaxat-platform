@@ -68,6 +68,10 @@ async function runProdSeed() {
         defaults: { email: l.email, password: 'lawyer123', name: l.name, role: 'lawyer', isVerified: true },
       });
       userCreated ? created++ : skipped++;
+      if (!userCreated && user.role !== 'lawyer') {
+        console.warn(`Пропуск ${l.email}: существующий аккаунт имеет роль ${user.role}`);
+        continue;
+      }
 
       const [, profCreated] = await LawyerProfile.findOrCreate({
         where: { userId: user.id },
@@ -90,35 +94,8 @@ async function runProdSeed() {
       });
       profCreated ? created++ : skipped++;
 
-      // Профиль мог быть создан регистрацией (тогда он в 'draft' и в каталог не
-      // попадает) — приводим демо-юриста к тому же виду, что и остальных.
-      // Трогаем ТОЛЬКО аккаунты из этого списка: это демо-записи, которыми
-      // владеет сид, а не профили настоящих юристов.
-      if (!profCreated) {
-        const profile = await LawyerProfile.findOne({ where: { userId: user.id } });
-        // Уже одобренный демо-юрист без часов приёма недоступен для записи —
-        // доливаем расписание, не трогая остальные его поля.
-        if (profile && profile.verificationStatus === 'approved'
-            && (!profile.schedule || Object.keys(profile.schedule).length === 0)) {
-          await profile.update({ schedule: WORK_WEEK });
-          updated++;
-        }
-        if (profile && profile.verificationStatus !== 'approved') {
-          await profile.update({
-            specialization: l.spec,
-            specializations: [l.spec],
-            experience: l.exp,
-            price: l.price,
-            location: l.location,
-            languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
-            description: `Опытный юрист. Специализация: ${l.spec}`,
-            schedule: WORK_WEEK,
-            isAvailable: true,
-            verificationStatus: 'approved',
-          });
-          updated++;
-        }
-      }
+      // Сид владеет только вновь созданной записью. Существующий профиль может
+      // уже принадлежать реальному человеку, поэтому его модерацию/цену/график не меняем.
     }
 
     // Специализации
@@ -127,7 +104,7 @@ async function runProdSeed() {
       wasCreated ? created++ : skipped++;
     }
 
-    // Промокоды (их сид уже идемпотентен)
+    // Промокоды добавляются только при отсутствии; отключённые админом не реактивируются.
     try {
       const { seedPromos } = require('./promos');
       await seedPromos();

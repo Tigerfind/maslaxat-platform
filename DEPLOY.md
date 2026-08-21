@@ -96,7 +96,9 @@ npm run db:migrate:undo     # откатить последнюю
 1. Поднять PostgreSQL, создать базу и пользователя, заполнить `DB_*` в `.env`.
 2. Первый старт приложения создаст таблицы (`sync()` в prod).
 3. Применить миграции: `NODE_ENV=production npm run db:migrate`.
-4. (Опц.) сиды справочников: `npm run db:seed`.
+4. (Опц.) неразрушающий начальный сид: `npm run db:seed`. Он только добавляет отсутствующие записи.
+   Полный сброс доступен лишь локально через `ALLOW_DESTRUCTIVE_SEED=1 npm run db:reset-and-seed`
+   и заблокирован при `NODE_ENV=production`.
 
 Порядок обычного обновления существующего production:
 1. Сделать резервную копию PostgreSQL.
@@ -124,18 +126,16 @@ npm run db:migrate:undo     # откатить последнюю
 Готово в репозитории: `backend/api/railway.json` (Dockerfile, `npm start`, healthcheck
 `/api/health`) и `frontend/railway.json` (Vite build → Nginx на `$PORT`).
 БД читает `DATABASE_URL` (плагин Railway), Redis — `REDIS_URL`. Backend работает на Node 20,
-frontend требует Node 20.19+. `watchPatterns` изолируют автодеплой: backend-изменения не пересобирают frontend
-и наоборот. На первом старте прод создаёт схему через `sync()`.
+frontend требует Node 20.19+. Деплой выполняется локальным Railway CLI из каталога каждого сервиса;
+`watchPatterns` намеренно отсутствуют, потому что monorepo-пути не существуют внутри local-upload архива.
 
-Пошагово (аккаунт на railway.app + этот GitHub-репозиторий подключён):
+Пошагово для уже созданного Railway project:
 
 1. **New Project → Deploy from GitHub repo** → выбрать `maslaxat-platform`.
 2. **Плагины:** в проекте → *New* → **Database → PostgreSQL**; ещё раз → **Database → Redis**.
    Railway сам заводит переменные `DATABASE_URL` и `REDIS_URL`.
-3. **Сервис Backend:** созданный из репозитория сервис → *Settings*:
-   - **Root Directory:** `backend/api`
-   - **Config File Path:** `/backend/api/railway.json`
-   - Railway подхватит `railway.json` (start `npm start`, healthcheck `/api/health`).
+3. **Сервис Backend:** Root Directory и repository Config File Path не задавать: local upload
+   выполняется из `backend/api`, где `/railway.json` и Dockerfile лежат в корне архива.
    - **Variables** (вкладка Variables у backend-сервиса):
      - `DATABASE_URL` → *Reference* на переменную из Postgres-плагина
      - `REDIS_URL` → *Reference* на Redis-плагин
@@ -145,17 +145,17 @@ frontend требует Node 20.19+. `watchPatterns` изолируют авто
      - `JWT_SECRET` = сгенерировать (`openssl rand -base64 48`)
      - `CORS_ORIGINS` и `FRONTEND_URL` = публичный URL фронта (заполнить после шага 4)
      - ключи по мере готовности: `ANTHROPIC_API_KEY`, `PAYME_*`, `SMTP_*`, `SMS_PROVIDER`+`ESKIZ_*`, `TURN_*`
-4. **Сервис Frontend:** в проекте → *New* → **GitHub Repo** (тот же репозиторий) → *Settings*:
-   - **Root Directory:** `frontend`
-   - **Config File Path:** `/frontend/railway.json`
-   - Railway подхватит `frontend/railway.json` (Vite build + Nginx).
+4. **Сервис Frontend:** local upload выполняется из `frontend`, где Railway автоматически
+   подхватывает `/railway.json` и Dockerfile.
     - **Variables:** `VITE_API_URL` = `https://<домен backend-сервиса>/api`
       (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
       нажать *Generate Domain*).
       Для Railway эта переменная обязательна: frontend и backend работают на разных доменах.
 5. **Сгенерировать домены** обоим сервисам (*Settings → Networking → Generate Domain*), затем
    вернуться в backend и вписать в `CORS_ORIGINS`/`FRONTEND_URL` публичный домен фронта.
-6. **Redeploy** обоих сервисов (кнопка *Deploy* или пуш в `main` — Railway деплоит автоматически).
+6. **Deploy** вручную:
+   `cd backend/api && railway up --service backend --environment production`, затем
+   `cd ../../../frontend && railway up --service frontend --environment production`.
 
 > Порядок первого запуска: сначала поднимется Postgres/Redis, затем backend (создаст схему через
 > `sync()` и пройдёт healthcheck `/api/health`), затем frontend. Если backend не проходит

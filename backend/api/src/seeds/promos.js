@@ -11,9 +11,8 @@ const PROMOS = [
 async function seedPromos() {
   await sequelize.sync();
   for (const p of PROMOS) {
-    const [row, created] = await Promo.findOrCreate({ where: { code: p.code }, defaults: p });
-    if (!created) await row.update({ ...p, isActive: true });
-    console.log(`${created ? 'создан' : 'обновлён'}: ${p.code} (−${p.discountPercent}%)`);
+    const [, created] = await Promo.findOrCreate({ where: { code: p.code }, defaults: p });
+    console.log(`${created ? 'создан' : 'уже существует'}: ${p.code} (−${p.discountPercent}%)`);
   }
 }
 

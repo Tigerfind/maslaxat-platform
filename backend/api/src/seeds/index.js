@@ -1,4 +1,8 @@
 require('dotenv').config();
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_SEED !== '1') {
+  console.error('Destructive reset seed blocked. Use only on a disposable DB with ALLOW_DESTRUCTIVE_SEED=1 and NODE_ENV!=production.');
+  process.exit(1);
+}
 const { sequelize, User, LawyerProfile, Specialization } = require('../models');
 
 const lawyers = [

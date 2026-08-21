@@ -92,7 +92,11 @@ describe('деньги/эскроу — фиксы аудита', () => {
   test('/join НЕ переводит консультацию в in_progress (закрыт бэкдор эскроу)', async () => {
     const client = await makeClient('mf-c9@test.uz');
     const { user: lawyer } = await makeLawyer('mf-l9@test.uz');
-    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000 });
+    const start = new Date(Date.now() + 5 * 60000);
+    const cons = await Consultation.create({
+      clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000,
+      scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 60 * 60000),
+    });
     const res = await request(app).post(`/api/client/consultations/${cons.id}/join`)
       .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
     expect(res.status).toBe(200);

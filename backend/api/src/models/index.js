@@ -122,6 +122,7 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     defaultValue: DataTypes.UUIDV4,
     primaryKey: true,
   },
+  userId: { type: DataTypes.UUID, allowNull: false, unique: 'lawyer_profiles_user_id_unique' },
   // Основная специализация (для обратной совместимости: = specializations[0]).
   // Каталог/карточка исторически читают это поле; держим синхронно с массивом.
   specialization: {

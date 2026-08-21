@@ -70,7 +70,7 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
       });
       if (await expireReservation(consultation, transaction)) {
         if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
-        throw paymentError(410, 'Время резервирования слота истекло. Забронируйте заново.', 'PAYMENT_RESERVATION_EXPIRED');
+        return { expired: true };
       }
       if (payment?.status === 'paid') throw paymentError(400, 'Консультация уже оплачена');
       const amount = consultation.price;
@@ -86,6 +86,9 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
     });
 
     const { payment, amount, reused } = result;
+    if (result.expired) {
+      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
+    }
     const amountTiyin = amount * 100;  // Payme работает в тийинах
 
     // Payme checkout URL
@@ -131,7 +134,7 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
       }
       if (await expireReservation(consultation, transaction)) {
         if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
-        throw paymentError(410, 'Время резервирования слота истекло. Забронируйте заново.', 'PAYMENT_RESERVATION_EXPIRED');
+        return { expired: true };
       }
       if (!payment) {
         payment = await Payment.create({
@@ -151,6 +154,10 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
       if (lawyerProfile) await lawyerProfile.increment('pendingBalance', { by: payment.amount, transaction });
       return { consultation, payment, performed: true };
     });
+
+    if (outcome.expired) {
+      return res.status(410).json({ error: 'Время резервирования слота истекло. Забронируйте заново.', code: 'PAYMENT_RESERVATION_EXPIRED' });
+    }
 
     // Уведомляем юриста об оплаченной консультации
     if (outcome.performed) {

@@ -78,6 +78,7 @@ test('video endpoint выдаёт краткоживущие TURN credentials т
   const client = await makeClient('turn-client@test.uz');
   const outsider = await makeClient('turn-outsider@test.uz');
   const { user: lawyer } = await makeLawyer('turn-lawyer@test.uz');
+  const start = new Date(Date.now() + 5 * 60000);
   const consultation = await models.Consultation.create({
     clientId: client.id,
     lawyerId: lawyer.id,
@@ -85,6 +86,8 @@ test('video endpoint выдаёт краткоживущие TURN credentials т
     status: 'accepted',
     question: 'TURN test',
     price: 0,
+    scheduledStartAt: start,
+    scheduledEndAt: new Date(start.getTime() + 60 * 60000),
   });
 
   const response = await request(app)

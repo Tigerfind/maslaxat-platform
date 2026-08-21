@@ -492,8 +492,8 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
 - Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;
   optional canvas/tar исключён из frontend install через `.npmrc`.
-- Railway autodeploy: backend/frontend `watchPatterns`, Docker build на lock-файле через `npm ci`,
-  `.dockerignore`, Config File Path задокументированы в DEPLOY.md.
+- Railway local deploy: `watchPatterns` удалены, потому что при `railway up` из каталога сервиса
+  monorepo-пути не входят в архив и deployment получал SKIPPED. Docker build использует `npm ci`.
 - Playwright E2E: изолированная БД emaslaxat_e2e, Chromium 11 сценариев (legal/auth/roles/catalog/booking/mobile), GitHub Actions backend+frontend+e2e.
 - Публичные legal pages: /terms, /privacy, /refund-policy + обязательные согласия при регистрации/бронировании; production smoke проверяет SPA routes, health, public API и auth guards.
 - Финансы: локальная отмена больше не выдаётся за завершённый Payme refund; refund requested→provider confirmed, FinancialEvent audit, withdrawal idempotency и pending→processing→paid/failed с обязательным bank reference.

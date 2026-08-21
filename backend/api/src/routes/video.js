@@ -100,6 +100,9 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
     }
+    if (!['accepted', 'in_progress'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
+    }
     const access = consultationAccess(consultation);
     if (!access.canJoin) return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
 
@@ -112,8 +115,6 @@ router.post('/consultation/:id/start', async (req, res, next) => {
       );
       if (affected === 0) return res.status(400).json({ error: 'Консультация уже изменена' });
       await consultation.reload();
-    } else if (consultation.status !== 'in_progress') {
-      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
     }
 
     res.json({ success: true, status: consultation.status });
