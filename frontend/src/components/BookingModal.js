@@ -66,6 +66,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
   const [availableDates, setAvailableDates] = useState([]);
+  // Пока слоты грузятся, «нет окон» показывать нельзя — это будет мигать
+  // сообщением об отсутствии дат на каждом открытии формы.
+  const [slotsLoading, setSlotsLoading] = useState(true);
   const [loyalty, setLoyalty] = useState(null);
   const [useFree, setUseFree] = useState(false);
   const [subLeft, setSubLeft] = useState(0);
@@ -132,6 +135,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     slotsRequest.current?.abort();
     const controller = new AbortController();
     slotsRequest.current = controller;
+    setSlotsLoading(true);
     try {
       const { data: slots } = await api.get(`/lawyers/${lawyer.id}/available-slots`, {
         params: { duration, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
@@ -142,6 +146,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') return;
       setAvailableDates([]);
       if (open) toast.error(error.response?.data?.error || t('booking.toastError'));
+    } finally {
+      setSlotsLoading(false);
     }
   };
   useEffect(() => {
@@ -820,7 +826,20 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         {step === 2 && (
           <>
             <div style={label}>{t('booking.date')}</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            {/* Пустой календарь без объяснения выглядит как сломанная форма:
+                клиент видит подпись «ДАТА» и ничего под ней. Слотов не бывает
+                по двум причинам — юрист не указал часы приёма либо всё занято
+                на две недели вперёд. Говорим об этом прямо. */}
+            {!slotsLoading && dates.length === 0 && (
+              <div style={{
+                marginBottom: 20, padding: '14px 16px', borderRadius: 12,
+                border: '1px solid var(--border)', background: 'var(--surface)',
+                fontSize: 13, color: 'var(--text2)', lineHeight: 1.5,
+              }}>
+                {t('booking.noSlotsAtAll')}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
               {dates.map((d) => {
                 const active = formData.preferredDate === d.iso;
                 return (

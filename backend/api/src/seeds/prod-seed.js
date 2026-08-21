@@ -49,6 +49,19 @@ async function runProdSeed() {
     }
 
     // Юристы + профили
+      // Часы приёма: без них availabilityService не выдаёт ни одного слота,
+      // и записаться к юристу физически невозможно — форма брони показывает
+      // пустой календарь. Демо-юристам ставим рабочую неделю пн–пт 09:00–18:00.
+      const WORK_WEEK = {
+        mon: { enabled: true, from: '09:00', to: '18:00' },
+        tue: { enabled: true, from: '09:00', to: '18:00' },
+        wed: { enabled: true, from: '09:00', to: '18:00' },
+        thu: { enabled: true, from: '09:00', to: '18:00' },
+        fri: { enabled: true, from: '09:00', to: '18:00' },
+        sat: { enabled: false, from: '09:00', to: '18:00' },
+        sun: { enabled: false, from: '09:00', to: '18:00' },
+      };
+
     for (const l of lawyers) {
       const [user, userCreated] = await User.findOrCreate({
         where: { email: l.email },
@@ -70,6 +83,7 @@ async function runProdSeed() {
           location: l.location,
           languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
           description: `Опытный юрист. Специализация: ${l.spec}`,
+          schedule: WORK_WEEK,
           isAvailable: true,
           verificationStatus: 'approved',
         },
@@ -82,6 +96,13 @@ async function runProdSeed() {
       // владеет сид, а не профили настоящих юристов.
       if (!profCreated) {
         const profile = await LawyerProfile.findOne({ where: { userId: user.id } });
+        // Уже одобренный демо-юрист без часов приёма недоступен для записи —
+        // доливаем расписание, не трогая остальные его поля.
+        if (profile && profile.verificationStatus === 'approved'
+            && (!profile.schedule || Object.keys(profile.schedule).length === 0)) {
+          await profile.update({ schedule: WORK_WEEK });
+          updated++;
+        }
         if (profile && profile.verificationStatus !== 'approved') {
           await profile.update({
             specialization: l.spec,
@@ -91,6 +112,7 @@ async function runProdSeed() {
             location: l.location,
             languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
             description: `Опытный юрист. Специализация: ${l.spec}`,
+            schedule: WORK_WEEK,
             isAvailable: true,
             verificationStatus: 'approved',
           });
