@@ -78,7 +78,7 @@ test('юрист сохраняет итог, клиент видит его в 
 
 test('завершение из кабинета юриста требует итог и сохраняет его вместе с completed', async () => {
   const { lawyer, consultation } = await scheduledFixture(-10);
-  await consultation.update({ status: 'in_progress' });
+  await consultation.update({ status: 'in_progress', isFree: true, price: 0, billingStatus: 'none' });
   const auth = `Bearer ${tokenFor(lawyer)}`;
   expect((await request(app).post(`/api/lawyer/consultations/${consultation.id}/end`)
     .set('Authorization', auth).send({ notes: '' })).status).toBe(400);

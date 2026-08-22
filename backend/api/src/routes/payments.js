@@ -19,6 +19,7 @@ const ERRORS = {
   INVALID_AMOUNT:      { code: -31001, message: 'Wrong amount' },
   TRANSACTION_NOT_FOUND: { code: -31003, message: 'Transaction not found' },
   CANT_PERFORM:        { code: -31008, message: 'Unable to perform operation' },
+  CANT_CANCEL:         { code: -31007, message: 'Unable to cancel transaction' },
   ALREADY_DONE:        { code: -31060, message: 'Transaction already completed' },
   ALREADY_CANCELLED:   { code: -31061, message: 'Transaction already cancelled' },
 };
@@ -189,7 +190,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
       // ── CheckPerformTransaction ────────────────────────────
       case 'CheckPerformTransaction': {
         const payment = await Payment.findOne({
-          where: { id: params.account.consultation_id },
+          where: { id: params.account.consultation_id, provider: 'payme' },
           include: [{ model: Consultation }],
         });
 
@@ -199,7 +200,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
 
         if (payment.status !== 'pending') return replyError(ERRORS.CANT_PERFORM);
-        if (!payment.Consultation || isPaymentReservationExpired(payment.Consultation)) return replyError(ERRORS.CANT_PERFORM);
+        if (!payment.Consultation || payment.Consultation.status !== 'payment_pending' || isPaymentReservationExpired(payment.Consultation)) return replyError(ERRORS.CANT_PERFORM);
 
         return reply({ allow: true });
       }
@@ -223,7 +224,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (params.amount !== Number(payment.amount) * 100) return { error: ERRORS.INVALID_AMOUNT };
           if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') return { error: ERRORS.CANT_PERFORM };
-          if (await expireReservation(consultation, transaction)) return { error: ERRORS.CANT_PERFORM };
+          if (await expireReservation(consultation, transaction)) {
+            const cancelTime = Date.now();
+            await payment.update({ status: 'failed', providerResponse: { ...payment.providerResponse, cancelTime, reason: 'reservation_expired' } }, { transaction });
+            return { error: ERRORS.CANT_PERFORM };
+          }
           if (payment.transactionId && payment.transactionId !== params.id) return { error: ERRORS.CANT_PERFORM };
 
           const createTime = payment.providerResponse?.createTime || params.time;
@@ -270,7 +275,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') {
             return { error: ERRORS.CANT_PERFORM };
           }
-          if (await expireReservation(consultation, transaction)) return { error: ERRORS.CANT_PERFORM };
+          if (await expireReservation(consultation, transaction)) {
+            const cancelTime = Date.now();
+            await payment.update({ status: 'failed', providerResponse: { ...payment.providerResponse, cancelTime, reason: 'reservation_expired' } }, { transaction });
+            return { error: ERRORS.CANT_PERFORM };
+          }
 
           const lawyerProfile = await LawyerProfile.findOne({
             where: { userId: consultation.lawyerId },
@@ -332,7 +341,21 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 } };
           }
           if (payment.status === 'paid') {
-            if (payment.refundStatus !== 'requested' || payment.escrowReleased) return { error: ERRORS.ALREADY_DONE };
+            if (payment.escrowReleased || ['in_progress', 'completed'].includes(consultation.status)) return { error: ERRORS.CANT_CANCEL };
+            if (payment.refundStatus === 'none') {
+              const lawyerProfile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId }, transaction, lock: transaction.LOCK.UPDATE });
+              if (!lawyerProfile || Number(lawyerProfile.pendingBalance) < Number(payment.amount)) return { error: ERRORS.CANT_CANCEL };
+              await lawyerProfile.decrement('pendingBalance', { by: Number(payment.amount), transaction });
+              await FinancialEvent.findOrCreate({
+                where: { idempotencyKey: `refund_requested:${payment.id}` },
+                defaults: {
+                  consultationId: consultation.id, paymentId: payment.id, actorUserId: null,
+                  source: 'payme', type: 'refund_requested', amount: payment.amount,
+                  idempotencyKey: `refund_requested:${payment.id}`, metadata: { rpcId: id },
+                }, transaction,
+              });
+              await consultation.update({ status: 'cancelled' }, { transaction });
+            }
             const cancelTime = Date.now();
             await payment.update({
               status: 'refunded', refundStatus: 'completed', refundedAt: new Date(cancelTime),
@@ -375,7 +398,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
       // ── CheckTransaction ───────────────────────────────────
       case 'CheckTransaction': {
-        const payment = await Payment.findOne({ where: { transactionId: params.id } });
+        const payment = await Payment.findOne({ where: { provider: 'payme', transactionId: params.id } });
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
 
         const stateMap = { pending: 1, paid: 2, failed: -1, refunded: -2 };
@@ -393,18 +416,20 @@ router.post('/webhook', verifyPayme, async (req, res) => {
       case 'GetStatement': {
         const payments = await Payment.findAll({
           where: {
-            status: { [Op.in]: ['paid', 'refunded'] },
-            createdAt: {
-              [require('sequelize').Op.between]: [
-                new Date(params.from),
-                new Date(params.to),
-              ],
-            },
+            provider: 'payme',
+            transactionId: { [Op.ne]: null },
           },
+          order: [['createdAt', 'ASC']],
+        });
+
+        const stateMap = { pending: 1, paid: 2, failed: -1, refunded: -2 };
+        const inRange = payments.filter((payment) => {
+          const createTime = Number(payment.providerResponse?.createTime || payment.createdAt.getTime());
+          return createTime >= Number(params.from) && createTime <= Number(params.to);
         });
 
         return reply({
-          transactions: payments.map((p) => ({
+          transactions: inRange.map((p) => ({
             id: p.transactionId,
             time: p.providerResponse?.createTime || p.createdAt.getTime(),
             amount: p.amount * 100,
@@ -413,7 +438,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             perform_time: p.providerResponse?.performTime || 0,
             cancel_time: p.providerResponse?.cancelTime || 0,
             transaction: p.id,
-            state: p.status === 'refunded' ? -2 : 2,
+            state: stateMap[p.status] || 1,
             reason: p.providerResponse?.reason || null,
           })),
         });

@@ -80,6 +80,20 @@ describe('captureHold — захват на 5-й минуте', () => {
     expect(Number(lp.pendingBalance)).toBe(150000);
   });
 
+  test('параллельный захват создаёт один Payment и один резерв', async () => {
+    const client = await makeClient('bl-race-client@test.uz');
+    const { user: lawyer, lp } = await makeLawyer('bl-race-lawyer@test.uz', { price: 175000 });
+    const c = await Consultation.create({
+      clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
+      question: 'Race', price: 175000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 6 * 60 * 1000),
+    });
+    const results = await Promise.all([billing.captureHold(c.id), billing.captureHold(c.id)]);
+    expect(results.filter((result) => result.reason === 'captured')).toHaveLength(1);
+    expect(await Payment.count({ where: { consultationId: c.id, status: 'paid' } })).toBe(1);
+    await lp.reload();
+    expect(Number(lp.pendingBalance)).toBe(175000);
+  });
+
   test('бесплатная консультация не списывается', async () => {
     const client = await makeClient('bl-c4@test.uz');
     const { user: lawyer } = await makeLawyer('bl-l4@test.uz', { price: 200000 });

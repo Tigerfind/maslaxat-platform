@@ -71,7 +71,7 @@ const blockingStatusWhere = (now = new Date()) => ({
 
 const isPaymentReservationExpired = (consultation, now = new Date()) => (
   consultation?.status === 'payment_pending'
-  && now.getTime() - new Date(consultation.createdAt).getTime() > PAYMENT_RESERVATION_MINUTES * 60000
+  && now.getTime() - new Date(consultation.createdAt).getTime() >= PAYMENT_RESERVATION_MINUTES * 60000
 );
 
 async function assertAvailable({ lawyerId, clientId, window, excludeConsultationId, transaction }) {

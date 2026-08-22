@@ -248,6 +248,7 @@ async function start() {
       require('./services/billingService').startBillingJob();
       // Reconcile Zoom operations after transient provider/DB failures.
       require('./services/zoomMeetingService').startReconciliationJob();
+      require('./services/reservationExpiryService').startReservationExpiryJob();
     });
   } catch (error) {
     logger.error('Failed to start server', { stack: error.stack });

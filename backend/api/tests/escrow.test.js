@@ -54,16 +54,28 @@ describe('escrow.completeConsultation', () => {
     expect(reloaded.notes).toBe('заметка');
   });
 
-  test('без оплаты эскроу не высвобождается, но консультация завершается', async () => {
+  test('платная консультация без оплаты не завершается', async () => {
     const client = await User.create({ name: 'C', email: `cf${Date.now()}@t.uz`, password: 'p', role: 'client', isActive: true });
     const lawyer = await User.create({ name: 'L', email: `lf${Date.now()}@t.uz`, password: 'p', role: 'lawyer', isActive: true });
     await LawyerProfile.create({ userId: lawyer.id, balance: 0, pendingBalance: 0, price: 100000, specialization: 'Гражданское право' });
     const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 100000 });
 
-    const res = await completeConsultation(cons.id);
-    expect(res.released).toBe(false);
-    expect(res.alreadyCompleted).toBe(false);
+    await expect(completeConsultation(cons.id)).rejects.toMatchObject({ code: 'PAYMENT_REQUIRED' });
     const reloaded = await Consultation.findByPk(cons.id);
-    expect(reloaded.status).toBe('completed');
+    expect(reloaded.status).toBe('in_progress');
+  });
+
+  test('бесплатная консультация завершается без Payment', async () => {
+    const client = await User.create({ name: 'C', email: `freec${Date.now()}@t.uz`, password: 'p', role: 'client', isActive: true });
+    const lawyer = await User.create({ name: 'L', email: `freel${Date.now()}@t.uz`, password: 'p', role: 'lawyer', isActive: true });
+    await LawyerProfile.create({ userId: lawyer.id, balance: 0, pendingBalance: 0, price: 100000, specialization: 'Гражданское право' });
+    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 0, isFree: true });
+    expect((await completeConsultation(cons.id)).consultation.status).toBe('completed');
+  });
+
+  test('несогласованный pendingBalance откатывает завершение', async () => {
+    const { cons } = await seedPaidConsultation({ price: 500000, pending: 100000 });
+    await expect(completeConsultation(cons.id)).rejects.toMatchObject({ code: 'ESCROW_BALANCE_MISMATCH' });
+    expect((await Consultation.findByPk(cons.id)).status).toBe('in_progress');
   });
 });

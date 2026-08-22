@@ -30,6 +30,15 @@ async function completeConsultation(consultationId, notes, actualDuration) {
       return { consultation: current, released: false, alreadyCompleted: false };
     }
 
+    // Платная услуга не может стать completed без реально подтверждённого платежа:
+    // иначе юрист получает завершённое дело, а платформа теряет выручку.
+    if (!current.isFree) {
+      const paidCount = await Payment.count({
+        where: { consultationId, status: 'paid', refundStatus: 'none' }, transaction: t,
+      });
+      if (paidCount === 0) throw Object.assign(new Error('Оплата консультации не подтверждена'), { status: 409, code: 'PAYMENT_REQUIRED' });
+    }
+
     const patch = { status: 'completed' };
     if (notes) patch.notes = notes;
     // Фактическая длительность звонка (сек) — только если валидная и положительная
@@ -66,6 +75,9 @@ async function completeConsultation(consultationId, notes, actualDuration) {
     if (totalPaid > 0) {
       const lp = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId }, transaction: t });
       if (!lp) throw new Error('Lawyer profile missing for escrow release');
+      if (Number(lp.pendingBalance) < totalPaid) {
+        throw Object.assign(new Error('Недостаточный резерв эскроу'), { status: 409, code: 'ESCROW_BALANCE_MISMATCH' });
+      }
       await lp.decrement('pendingBalance', { by: totalPaid, transaction: t });
       await lp.increment('balance', { by: totalPaid, transaction: t });
       released = true;

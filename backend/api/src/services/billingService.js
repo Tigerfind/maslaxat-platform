@@ -32,83 +32,63 @@ async function captureViaProvider(/* consultation */) {
  * @returns {Promise<{captured:boolean, reason:string}>}
  */
 async function captureHold(consultationId) {
-  const c = await Consultation.findByPk(consultationId);
-  if (!c) return { captured: false, reason: 'not_found' };
-
-  // Бесплатная — списывать нечего
-  if (c.isFree) {
-    if (c.billingStatus !== 'none') await c.update({ billingStatus: 'none' });
-    return { captured: false, reason: 'free' };
-  }
-  // Уже захвачено/отдано — не двоим (идемпотентность)
-  if (['charged', 'released'].includes(c.billingStatus)) {
-    return { captured: false, reason: 'already' };
-  }
-
-  // Если клиент уже оплатил старым путём (есть paid Payment) — деньги в эскроу,
-  // просто фиксируем факт захвата, без второго списания.
-  const existingPaid = await Payment.findOne({ where: { consultationId, status: 'paid' } });
-  if (existingPaid) {
-    await c.update({ billingStatus: 'charged', chargedAt: c.chargedAt || new Date() });
-    return { captured: true, reason: 'already_paid' };
-  }
-
-  const amount = Number(c.price) || 0;
-  if (amount <= 0) {
-    await c.update({ billingStatus: 'none' });
-    return { captured: false, reason: 'zero' };
-  }
-
-  // Реальный провайдер (с ключами) — приоритетно.
-  if (process.env.PAYME_KEY) {
-    const ok = await captureViaProvider(c);
-    if (!ok) {
-      await c.update({ billingStatus: 'failed' });
-      logger.warn(`[Billing] provider capture not available consultation=${consultationId}`);
-      await notifyFailure(c, amount);
-      return { captured: false, reason: 'provider_unavailable' };
+  let notify = null;
+  const result = await Consultation.sequelize.transaction(async (t) => {
+    const c = await Consultation.findByPk(consultationId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!c) return { captured: false, reason: 'not_found' };
+    if (c.isFree) {
+      if (c.billingStatus !== 'none') await c.update({ billingStatus: 'none' }, { transaction: t });
+      return { captured: false, reason: 'free' };
     }
-    // (при реальной интеграции здесь — создание Payment + эскроу, как в webhook Perform)
-  } else if (!canSimulate()) {
-    // Прод без ключей — НЕ фабрикуем деньги (fail-closed).
-    await c.update({ billingStatus: 'failed' });
-    logger.warn(`[Billing] capture skipped (no Payme keys, prod) consultation=${consultationId}`);
-    await notifyFailure(c, amount);
-    return { captured: false, reason: 'no_provider' };
-  }
-
-  // Симуляция захвата (dev/test): оплаченный Payment на цену + резерв эскроу.
-  // Зеркалит webhook PerformTransaction, но на 5-й минуте вместо предоплаты.
-  const t = await Consultation.sequelize.transaction();
-  try {
+    if (['charged', 'released'].includes(c.billingStatus)) return { captured: false, reason: 'already' };
+    const existingPaid = await Payment.findOne({ where: { consultationId, status: 'paid' }, transaction: t, lock: t.LOCK.UPDATE });
+    if (existingPaid) {
+      await c.update({ billingStatus: 'charged', chargedAt: c.chargedAt || new Date() }, { transaction: t });
+      return { captured: true, reason: 'already_paid' };
+    }
+    const amount = Number(c.price) || 0;
+    if (amount <= 0) {
+      await c.update({ billingStatus: 'none' }, { transaction: t });
+      return { captured: false, reason: 'zero' };
+    }
+    if (process.env.PAYME_KEY) {
+      const ok = await captureViaProvider(c);
+      if (!ok) {
+        await c.update({ billingStatus: 'failed' }, { transaction: t });
+        notify = { c, amount };
+        return { captured: false, reason: 'provider_unavailable' };
+      }
+    } else if (!canSimulate()) {
+      await c.update({ billingStatus: 'failed' }, { transaction: t });
+      notify = { c, amount };
+      return { captured: false, reason: 'no_provider' };
+    }
     await Payment.create({
-      consultationId,
-      userId: c.clientId,
-      amount,                         // в сумах (= consultation.price), как /payments
-      currency: 'UZS',
-      provider: 'payme',
-      status: 'paid',
-      escrowReleased: false,
+      consultationId, userId: c.clientId, amount, currency: 'UZS', provider: 'payme',
+      status: 'paid', escrowReleased: false,
       providerResponse: { simulated: true, model: 'hold-5min', capturedAt: Date.now() },
     }, { transaction: t });
-    const lp = await LawyerProfile.findOne({ where: { userId: c.lawyerId }, transaction: t });
+    const lp = await LawyerProfile.findOne({ where: { userId: c.lawyerId }, transaction: t, lock: t.LOCK.UPDATE });
     if (lp) await lp.increment('pendingBalance', { by: amount, transaction: t });
     await c.update({ billingStatus: 'charged', chargedAt: new Date() }, { transaction: t });
-    await t.commit();
-  } catch (e) {
-    await t.rollback();
-    logger.error('[Billing] capture failed:', e.message);
+    return { captured: true, reason: 'captured', clientId: c.clientId, amount };
+  }).catch((error) => {
+    logger.error('[Billing] capture failed:', error.message);
     return { captured: false, reason: 'error' };
+  });
+
+  if (notify) {
+    logger.warn(`[Billing] provider capture unavailable consultation=${consultationId}`);
+    await notifyFailure(notify.c, notify.amount);
   }
 
-  try {
+  if (result.captured && result.reason === 'captured') try {
     await notificationService.createNotification(
-      c.clientId, 'payment_charged', 'Оплата списана',
-      `Списано ${amount.toLocaleString()} сум за консультацию.`, { consultationId },
+      result.clientId, 'payment_charged', 'Оплата списана',
+      `Списано ${result.amount.toLocaleString()} сум за консультацию.`, { consultationId },
     );
   } catch (e) { /* best-effort */ }
-
-  return { captured: true, reason: 'captured' };
+  return result;
 }
 
 async function notifyFailure(c, amount) {
