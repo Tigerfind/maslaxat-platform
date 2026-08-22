@@ -72,6 +72,13 @@ test('resend verification сообщает об отсутствии SMTP в pro
   expect(response.status).toBe(503);
 });
 
+test('forgot password не сообщает ложный успех без SMTP в production', async () => {
+  process.env.NODE_ENV = 'production';
+  const response = await request(app).post('/api/auth/forgot-password').send({ email: 'nobody@example.uz' });
+  expect(response.status).toBe(503);
+  expect(response.body.code).toBe('EMAIL_UNAVAILABLE');
+});
+
 test('video endpoint выдаёт краткоживущие TURN credentials только участнику', async () => {
   process.env.TURN_URL = 'turn:turn.example.uz:3478';
   process.env.TURN_SECRET = 'turn-test-secret';

@@ -6,7 +6,7 @@ const Joi = require('joi');
 const { Op } = require('sequelize');
 const rateLimit = require('express-rate-limit');
 const { User, LawyerProfile, PhoneOtp } = require('../models');
-const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
+const { isEmailConfigured, sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
 const LEGAL_VERSION = '2026-08-13';
 router.use('/linkedin', require('./linkedin-auth'));
@@ -419,6 +419,9 @@ router.post('/phone/confirm', authenticate, async (req, res, next) => {
 // POST /api/auth/forgot-password
 router.post('/forgot-password', emailLimiter, async (req, res, next) => {
   try {
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: 'Отправка email временно недоступна. Обратитесь в поддержку.', code: 'EMAIL_UNAVAILABLE' });
+    }
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email обязателен' });

@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 
 // Create transporter — uses SMTP settings from env or falls back to Ethereal (dev)
 let transporter;
+const isEmailConfigured = () => process.env.NODE_ENV !== 'production' || Boolean(process.env.SMTP_HOST);
 
 const getTransporter = async () => {
   if (transporter) return transporter;
@@ -122,6 +123,7 @@ const sendVerificationEmail = async (email, token) => {
 };
 
 module.exports = {
+  isEmailConfigured,
   sendMail,
   sendPasswordResetEmail,
   sendVerificationEmail,

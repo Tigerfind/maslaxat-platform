@@ -58,6 +58,7 @@ async function main() {
     description: 'Изолированный профиль для E2E возврата.', experience: 5, price: 120000,
     schedule: {}, isAvailable: false, verificationStatus: 'approved', balance: 0, pendingBalance: 0,
   });
+  const videoStartsAt = new Date(Date.now() + 5 * 60 * 1000);
   await Consultation.bulkCreate([
     {
       id: '11111111-1111-4111-8111-111111111111',
@@ -69,6 +70,9 @@ async function main() {
       id: '22222222-2222-4222-8222-222222222222',
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'accepted',
       question: 'E2E video call', duration: 60, price: 0, isFree: true, billingStatus: 'none',
+      scheduledStartAt: videoStartsAt,
+      scheduledEndAt: new Date(videoStartsAt.getTime() + 60 * 60 * 1000),
+      scheduleTimezone: 'Asia/Tashkent',
       legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
     },
     {
