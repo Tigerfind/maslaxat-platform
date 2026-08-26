@@ -513,6 +513,11 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   durable versioned create/update/cancel/end queue с lease/backoff/reconciliation, 10-минутный
   booking buffer, delayed-attendance settlement перед refund, admin diagnostics и безопасные telemetry events. Миграции `20260829000000..4`;
   архитектура и production checklist: `docs/ZOOM_PRODUCTION_ARCHITECTURE.md`. Live smoke ждёт ключи.
+- Zoom foundation release 26.08.2026: backup `emaslaxat-prod-before-zoom-20260826.dump`
+  (SHA-256 `5bedc54e767f3a712b3e26ecb180e78058f359f42e67f5d486e0b47f45343005`),
+  migrations `20260829000000..5` applied; backend `418bfd76...`, frontend `4e06201e...` successful.
+  Production smoke: DB/Redis ready, public routes 320/375/768/1440 без overflow/errors, auth guards 401,
+  reminder/timing jobs healthy. Zoom SDK remains fail-closed until credentials and Marketplace approval.
 - CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 19 Chromium E2E
   (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
 - Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;
