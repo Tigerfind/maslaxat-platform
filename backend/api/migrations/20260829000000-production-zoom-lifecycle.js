@@ -14,8 +14,8 @@ module.exports = {
     await add('consultations', 'final_left_at', { type: Sequelize.DATE });
     await add('consultations', 'grace_ends_at', { type: Sequelize.DATE });
     await add('consultations', 'no_show_checked_at', { type: Sequelize.DATE });
-    await add('consultations', 'reminder_24_sent', { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false });
-    await add('consultations', 'reminder_10_sent', { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false });
+    await add('consultations', 'reminder24_sent', { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false });
+    await add('consultations', 'reminder10_sent', { type: Sequelize.BOOLEAN, allowNull: false, defaultValue: false });
 
     await add('consultation_meetings', 'meeting_uuid', { type: Sequelize.STRING(255) });
     await add('consultation_meetings', 'desired_state', { type: Sequelize.STRING(32), allowNull: false, defaultValue: 'ready' });

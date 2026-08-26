@@ -46,7 +46,7 @@ async function processWindow(window, now) {
         sendReminder(consultation.lawyer, consultation.client?.name || 'клиентом', consultation, window.label),
       ]);
       sent += 1;
-    } catch (error) { logger.error('[Reminder] item failed', { consultationId: consultation.id, code: error.code }); }
+    } catch (error) { logger.error('[Reminder] item failed', { consultationId: consultation.id, code: error.code, message: error.message }); }
   }
   return sent;
 }
@@ -54,7 +54,7 @@ async function processWindow(window, now) {
 async function checkUpcomingReminders() {
   const now = new Date();
   const results = await Promise.all(WINDOWS.map((window) => processWindow(window, now).catch((error) => {
-    logger.error('[Reminder] check failed', { window: window.minutes, code: error.code }); return 0;
+    logger.error('[Reminder] check failed', { window: window.minutes, code: error.code, message: error.message }); return 0;
   })));
   return results.reduce((sum, value) => sum + value, 0);
 }
