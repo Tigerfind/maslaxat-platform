@@ -7,7 +7,7 @@ const zoomConnectionService = require('../src/services/zoomConnectionService');
 const { resetDb, models, makeClient, makeLawyer, tokenFor } = require('./helpers');
 
 const originalFetch = global.fetch;
-const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
 beforeAll(() => {
   process.env.ZOOM_CLIENT_ID = 'zoom-client';
   process.env.ZOOM_CLIENT_SECRET = 'zoom-secret';
