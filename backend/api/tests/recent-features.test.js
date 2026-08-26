@@ -61,7 +61,7 @@ describe('несколько категорий права на проблему
           { text: 'Развод', categories: ['family', 'civil'] },
           { text: 'Налоги бизнеса', categories: ['tax', 'corporate'] },
         ],
-        consultationType: 'video', duration: 60,
+        consultationType: 'chat', duration: 60,
       });
     expect(res.status).toBe(201);
     expect(res.body.consultation.specialization).toBe('family'); // 1-я категория первой проблемы
@@ -80,7 +80,7 @@ describe('несколько категорий права на проблему
     const { user: lawyer } = await makeLawyer('sp-ld@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ problems: [{ text: 'Вопрос', categories: ['civil', 'civil', 'family'] }], consultationType: 'video', acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ problems: [{ text: 'Вопрос', categories: ['civil', 'civil', 'family'] }], consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(201);
     const c = await Consultation.findByPk(res.body.consultation.id);
     expect(c.problems).toEqual([{ text: 'Вопрос', categories: ['civil', 'family'] }]);
@@ -91,7 +91,7 @@ describe('несколько категорий права на проблему
     const { user: lawyer } = await makeLawyer('sp-l2@test.uz');
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ problems: [{ text: 'Вопрос', categories: [] }], consultationType: 'video', acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ problems: [{ text: 'Вопрос', categories: [] }], consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.specialization == null).toBe(true);
     const c = await Consultation.findByPk(res.body.consultation.id);
@@ -104,7 +104,7 @@ describe('несколько категорий права на проблему
     // строка
     const r1 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'Просто вопрос', consultationType: 'video', acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ question: 'Просто вопрос', consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(r1.status).toBe(201);
     const c1 = await Consultation.findByPk(r1.body.consultation.id);
     expect(c1.problems).toEqual([{ text: 'Просто вопрос', categories: [] }]);
@@ -113,7 +113,7 @@ describe('несколько категорий права на проблему
     const client2 = await makeClient('sp-c4@test.uz');
     const r2 = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client2)}`)
-      .send({ problems: [{ text: 'Аренда', category: 'real-estate' }], consultationType: 'video', acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ problems: [{ text: 'Аренда', category: 'real-estate' }], consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(r2.status).toBe(201);
     const c2 = await Consultation.findByPk(r2.body.consultation.id);
     expect(c2.problems).toEqual([{ text: 'Аренда', categories: ['real-estate'] }]);

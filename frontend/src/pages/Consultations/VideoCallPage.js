@@ -1689,7 +1689,7 @@ const VideoCallPage = () => {
           <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{t('videoCall.extendTitle')}</Typography>
           {/* выбор длительности */}
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 2 }}>
-            {[15, 30].map((m) => (
+            {[30].map((m) => (
               <button key={m} onClick={() => setExtendMin(m)}
                 style={{ padding: '10px 22px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600,
                   border: extendMin === m ? '1px solid #C9A980' : '1px solid #444',

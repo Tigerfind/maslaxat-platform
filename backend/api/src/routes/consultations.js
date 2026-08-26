@@ -1,6 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
-const { Consultation, ConsultationMeeting, User, LawyerProfile, Review, Promo, Payment, CaseDocument } = require('../models');
+const { Consultation, ConsultationMeeting, MeetingEvent, User, LawyerProfile, Review, Promo, Payment, CaseDocument } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
@@ -88,7 +88,7 @@ router.get('/', authenticate, async (req, res, next) => {
       where,
       include: [
         ...participantIncludes(),
-        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'lastError'] },
+        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'lastSafeError'] },
         { model: Payment, as: 'payments', separate: true, attributes: ['id', 'amount', 'currency', 'status', 'refundStatus', 'refundedAt', 'escrowReleased', 'updatedAt'], order: [['createdAt', 'DESC']] },
       ],
       order: [['createdAt', 'DESC']],
@@ -124,6 +124,7 @@ router.get('/', authenticate, async (req, res, next) => {
 
     res.json({
       consultations,
+      serverNow: new Date().toISOString(),
       total: count,
       counts,
       page,
@@ -202,11 +203,9 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
     // completed (иначе revert-примитив → повторная выплата эскроу). rejected/cancelled
     // недоступны здесь намеренно — у них отдельные эндпоинты с возвратом эскроу.
     // Админ сохраняет широту (модерация/разбор спора) и этот гейт минует.
-    const LAWYER_TRANSITIONS = {
-      pending: ['accepted'],
-      accepted: ['in_progress'],
-      in_progress: ['completed'],
-    };
+    // Юрист принимает заявку здесь. Старт/завершение разрешены только через
+    // специализированные endpoints, где проверяется время и факт сессии.
+    const LAWYER_TRANSITIONS = { pending: ['accepted'] };
     if (req.userRole === 'lawyer') {
       const allowed = LAWYER_TRANSITIONS[consultation.status] || [];
       if (!allowed.includes(req.body.status)) {
@@ -231,6 +230,9 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
     }
     if (req.body.notes) consultation.notes = req.body.notes;
     await consultation.save();
+    if (req.body.status === 'accepted' && consultation.meetingProvider === 'zoom') {
+      setImmediate(() => zoomMeetingService.maybeProvision(consultation.id).catch(() => {}));
+    }
 
     res.json({ consultation });
   } catch (err) {
@@ -251,7 +253,7 @@ router.get('/:id', authenticate, async (req, res, next) => {
           include: [{ model: LawyerProfile, as: 'profile', attributes: ['specialization', 'rating'] }],
         },
         { model: Review, as: 'consultationReview', attributes: ['id', 'rating', 'text'] },
-        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'startedAt', 'endedAt', 'lastError'] },
+        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'startedAt', 'endedAt', 'lastSafeError'] },
         { model: Payment, as: 'payments', separate: true, attributes: ['id', 'amount', 'currency', 'status', 'refundStatus', 'refundedAt', 'escrowReleased', 'updatedAt'], order: [['createdAt', 'DESC']] },
       ],
     });
@@ -363,27 +365,43 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
     if (!['payment_pending', 'pending', 'accepted'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Эту консультацию нельзя перенести' });
     }
-    const profile = await LawyerProfile.findOne({ where: { userId: consultation.lawyerId } });
     let window;
-    try { window = availabilityService.validateWindow(profile, preferredDate, preferredTime, consultation.duration); }
-    catch (error) { return res.status(error.status || 400).json({ error: error.message, code: error.code }); }
+    let expiredReservation = false;
     try {
       await Consultation.sequelize.transaction(async (transaction) => {
         await availabilityService.lockBookingParticipants(consultation.lawyerId, consultation.clientId, transaction);
+        const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
+        if (![locked.clientId, locked.lawyerId].includes(req.userId)) throw availabilityService.slotError('ACCESS_DENIED', 'Нет доступа', 403);
+        if (!['payment_pending', 'pending', 'accepted'].includes(locked.status)) {
+          throw availabilityService.slotError('INVALID_STATUS', 'Эту консультацию нельзя перенести', 409);
+        }
+        if (availabilityService.isPaymentReservationExpired(locked)) {
+          await locked.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
+          expiredReservation = true;
+          return;
+        }
+        const profile = await LawyerProfile.findOne({ where: { userId: locked.lawyerId }, transaction, lock: transaction.LOCK.UPDATE });
+        window = availabilityService.validateWindow(profile, preferredDate, preferredTime, locked.duration);
         await availabilityService.assertAvailable({
-          lawyerId: consultation.lawyerId, clientId: consultation.clientId, window,
-          excludeConsultationId: consultation.id, transaction,
+          lawyerId: locked.lawyerId, clientId: locked.clientId, window,
+          excludeConsultationId: locked.id, transaction,
         });
-        await consultation.update({
+        await locked.update({
           preferredDate, preferredTime, scheduledStartAt: window.start.toJSDate(),
           scheduledEndAt: window.end.toJSDate(), scheduleTimezone: window.timezone,
-          reminderSent: false,
+          reminderSent: false, reminder24Sent: false, reminder10Sent: false,
+          lifecycleStatus: 'rescheduled',
+          lawyerFirstJoinedAt: null, clientFirstJoinedAt: null, conversationStartedAt: null,
+          callStartedAt: null, finalLeftAt: null, graceEndsAt: null,
+          noShowCheckedAt: null, lawyerEndedAt: null, actualDuration: null,
         }, { transaction });
       });
     } catch (error) {
-      if (error.code === 'SLOT_UNAVAILABLE') return res.status(409).json({ error: error.message, code: error.code });
+      if (error.code) return res.status(error.status || 409).json({ error: error.message, code: error.code });
       throw error;
     }
+    if (expiredReservation) return res.status(410).json({ error: 'Время резервирования оплаты истекло', code: 'PAYMENT_RESERVATION_EXPIRED' });
+    await consultation.reload();
     if (consultation.meetingProvider === 'zoom') zoomMeetingService.updateMeeting(consultation.id).catch(() => {});
 
     // Уведомляем другую сторону
@@ -418,7 +436,7 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
       const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
       if (!locked || !['payment_pending', 'pending', 'accepted'].includes(locked.status)) return false;
       const reason = req.body.reason || 'Отменено пользователем';
-      await locked.update({ status: 'cancelled', notes: reason }, { transaction });
+      await locked.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: reason }, { transaction });
       await refundConsultationEscrow(locked.id, {
         transaction, actorUserId: req.userId, source: req.userRole || 'client', reason,
       });
@@ -463,6 +481,14 @@ router.post('/:id/complete', authenticate, authorize('client'), async (req, res,
     }
     if (!['accepted', 'in_progress'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Завершить можно только активную консультацию' });
+    }
+    if (consultation.lifecycleStatus === 'no_show_lawyer') {
+      return res.status(409).json({ error: 'Отмечена неявка юриста. Обратитесь за переносом или возвратом.', code: 'LAWYER_NO_SHOW' });
+    }
+    if (consultation.meetingProvider === 'zoom' && !consultation.conversationStartedAt) {
+      const meeting = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['startedAt'] });
+      const fallbackAccess = await MeetingEvent.findOne({ where: { consultationId: consultation.id, eventType: 'external_access_issued', participantRole: 'client' }, attributes: ['id'] });
+      if (!meeting?.startedAt || !fallbackAccess) return res.status(409).json({ error: 'Zoom не подтвердил оказание консультации', code: 'MEETING_EVIDENCE_REQUIRED' });
     }
 
     // Единый идемпотентный путь: завершение + высвобождение эскроу

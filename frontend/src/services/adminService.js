@@ -172,6 +172,8 @@ export const adminConsultationService = {
     const response = await api.get('/admin/consultations', { params: filters });
     return response.data;
   },
+  getMeetingDiagnostics: async (id) => (await api.get(`/admin/consultations/${id}/meeting-diagnostics`)).data,
+  retryMeeting: async (id) => (await api.post(`/admin/consultations/${id}/meeting/retry`)).data,
 
 };
 

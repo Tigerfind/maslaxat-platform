@@ -7,6 +7,7 @@ const BLOCKING_STATUSES = ['payment_pending', 'pending', 'accepted', 'in_progres
 const PAYMENT_RESERVATION_MINUTES = 15;
 const MIN_LEAD_MINUTES = 120;
 const SLOT_STEP_MINUTES = 30;
+const BOOKING_BUFFER_MINUTES = Math.min(60, Math.max(0, Number(process.env.BOOKING_BUFFER_MINUTES) || 10));
 const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 
 function slotError(code, message, status = 400, extra = {}) {
@@ -25,7 +26,9 @@ function validateWindow(profile, date, time, duration, now = DateTime.utc()) {
   }
   const timezone = profile.timezone || 'Asia/Tashkent';
   const start = DateTime.fromISO(`${date}T${time}`, { zone: timezone });
-  if (!start.isValid) throw slotError('INVALID_SLOT', 'Некорректная дата консультации');
+  if (!start.isValid || start.toISODate() !== date || start.toFormat('HH:mm') !== time) {
+    throw slotError('INVALID_SLOT', 'Некорректное или несуществующее локальное время консультации');
+  }
   const end = start.plus({ minutes });
   if (start.toUTC() < now.plus({ minutes: MIN_LEAD_MINUTES })) {
     throw slotError('MIN_LEAD_TIME', `Консультацию нужно бронировать минимум за ${MIN_LEAD_MINUTES} минут`, 400, { minLeadMinutes: MIN_LEAD_MINUTES });
@@ -75,9 +78,11 @@ const isPaymentReservationExpired = (consultation, now = new Date()) => (
 );
 
 async function assertAvailable({ lawyerId, clientId, window, excludeConsultationId, transaction }) {
+  const bufferedStart = window.start.minus({ minutes: BOOKING_BUFFER_MINUTES });
+  const bufferedEnd = window.end.plus({ minutes: BOOKING_BUFFER_MINUTES });
   const where = {
-    scheduledStartAt: { [Op.lt]: window.end.toJSDate() },
-    scheduledEndAt: { [Op.gt]: window.start.toJSDate() },
+    scheduledStartAt: { [Op.lt]: bufferedEnd.toJSDate() },
+    scheduledEndAt: { [Op.gt]: bufferedStart.toJSDate() },
     [Op.and]: [blockingStatusWhere(), { [Op.or]: [{ lawyerId }, ...(clientId ? [{ clientId }] : [])] }],
   };
   if (excludeConsultationId) where.id = { [Op.ne]: excludeConsultationId };
@@ -116,8 +121,8 @@ async function listAvailableSlots(lawyerId, { from, days = 21, duration = 60, cl
       try {
         const window = validateWindow(profile, date, time, duration);
         const overlaps = occupied.some((item) => (
-          DateTime.fromJSDate(item.scheduledStartAt) < window.end
-          && DateTime.fromJSDate(item.scheduledEndAt) > window.start
+          DateTime.fromJSDate(item.scheduledStartAt) < window.end.plus({ minutes: BOOKING_BUFFER_MINUTES })
+          && DateTime.fromJSDate(item.scheduledEndAt) > window.start.minus({ minutes: BOOKING_BUFFER_MINUTES })
         ));
         if (!overlaps) {
           const clientStart = window.start.setZone(viewerTimezone);
@@ -134,12 +139,12 @@ async function listAvailableSlots(lawyerId, { from, days = 21, duration = 60, cl
   }
   return {
     lawyerId, timezone, clientTimezone: viewerTimezone, duration: Number(duration), slotStepMinutes: SLOT_STEP_MINUTES,
-    minLeadMinutes: MIN_LEAD_MINUTES, dates: results,
+    minLeadMinutes: MIN_LEAD_MINUTES, bookingBufferMinutes: BOOKING_BUFFER_MINUTES, serverNow: DateTime.utc().toISO(), dates: results,
   };
 }
 
 module.exports = {
-  DURATIONS, BLOCKING_STATUSES, PAYMENT_RESERVATION_MINUTES, MIN_LEAD_MINUTES, SLOT_STEP_MINUTES,
+  DURATIONS, BLOCKING_STATUSES, PAYMENT_RESERVATION_MINUTES, MIN_LEAD_MINUTES, SLOT_STEP_MINUTES, BOOKING_BUFFER_MINUTES,
   validateWindow, lockLawyer, lockBookingParticipants, lockZoomConnection, blockingStatusWhere,
   isPaymentReservationExpired, assertAvailable, listAvailableSlots, slotError,
 };

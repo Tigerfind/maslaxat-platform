@@ -1,9 +1,11 @@
 const router = require('express').Router();
 const crypto = require('crypto');
+const { DateTime } = require('luxon');
 const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
 const { consultationAccess } = require('../services/consultationAccessService');
+const availabilityService = require('../services/availabilityService');
 
 function buildIceServers(userId) {
   const servers = [
@@ -45,6 +47,9 @@ router.get('/consultation/:id', async (req, res, next) => {
 
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
+    }
+    if (consultation.meetingProvider === 'zoom') {
+      return res.status(409).json({ error: 'Используйте защищённый Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
     }
 
     // Only participants can access
@@ -92,6 +97,7 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
+    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Используйте Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
 
     const isParticipant =
       consultation.clientId === req.userId ||
@@ -109,6 +115,9 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
     if (consultation.status === 'accepted') {
+      if (!consultation.callStartedAt) {
+        return res.status(409).json({ error: 'Ожидается соединение второго участника', code: 'PEER_NOT_CONNECTED' });
+      }
       const [affected] = await Consultation.update(
         { status: 'in_progress' },
         { where: { id: consultation.id, status: 'accepted' } }
@@ -130,6 +139,7 @@ router.post('/consultation/:id/end', async (req, res, next) => {
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
+    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Завершение Zoom фиксируется сервером', code: 'ZOOM_PROVIDER_REQUIRED' });
 
     const isParticipant =
       consultation.clientId === req.userId ||
@@ -144,13 +154,22 @@ router.post('/consultation/:id/end', async (req, res, next) => {
     if (consultation.status !== 'in_progress') {
       return res.status(400).json({ error: 'Завершить можно только начатую консультацию' });
     }
+    if (!consultation.callStartedAt) {
+      return res.status(400).json({ error: 'Нет подтверждения соединения участников' });
+    }
 
-    // Единый идемпотентный путь: завершение + высвобождение эскроу (раньше видео-
-    // завершение НЕ платило юристу — деньги застревали в pendingBalance).
     const durationSeconds = parseInt(req.body?.durationSeconds, 10);
-    await completeConsultation(consultation.id, undefined, durationSeconds);
+    if (consultation.clientId === req.userId) {
+      await completeConsultation(consultation.id, undefined, durationSeconds);
+      return res.json({ success: true, status: 'completed' });
+    }
 
-    res.json({ success: true, status: 'completed' });
+    await consultation.update({
+      lawyerEndedAt: consultation.lawyerEndedAt || new Date(),
+      ...(Number.isFinite(durationSeconds) && durationSeconds >= 0 ? { actualDuration: durationSeconds } : {}),
+    });
+
+    res.json({ success: true, status: consultation.status, awaitingClientConfirmation: true });
   } catch (err) {
     next(err);
   }
@@ -159,13 +178,14 @@ router.post('/consultation/:id/end', async (req, res, next) => {
 // POST /api/video/consultation/:id/extend — продлить идущую консультацию
 // Доплата резервируется на эскроу юриста (в dev — тест-оплата; реальный Payme —
 // Фаза 6). Только участник, только in_progress.
-const EXTEND_MINUTES = [15, 30];
+const EXTEND_MINUTES = [30];
 router.post('/consultation/:id/extend', async (req, res, next) => {
   try {
     const consultation = await Consultation.findByPk(req.params.id, {
       include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile', attributes: ['price'] }] }],
     });
     if (!consultation) return res.status(404).json({ error: 'Consultation not found' });
+    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Продление Zoom доступно только через подтверждённое предложение', code: 'ZOOM_EXTENSION_REQUIRED' });
 
     const isParticipant = consultation.clientId === req.userId || consultation.lawyerId === req.userId;
     if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
@@ -173,8 +193,8 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
       return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
     }
 
-    let minutes = parseInt(req.body?.minutes, 10);
-    if (!EXTEND_MINUTES.includes(minutes)) minutes = 15;
+    const minutes = parseInt(req.body?.minutes, 10);
+    if (!EXTEND_MINUTES.includes(minutes)) return res.status(400).json({ error: 'Допустимо продление на 30 минут' });
 
     // Доплата = базовая ставка юриста × минуты/60 (на сервере, клиенту не доверяем)
     const basePrice = consultation.lawyer?.profile?.price || 0;
@@ -190,6 +210,7 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
     // и не задваивали резерв (SELECT ... FOR UPDATE через lock).
     let newDuration; let newPrice;
     await Consultation.sequelize.transaction(async (t) => {
+      await availabilityService.lockBookingParticipants(consultation.lawyerId, consultation.clientId, t);
       const locked = await Consultation.findByPk(consultation.id, { lock: t.LOCK.UPDATE, transaction: t });
       // Внутри лока перепроверяем статус (мог измениться между проверкой и локом)
       if (!locked || locked.status !== 'in_progress') {
@@ -198,8 +219,17 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
         throw err;
       }
       newDuration = (locked.duration || 60) + minutes;
+      if (![60, 90].includes(newDuration)) {
+        const err = new Error('INVALID_EXTENSION_DURATION'); err.code = 'INVALID_EXTENSION_DURATION'; throw err;
+      }
+      const newEnd = new Date(new Date(locked.scheduledEndAt).getTime() + minutes * 60000);
+      await availabilityService.assertAvailable({
+        lawyerId: locked.lawyerId, clientId: locked.clientId,
+        window: { start: DateTime.fromJSDate(locked.scheduledStartAt), end: DateTime.fromJSDate(newEnd) },
+        excludeConsultationId: locked.id, transaction: t,
+      });
       newPrice = (locked.price || 0) + addAmount;
-      await locked.update({ duration: newDuration, price: newPrice }, { transaction: t });
+      await locked.update({ duration: newDuration, scheduledEndAt: newEnd, price: newPrice }, { transaction: t });
 
       if (addAmount > 0) {
         await Payment.create({
@@ -226,6 +256,8 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
     if (err.code === 'NOT_IN_PROGRESS') {
       return res.status(400).json({ error: 'Продлить можно только идущую консультацию' });
     }
+    if (err.code === 'INVALID_EXTENSION_DURATION') return res.status(409).json({ error: 'Максимальная длительность консультации — 90 минут' });
+    if (err.code === 'SLOT_UNAVAILABLE') return res.status(409).json({ error: 'Следующее время занято, продление невозможно', code: err.code });
     next(err);
   }
 });

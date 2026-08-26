@@ -8,6 +8,12 @@ function key() {
   return value;
 }
 
+function isConfigured() {
+  if (process.env.NODE_ENV === 'test' && !process.env.OAUTH_TOKEN_ENCRYPTION_KEY) return true;
+  try { return Buffer.from(String(process.env.OAUTH_TOKEN_ENCRYPTION_KEY || ''), 'base64').length === 32; }
+  catch { return false; }
+}
+
 function encrypt(value, context) {
   if (value == null) return null;
   const iv = crypto.randomBytes(12);
@@ -27,4 +33,4 @@ function decrypt(payload, context) {
   return Buffer.concat([decipher.update(Buffer.from(encrypted, 'base64url')), decipher.final()]).toString('utf8');
 }
 
-module.exports = { encrypt, decrypt };
+module.exports = { encrypt, decrypt, isConfigured };

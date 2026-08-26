@@ -18,7 +18,7 @@ async function expireReservationById(consultationId, now = new Date()) {
         providerResponse: { ...(payment.providerResponse || {}), cancelTime: now.getTime(), reason: 'reservation_expired' },
       }, { transaction });
     }
-    await consultation.update({ status: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
+    await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
     if (consultation.promoCode) {
       await Promo.increment('usedCount', { by: -1, where: { code: consultation.promoCode, usedCount: { [Op.gt]: 0 } }, transaction });
     }

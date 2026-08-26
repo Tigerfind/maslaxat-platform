@@ -10,5 +10,6 @@ test('новые consultation/payment строки определены на т�
   for (const language of ['ru', 'uz', 'en']) {
     for (const key of keys) expect(translations.consultations[language][key]).toEqual(expect.any(String));
     expect(translations.lawyerConsult[language].summaryPrompt).toEqual(expect.any(String));
+    expect(translations.lawyerConsult[language].awaitingConfirmation).toEqual(expect.any(String));
   }
 });

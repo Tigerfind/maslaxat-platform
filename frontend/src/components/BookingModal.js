@@ -66,6 +66,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
   const [availableDates, setAvailableDates] = useState([]);
+  const [slotMeta, setSlotMeta] = useState(null);
   // Пока слоты грузятся, «нет окон» показывать нельзя — это будет мигать
   // сообщением об отсутствии дат на каждом открытии формы.
   const [slotsLoading, setSlotsLoading] = useState(true);
@@ -142,6 +143,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         signal: controller.signal,
       });
       setAvailableDates(slots.dates || []);
+      setSlotMeta({ timezone: slots.timezone, clientTimezone: slots.clientTimezone, bookingBufferMinutes: slots.bookingBufferMinutes });
     } catch (error) {
       if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') return;
       setAvailableDates([]);
@@ -870,6 +872,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </div>
 
             <div style={label}>{t('booking.time')}</div>
+            {slotMeta && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+              {t('booking.timezoneHint', { lawyer: slotMeta.timezone, client: slotMeta.clientTimezone, buffer: slotMeta.bookingBufferMinutes })}
+            </div>}
             {timeSlots.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text3)', padding: '10px 0 22px' }}>
                 {formData.preferredDate ? t('booking.noSlots') : t('booking.pickDateFirst')}

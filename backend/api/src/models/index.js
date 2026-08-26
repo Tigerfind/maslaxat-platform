@@ -269,6 +269,7 @@ const Consultation = sequelize.define('Consultation', {
   // Длительность в минутах (30/60/90) — влияет на цену
   duration: {
     type: DataTypes.INTEGER,
+    allowNull: false,
     defaultValue: 60,
   },
   // Фактическая длительность видеозвонка в секундах (по факту соединения)
@@ -313,6 +314,11 @@ const Consultation = sequelize.define('Consultation', {
   callStartedAt: {
     type: DataTypes.DATE,
   },
+  // Юрист отметил работу завершённой; эскроу остаётся замороженным до
+  // подтверждения клиента или решения администратора.
+  lawyerEndedAt: {
+    type: DataTypes.DATE,
+  },
   // Момент захвата оплаты (списания с карты клиента) — на 5-й минуте разговора.
   chargedAt: {
     type: DataTypes.DATE,
@@ -334,6 +340,15 @@ const Consultation = sequelize.define('Consultation', {
   scheduleTimezone: { type: DataTypes.STRING(64) },
   acceptedAt: { type: DataTypes.DATE },
   meetingProvider: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'webrtc' },
+  lifecycleStatus: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'confirmed' },
+  lawyerFirstJoinedAt: { type: DataTypes.DATE },
+  clientFirstJoinedAt: { type: DataTypes.DATE },
+  conversationStartedAt: { type: DataTypes.DATE },
+  finalLeftAt: { type: DataTypes.DATE },
+  graceEndsAt: { type: DataTypes.DATE },
+  noShowCheckedAt: { type: DataTypes.DATE },
+  reminder24Sent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  reminder10Sent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
@@ -585,6 +600,19 @@ const ConsultationMeeting = sequelize.define('ConsultationMeeting', {
   startedAt: { type: DataTypes.DATE },
   endedAt: { type: DataTypes.DATE },
   cancelledAt: { type: DataTypes.DATE },
+  meetingUuid: { type: DataTypes.STRING(255) },
+  desiredState: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'ready' },
+  pendingOperation: { type: DataTypes.STRING(32) },
+  operationVersion: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  attemptCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  nextAttemptAt: { type: DataTypes.DATE },
+  lastAttemptAt: { type: DataTypes.DATE },
+  leaseOwner: { type: DataTypes.STRING(120) },
+  leaseExpiresAt: { type: DataTypes.DATE },
+  idempotencyKey: { type: DataTypes.STRING(255) },
+  lastHttpStatus: { type: DataTypes.INTEGER },
+  providerRequestId: { type: DataTypes.STRING(255) },
+  lastSafeError: { type: DataTypes.STRING(255) },
 }, {
   indexes: [
     { name: 'consultation_meetings_consultation_unique', unique: true, fields: ['consultation_id'] },
@@ -599,6 +627,9 @@ const ZoomWebhookEvent = sequelize.define('ZoomWebhookEvent', {
   payload: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
   status: { type: DataTypes.STRING(32), allowNull: false, defaultValue: 'processed' },
   processedAt: { type: DataTypes.DATE },
+  attemptCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  nextAttemptAt: { type: DataTypes.DATE },
+  lastError: { type: DataTypes.STRING(255) },
 }, { indexes: [{ name: 'zoom_webhook_events_request_unique', unique: true, fields: ['request_id'] }] });
 
 const LawyerProfileStatusHistory = sequelize.define('LawyerProfileStatusHistory', {
@@ -613,6 +644,36 @@ const LawyerProfileStatusHistory = sequelize.define('LawyerProfileStatusHistory'
   updatedAt: false,
   indexes: [{ name: 'lawyer_profile_status_history_profile_created_idx', fields: ['lawyer_profile_id', 'created_at'] }],
 });
+
+ZoomConnection.prototype.toJSON = function toJSON() {
+  const value = { ...this.get() };
+  delete value.accessTokenEncrypted;
+  delete value.refreshTokenEncrypted;
+  return value;
+};
+ConsultationMeeting.prototype.toJSON = function toJSON() {
+  const value = { ...this.get() };
+  delete value.joinUrlEncrypted;
+  delete value.startUrlEncrypted;
+  delete value.passcodeEncrypted;
+  delete value.leaseOwner;
+  return value;
+};
+
+const MeetingEvent = sequelize.define('MeetingEvent', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  consultationId: { type: DataTypes.UUID, allowNull: false },
+  meetingId: { type: DataTypes.UUID },
+  providerEventId: { type: DataTypes.STRING(255) },
+  eventType: { type: DataTypes.STRING(80), allowNull: false },
+  participantRole: { type: DataTypes.STRING(16) },
+  occurredAt: { type: DataTypes.DATE, allowNull: false },
+  correlationId: { type: DataTypes.STRING(64), allowNull: false },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, { tableName: 'meeting_events', updatedAt: false, indexes: [
+  { name: 'meeting_events_provider_event_unique', unique: true, fields: ['provider_event_id'] },
+  { name: 'meeting_events_consultation_occurred_idx', fields: ['consultation_id', 'occurred_at'] },
+] });
 
 // ─── CASE DOCUMENT (рабочие документы по консультации) ──────
 // Файлы по конкретному делу (договор, черновик иска, справки). Видны ОБОИМ
@@ -1031,6 +1092,10 @@ Consultation.hasOne(ConsultationMeeting, { foreignKey: 'consultationId', as: 'me
 ConsultationMeeting.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
 ZoomConnection.hasMany(ConsultationMeeting, { foreignKey: 'zoomConnectionId', as: 'meetings' });
 ConsultationMeeting.belongsTo(ZoomConnection, { foreignKey: 'zoomConnectionId', as: 'zoomConnection' });
+Consultation.hasMany(MeetingEvent, { foreignKey: 'consultationId', as: 'meetingEvents', onDelete: 'CASCADE' });
+MeetingEvent.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
+ConsultationMeeting.hasMany(MeetingEvent, { foreignKey: 'meetingId', as: 'events', onDelete: 'SET NULL' });
+MeetingEvent.belongsTo(ConsultationMeeting, { foreignKey: 'meetingId', as: 'meeting' });
 
 // User <-> AIConversation
 User.hasMany(AIConversation, { foreignKey: 'userId', as: 'conversations' });
@@ -1125,6 +1190,7 @@ module.exports = {
   ZoomConnection,
   ConsultationMeeting,
   ZoomWebhookEvent,
+  MeetingEvent,
   LawyerProfileStatusHistory,
   Consultation,
   AIConversation,

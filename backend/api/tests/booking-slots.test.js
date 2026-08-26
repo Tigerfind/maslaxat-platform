@@ -35,9 +35,22 @@ test('слоты учитывают длительность, расписани
   expect(times).not.toContain('09:00');
   expect(times).not.toContain('09:30');
   expect(times).not.toContain('10:00');
-  expect(times).toContain('10:30');
+  expect(times).not.toContain('10:30'); // 10-минутный технический перерыв
   expect(times).toContain('11:00');
   expect(times).not.toContain('11:30');
+});
+
+test('технический перерыв блокирует слот вплотную до и после консультации', async () => {
+  const { user: lawyer } = await setupLawyer('slots-buffer-lawyer@test.uz');
+  const client = await makeClient('slots-buffer-client@test.uz');
+  const date = nextWeekday(1);
+  const start = DateTime.fromISO(`${date}T10:00`, { zone: 'Asia/Tashkent' });
+  await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'accepted', question: 'busy', duration: 30, scheduledStartAt: start.toJSDate(), scheduledEndAt: start.plus({ minutes: 30 }).toJSDate(), scheduleTimezone: 'Asia/Tashkent' });
+  const response = await request(app).get(`/api/lawyers/${lawyer.id}/available-slots?from=${date}&days=1&duration=30`);
+  const times = response.body.dates[0].slots.map((slot) => slot.time);
+  expect(times).not.toContain('09:30');
+  expect(times).not.toContain('10:30');
+  expect(response.body.bookingBufferMinutes).toBe(10);
 });
 
 test('две параллельные брони одного слота дают ровно один success', async () => {

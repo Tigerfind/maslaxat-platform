@@ -1,5 +1,5 @@
-const JOIN_EARLY_MINUTES = 15;
-const JOIN_LATE_MINUTES = 120;
+const JOIN_EARLY_MINUTES = 10;
+const JOIN_LATE_MINUTES = 5;
 
 function consultationAccess(consultation, now = new Date()) {
   const start = consultation?.scheduledStartAt ? new Date(consultation.scheduledStartAt) : null;

@@ -1,6 +1,6 @@
 // Идемпотентный сид для ПРОДА — НЕ разрушающий.
 // В отличие от index.js (sync force:true — дропает всё), этот скрипт только
-// ДОБАВЛЯ�ет демо-данные через findOrCreate: существующие записи не трогает,
+// ДОБАВЛЯЕТ справочники через findOrCreate: существующие записи не трогает,
 // таблицы не пересоздаёт. Безопасно запускать повторно.
 require('dotenv').config();
 const { sequelize, User, LawyerProfile, Specialization } = require('../models');
@@ -37,11 +37,21 @@ async function runProdSeed() {
   await sequelize.authenticate();
 
   let created = 0, skipped = 0, updated = 0;
+  const includeDemoData = process.env.ALLOW_PRODUCTION_DEMO_DATA === '1';
+  const demoPasswords = {
+    client: process.env.DEMO_CLIENT_PASSWORD,
+    admin: process.env.DEMO_ADMIN_PASSWORD,
+    lawyer: process.env.DEMO_LAWYER_PASSWORD,
+  };
+  if (includeDemoData && Object.values(demoPasswords).some((password) => !password || password.length < 12)) {
+    throw new Error('Demo data requires DEMO_CLIENT_PASSWORD, DEMO_ADMIN_PASSWORD and DEMO_LAWYER_PASSWORD (12+ chars)');
+  }
 
-    // Демо клиент и админ
+  if (includeDemoData) {
+    // Демо клиент и админ создаются только по отдельному explicit opt-in.
     const demoUsers = [
-      { email: 'client@maslaxat.uz', password: 'client123', name: 'Клиент Тестовый', phone: '+998901234567', role: 'client', isVerified: true },
-      { email: 'admin@maslaxat.uz', password: 'admin123', name: 'Администратор', phone: '+998901234568', role: 'admin', isVerified: true },
+      { email: 'client@maslaxat.uz', password: demoPasswords.client, name: 'Клиент Тестовый', phone: '+998901234567', role: 'client', isVerified: true },
+      { email: 'admin@maslaxat.uz', password: demoPasswords.admin, name: 'Администратор', phone: '+998901234568', role: 'admin', isVerified: true },
     ];
     for (const u of demoUsers) {
       const [, wasCreated] = await User.findOrCreate({ where: { email: u.email }, defaults: u });
@@ -65,7 +75,7 @@ async function runProdSeed() {
     for (const l of lawyers) {
       const [user, userCreated] = await User.findOrCreate({
         where: { email: l.email },
-        defaults: { email: l.email, password: 'lawyer123', name: l.name, role: 'lawyer', isVerified: true },
+        defaults: { email: l.email, password: demoPasswords.lawyer, name: l.name, role: 'lawyer', isVerified: true },
       });
       userCreated ? created++ : skipped++;
       if (!userCreated && user.role !== 'lawyer') {
@@ -97,6 +107,7 @@ async function runProdSeed() {
       // Сид владеет только вновь созданной записью. Существующий профиль может
       // уже принадлежать реальному человеку, поэтому его модерацию/цену/график не меняем.
     }
+  }
 
     // Специализации
     for (const s of specializations) {

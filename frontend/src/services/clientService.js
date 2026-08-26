@@ -44,6 +44,11 @@ export const clientDashboardService = {
       return list.map((c) => ({
         id: c.id,
         type: c.type,
+        meetingProvider: c.meetingProvider,
+        scheduledStartAt: c.scheduledStartAt,
+        scheduledEndAt: c.scheduledEndAt,
+        scheduleTimezone: c.scheduleTimezone,
+        access: c.access,
         status: c.status,
         lawyerName: c.lawyer?.name || null,
         avatar: c.lawyer?.avatar || null,

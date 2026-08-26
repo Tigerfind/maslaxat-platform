@@ -35,6 +35,14 @@ test('production seed дважды не меняет существующие п
   expect(promo).toMatchObject({ discountPercent: 3, minAmount: 999, isActive: false });
 });
 
+test('production seed по умолчанию не создаёт demo-аккаунты', async () => {
+  delete process.env.ALLOW_PRODUCTION_DEMO_DATA;
+  await runProdSeed();
+  expect(await models.User.findOne({ where: { email: 'admin@maslaxat.uz' } })).toBeNull();
+  expect(await models.User.findOne({ where: { email: 'client@maslaxat.uz' } })).toBeNull();
+  expect(await models.User.findOne({ where: { email: 'karimova@maslaxat.uz' } })).toBeNull();
+});
+
 test('destructive seed невозможно запустить в production', () => {
   const result = spawnSync(process.execPath, [path.join(__dirname, '../src/seeds/index.js')], {
     env: { ...process.env, NODE_ENV: 'production', ALLOW_DESTRUCTIVE_SEED: '1' }, encoding: 'utf8',

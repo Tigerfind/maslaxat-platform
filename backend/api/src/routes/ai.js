@@ -7,6 +7,7 @@ const { authenticate } = require('../middleware/auth');
 const { AIConversation, AIMessage, Subscription } = require('../models');
 const { getRedis } = require('../config/redis');
 const { searchLegalSources, citedSources } = require('../services/legalRagService');
+const { AI_ATTACHMENT_EXTENSIONS, fileFilterFor, validateUploadSignatures } = require('../services/uploadSecurity');
 
 // File upload for AI chat. В проде UPLOAD_DIR указывает на записываемый volume
 // (напр. /data/uploads); в dev — относительная папка внутри проекта.
@@ -16,15 +17,7 @@ const aiUploadDir = process.env.UPLOAD_DIR
 const upload = multer({
   dest: aiUploadDir,
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
-  fileFilter: (req, file, cb) => {
-    const allowed = /jpeg|jpg|png|gif|pdf|doc|docx|txt/;
-    const ext = allowed.test(path.extname(file.originalname).toLowerCase());
-    const mime = allowed.test(file.mimetype) || file.mimetype === 'application/pdf'
-      || file.mimetype === 'application/msword'
-      || file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      || file.mimetype === 'text/plain';
-    cb(null, ext || mime);
-  },
+  fileFilter: fileFilterFor(AI_ATTACHMENT_EXTENSIONS),
 });
 
 // ─── SYSTEM PROMPT: Uzbekistan Legal Expert ─────────────────
@@ -442,8 +435,16 @@ const checkAIRateLimit = async (req, res, next) => {
   }
 };
 
+const requireAIAvailable = (req, res, next) => {
+  const key = String(process.env.ANTHROPIC_API_KEY || '').trim();
+  if (!key || key === 'CHANGE_ME' || key === 'sk-ant-CHANGE_ME') {
+    return res.status(503).json({ error: 'AI-помощник временно недоступен', code: 'AI_UNAVAILABLE' });
+  }
+  next();
+};
+
 // ─── POST /api/ai/chat/message — send message (with optional files) ───
-router.post('/chat/message', authenticate, checkAIRateLimit, upload.array('files', 5), async (req, res, next) => {
+router.post('/chat/message', authenticate, requireAIAvailable, checkAIRateLimit, upload.array('files', 5), validateUploadSignatures(AI_ATTACHMENT_EXTENSIONS), async (req, res, next) => {
   const uploaded = req.files || [];
   const cleanupFiles = () => {
     for (const att of uploaded) {

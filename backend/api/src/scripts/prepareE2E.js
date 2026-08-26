@@ -20,7 +20,7 @@ async function main() {
   fs.mkdirSync(EXPECTED_UPLOAD_DIR, { recursive: true });
 
   const { resetDb, models } = require('../../tests/helpers');
-  const { sequelize, User, LawyerProfile, Specialization, Consultation } = models;
+  const { sequelize, User, LawyerProfile, Specialization, Consultation, ConsultationMeeting } = models;
   await resetDb();
 
   await Specialization.bulkCreate([
@@ -67,6 +67,13 @@ async function main() {
       legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
     },
     {
+      id: '44444444-4444-4444-8444-444444444444',
+      clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted', lifecycleStatus: 'ready',
+      question: 'E2E Zoom lobby', duration: 30, price: 0, isFree: true, billingStatus: 'none',
+      scheduledStartAt: videoStartsAt, scheduledEndAt: new Date(videoStartsAt.getTime() + 30 * 60 * 1000),
+      scheduleTimezone: 'Asia/Tashkent', legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
+    {
       id: '22222222-2222-4222-8222-222222222222',
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'accepted',
       question: 'E2E video call', duration: 60, price: 0, isFree: true, billingStatus: 'none',
@@ -82,6 +89,12 @@ async function main() {
       legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
     },
   ]);
+  const secretBox = require('../services/secretBox');
+  const zoomMeeting = await ConsultationMeeting.create({ consultationId: '44444444-4444-4444-8444-444444444444', provider: 'zoom', externalMeetingId: '123456789', status: 'ready', scheduledAt: videoStartsAt, duration: 30 });
+  await zoomMeeting.update({
+    joinUrlEncrypted: secretBox.encrypt('https://zoom.us/j/123456789', `meeting:${zoomMeeting.id}:join`),
+    passcodeEncrypted: secretBox.encrypt('test', `meeting:${zoomMeeting.id}:passcode`),
+  });
   await User.create({
     email: 'admin.e2e@maslaxat.uz', password: 'E2eAdmin123!', name: 'E2E Admin',
     role: 'admin', isVerified: true, isActive: true,

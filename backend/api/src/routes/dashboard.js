@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
+const { DateTime } = require('luxon');
 const sequelize = require('../config/database');
 const { Consultation, User, LawyerProfile, Document, Review, Specialization, Notification, AIConversation, Payment } = require('../models');
 
@@ -78,9 +79,7 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
     // Build 7-day array [Mon..Sun] mapped to actual counts
     const weeklyActivity = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = DateTime.utc().minus({ days: i }).toISODate();
       const found = weeklyRaw.find((r) => r.date === dateStr);
       weeklyActivity.push(parseInt(found?.count) || 0);
     }

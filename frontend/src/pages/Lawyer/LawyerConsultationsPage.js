@@ -146,7 +146,7 @@ const LawyerConsultationsPage = () => {
     if (summary === null) return;
     if (!summary.trim()) { toast.error(t('lawyerConsult.summaryRequired')); return; }
     setActing(id);
-    try { await lawyerService.consultation.endConsultation(id, summary.trim()); toast.success(t('lawyerConsult.finished')); await load(); }
+    try { await lawyerService.consultation.endConsultation(id, summary.trim()); toast.success(t('lawyerConsult.awaitingConfirmation')); await load(); }
     catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
 
@@ -343,15 +343,18 @@ const LawyerConsultationsPage = () => {
                       </button>
                     )}
                     {['accepted', 'in_progress'].includes(c.status) && (
-                      <button onClick={() => navigate(`/consultations/${isVideo ? 'video' : 'chat'}/${c.id}`)} style={footBtn('var(--accent-dark)')}>
+                      <button onClick={() => launchConsultation(c, navigate).catch(() => toast.error(t('lawyerPanel.genericError')))} style={footBtn('var(--accent-dark)')}>
                         {isVideo ? <VideocamOutlined sx={{ fontSize: 16 }} /> : <ChatBubbleOutline sx={{ fontSize: 16 }} />}
                         {isVideo ? t('lawyerConsult.openVideo') : t('lawyerConsult.openChat')}
                       </button>
                     )}
-                    {c.status === 'in_progress' && (
+                    {c.status === 'in_progress' && !c.lawyerEndedAt && (
                       <button disabled={busy} onClick={() => finish(c.id)} style={footBtn('#7A9A6B')}>
                         <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerConsult.finish')}
                       </button>
+                    )}
+                    {c.status === 'in_progress' && c.lawyerEndedAt && (
+                      <span style={{ fontSize: 12.5, color: 'var(--text3)' }}>{t('lawyerConsult.awaitingConfirmation')}</span>
                     )}
                     {c.status === 'completed' && (
                       <button onClick={() => navigate(`/consultations/chat/${c.id}`)} style={footBtn('var(--text2)')}>

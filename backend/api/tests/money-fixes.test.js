@@ -2,6 +2,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 const { computeLoyalty } = require('../src/services/loyaltyService');
+const { DateTime } = require('luxon');
 
 const { Consultation, Payment, LawyerProfile } = models;
 
@@ -34,14 +35,16 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const client = await makeClient('mf-c2@test.uz');
     const { user: lawyer, lp } = await makeLawyer('mf-l2@test.uz', { pendingBalance: 200000 });
     const cons = await paidConsultation(client.id, lawyer.id, { status: 'in_progress' });
+    await cons.update({ callStartedAt: new Date() });
 
     const res = await request(app).post(`/api/video/consultation/${cons.id}/end`)
       .set('Authorization', `Bearer ${tokenFor(lawyer)}`).send({ durationSeconds: 725 });
     expect(res.status).toBe(200);
+    expect(res.body.awaitingClientConfirmation).toBe(true);
 
     const after = await LawyerProfile.findByPk(lp.id);
-    expect(Number(after.balance)).toBe(200000);
-    expect(Number(after.pendingBalance)).toBe(0);
+    expect(Number(after.balance)).toBe(0);
+    expect(Number(after.pendingBalance)).toBe(200000);
     // фактическая длительность звонка сохранена
     expect((await Consultation.findByPk(cons.id)).actualDuration).toBe(725);
   });
@@ -112,39 +115,44 @@ describe('деньги/эскроу — фиксы аудита', () => {
     expect(loyalty.freeNow).toBe(false); // бонус уже использован
   });
 
-  test('продление: +15 мин добавляет доплату, эскроу выплачивает сумму всех платежей', async () => {
+  test('продление: +30 мин сохраняет допустимую длительность и выплачивает сумму всех платежей', async () => {
     const client = await makeClient('mf-ext-c@test.uz');
     const { user: lawyer, lp } = await makeLawyer('mf-ext-l@test.uz', { price: 200000, pendingBalance: 200000 });
     // оплаченная идущая консультация (оригинал 200000 зарезервирован)
-    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 200000, duration: 60 });
+    const scheduledStartAt = new Date(Date.now() - 10 * 60000);
+    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 200000, duration: 60, callStartedAt: new Date(), scheduledStartAt, scheduledEndAt: new Date(scheduledStartAt.getTime() + 60 * 60000), scheduleTimezone: 'Asia/Tashkent' });
     await Payment.create({ userId: client.id, consultationId: cons.id, amount: 200000, currency: 'UZS', provider: 'payme', status: 'paid' });
 
     // продление на 15 мин → доплата 50000
     const ext = await request(app).post(`/api/video/consultation/${cons.id}/extend`)
-      .set('Authorization', `Bearer ${tokenFor(client)}`).send({ minutes: 15 });
+      .set('Authorization', `Bearer ${tokenFor(client)}`).send({ minutes: 30 });
     expect(ext.status).toBe(200);
-    expect(ext.body.addAmount).toBe(50000);
-    expect(ext.body.duration).toBe(75);
-    expect(ext.body.price).toBe(250000);
+    expect(ext.body.addAmount).toBe(100000);
+    expect(ext.body.duration).toBe(90);
+    expect(ext.body.price).toBe(300000);
 
     const afterExt = await LawyerProfile.findByPk(lp.id);
-    expect(Number(afterExt.pendingBalance)).toBe(250000); // 200000 + 50000
+    expect(Number(afterExt.pendingBalance)).toBe(300000);
 
     // завершение → выплачивается СУММА всех платежей (оригинал + продление)
     const end = await request(app).post(`/api/video/consultation/${cons.id}/end`)
       .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
     expect(end.status).toBe(200);
+    expect((await request(app).post(`/api/consultations/${cons.id}/complete`)
+      .set('Authorization', `Bearer ${tokenFor(client)}`)).status).toBe(200);
     const done = await LawyerProfile.findByPk(lp.id);
-    expect(Number(done.balance)).toBe(250000);
+    expect(Number(done.balance)).toBe(300000);
     expect(Number(done.pendingBalance)).toBe(0);
   });
 
   test('длительность масштабирует цену (90 мин = 1.5×)', async () => {
     const client = await makeClient('mf-c7@test.uz');
     const { user: lawyer } = await makeLawyer('mf-l7@test.uz', { price: 200000 });
+    let date = DateTime.now().setZone('Asia/Tashkent').plus({ weeks: 1 }).startOf('day');
+    while (date.weekday !== 1) date = date.plus({ days: 1 });
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'q', consultationType: 'video', duration: 90, acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ question: 'q', consultationType: 'video', duration: 90, preferredDate: date.toISODate(), preferredTime: '09:00', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.duration).toBe(90);
     expect(res.body.consultation.price).toBe(300000); // 200000 * 90/60

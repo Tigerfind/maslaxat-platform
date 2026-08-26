@@ -9,6 +9,7 @@ test('новые строки каталога, доверия и расписа
     ['lawyerPanel', 'availabilityProgress'], ['lawyerPanel', 'availabilityLoadError'],
     ['onboarding', 'scheduleProgress'], ['adminManage', 'scheduleStatus'], ['adminManage', 'scheduleSlots'],
     ['adminManage', 'docVerify'], ['adminManage', 'docVerified'],
+    ['dashboard', 'aiUnavailable'], ['ai', 'serviceUnavailable'],
   ];
   for (const language of ['ru', 'uz', 'en']) {
     for (const [section, key] of keys) {

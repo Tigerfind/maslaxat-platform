@@ -21,7 +21,6 @@ test('production build регистрирует активный service worker 
     const manifest = await context.request.get('/manifest.json');
     expect(manifest.status()).toBe(200);
     expect((await manifest.json()).name).toBeTruthy();
-    await page.reload();
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
     await page.evaluate(async () => {
       await Promise.allSettled([fetch('/api/private-cache-probe'), fetch('/uploads/private-cache-probe')]);

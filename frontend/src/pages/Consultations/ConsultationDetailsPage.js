@@ -2,13 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button, CircularProgress } from '@mui/material';
 import { CalendarMonthOutlined, FolderOpenOutlined, PaymentOutlined, VideocamOutlined } from '@mui/icons-material';
-import { toast } from 'react-toastify';
 import clientService from '../../services/clientService';
 import { launchConsultation } from '../../services/meetingLauncher';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import ErrorState from '../../components/UI/ErrorState';
 import { useTranslation } from '../../i18n';
+import { toast } from 'react-toastify';
 
 const card = { background: 'var(--card-glass)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', boxShadow: 'var(--card-shadow)', padding: 22 };
 
@@ -70,7 +70,7 @@ const ConsultationDetailsPage = () => {
           {(data.statusHistory || []).map((item, index) => <p key={`${item.status}-${index}`}>{new Date(item.at).toLocaleString(locale)} · {t(`consultations.status_${item.status}`)}</p>)}
         </section>
         <section style={{ ...card, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-          {data.access?.canJoin && <Button onClick={() => launchConsultation(c, navigate)}>{t('consultations.joinCall')}</Button>}
+          {(data.access?.canJoin || (c.meetingProvider === 'zoom' && ['accepted', 'in_progress'].includes(c.status))) && <Button onClick={() => launchConsultation(c, navigate).catch((error) => toast.error(error.response?.data?.error || t('consultations.joinUnavailable')))}>{c.meetingProvider === 'zoom' && !data.access?.canJoin ? 'Проверить оборудование' : t('consultations.joinCall')}</Button>}
           <Button startIcon={<FolderOpenOutlined />} onClick={() => setDocsOpen(true)}>{t('caseDocs.title')} ({data.documents?.count || 0})</Button>
         </section>
       </div>

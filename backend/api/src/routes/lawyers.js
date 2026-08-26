@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { Op, fn, col, literal, where: sqlWhere } = require('sequelize');
+const { DateTime } = require('luxon');
 const {
   sequelize, User, LawyerProfile, LawyerExperience, LawyerEducation, LawyerCertificate,
   ZoomConnection, Review, Consultation,
@@ -32,6 +33,13 @@ const CATALOG_PROFILE_ATTRIBUTES = [
 const PUBLIC_REVIEW_ATTRIBUTES = [
   'id', 'rating', 'text', 'replyText', 'repliedAt', 'helpfulCount', 'createdAt',
 ];
+const anonymizeReviewer = (review) => {
+  const plain = review?.toJSON ? review.toJSON() : review;
+  if (!plain?.client) return plain;
+  const parts = String(plain.client.name || '').trim().split(/\s+/).filter(Boolean);
+  const name = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : (parts[0] || 'Клиент');
+  return { ...plain, client: { name, avatar: null } };
+};
 
 /**
  * Разбирает фильтр опыта: '0-5' | '5-10' | '10-15' | '15+' | '10+'.
@@ -106,9 +114,38 @@ async function catalogFacets(baseUserWhere, onlineUserIds = []) {
     })),
   );
 
+  // «Доступен сейчас»: живое соединение ИЛИ рабочее время юриста. Одного
+  // socket-присутствия мало — юрист, не держащий вкладку открытой, всё равно
+  // принимает записи, и клиенту важно именно это.
+  const openNowProfiles = await LawyerProfile.findAll({
+    where: { ...approved, isAvailable: true },
+    attributes: ['userId', 'schedule', 'timezone'],
+  });
+  const onlineSet = new Set(onlineUserIds);
+  const availableNowIds = openNowProfiles
+    .filter((p) => onlineSet.has(p.userId) || isWithinWorkingHours(p))
+    .map((p) => p.userId);
+  const availableNow = availableNowIds.length
+    ? await User.count({ ...withProfile({}), where: { ...baseUserWhere, id: { [Op.in]: availableNowIds } } })
+    : 0;
+
+  // Английский язык — рабочий фильтр для юридического рынка (бизнес, ВЭД,
+  // иностранные клиенты). Показываем его как замену рейтингу, пока оценок
+  // нет ни у кого: мёртвый чип «Высокий рейтинг» выбрать никого не может.
+  const withEnglish = await User.count(withProfile({
+    languages: { [Op.overlap]: ['Английский', 'English', 'en'] },
+  }));
+
+  // Есть ли в каталоге хоть одна оценка. Пока нет — фильтр по рейтингу
+  // бессмысленен, и фронт покажет вместо него работающий чип.
+  const ratedCount = await User.count(withProfile({ rating: { [Op.gt]: 0 } }));
+
   return {
     total,
     online,
+    availableNow,
+    hasRatings: ratedCount > 0,
+    english: { count: withEnglish },
     highRating: { from: HIGH_RATING_FROM, count: highRating },
     experienced: { from: EXPERIENCED_FROM, count: experienced },
     budget: { maxPrice: budgetThreshold, count: budget },
@@ -118,10 +155,28 @@ async function catalogFacets(baseUserWhere, onlineUserIds = []) {
   };
 }
 
+// Юрист «доступен сейчас», если принимает записи и текущее время попадает в его
+// часы приёма. Раньше чип «Онлайн сейчас» опирался только на живое
+// socket-соединение — для юриста, который просто не держит вкладку открытой,
+// это всегда ноль, и фильтр был мёртвым по построению.
+const DAY_KEYS_SHORT = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+function isWithinWorkingHours(profile, now = DateTime.now()) {
+  const schedule = profile?.schedule;
+  if (!schedule || typeof schedule !== 'object') return false;
+  const zone = profile.timezone || 'Asia/Tashkent';
+  const local = now.setZone(zone);
+  const day = schedule[DAY_KEYS_SHORT[local.weekday - 1]];
+  if (!day?.enabled || !day.from || !day.to) return false;
+  const [fh, fm] = String(day.from).split(':').map(Number);
+  const [th, tm] = String(day.to).split(':').map(Number);
+  const minutes = local.hour * 60 + local.minute;
+  return minutes >= (fh * 60 + fm) && minutes < (th * 60 + tm);
+}
+
 // GET /api/lawyers — поиск юристов (публичный)
 router.get('/', async (req, res, next) => {
   try {
-    const { specialization, search, minRating, minExperience, sortBy, location, language, minPrice, maxPrice, onlineOnly, availableOnly, zoomAvailable, experience, budget, status, page = 1, limit = 20 } = req.query;
+    const { specialization, search, minRating, minExperience, sortBy, location, language, minPrice, maxPrice, onlineOnly, availableNow, availableOnly, zoomAvailable, experience, budget, status, page = 1, limit = 20 } = req.query;
     const pageNumber = Math.max(1, Number.parseInt(page, 10) || 1);
     const limitNumber = Math.min(100, Math.max(1, Number.parseInt(limit, 10) || 20));
     const offset = (pageNumber - 1) * limitNumber;
@@ -191,6 +246,23 @@ router.get('/', async (req, res, next) => {
       return res.status(503).json({ error: 'Статус онлайн временно недоступен' });
     }
     if (onlyOnline) userWhere.id = { [Op.in]: onlineUserIds.length ? onlineUserIds : [null] };
+
+    // «Доступен сейчас» — принимает записи И сейчас его рабочее время (или он
+    // реально в сети). Чисто socket-присутствие для этого не годится: юрист,
+    // не держащий вкладку открытой, всё равно принимает записи.
+    // Считаем в приложении: расписание — JSONB со своим часовым поясом.
+    const wantAvailableNow = availableNow === 'true' || availableNow === true;
+    if (wantAvailableNow) {
+      const candidates = await LawyerProfile.findAll({
+        where: { verificationStatus: 'approved', isAvailable: true },
+        attributes: ['userId', 'schedule', 'timezone'],
+      });
+      const onlineSet = new Set(onlineUserIds);
+      const ids = candidates
+        .filter((p) => onlineSet.has(p.userId) || isWithinWorkingHours(p))
+        .map((p) => p.userId);
+      userWhere.id = { [Op.in]: ids.length ? ids : [null] };
+    }
     const searchTerm = typeof search === 'string' ? search.trim().slice(0, 100) : '';
     if (searchTerm) {
       const escapedTerm = searchTerm.replace(/[\\%_]/g, '\\$&');
@@ -340,7 +412,7 @@ router.get('/:id', async (req, res, next) => {
           attributes: PUBLIC_REVIEW_ATTRIBUTES,
           where: { isHidden: false },
           required: false,
-          include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
+          include: [{ model: User, as: 'client', attributes: ['name'] }],
           order: [['createdAt', 'DESC']],
           limit: 20,
         },
@@ -354,6 +426,7 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const plainLawyer = lawyer.toJSON();
+    plainLawyer.receivedReviews = (plainLawyer.receivedReviews || []).map(anonymizeReviewer);
     const plainProfile = plainLawyer.profile && typeof plainLawyer.profile.toJSON === 'function'
       ? plainLawyer.profile.toJSON()
       : plainLawyer.profile;
@@ -382,11 +455,11 @@ router.get('/:id/reviews', async (req, res, next) => {
     const reviews = await Review.findAll({
       where: { lawyerId: req.params.id, isHidden: false },
       attributes: PUBLIC_REVIEW_ATTRIBUTES,
-      include: [{ model: User, as: 'client', attributes: ['id', 'name', 'avatar'] }],
+      include: [{ model: User, as: 'client', attributes: ['name'] }],
       order: [['createdAt', 'DESC']],
       limit: 50,
     });
-    res.json({ reviews });
+    res.json({ reviews: reviews.map(anonymizeReviewer) });
   } catch (err) {
     next(err);
   }
@@ -483,7 +556,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     const requestedFormat = req.body.consultationType || 'webrtc';
     if (!['chat', 'audio', 'webrtc', 'video', 'zoom'].includes(requestedFormat)) return res.status(400).json({ error: 'Некорректный формат консультации' });
     const normalizedFormat = requestedFormat === 'video' ? 'webrtc' : requestedFormat;
-    if (normalizedFormat === 'zoom' && !scheduledWindow) return res.status(400).json({ error: 'Для Zoom выберите свободное время' });
+    if (['zoom', 'webrtc'].includes(normalizedFormat) && !scheduledWindow) return res.status(400).json({ error: 'Для видеоконсультации выберите свободное время' });
     if (!lawyer.profile.consultationFormats?.includes(normalizedFormat)) return res.status(400).json({ error: 'Юрист не поддерживает выбранный формат' });
     const assertZoomConnected = async (transaction) => {
       if (normalizedFormat !== 'zoom') return;
@@ -539,6 +612,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       ...baseFields, price, isFree: false, freeSource: null, notes,
       promoCode: appliedPromo ? appliedPromo.code : null,
       status: normalizedFormat === 'zoom' ? 'payment_pending' : 'pending',
+      lifecycleStatus: normalizedFormat === 'zoom' ? 'pending_payment' : 'confirmed',
       billingStatus: normalizedFormat === 'zoom' ? 'none' : 'held',
     });
 
@@ -566,14 +640,14 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
             const loyalty = await computeLoyalty(req.userId, { transaction: t });
             if (loyalty.freeNow) {
               isFree = true; freeSource = 'loyalty';
-              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'loyalty', promoCode: null, status: 'pending', notes: 'Бесплатно по акции «первая консультация бесплатно»' };
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'loyalty', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', notes: 'Бесплатно по акции «первая консультация бесплатно»' };
             }
           } else if (req.body.useSubscriptionFree) {
             const { computeSubscriptionBenefit } = require('../services/subscriptionService');
             const benefit = await computeSubscriptionBenefit(req.userId, { transaction: t });
             if (benefit.remaining > 0) {
               isFree = true; freeSource = 'subscription';
-              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
             }
           }
           consultation = await Consultation.create(fields, { transaction: t });

@@ -1,19 +1,31 @@
 const crypto = require('crypto');
 const router = require('express').Router();
 const { authenticate, authorize } = require('../middleware/auth');
-const { Consultation, ConsultationMeeting, User, ZoomConnection } = require('../models');
+const { Consultation, ConsultationMeeting, MeetingEvent, User, ZoomConnection } = require('../models');
 const store = require('../services/oauthTransactionStore');
 const secretBox = require('../services/secretBox');
 const zoomApi = require('../services/zoomApiService');
 const zoomConnectionService = require('../services/zoomConnectionService');
 const { consultationAccess } = require('../services/consultationAccessService');
+const meetingSdk = require('../services/zoomMeetingSdkService');
+const lifecycle = require('../services/consultationLifecycleService');
+const { distributedRateLimit } = require('../middleware/distributedRateLimit');
 
 const hash = (value) => crypto.createHash('sha256').update(String(value)).digest('base64url');
+const meetingAccessLimiter = distributedRateLimit({
+  prefix: 'zoom-meeting-access', windowSeconds: 60 * 60,
+  max: process.env.NODE_ENV === 'production' ? 60 : 1000,
+  keyGenerator: (req) => `${req.userId}:${req.params.id}`,
+});
 
 router.get('/status', authenticate, authorize('lawyer'), async (req, res, next) => {
   try {
     const connection = await ZoomConnection.findOne({ where: { userId: req.userId }, attributes: ['status', 'zoomEmail', 'tokenExpiresAt', 'connectedAt', 'lastError'] });
-    return res.json({ enabled: zoomApi.enabled(), connected: connection?.status === 'connected', connection });
+    return res.json({
+      enabled: zoomApi.enabled(), sdkEnabled: meetingSdk.sdkEnabled(),
+      webhookConfigured: Boolean(process.env.ZOOM_WEBHOOK_SECRET),
+      connected: connection?.status === 'connected', connection,
+    });
   } catch (error) { return next(error); }
 });
 
@@ -54,9 +66,8 @@ router.get('/oauth/callback', async (req, res) => {
       redirect_uri: process.env.ZOOM_REDIRECT_URI, code_verifier: attempt.verifier,
     });
     const tempConnection = { userId: attempt.userId, tokenExpiresAt: new Date(Date.now() + 3600000), accessTokenEncrypted: secretBox.encrypt(tokens.access_token, `zoom:${attempt.userId}:access`) };
-    const meResponse = await fetch('https://api.zoom.us/v2/users/me', { headers: { Authorization: `Bearer ${tokens.access_token}` } });
-    const me = await meResponse.json();
-    if (!meResponse.ok || !me.id) throw new Error('Zoom user lookup failed');
+    const me = await zoomApi.userProfile(tokens.access_token);
+    if (!me.id) throw new Error('Zoom user lookup failed');
     await ZoomConnection.upsert({
       userId: attempt.userId, zoomUserId: String(me.id), zoomAccountId: me.account_id || null,
       zoomEmail: me.email || null,
@@ -69,6 +80,7 @@ router.get('/oauth/callback', async (req, res) => {
     res.clearCookie('zoom_oauth_bind', { path: '/api/zoom' });
     return res.redirect(`${frontend}/settings?zoom=connected`);
   } catch (error) {
+    res.clearCookie('zoom_oauth_bind', { path: '/api/zoom' });
     return res.redirect(`${frontend}/settings?zoom=failed`);
   }
 });
@@ -80,26 +92,55 @@ router.delete('/connection', authenticate, authorize('lawyer'), async (req, res,
   } catch (error) { return next(error); }
 });
 
-router.post('/consultations/:id/access', authenticate, async (req, res, next) => {
+router.post('/consultations/:id/access', authenticate, meetingAccessLimiter, async (req, res, next) => {
   try {
     let consultation = await Consultation.findByPk(req.params.id, { include: [{ model: ConsultationMeeting, as: 'meeting' }] });
     if (!consultation || ![consultation.clientId, consultation.lawyerId].includes(req.userId)) return res.status(403).json({ error: 'Нет доступа' });
     if (consultation.meetingProvider === 'zoom' && consultation.status === 'accepted'
       && (!consultation.meeting || !['ready', 'started'].includes(consultation.meeting.status))) {
-      await require('../services/zoomMeetingService').maybeProvision(consultation.id).catch(() => null);
-      consultation = await Consultation.findByPk(req.params.id, { include: [{ model: ConsultationMeeting, as: 'meeting' }] });
+      const service = require('../services/zoomMeetingService');
+      const queued = await service.ensureProvisionQueued(consultation.id);
+      if (queued) setImmediate(() => service.processMeetingOperation(queued.id).catch(() => {}));
+      return res.status(202).json({ error: 'Подготавливаем видеовстречу', code: 'MEETING_PREPARING' });
     }
     if (consultation.meetingProvider !== 'zoom' || !consultation.meeting || !['ready', 'started'].includes(consultation.meeting.status)) return res.status(409).json({ error: 'Zoom-встреча ещё не готова', code: 'MEETING_NOT_READY' });
     if (!['accepted', 'in_progress'].includes(consultation.status)) return res.status(409).json({ error: 'Консультация недоступна для подключения' });
     const access = consultationAccess(consultation);
     if (!access.canJoin) return res.status(403).json({ error: 'Подключение пока недоступно', code: access.reason, ...access });
-    res.set('Cache-Control', 'no-store');
-    if (req.userId === consultation.lawyerId) {
-      const connection = await ZoomConnection.findByPk(consultation.meeting.zoomConnectionId);
-      const current = await zoomApi.api(connection, `/meetings/${consultation.meeting.externalMeetingId}`);
-      return res.json({ role: 'lawyer', url: current.start_url });
-    }
-    return res.json({ role: 'client', url: secretBox.decrypt(consultation.meeting.joinUrlEncrypted, `meeting:${consultation.meeting.id}:join`) });
+    res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache', 'Referrer-Policy': 'no-referrer' });
+    return res.json(await meetingSdk.externalAccess(consultation.id, req.userId));
+  } catch (error) { return next(error); }
+});
+
+router.get('/consultations/:id/preflight', authenticate, async (req, res, next) => {
+  try {
+    res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache' });
+    return res.json(await meetingSdk.preflight(req.params.id, req.userId));
+  } catch (error) { return next(error); }
+});
+
+router.post('/consultations/:id/sdk-access', authenticate, meetingAccessLimiter, async (req, res, next) => {
+  try {
+    res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache', 'Referrer-Policy': 'no-referrer' });
+    const result = await meetingSdk.sdkAccess(req.params.id, req.userId);
+    await MeetingEvent.create({ consultationId: req.params.id, eventType: 'join_attempt', participantRole: result.role, occurredAt: new Date(), correlationId: lifecycle.correlationIdFor(req.params.id), metadata: { channel: 'sdk' } });
+    return res.json(result);
+  } catch (error) { return next(error); }
+});
+
+router.post('/consultations/:id/telemetry', authenticate, meetingAccessLimiter, async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id, { attributes: ['id', 'clientId', 'lawyerId'] });
+    if (!consultation || ![consultation.clientId, consultation.lawyerId].includes(req.userId)) return res.status(403).json({ error: 'Нет доступа' });
+    const allowed = ['join_succeeded', 'join_failed', 'reconnect_started', 'reconnect_succeeded', 'reconnect_failed', 'meeting_completed'];
+    if (!allowed.includes(req.body.event)) return res.status(400).json({ error: 'Некорректное событие' });
+    await MeetingEvent.create({
+      consultationId: consultation.id, eventType: req.body.event,
+      participantRole: req.userId === consultation.lawyerId ? 'lawyer' : 'client', occurredAt: new Date(),
+      correlationId: lifecycle.correlationIdFor(consultation.id),
+      metadata: { provider: 'zoom', quality: ['good', 'fair', 'poor'].includes(req.body.quality) ? req.body.quality : undefined },
+    });
+    return res.status(202).json({ accepted: true });
   } catch (error) { return next(error); }
 });
 

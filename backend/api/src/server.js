@@ -8,7 +8,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { sequelize } = require('./models');
-const { connectRedis } = require('./config/redis');
+const { connectRedis, getRedis } = require('./config/redis');
 const { errorHandler } = require('./middleware/errorHandler');
 const { initSignaling } = require('./socket/signaling');
 const logger = require('./config/logger');
@@ -52,7 +52,7 @@ app.use('/api/', rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
   message: { error: 'Слишком много запросов, попробуйте позже' },
-  skip: () => isDev,
+  skip: (req) => isDev || req.path === '/payments/webhook' || req.path === '/zoom/webhook',
 }));
 
 // Строгий лимит на аутентификацию — защита от подбора пароля (действует и в проде, и в dev)
@@ -67,6 +67,7 @@ app.use('/api/auth', rateLimit({
 app.post('/api/zoom/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res, next) => {
   require('./services/zoomWebhookService').handle(req, res).catch(next);
 });
+app.use('/api/payments/webhook', express.json({ limit: '128kb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -76,7 +77,7 @@ app.use((req, res, next) => {
   res.on('finish', () => {
     const ms = Date.now() - start;
     const level = res.statusCode >= 500 ? 'error' : res.statusCode >= 400 ? 'warn' : 'http';
-    logger.log(level, `${req.method} ${req.originalUrl} ${res.statusCode} ${ms}ms`, {
+    logger.log(level, `${req.method} ${req.baseUrl}${req.path} ${res.statusCode} ${ms}ms`, {
       userId: req.userId || null,
     });
   });
@@ -103,8 +104,30 @@ app.get('/api/health', (req, res) => {
   });
 });
 
+// Readiness проверяет обязательную БД и показывает деградацию необязательного
+// Redis без раскрытия URL, credentials или текста внутренних ошибок.
+app.get('/api/health/ready', async (req, res) => {
+  let database = false;
+  let redis = false;
+  try {
+    await sequelize.authenticate();
+    database = true;
+  } catch (error) {
+    logger.error('Readiness database check failed', { message: error.message });
+  }
+  try {
+    const client = getRedis();
+    redis = Boolean(client?.isReady && await client.ping() === 'PONG');
+  } catch (error) {
+    logger.warn('Readiness Redis check failed', { message: error.message });
+  }
+  const status = database ? (redis ? 'ready' : 'degraded') : 'unavailable';
+  res.status(database ? 200 : 503).json({ status, dependencies: { database, redis } });
+});
+
 // API Routes
 app.use('/api/auth', require('./routes/auth'));
+app.use('/api/system', require('./routes/system'));
 app.use('/api/users', require('./routes/users'));
 app.use('/api/client/users', require('./routes/users'));
 app.use('/api/lawyers', require('./routes/lawyers'));
@@ -248,6 +271,7 @@ async function start() {
       require('./services/billingService').startBillingJob();
       // Reconcile Zoom operations after transient provider/DB failures.
       require('./services/zoomMeetingService').startReconciliationJob();
+      require('./services/consultationTimingService').startTimingJob();
       require('./services/reservationExpiryService').startReservationExpiryJob();
     });
   } catch (error) {

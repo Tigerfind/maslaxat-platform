@@ -71,7 +71,7 @@ const LegalPage = ({ documentType }) => {
   const document = locale[documentType] || locale.terms;
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: C.bgCream, position: 'relative' }}>
+    <Box sx={{ minHeight: '100vh', bgcolor: C.bgCream, position: 'relative', overflowX: 'hidden' }}>
       <AmbientBackground />
       <Box sx={{ position: 'relative', zIndex: 2 }}>
         <Box component="header" sx={{ position: 'sticky', top: 0, zIndex: 5, backdropFilter: 'blur(18px)', bgcolor: 'rgba(245,241,235,.85)', borderBottom: `1px solid ${C.borderLight}` }}>

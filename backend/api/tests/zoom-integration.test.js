@@ -7,11 +7,13 @@ const zoomConnectionService = require('../src/services/zoomConnectionService');
 const { resetDb, models, makeClient, makeLawyer, tokenFor } = require('./helpers');
 
 const originalFetch = global.fetch;
+const settle = () => new Promise((resolve) => setTimeout(resolve, 30));
 beforeAll(() => {
   process.env.ZOOM_CLIENT_ID = 'zoom-client';
   process.env.ZOOM_CLIENT_SECRET = 'zoom-secret';
   process.env.ZOOM_REDIRECT_URI = 'http://localhost/api/zoom/oauth/callback';
   process.env.ZOOM_WEBHOOK_SECRET = 'zoom-webhook-secret';
+  process.env.MEETING_PARTICIPANT_SECRET = 'test-participant-secret-32-bytes';
   process.env.OAUTH_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString('base64');
 });
 beforeEach(async () => { await resetDb(); global.fetch = jest.fn(); });
@@ -64,7 +66,7 @@ test('start_url доступен только юристу, join_url тольк�
   const start = new Date(Date.now() + 5 * 60000);
   const consultation = await models.Consultation.create({
     clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted',
-    question: 'Zoom access', duration: 60, scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 3600000), scheduleTimezone: 'Asia/Tashkent',
+    question: 'Zoom access', duration: 60, isFree: true, scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 3600000), scheduleTimezone: 'Asia/Tashkent',
   });
   const meeting = await models.ConsultationMeeting.create({ consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom', externalMeetingId: 'meeting-1', status: 'ready' });
   await meeting.update({ joinUrlEncrypted: secretBox.encrypt('https://zoom.us/join/client', `meeting:${meeting.id}:join`) });
@@ -98,6 +100,7 @@ test('Zoom webhook проверяет подпись и обновляет meeti
   const startedPayload = { event: 'meeting.started', payload: { object: { id: 'webhook-meeting' } } };
   const response = await signedWebhook(startedPayload, 'zoom-request-1');
   expect(response.status).toBe(204);
+  await settle();
   await meeting.reload();
   expect(meeting.status).toBe('started');
   await consultation.reload();
@@ -113,11 +116,84 @@ test('Zoom webhook проверяет подпись и обновляет meeti
 
   const ended = await signedWebhook({ event: 'meeting.ended', payload: { object: { id: 'webhook-meeting' } } }, 'zoom-request-2');
   expect(ended.status).toBe(204);
+  await settle();
   await consultation.reload();
   expect(consultation.status).toBe('accepted');
 
   const bad = await request(app).post('/api/zoom/webhook').set('Content-Type', 'application/json').set('x-zm-request-id', 'zoom-request-bad').set('x-zm-request-timestamp', String(Math.floor(Date.now() / 1000))).set('x-zm-signature', 'bad').send(JSON.stringify(startedPayload));
   expect(bad.status).toBe(401);
+});
+
+test('participant webhooks фиксируют серверное присутствие и начало разговора', async () => {
+  const client = await makeClient('zoom-attendance-client@test.uz');
+  const { user: lawyer } = await makeLawyer('zoom-attendance-lawyer@test.uz');
+  const connection = await connectionFor(lawyer.id);
+  const start = new Date(Date.now() - 60000);
+  const consultation = await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted', lifecycleStatus: 'ready', question: 'Attendance', duration: 30, isFree: true, scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 1800000), scheduleTimezone: 'Asia/Tashkent' });
+  await models.ConsultationMeeting.create({ consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom', externalMeetingId: 'attendance-meeting', status: 'ready' });
+  const sdk = require('../src/services/zoomMeetingSdkService');
+  const joined = (userId) => ({ event: 'participant.joined', event_ts: Date.now(), payload: { object: { id: 'attendance-meeting', participant: { customer_key: sdk.customerKey(consultation.id, userId) } } } });
+  expect((await signedWebhook(joined(client.id), 'attendance-client')).status).toBe(204);
+  await settle(); await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('waiting_for_lawyer');
+  expect(consultation.clientFirstJoinedAt).toBeTruthy();
+  expect((await signedWebhook(joined(lawyer.id), 'attendance-lawyer')).status).toBe(204);
+  await settle(); await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('in_progress');
+  expect(consultation.status).toBe('in_progress');
+  expect(consultation.conversationStartedAt).toBeTruthy();
+});
+
+test('параллельные participant.joined не теряют начало разговора', async () => {
+  const client = await makeClient('zoom-concurrent-client@test.uz');
+  const { user: lawyer } = await makeLawyer('zoom-concurrent-lawyer@test.uz');
+  const connection = await connectionFor(lawyer.id);
+  const start = new Date(Date.now() - 60000);
+  const consultation = await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted', lifecycleStatus: 'ready', question: 'Concurrent attendance', duration: 30, isFree: true, scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 1800000), scheduleTimezone: 'Asia/Tashkent' });
+  await models.ConsultationMeeting.create({ consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom', externalMeetingId: 'concurrent-attendance', status: 'started' });
+  const sdk = require('../src/services/zoomMeetingSdkService');
+  const payload = (userId) => ({ event: 'participant.joined', event_ts: Date.now(), payload: { object: { id: 'concurrent-attendance', participant: { customer_key: sdk.customerKey(consultation.id, userId) } } } });
+  await Promise.all([signedWebhook(payload(client.id), 'join-client-concurrent'), signedWebhook(payload(lawyer.id), 'join-lawyer-concurrent')]);
+  await new Promise((resolve) => setTimeout(resolve, 80));
+  await consultation.reload();
+  expect(consultation).toMatchObject({ status: 'in_progress', lifecycleStatus: 'in_progress' });
+  expect(consultation.clientFirstJoinedAt).toBeTruthy();
+  expect(consultation.lawyerFirstJoinedAt).toBeTruthy();
+  expect(consultation.conversationStartedAt).toBeTruthy();
+});
+
+test('out-of-order attendance после meeting.ended корректирует сторону no-show', async () => {
+  const client = await makeClient('zoom-order-client@test.uz');
+  const { user: lawyer } = await makeLawyer('zoom-order-lawyer@test.uz');
+  const connection = await connectionFor(lawyer.id);
+  const consultation = await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted', lifecycleStatus: 'ready', question: 'Order', duration: 30, isFree: true, scheduledStartAt: new Date(Date.now() - 20 * 60000), scheduledEndAt: new Date(Date.now() + 10 * 60000), scheduleTimezone: 'Asia/Tashkent' });
+  await models.ConsultationMeeting.create({ consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom', externalMeetingId: 'order-meeting', status: 'ready' });
+  await signedWebhook({ event: 'meeting.ended', event_ts: Date.now(), payload: { object: { id: 'order-meeting' } } }, 'order-ended');
+  await settle(); await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('ready');
+  await require('../src/services/consultationTimingService').reconcileConsultationTiming(new Date());
+  await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('no_show_lawyer');
+  const sdk = require('../src/services/zoomMeetingSdkService');
+  await signedWebhook({ event: 'participant.joined', event_ts: Date.now() - 30000, payload: { object: { id: 'order-meeting', participant: { customer_key: sdk.customerKey(consultation.id, lawyer.id) } } } }, 'order-late-join');
+  await settle(); await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('no_show_client');
+  expect(consultation.conversationStartedAt).toBeNull();
+});
+
+test('webhook отклоняет replay с тем же request id и другим payload', async () => {
+  const first = { event: 'meeting.started', payload: { object: { id: 'one' } } };
+  const second = { event: 'meeting.ended', payload: { object: { id: 'two' } } };
+  expect((await signedWebhook(first, 'conflicting-replay')).status).toBe(204);
+  expect((await signedWebhook(second, 'conflicting-replay')).status).toBe(401);
+});
+
+test('webhook отклоняет просроченную подпись', async () => {
+  const payload = JSON.stringify({ event: 'meeting.started', payload: { object: { id: 'old' } } });
+  const timestamp = String(Math.floor(Date.now() / 1000) - 600);
+  const signature = `v0=${crypto.createHmac('sha256', process.env.ZOOM_WEBHOOK_SECRET).update(`v0:${timestamp}:${payload}`).digest('hex')}`;
+  const response = await request(app).post('/api/zoom/webhook').set('Content-Type', 'application/json').set('x-zm-request-id', 'old-event').set('x-zm-request-timestamp', timestamp).set('x-zm-signature', signature).send(payload);
+  expect(response.status).toBe(401);
 });
 
 test('ручное отключение блокируется при будущей встрече, deauthorization включает fallback', async () => {
@@ -162,10 +238,13 @@ test('failed webhook можно безопасно обработать повт
   });
   const update = jest.spyOn(models.ConsultationMeeting.prototype, 'update').mockRejectedValueOnce(new Error('temporary db error'));
   const payload = { event: 'meeting.started', payload: { object: { id: 'retry-meeting' } } };
-  expect((await signedWebhook(payload, 'zoom-request-retry')).status).toBe(500);
+  expect((await signedWebhook(payload, 'zoom-request-retry')).status).toBe(204);
+  await settle();
   expect((await models.ZoomWebhookEvent.findOne({ where: { requestId: 'zoom-request-retry' } })).status).toBe('failed');
   update.mockRestore();
   expect((await signedWebhook(payload, 'zoom-request-retry')).status).toBe(204);
+  await models.ZoomWebhookEvent.update({ status: 'failed', nextAttemptAt: new Date(0) }, { where: { requestId: 'zoom-request-retry' } });
+  await require('../src/services/zoomWebhookService').reconcileWebhookEvents();
   await meeting.reload();
   expect(meeting.status).toBe('started');
   expect((await models.ZoomWebhookEvent.findOne({ where: { requestId: 'zoom-request-retry' } })).status).toBe('processed');
@@ -188,9 +267,18 @@ test('reconciliation находит уже созданную Zoom-встреч�
   global.fetch
     .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ meetings: [] }) })
     .mockResolvedValueOnce({ ok: true, status: 201, json: async () => remote });
-  const update = jest.spyOn(models.ConsultationMeeting.prototype, 'update').mockRejectedValueOnce(new Error('temporary local write failure'));
+  const originalUpdate = models.ConsultationMeeting.update;
+  let failedReadyWrite = false;
+  const update = jest.spyOn(models.ConsultationMeeting, 'update').mockImplementation(function mockMeetingUpdate(values, options) {
+    if (!failedReadyWrite && values.status === 'ready') {
+      failedReadyWrite = true;
+      return Promise.reject(new Error('temporary local write failure'));
+    }
+    return originalUpdate.call(models.ConsultationMeeting, values, options);
+  });
   await expect(zoomMeetingService.maybeProvision(consultation.id)).rejects.toThrow('temporary local write failure');
   update.mockRestore();
+  await models.ConsultationMeeting.update({ nextAttemptAt: new Date(0) }, { where: { consultationId: consultation.id } });
 
   global.fetch.mockReset()
     .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ meetings: [remote] }) })
@@ -213,13 +301,64 @@ test('reconciliation повторяет неудавшееся удаление 
     consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom',
     externalMeetingId: 'cancel-retry', status: 'ready',
   });
-  global.fetch.mockResolvedValueOnce({ ok: false, status: 500, json: async () => ({}) });
-  await zoomMeetingService.cancelMeeting(consultation.id);
+  global.fetch.mockResolvedValue({ ok: false, status: 500, headers: { get: () => null }, json: async () => ({}) });
+  await expect(zoomMeetingService.cancelMeeting(consultation.id)).rejects.toThrow();
   await meeting.reload();
   expect(meeting.status).toBe('cancellation_pending');
 
-  global.fetch.mockResolvedValueOnce({ ok: true, status: 204, json: async () => ({}) });
+  await meeting.update({ nextAttemptAt: new Date(0) });
+  global.fetch.mockReset().mockResolvedValue({ ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) });
   expect(await zoomMeetingService.reconcilePendingMeetings()).toBe(1);
+  await meeting.reload();
+  expect(meeting.status).toBe('cancelled');
+});
+
+test('отмена побеждает параллельное создание и не оставляет orphan meeting', async () => {
+  const client = await makeClient('zoom-create-cancel-client@test.uz');
+  const { user: lawyer } = await makeLawyer('zoom-create-cancel-lawyer@test.uz');
+  await connectionFor(lawyer.id);
+  const consultation = await models.Consultation.create({
+    clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted',
+    question: 'Create cancel race', duration: 30, isFree: true,
+    scheduledStartAt: new Date(Date.now() + 3600000), scheduledEndAt: new Date(Date.now() + 5400000), scheduleTimezone: 'Asia/Tashkent',
+  });
+  let resolveCreate;
+  const createResponse = new Promise((resolve) => { resolveCreate = resolve; });
+  global.fetch
+    .mockResolvedValueOnce({ ok: true, status: 200, headers: { get: () => null }, json: async () => ({ meetings: [] }) })
+    .mockReturnValueOnce(createResponse)
+    .mockResolvedValue({ ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) });
+  const provisioning = zoomMeetingService.maybeProvision(consultation.id);
+  while (global.fetch.mock.calls.length < 2) await new Promise((resolve) => setTimeout(resolve, 5));
+  await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' });
+  await zoomMeetingService.queueOperation(consultation.id, 'cancel');
+  resolveCreate({ ok: true, status: 201, headers: { get: () => null }, json: async () => ({ id: 555, join_url: 'https://zoom.us/j/555', password: 'p' }) });
+  await provisioning;
+  const meeting = await models.ConsultationMeeting.findOne({ where: { consultationId: consultation.id } });
+  await zoomMeetingService.processMeetingOperation(meeting.id);
+  await meeting.reload();
+  expect(meeting.status).toBe('cancelled');
+  expect(global.fetch.mock.calls.some(([, options]) => options?.method === 'DELETE')).toBe(true);
+});
+
+test('устаревший update не стирает более новую cancel operation', async () => {
+  const client = await makeClient('zoom-update-cancel-client@test.uz');
+  const { user: lawyer } = await makeLawyer('zoom-update-cancel-lawyer@test.uz');
+  const connection = await connectionFor(lawyer.id);
+  const consultation = await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'zoom', status: 'accepted', question: 'Update cancel race', duration: 30, isFree: true, scheduledStartAt: new Date(Date.now() + 3600000), scheduledEndAt: new Date(Date.now() + 5400000), scheduleTimezone: 'Asia/Tashkent' });
+  const meeting = await models.ConsultationMeeting.create({ consultationId: consultation.id, zoomConnectionId: connection.id, provider: 'zoom', externalMeetingId: 'update-race', status: 'ready' });
+  let resolveUpdate;
+  global.fetch.mockReturnValueOnce(new Promise((resolve) => { resolveUpdate = resolve; })).mockResolvedValue({ ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) });
+  const updating = zoomMeetingService.updateMeeting(consultation.id);
+  while (global.fetch.mock.calls.length < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+  await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' });
+  await zoomMeetingService.queueOperation(consultation.id, 'cancel');
+  resolveUpdate({ ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) });
+  await updating;
+  await meeting.reload();
+  expect(meeting.pendingOperation).toBe('cancel');
+  expect(meeting.desiredState).toBe('cancelled');
+  await zoomMeetingService.processMeetingOperation(meeting.id);
   await meeting.reload();
   expect(meeting.status).toBe('cancelled');
 });

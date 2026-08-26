@@ -15,7 +15,7 @@ test('каталог обновляет online по подключению и о
     await login(lawyerPage, 'lawyer');
     await expect(page.getByText('Онлайн', { exact: true })).toBeVisible();
 
-    const onlineFilter = page.getByRole('button', { name: /Онлайн сейчас/ });
+    const onlineFilter = page.getByRole('switch', { name: 'Только онлайн' });
     await expect(onlineFilter).toBeEnabled();
     await onlineFilter.click();
     await expect(page.getByText('E2E Lawyer').first()).toBeVisible();

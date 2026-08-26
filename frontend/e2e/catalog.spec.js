@@ -133,7 +133,7 @@ test('API бронирования требует consent и сохраняет 
   const accepted = await request.post(`http://127.0.0.1:3101/api/client/lawyers/${lawyer.id}/book`, {
     headers,
     data: {
-      question: 'Проверка Playwright', consultationType: 'video',
+      question: 'Проверка Playwright', consultationType: 'chat',
       acceptedTerms: true, legalVersion: '2026-08-13',
     },
   });

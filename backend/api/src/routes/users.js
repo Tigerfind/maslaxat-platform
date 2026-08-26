@@ -9,6 +9,14 @@ const { authenticate } = require('../middleware/auth');
 const { sendVerificationEmail } = require('../services/emailService');
 const logger = require('../config/logger');
 const { disconnectUserSockets } = require('../socket/io');
+const { AVATAR_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles } = require('../services/uploadSecurity');
+const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+
+const emailChangeLimiter = distributedRateLimit({
+  prefix: 'email-change-user', windowSeconds: 60 * 60,
+  max: process.env.NODE_ENV === 'production' ? 5 : 1000,
+  keyGenerator: (req) => req.userId,
+});
 
 // Avatar upload config
 const uploadDir = process.env.UPLOAD_DIR || './uploads';
@@ -22,19 +30,11 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Поддерживаются только изображения (jpg, png, webp)'));
-    }
-  },
+  fileFilter: fileFilterFor(AVATAR_EXTENSIONS),
 });
 
 // PUT /api/users/profile — update user profile
-router.put('/profile', authenticate, upload.single('avatar'), async (req, res, next) => {
+router.put('/profile', authenticate, upload.single('avatar'), validateUploadSignatures(AVATAR_EXTENSIONS), async (req, res, next) => {
   try {
     const user = await User.findByPk(req.userId);
     if (!user) {
@@ -48,14 +48,21 @@ router.put('/profile', authenticate, upload.single('avatar'), async (req, res, n
     if (address !== undefined) user.address = address;
 
     // Avatar upload
+    const previousAvatar = user.avatar;
     if (req.file) {
       user.avatar = `/uploads/${req.file.filename}`;
     }
 
     await user.save();
 
+    if (req.file && previousAvatar?.startsWith('/uploads/avatar-')) {
+      const previousPath = path.join(uploadDir, path.basename(previousAvatar));
+      if (previousPath !== req.file.path) require('fs').promises.unlink(previousPath).catch(() => {});
+    }
+
     res.json({ user: user.toJSON() });
   } catch (err) {
+    cleanupUploadedFiles(req);
     next(err);
   }
 });
@@ -107,7 +114,7 @@ router.put('/password', authenticate, async (req, res, next) => {
 // PUT /api/users/email — привязать/сменить настоящий email (в т.ч. для телефон-аккаунтов
 // с плейсхолдером @phone.maslaxat.uz). Проверяем формат + уникальность; новый email
 // требует подтверждения (isVerified→false + письмо).
-router.put('/email', authenticate, async (req, res, next) => {
+router.put('/email', authenticate, emailChangeLimiter, async (req, res, next) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(email)) {

@@ -6,7 +6,7 @@ const zoomApi = require('./zoomApiService');
 const zoomMeetingService = require('./zoomMeetingService');
 const availabilityService = require('./availabilityService');
 
-const ACTIVE_BOOKING_STATUSES = ['payment_pending', 'pending', 'accepted'];
+const ACTIVE_BOOKING_STATUSES = ['payment_pending', 'pending', 'accepted', 'in_progress'];
 
 async function disconnect(userId, { revokeRemote = true, reason = 'user_disconnected', allowFallback = false } = {}) {
   let connection;
@@ -20,7 +20,7 @@ async function disconnect(userId, { revokeRemote = true, reason = 'user_disconne
         lawyerId: userId,
         meetingProvider: 'zoom',
         status: { [Op.in]: ACTIVE_BOOKING_STATUSES },
-        [Op.or]: [{ scheduledStartAt: null }, { scheduledStartAt: { [Op.gt]: new Date() } }],
+        [Op.or]: [{ status: 'in_progress' }, { scheduledStartAt: null }, { scheduledStartAt: { [Op.gt]: new Date() } }],
       },
       attributes: ['id', 'clientId', 'lawyerId'], transaction, lock: transaction.LOCK.UPDATE,
     });
@@ -53,8 +53,8 @@ async function disconnect(userId, { revokeRemote = true, reason = 'user_disconne
     if (allowFallback && consultations.length) {
       const ids = consultations.map((item) => item.id);
       await ConsultationMeeting.update(
-        { cancelledAt: new Date() },
-        { where: { consultationId: { [Op.in]: ids }, status: 'cancelled' }, transaction },
+        { status: 'cancelled', desiredState: 'cancelled', pendingOperation: null, cancelledAt: new Date(), lastSafeError: 'Zoom authorization revoked' },
+        { where: { consultationId: { [Op.in]: ids } }, transaction },
       );
     }
     await connection.update({

@@ -183,17 +183,26 @@ Compose-сеть использует `api:3001` и `frontend:3000`; nginx-ко�
 ## 6. Пост-деплой проверка
 
 - [ ] `GET /api/health` → 200
+- [ ] `GET /api/health/ready` → 200, `database: true`; `redis: false` означает degraded mode
+- [ ] `GET /api/system/capabilities` соответствует реально заданным ключам и не содержит секретов
+- [ ] Перед миграциями создан custom-format backup клиентом той же major-версии PostgreSQL
+- [ ] Backup восстановлен в отдельную disposable-БД; совпали число таблиц и ключевые row counts
+- [ ] `npm run db:migrate:status` не показывает неожиданные pending migration
 - [ ] Регистрация + вход работают (JWT выдаётся)
 - [ ] AI-чат отвечает (реальный Claude, если ключ задан)
 - [ ] Тест-оплата **недоступна** в проде (`/payments/simulate` → 403)
 - [ ] Письмо сброса пароля реально приходит на почту
 - [ ] Видеозвонок между двумя устройствами соединяется (нужен TURN)
+- [ ] Zoom General App: OAuth + Meeting SDK Embed включены, Marketplace review завершён для external lawyer accounts
+- [ ] Zoom staging: host role получает ZAK, client role не получает ZAK/start URL; Component View и mobile fallback проверены
+- [ ] Zoom webhooks `meeting.started/ended`, `participant.joined/left`, `app_deauthorized` доставляются и видны в admin diagnostics
 - [ ] Уведомления приходят мгновенно (socket), не только по опросу
 - [ ] На телефоне сайт предлагает «Установить приложение» (PWA-иконки на месте)
 - [ ] 2FA: юрист/админ включает в Настройках (QR + код), при след. входе спрашивает код
 - [ ] Web-push (если `VAPID_*`): тумблер в Настройках подписывает, уведомление приходит при закрытой вкладке
 - [ ] Соц-вход (если ключи заданы): кнопки Google/Telegram видны и логинят
 - [ ] Ошибки не показывают stack trace клиенту (скрыт при `NODE_ENV=production`)
+- [ ] `RUN_SEED=0`; `ALLOW_PRODUCTION_DEMO_DATA=0` на публичном production
 
 ---
 

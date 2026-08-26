@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient } = require('./helpers');
 
-const { User } = models;
+const { User, PhoneOtp } = models;
 
 beforeAll(async () => {
   await resetDb();
@@ -30,5 +30,28 @@ describe('auth-закалка из аудита', () => {
     await User.destroy({ where: { id: ghost.id } });
     const res = await request(app).post('/api/auth/resend-verification').set('Authorization', `Bearer ${token}`);
     expect([401, 404]).toContain(res.status); // 401 (нет юзера в authenticate) или 404 — но не 500
+  });
+
+  test('reset token потребляется атомарно при параллельных запросах', async () => {
+    const user = await makeClient('ah-reset@test.uz');
+    await user.update({ resetToken: 'one-use-token', resetTokenExpiry: new Date(Date.now() + 60000) });
+    const responses = await Promise.all([
+      request(app).post('/api/auth/reset-password').send({ token: 'one-use-token', password: 'new-password-a' }),
+      request(app).post('/api/auth/reset-password').send({ token: 'one-use-token', password: 'new-password-b' }),
+    ]);
+    expect(responses.map((response) => response.status).sort()).toEqual([200, 400]);
+    await user.reload();
+    expect(user.resetToken).toBeNull();
+  });
+
+  test('параллельный перебор OTP ограничен пятью атомарными попытками', async () => {
+    const phone = '+998901112233';
+    await makeClient('ah-otp@test.uz', { phone });
+    await PhoneOtp.create({ phone, code: '654321', expiresAt: new Date(Date.now() + 60000) });
+    const responses = await Promise.all(Array.from({ length: 12 }, () =>
+      request(app).post('/api/auth/phone/verify').send({ phone, code: '000000' })));
+    const wrong = responses.filter((response) => response.body.error === 'Неверный код');
+    expect(wrong.length).toBeLessThanOrEqual(4);
+    expect(await PhoneOtp.findOne({ where: { phone } })).toBeNull();
   });
 });

@@ -23,6 +23,7 @@ import BookingModal from '../../components/BookingModal';
 import { stripMarkdown } from './aiFormat';
 import MarkdownMessage from '../../components/MarkdownMessage';
 import { useTranslation } from '../../i18n';
+import api from '../../services/api';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -96,6 +97,11 @@ const AIChatPageGlass = () => {
   const [copiedMessageIndex, setCopiedMessageIndex] = useState(null);
   const [voiceOn, setVoiceOn] = useState(false);
   const [voiceText, setVoiceText] = useState('');
+  const [capabilities, setCapabilities] = useState(null);
+
+  useEffect(() => {
+    api.get('/system/capabilities').then(({ data }) => setCapabilities(data)).catch(() => setCapabilities(null));
+  }, []);
 
   const handleCopyMessage = (text, index) => {
     navigator.clipboard.writeText(text).then(() => {
@@ -545,6 +551,11 @@ const AIChatPageGlass = () => {
     <div style={chatStyle}>
       {/* Messages */}
       <div style={{ flex: 1, overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {capabilities?.ai === false && (
+          <div role="status" style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(196,163,90,0.14)', color: 'var(--text2)', fontSize: 13 }}>
+            {t('ai.serviceUnavailable')}
+          </div>
+        )}
         {isEmpty && (
           <div style={{ textAlign: 'center', marginBottom: 6, marginTop: 'auto' }}>
             <div style={{
@@ -775,6 +786,7 @@ const AIChatPageGlass = () => {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 14px' }}>
           <button
             onClick={() => fileInputRef.current?.click()}
+            disabled={capabilities?.ai === false}
             style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex', padding: 4 }}
           >
             <AttachFileOutlined sx={{ fontSize: 20 }} />
@@ -785,11 +797,12 @@ const AIChatPageGlass = () => {
             onKeyDown={handleKeyDown}
             placeholder={t('ai.placeholder')}
             rows={1}
-            disabled={isLoading}
+            disabled={isLoading || capabilities?.ai === false}
             style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', resize: 'none', fontFamily: 'inherit', fontSize: 14, color: 'var(--text)', padding: '8px 0', lineHeight: 1.4, maxHeight: 120 }}
           />
           <button
             onClick={toggleVoice}
+            disabled={capabilities?.ai === false}
             title={t('ai.voiceInput')}
             style={{
               background: voiceOn ? 'var(--accent)' : 'transparent', border: 'none', width: 38, height: 38, borderRadius: 'var(--radius)',
@@ -800,7 +813,7 @@ const AIChatPageGlass = () => {
           </button>
           <button
             onClick={handleSendMessage}
-            disabled={!armed || isLoading}
+            disabled={!armed || isLoading || capabilities?.ai === false}
             className={`send-btn${armed ? ' armed' : ''}`}
             style={{
               background: 'var(--accent)', border: 'none', width: 38, height: 38, borderRadius: 'var(--radius)',

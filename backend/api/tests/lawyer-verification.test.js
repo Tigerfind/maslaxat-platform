@@ -87,7 +87,7 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${approved.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
+      .send({ consultationType: 'chat', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
     expect([200, 201]).toContain(res.status);
   });
 });

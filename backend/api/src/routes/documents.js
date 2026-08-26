@@ -7,6 +7,7 @@ const rateLimit = require('express-rate-limit');
 const { Document } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { DOCUMENT_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
 
 // Лимит на AI-анализ документов (защита от неограниченных платных вызовов Claude).
 // Ключ — пользователь (не IP), поэтому ставится ПОСЛЕ authenticate.
@@ -53,22 +54,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png'];
-    const allowedMime = [
-      'application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 'image/jpeg', 'image/png',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    // Проверяем И расширение, И заявленный MIME — чтобы нельзя было протащить
-    // произвольный файл, переименовав его в .pdf.
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) {
-      cb(null, true);
-    } else {
-      cb(new Error('Неподдерживаемый формат файла'));
-    }
-  },
+  fileFilter: fileFilterFor(DOCUMENT_EXTENSIONS),
 });
 
 // GET /api/documents — list user documents
@@ -85,13 +71,17 @@ router.get('/', authenticate, async (req, res, next) => {
 });
 
 // POST /api/documents/upload — upload a document
-router.post('/upload', authenticate, upload.single('file'), async (req, res, next) => {
+router.post('/upload', authenticate, upload.single('file'), validateUploadSignatures(DOCUMENT_EXTENSIONS), async (req, res, next) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'Файл не загружен' });
     }
-
-    const metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {};
+    let metadata = {};
+    try { metadata = req.body.metadata ? JSON.parse(req.body.metadata) : {}; }
+    catch {
+      cleanupUploadedFiles(req);
+      return res.status(400).json({ error: 'Некорректные метаданные документа' });
+    }
 
     // Категория (папка) — необязательна; ограничиваем длину, пустую → null
     let category = null;
@@ -99,18 +89,22 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
       category = metadata.category.trim().slice(0, 50);
     }
 
-    const document = await Document.create({
-      userId: req.userId,
-      name: req.file.originalname,
-      type: path.extname(req.file.originalname).replace('.', '').toUpperCase(),
-      size: req.file.size,
-      path: req.file.path,
-      status: 'pending',
-      category,
+    const document = await createWithinUploadQuota({
+      Model: Document, where: { userId: req.userId }, maxFiles: 100, maxBytes: 250 * 1024 * 1024,
+      values: {
+        userId: req.userId, name: req.file.originalname,
+        type: path.extname(req.file.originalname).replace('.', '').toUpperCase(),
+        size: req.file.size, path: req.file.path, status: 'pending', category,
+      },
     });
+    if (!document) {
+      cleanupUploadedFiles(req);
+      return res.status(413).json({ error: 'Превышен лимит хранилища документов' });
+    }
 
     res.status(201).json(document);
   } catch (err) {
+    cleanupUploadedFiles(req);
     next(err);
   }
 });
@@ -162,6 +156,9 @@ router.get('/:id/download', authenticate, async (req, res, next) => {
 // POST /api/documents/:id/ai-check — AI analysis of document via Claude
 router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next) => {
   try {
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI-анализ временно недоступен', code: 'AI_UNAVAILABLE' });
+    }
     const document = await Document.findOne({
       where: { id: req.params.id, userId: req.userId },
     });

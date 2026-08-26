@@ -3,18 +3,29 @@ const router = express.Router();
 const { SupportTicket, User } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notifications = require('../services/notificationService');
+const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+
+const supportLimiter = distributedRateLimit({
+  prefix: 'support-user', windowSeconds: 60 * 60,
+  max: process.env.NODE_ENV === 'production' ? 5 : 1000,
+  keyGenerator: (req) => req.userId,
+});
 
 // POST /api/support — создать обращение в поддержку
-router.post('/', authenticate, async (req, res, next) => {
+router.post('/', authenticate, supportLimiter, async (req, res, next) => {
   try {
-    const { subject, message } = req.body;
-    if (!message || !message.trim()) {
+    const subject = typeof req.body.subject === 'string' ? req.body.subject.trim() : '';
+    const message = typeof req.body.message === 'string' ? req.body.message.trim() : '';
+    if (!message) {
       return res.status(400).json({ error: 'Введите сообщение' });
+    }
+    if (subject.length > 200 || message.length > 5000) {
+      return res.status(400).json({ error: 'Обращение превышает допустимую длину' });
     }
     const ticket = await SupportTicket.create({
       userId: req.userId,
       subject: subject || 'Обращение в поддержку',
-      message: message.trim(),
+      message,
       status: 'open',
     });
 

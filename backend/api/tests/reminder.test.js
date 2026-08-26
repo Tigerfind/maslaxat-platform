@@ -51,11 +51,15 @@ describe('reminderService.checkUpcomingReminders', () => {
     expect(after).toBe(before);
   });
 
-  test('не шлёт, если до консультации больше часа', async () => {
-    await consultationInMinutes(180); // через 3 часа
+  test('шлёт отдельное напоминание за 24 часа и не дублирует его', async () => {
+    const { c } = await consultationInMinutes(180); // попадает в окно 24h, но не 1h
     const before = await Notification.count({ where: { type: 'consultation_reminder' } });
     await checkUpcomingReminders();
+    await c.reload();
     const after = await Notification.count({ where: { type: 'consultation_reminder' } });
-    expect(after).toBe(before);
+    expect(after).toBe(before + 2);
+    expect(c.reminder24Sent).toBe(true);
+    await checkUpcomingReminders();
+    expect(await Notification.count({ where: { type: 'consultation_reminder' } })).toBe(after);
   });
 });

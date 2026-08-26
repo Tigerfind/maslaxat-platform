@@ -78,14 +78,17 @@ test('юрист сохраняет итог, клиент видит его в 
 
 test('завершение из кабинета юриста требует итог и сохраняет его вместе с completed', async () => {
   const { lawyer, consultation } = await scheduledFixture(-10);
-  await consultation.update({ status: 'in_progress', isFree: true, price: 0, billingStatus: 'none' });
+  await consultation.update({ status: 'in_progress', isFree: true, price: 0, billingStatus: 'none', callStartedAt: new Date() });
   const auth = `Bearer ${tokenFor(lawyer)}`;
   expect((await request(app).post(`/api/lawyer/consultations/${consultation.id}/end`)
     .set('Authorization', auth).send({ notes: '' })).status).toBe(400);
   const summary = 'Проверить доказательства и направить претензию в течение недели.';
-  expect((await request(app).post(`/api/lawyer/consultations/${consultation.id}/end`)
-    .set('Authorization', auth).send({ notes: summary })).status).toBe(200);
+  const ended = await request(app).post(`/api/lawyer/consultations/${consultation.id}/end`)
+    .set('Authorization', auth).send({ notes: summary });
+  expect(ended.status).toBe(200);
+  expect(ended.body.awaitingClientConfirmation).toBe(true);
   await consultation.reload();
-  expect(consultation.status).toBe('completed');
+  expect(consultation.status).toBe('in_progress');
+  expect(consultation.lawyerEndedAt).toBeTruthy();
   expect(consultation.lawyerSummary).toBe(summary);
 });

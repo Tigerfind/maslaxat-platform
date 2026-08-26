@@ -5,6 +5,7 @@ const fs = require('fs');
 const { Consultation, CaseDocument, User } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const { CASE_DOCUMENT_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
 
 // Рабочие документы по делу: файлы конкретной консультации, видны ОБОИМ участникам
 // (клиент + юрист). Роль не важна — важно, что ты участник этой консультации.
@@ -26,17 +27,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: parseInt(process.env.MAX_FILE_SIZE) || 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.doc', '.docx', '.txt', '.jpg', '.jpeg', '.png', '.webp'];
-    const allowedMime = [
-      'application/pdf', 'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      'text/plain', 'image/jpeg', 'image/png', 'image/webp',
-    ];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Неподдерживаемый формат файла'));
-  },
+  fileFilter: fileFilterFor(CASE_DOCUMENT_EXTENSIONS),
 });
 
 // Мидлвар: грузим консультацию и проверяем, что текущий пользователь — её участник.
@@ -74,17 +65,20 @@ router.get('/:consultationId/documents', authenticate, requireParticipant, async
 });
 
 // POST /:consultationId/documents — загрузить документ по делу
-router.post('/:consultationId/documents', authenticate, requireParticipant, upload.single('file'), async (req, res, next) => {
+router.post('/:consultationId/documents', authenticate, requireParticipant, upload.single('file'), validateUploadSignatures(CASE_DOCUMENT_EXTENSIONS), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
-    const doc = await CaseDocument.create({
-      consultationId: req.params.consultationId,
-      uploaderId: req.userId,
-      name: req.file.originalname,
-      path: req.file.path,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
+    const doc = await createWithinUploadQuota({
+      Model: CaseDocument, where: { consultationId: req.params.consultationId }, maxFiles: 50, maxBytes: 100 * 1024 * 1024,
+      values: {
+        consultationId: req.params.consultationId, uploaderId: req.userId,
+        name: req.file.originalname, path: req.file.path, mimeType: req.file.mimetype, size: req.file.size,
+      },
     });
+    if (!doc) {
+      cleanupUploadedFiles(req);
+      return res.status(413).json({ error: 'Превышен лимит документов консультации' });
+    }
     // Уведомляем другую сторону о новом документе (fail-safe)
     try {
       const me = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -101,6 +95,7 @@ router.post('/:consultationId/documents', authenticate, requireParticipant, uplo
       document: { id: doc.id, name: doc.name, mimeType: doc.mimeType, size: doc.size, uploaderId: doc.uploaderId, createdAt: doc.createdAt },
     });
   } catch (err) {
+    cleanupUploadedFiles(req);
     next(err);
   }
 });

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Chip, CircularProgress,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Pagination,
+  Table, TableBody, TableCell, TableHead, TableRow, Paper, Pagination, Button, Dialog, DialogTitle, DialogContent, DialogActions,
 } from '@mui/material';
 import { adminConsultationService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
@@ -40,6 +40,15 @@ const AdminConsultationsPage = () => {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [total, setTotal] = useState(0);
+  const [diagnostics, setDiagnostics] = useState(null);
+  const [diagnosticsLoading, setDiagnosticsLoading] = useState(false);
+
+  const openDiagnostics = async (id) => {
+    setDiagnosticsLoading(true);
+    try { setDiagnostics(await adminConsultationService.getMeetingDiagnostics(id)); }
+    catch (e) { setError(e); }
+    finally { setDiagnosticsLoading(false); }
+  };
 
   const load = async (pageNum = 1, st = status) => {
     setLoading(true);
@@ -104,11 +113,12 @@ const AdminConsultationsPage = () => {
                   <TableCell>{t('adminConsult.price')}</TableCell>
                   <TableCell>{t('adminConsult.status')}</TableCell>
                   <TableCell>{t('adminConsult.created')}</TableCell>
+                  <TableCell>Диагностика</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {items.length === 0 ? (
-                  <TableRow><TableCell colSpan={6} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminConsult.empty')}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={7} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminConsult.empty')}</TableCell></TableRow>
                 ) : items.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>
@@ -128,12 +138,35 @@ const AdminConsultationsPage = () => {
                         sx={{ color: STATUS_COLOR[c.status] || axelionColors.textMuted, bgcolor: axelionColors.bgCream, fontWeight: 600 }} />
                     </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13, color: axelionColors.textMuted }}>{fmtDate(c.createdAt)}</TableCell>
+                    <TableCell><Button size="small" onClick={() => openDiagnostics(c.id)}>Открыть</Button></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
             </Table>
           </Paper>
         )}
+        <Dialog open={Boolean(diagnostics) || diagnosticsLoading} onClose={() => setDiagnostics(null)} maxWidth="md" fullWidth>
+          <DialogTitle>Диагностика видеоконсультации</DialogTitle>
+          <DialogContent>
+            {diagnosticsLoading ? <CircularProgress /> : diagnostics && <Box sx={{ display: 'grid', gap: 1, fontSize: 14 }}>
+              <div>ID: {diagnostics.consultation.id}</div>
+              <div>Статус: {diagnostics.consultation.lifecycleStatus} / {diagnostics.consultation.status}</div>
+              <div>Провайдер: {diagnostics.consultation.meetingProvider}</div>
+              <div>Длительность: {diagnostics.consultation.duration} минут</div>
+              <div>Часовой пояс: {diagnostics.consultation.scheduleTimezone || '—'}</div>
+              <div>Zoom: {diagnostics.consultation.meeting?.status || 'не создан'}; операция: {diagnostics.consultation.meeting?.pendingOperation || '—'}</div>
+              <div>Попытки: {diagnostics.consultation.meeting?.attemptCount || 0}; ошибка: {diagnostics.consultation.meeting?.lastSafeError || '—'}</div>
+              <div>Юрист вошёл: {diagnostics.consultation.lawyerFirstJoinedAt ? fmtDate(diagnostics.consultation.lawyerFirstJoinedAt) : '—'}</div>
+              <div>Клиент вошёл: {diagnostics.consultation.clientFirstJoinedAt ? fmtDate(diagnostics.consultation.clientFirstJoinedAt) : '—'}</div>
+              <Typography variant="subtitle2" sx={{ mt: 1 }}>Технические события</Typography>
+              {(diagnostics.events || []).map((event) => <div key={event.id}>{fmtDate(event.occurredAt)} · {event.eventType} · {event.participantRole || 'system'}</div>)}
+            </Box>}
+          </DialogContent>
+          <DialogActions>
+            {diagnostics?.consultation?.meetingProvider === 'zoom' && <Button onClick={async () => { await adminConsultationService.retryMeeting(diagnostics.consultation.id); setDiagnostics(null); }}>Повторить создание</Button>}
+            <Button onClick={() => setDiagnostics(null)}>Закрыть</Button>
+          </DialogActions>
+        </Dialog>
 
         {!loading && !error && totalPages > 1 && (
           <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>

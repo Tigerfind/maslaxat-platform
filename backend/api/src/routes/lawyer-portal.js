@@ -11,10 +11,12 @@ const {
 } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
-const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
+const { refundConsultationEscrow } = require('../services/escrow');
 const zoomMeetingService = require('../services/zoomMeetingService');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 const { scheduleMeetsMinimum } = require('../services/schedulePolicy');
+const { consultationAccess } = require('../services/consultationAccessService');
+const { AVATAR_EXTENSIONS, VERIFICATION_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
 // Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
@@ -76,12 +78,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: { fileSize: 5 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowed = ['.jpg', '.jpeg', '.png', '.webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowed.includes(ext)) cb(null, true);
-    else cb(new Error('Поддерживаются только изображения (jpg, png, webp)'));
-  },
+  fileFilter: fileFilterFor(AVATAR_EXTENSIONS),
 });
 
 // Загрузка верификационных документов (диплом/лицензия/удостоверение) — PDF + картинки.
@@ -95,13 +92,7 @@ const docStorage = multer.diskStorage({
 const docUpload = multer({
   storage: docStorage,
   limits: { fileSize: 10 * 1024 * 1024 },
-  fileFilter: (req, file, cb) => {
-    const allowedExt = ['.pdf', '.jpg', '.jpeg', '.png', '.webp'];
-    const allowedMime = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
-    const ext = path.extname(file.originalname).toLowerCase();
-    if (allowedExt.includes(ext) && allowedMime.includes(file.mimetype)) cb(null, true);
-    else cb(new Error('Поддерживаются PDF и изображения (jpg, png, webp)'));
-  },
+  fileFilter: fileFilterFor(VERIFICATION_EXTENSIONS),
 });
 const VERIF_DOC_TYPES = ['diploma', 'license', 'certificate', 'id', 'other'];
 
@@ -154,9 +145,14 @@ router.get('/consultation-requests', async (req, res, next) => {
       specialization: c.specialization || null,
       description: c.description,
       consultationType: c.type,
+      meetingProvider: c.meetingProvider,
+      scheduledStartAt: c.scheduledStartAt,
+      scheduledEndAt: c.scheduledEndAt,
+      scheduleTimezone: c.scheduleTimezone,
       preferredDate: c.preferredDate,
       preferredTime: c.preferredTime,
       status: c.status,
+      lawyerEndedAt: c.lawyerEndedAt,
       createdAt: c.createdAt,
       price: c.price,
       // Сколько завершённых консультаций у этого клиента было с данным юристом (0 = новый).
@@ -181,7 +177,6 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
     if (consultation.lawyerId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
-
     const wasAlreadyAccepted = consultation.status === 'accepted';
     if (!wasAlreadyAccepted) {
       const [affected] = await Consultation.update(
@@ -232,7 +227,7 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
     // completed/in_progress, поэтому возврат всегда идёт из pendingBalance (не balance).
     const rejected = await Consultation.sequelize.transaction(async (tx) => {
       const [affected] = await Consultation.update(
-        { status: 'rejected', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { status: 'rejected', lifecycleStatus: 'cancelled', ...(req.body.reason ? { notes: req.body.reason } : {}) },
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
@@ -245,6 +240,7 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
       return res.status(400).json({ error: 'Заявку нельзя отклонить в текущем статусе' });
     }
     await consultation.reload();
+    if (consultation.meetingProvider === 'zoom') zoomMeetingService.cancelMeeting(consultation.id).catch(() => {});
 
     // Notify client
     const lawyerForReject = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -342,7 +338,7 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
     // Атомарно: источник-гейт (только до начала сессии) + rejected + возврат эскроу.
     const rejected = await Consultation.sequelize.transaction(async (tx) => {
       const [affected] = await Consultation.update(
-        { status: 'rejected', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { status: 'rejected', lifecycleStatus: 'cancelled', ...(req.body.reason ? { notes: req.body.reason } : {}) },
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
@@ -355,6 +351,7 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
       return res.status(400).json({ error: 'Консультацию нельзя отклонить в текущем статусе' });
     }
     await consultation.reload();
+    if (consultation.meetingProvider === 'zoom') zoomMeetingService.cancelMeeting(consultation.id).catch(() => {});
 
     // Notify client
     const lawyerReject2 = await User.findByPk(req.userId, { attributes: ['name'] });
@@ -375,6 +372,13 @@ router.post('/consultations/:id/start', async (req, res, next) => {
     }
     if (consultation.lawyerId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
+    }
+    if (consultation.type === 'video') {
+      return res.status(400).json({ error: 'Видеоконсультация начинается после соединения участников' });
+    }
+    const access = consultationAccess(consultation);
+    if (!access.canJoin) {
+      return res.status(403).json({ error: 'Начать консультацию сейчас нельзя', code: access.reason });
     }
 
     // Источник-гейт: начать можно ТОЛЬКО подтверждённую (accepted). Идемпотентно, если
@@ -416,18 +420,35 @@ router.post('/consultations/:id/end', async (req, res, next) => {
       return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
     }
 
+    if (consultation.type === 'video' && !consultation.callStartedAt) {
+      return res.status(400).json({ error: 'Нет подтверждения соединения участников' });
+    }
+    if (consultation.type !== 'video') {
+      const [clientMessages, lawyerMessages] = await Promise.all([
+        Message.count({ where: { consultationId: consultation.id, senderId: consultation.clientId } }),
+        Message.count({ where: { consultationId: consultation.id, senderId: consultation.lawyerId } }),
+      ]);
+      if (!clientMessages || !lawyerMessages) {
+        return res.status(400).json({ error: 'Завершить чат можно после обмена сообщениями с клиентом' });
+      }
+    }
+
     const lawyerSummary = typeof req.body.notes === 'string' ? req.body.notes.trim().slice(0, 5000) : '';
     if (!lawyerSummary) return res.status(400).json({ error: 'Добавьте итог консультации для клиента' });
-    await consultation.update({ lawyerSummary });
+    await consultation.update({ lawyerSummary, lawyerEndedAt: consultation.lawyerEndedAt || new Date() });
 
-    // Единый идемпотентный путь: завершение + высвобождение эскроу
-    const { consultation: updated } = await completeConsultation(consultation.id);
-
-    // Notify client that consultation completed
+    // Юрист не может сам высвободить себе эскроу. Клиент подтверждает результат
+    // через /consultations/:id/complete, спор разбирает администратор.
     const lawyerEnd = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyConsultationCompleted(updated.clientId, lawyerEnd?.name || 'Юрист', updated);
+    await notificationService.createNotification(
+      consultation.clientId,
+      'consultation_completion_requested',
+      'Юрист завершил консультацию',
+      `${lawyerEnd?.name || 'Юрист'} добавил итог. Подтвердите завершение консультации.`,
+      { consultationId: consultation.id },
+    );
 
-    res.json({ success: true, message: 'Консультация завершена', consultation: updated });
+    res.json({ success: true, message: 'Ожидается подтверждение клиента', awaitingClientConfirmation: true, consultation });
   } catch (err) {
     next(err);
   }
@@ -897,7 +918,7 @@ router.get('/profile/preview', async (req, res, next) => {
 });
 
 // PUT /profile — update lawyer profile (all fields + optional avatar)
-router.put('/profile', upload.single('avatar'), async (req, res, next) => {
+router.put('/profile', upload.single('avatar'), validateUploadSignatures(AVATAR_EXTENSIONS), async (req, res, next) => {
   try {
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
     if (!profile) return res.status(404).json({ error: 'Профиль не найден' });
@@ -984,8 +1005,13 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
 
     // Update avatar on User model if file uploaded
     if (req.file) {
+      const oldUser = await User.findByPk(req.userId, { attributes: ['avatar'] });
       const avatarUrl = `/uploads/${req.file.filename}`;
       await User.update({ avatar: avatarUrl }, { where: { id: req.userId } });
+      if (oldUser?.avatar?.startsWith('/uploads/avatar-')) {
+        const oldPath = path.join(uploadDir, path.basename(oldUser.avatar));
+        if (oldPath !== req.file.path) fs.promises.unlink(oldPath).catch(() => {});
+      }
     }
 
     // Return updated data
@@ -996,6 +1022,7 @@ router.put('/profile', upload.single('avatar'), async (req, res, next) => {
 
     res.json({ success: true, user: updatedUser, profile: updatedUser.profile });
   } catch (err) {
+    cleanupUploadedFiles(req);
     next(err);
   }
 });
@@ -1073,22 +1100,23 @@ router.get('/verification-documents', async (req, res, next) => {
 });
 
 // POST /verification-documents — загрузить документ (multipart: file + type)
-router.post('/verification-documents', docUpload.single('file'), async (req, res, next) => {
+router.post('/verification-documents', docUpload.single('file'), validateUploadSignatures(VERIFICATION_EXTENSIONS), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     const type = VERIF_DOC_TYPES.includes(req.body.type) ? req.body.type : 'other';
-    const doc = await LawyerDocument.create({
-      userId: req.userId,
-      type,
-      name: req.file.originalname,
-      path: req.file.path,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
+    const doc = await createWithinUploadQuota({
+      Model: LawyerDocument, where: { userId: req.userId }, maxFiles: 20, maxBytes: 100 * 1024 * 1024,
+      values: { userId: req.userId, type, name: req.file.originalname, path: req.file.path, mimeType: req.file.mimetype, size: req.file.size },
     });
+    if (!doc) {
+      cleanupUploadedFiles(req);
+      return res.status(413).json({ error: 'Превышен лимит верификационных документов' });
+    }
     res.status(201).json({
       document: { id: doc.id, type: doc.type, name: doc.name, mimeType: doc.mimeType, size: doc.size, createdAt: doc.createdAt },
     });
   } catch (err) {
+    cleanupUploadedFiles(req);
     next(err);
   }
 });

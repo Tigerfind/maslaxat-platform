@@ -113,6 +113,8 @@ const MAX_PRICE = LAWYER_MAX_PRICE;
 // сервер присылает их в facets, эти значения — фолбэк, если фасеты не пришли.
 const HIGH_RATING_FROM = 4.5;
 const EXPERIENCED_PRESET = '10+';
+// Значение языка должно совпадать с тем, что лежит в профилях юристов.
+const ENGLISH = 'Английский';
 
 // Опции сортировки с иконками
 const SORT_OPTS = [
@@ -212,6 +214,7 @@ const LawyersPageGlass = () => {
     // на «в каком порядке», эти два — на «кто мне вообще подходит».
     budget: '',
     status: '',
+    availableNow: false,
   });
   const [draftPriceRange, setDraftPriceRange] = useState([0, MAX_PRICE]);
   const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
@@ -369,6 +372,7 @@ const LawyersPageGlass = () => {
       language: '',
       budget: '',
       status: '',
+      availableNow: false,
     });
     setSearchQuery('');
     setDebouncedSearch('');
@@ -973,6 +977,9 @@ const LawyersPageGlass = () => {
     if (filters.onlineOnly) chips.push({
       key: 'online', label: t('lawyers.fltOnline'), clear: () => handleFilterChange('onlineOnly', false),
     });
+    if (filters.availableNow) chips.push({
+      key: 'availableNow', label: t('lawyers.presetOnline'), clear: () => handleFilterChange('availableNow', false),
+    });
     if (filters.zoomAvailable) chips.push({
       key: 'zoom', label: t('lawyers.zoomAvailable'), clear: () => handleFilterChange('zoomAvailable', false),
     });
@@ -1202,19 +1209,37 @@ const LawyersPageGlass = () => {
           {(() => {
             const presets = [
               {
+                // «Доступен сейчас» = принимает записи И идёт его рабочее время
+                // (или он реально в сети). Раньше чип смотрел только на живое
+                // socket-соединение и был вечным нулём: юрист, не держащий
+                // вкладку открытой, всё равно принимает записи.
                 k: 'presetOnline',
-                active: filters.onlineOnly,
-                count: facets?.online,
+                active: filters.availableNow,
+                count: facets?.availableNow,
                 hint: t('lawyers.presetOnlineHint'),
-                apply: () => handleFilterChange('onlineOnly', !filters.onlineOnly),
+                emptyHint: t('lawyers.presetNoneNow'),
+                apply: () => handleFilterChange('availableNow', !filters.availableNow),
               },
-              {
-                k: 'presetTop',
-                active: filters.minRating === HIGH_RATING_FROM,
-                count: facets?.highRating?.count,
-                hint: t('lawyers.presetTopHint').replace('{n}', facets?.highRating?.from ?? HIGH_RATING_FROM),
-                apply: () => handleFilterChange('minRating', filters.minRating === HIGH_RATING_FROM ? 0 : HIGH_RATING_FROM),
-              },
+              // Пока оценок нет ни у кого, фильтр по рейтингу не может выбрать
+              // никого — вместо мёртвого чипа показываем рабочий: язык
+              // консультации. Как только появятся первые оценки, чип
+              // «Высокий рейтинг» вернётся сам.
+              facets?.hasRatings === false
+                ? {
+                  k: 'presetEnglish',
+                  active: filters.language === ENGLISH,
+                  count: facets?.english?.count,
+                  hint: t('lawyers.presetEnglishHint'),
+                  apply: () => handleFilterChange('language', filters.language === ENGLISH ? '' : ENGLISH),
+                }
+                : {
+                  k: 'presetTop',
+                  active: filters.minRating === HIGH_RATING_FROM,
+                  count: facets?.highRating?.count,
+                  hint: t('lawyers.presetTopHint').replace('{n}', facets?.highRating?.from ?? HIGH_RATING_FROM),
+                  emptyHint: t('lawyers.presetNoRatings'),
+                  apply: () => handleFilterChange('minRating', filters.minRating === HIGH_RATING_FROM ? 0 : HIGH_RATING_FROM),
+                },
               {
                 k: 'presetCheap',
                 active: budgetMax != null && filters.priceRange[1] === budgetMax,
@@ -1245,7 +1270,7 @@ const LawyersPageGlass = () => {
                       key={p.k}
                       onClick={empty ? undefined : p.apply}
                       disabled={empty}
-                      title={empty ? t('lawyers.presetNone') : p.hint}
+                      title={empty ? (p.emptyHint || t('lawyers.presetNone')) : p.hint}
                       aria-pressed={p.active}
                       style={{
                         minHeight: 44, cursor: empty ? 'not-allowed' : 'pointer', padding: '8px 15px', borderRadius: 999,

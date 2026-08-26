@@ -4,7 +4,7 @@ const fs = require('fs');
 const {
   sequelize, User, LawyerProfile, LawyerExperience, LawyerEducation, LawyerCertificate,
   LawyerProfileStatusHistory, Consultation, Review, Specialization, SupportTicket,
-  Promo, LawyerDocument, Withdrawal, Payment, FinancialEvent,
+  Promo, LawyerDocument, Withdrawal, Payment, FinancialEvent, ConsultationMeeting, MeetingEvent, ZoomConnection,
 } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const { recomputeLawyerRating } = require('../services/ratingService');
@@ -534,6 +534,65 @@ router.get('/consultations', async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+router.get('/consultations/:id/meeting-diagnostics', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id, {
+      attributes: ['id', 'status', 'lifecycleStatus', 'duration', 'scheduledStartAt', 'scheduledEndAt', 'scheduleTimezone', 'meetingProvider', 'lawyerFirstJoinedAt', 'clientFirstJoinedAt', 'conversationStartedAt', 'finalLeftAt', 'graceEndsAt'],
+      include: [{
+        model: ConsultationMeeting, as: 'meeting',
+        attributes: ['id', 'provider', 'externalMeetingId', 'status', 'desiredState', 'pendingOperation', 'attemptCount', 'nextAttemptAt', 'lastAttemptAt', 'lastHttpStatus', 'providerRequestId', 'lastSafeError', 'startedAt', 'endedAt', 'scheduledAt', 'duration'],
+        include: [{ model: ZoomConnection, as: 'zoomConnection', attributes: ['status', 'connectedAt', 'tokenExpiresAt', 'lastError'] }],
+      }],
+    });
+    if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+    const events = await MeetingEvent.findAll({
+      where: { consultationId: consultation.id },
+      attributes: ['id', 'eventType', 'participantRole', 'occurredAt', 'correlationId', 'metadata'],
+      order: [['occurredAt', 'DESC']], limit: 100,
+    });
+    return res.json({ consultation, events });
+  } catch (error) { return next(error); }
+});
+
+router.post('/consultations/:id/meeting/retry', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation || consultation.meetingProvider !== 'zoom') return res.status(404).json({ error: 'Zoom-консультация не найдена' });
+    const service = require('../services/zoomMeetingService');
+    const existing = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['externalMeetingId', 'status'] });
+    const operation = ['cancelled', 'rejected'].includes(consultation.status)
+      ? 'cancel'
+      : consultation.lifecycleStatus === 'completed' ? 'end'
+        : existing?.externalMeetingId ? 'update' : 'create';
+    if (!existing && !['accepted'].includes(consultation.status)) return res.status(409).json({ error: 'Повторная операция недоступна в текущем статусе' });
+    const meeting = await service.queueOperation(consultation.id, operation);
+    setImmediate(() => service.processMeetingOperation(meeting.id).catch(() => {}));
+    return res.status(202).json({ status: 'meeting_creating' });
+  } catch (error) { return next(error); }
+});
+
+router.get('/meeting-metrics', async (req, res, next) => {
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [total, ready, failed, backlog, joined, reconnects, connectedConsultations] = await Promise.all([
+      ConsultationMeeting.count({ where: { provider: 'zoom', createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { provider: 'zoom', status: { [Op.in]: ['ready', 'started', 'ended'] }, createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { provider: 'zoom', status: 'failed', createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { pendingOperation: { [Op.ne]: null } } }),
+      MeetingEvent.count({ where: { eventType: 'join_succeeded', occurredAt: { [Op.gte]: since } } }),
+      MeetingEvent.count({ where: { eventType: 'reconnect_started', occurredAt: { [Op.gte]: since } } }),
+      Consultation.findAll({ where: { meetingProvider: 'zoom', conversationStartedAt: { [Op.ne]: null }, createdAt: { [Op.gte]: since } }, attributes: ['scheduledStartAt', 'conversationStartedAt'], raw: true }),
+    ]);
+    const delays = connectedConsultations.map((item) => Math.max(0, (new Date(item.conversationStartedAt) - new Date(item.scheduledStartAt)) / 1000));
+    return res.json({
+      periodDays: 30, meetingCreateSuccessRate: total ? Math.round((ready / total) * 1000) / 10 : null,
+      connectionSuccessRate: total ? Math.round((connectedConsultations.length / total) * 1000) / 10 : null,
+      averageConnectionDelaySeconds: delays.length ? Math.round(delays.reduce((sum, value) => sum + value, 0) / delays.length) : null,
+      total, ready, failed, backlog, successfulJoins: joined, reconnects,
+    });
+  } catch (error) { return next(error); }
 });
 
 // ─── SUPPORT TICKETS (управление) ───────────────────────────

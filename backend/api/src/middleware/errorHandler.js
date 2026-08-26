@@ -7,7 +7,7 @@ const errorHandler = (err, req, res, next) => {
   logger.error(err.message, {
     status,
     method: req.method,
-    url: req.originalUrl,
+    url: `${req.baseUrl}${req.path}`,
     userId: req.userId || null,
     stack: err.stack,
   });

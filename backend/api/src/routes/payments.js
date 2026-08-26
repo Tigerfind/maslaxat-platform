@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const logger = require('../config/logger');
+const crypto = require('crypto');
 const { Op } = require('sequelize');
 const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal, FinancialEvent } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
@@ -8,7 +9,7 @@ const { isPaymentReservationExpired } = require('../services/availabilityService
 
 const expireReservation = async (consultation, transaction) => {
   if (!isPaymentReservationExpired(consultation)) return false;
-  await consultation.update({ status: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
+  await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
   return true;
 };
 
@@ -36,11 +37,15 @@ const verifyPayme = (req, res, next) => {
     return res.status(503).json({ jsonrpc: '2.0', id: req.body?.id || null, error: ERRORS.CANT_PERFORM });
   }
   const auth = req.headers.authorization || '';
-  const b64 = auth.replace('Basic ', '');
+  const b64 = auth.startsWith('Basic ') ? auth.slice(6) : '';
   const decoded = Buffer.from(b64, 'base64').toString('utf-8');
-  const [, key] = decoded.split(':');
+  const separator = decoded.indexOf(':');
+  const key = separator >= 0 ? decoded.slice(separator + 1) : '';
+  const actual = Buffer.from(key);
+  const expected = Buffer.from(process.env.PAYME_KEY);
+  const valid = actual.length === expected.length && crypto.timingSafeEqual(actual, expected);
 
-  if (key !== process.env.PAYME_KEY) {
+  if (!valid) {
     return res.status(401).json({
       jsonrpc: '2.0',
       id: req.body?.id || null,
@@ -144,14 +149,14 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
         }, { transaction });
       }
       if (payment.status === 'paid') {
-        await consultation.update({ status: 'pending' }, { transaction });
+        await consultation.update({ status: 'pending', lifecycleStatus: 'confirmed' }, { transaction });
         return { consultation, payment, performed: false };
       }
       const lawyerProfile = await LawyerProfile.findOne({
         where: { userId: consultation.lawyerId }, transaction, lock: transaction.LOCK.UPDATE,
       });
       await payment.update({ status: 'paid', providerResponse: { test: true, paidAt: Date.now() } }, { transaction });
-      await consultation.update({ status: 'pending' }, { transaction });
+      await consultation.update({ status: 'pending', lifecycleStatus: 'confirmed' }, { transaction });
       if (lawyerProfile) await lawyerProfile.increment('pendingBalance', { by: payment.amount, transaction });
       return { consultation, payment, performed: true };
     });
@@ -292,7 +297,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             status: 'paid',
             providerResponse: { ...payment.providerResponse, performTime },
           }, { transaction });
-          await consultation.update({ status: 'pending' }, { transaction });
+          await consultation.update({ status: 'pending', lifecycleStatus: 'confirmed' }, { transaction });
           await lawyerProfile.increment('pendingBalance', { by: Number(payment.amount), transaction });
 
           return {
@@ -338,7 +343,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           });
           if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
           if (payment.status === 'refunded') {
-            return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 } };
+            return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 }, cancelledConsultationId: consultation.id };
           }
           if (payment.status === 'paid') {
             if (payment.escrowReleased || ['in_progress', 'completed'].includes(consultation.status)) return { error: ERRORS.CANT_CANCEL };
@@ -354,7 +359,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
                   idempotencyKey: `refund_requested:${payment.id}`, metadata: { rpcId: id },
                 }, transaction,
               });
-              await consultation.update({ status: 'cancelled' }, { transaction });
+              await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' }, { transaction });
             }
             const cancelTime = Date.now();
             await payment.update({
@@ -371,7 +376,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
               },
               transaction,
             });
-            return { result: { cancel_time: cancelTime, transaction: payment.id, state: -2 } };
+            return { result: { cancel_time: cancelTime, transaction: payment.id, state: -2 }, cancelledConsultationId: consultation.id };
           }
           if (payment.status === 'failed') {
             return {
@@ -389,10 +394,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             status: 'failed',
             providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
           }, { transaction });
-          await consultation.update({ status: 'cancelled' }, { transaction });
-          return { result: { cancel_time: cancelTime, transaction: payment.id, state: -1 } };
+          await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' }, { transaction });
+          return { result: { cancel_time: cancelTime, transaction: payment.id, state: -1 }, cancelledConsultationId: consultation.id };
         });
 
+        if (outcome.cancelledConsultationId) require('../services/zoomMeetingService').cancelMeeting(outcome.cancelledConsultationId).catch(() => {});
         return outcome.error ? replyError(outcome.error) : reply(outcome.result);
       }
 
@@ -414,10 +420,20 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
       // ── GetStatement ───────────────────────────────────────
       case 'GetStatement': {
+        const from = Number(params.from);
+        const to = Number(params.to);
+        if (!Number.isFinite(from) || !Number.isFinite(to) || from > to || to - from > 31 * 24 * 60 * 60 * 1000) {
+          return replyError(ERRORS.CANT_PERFORM);
+        }
+        // createTime лежит в providerResponse JSONB. Сначала жёстко ограничиваем
+        // выборку индексируемым createdAt (с запасом на часы провайдера), затем
+        // применяем точный Payme-диапазон в памяти к уже малому набору.
+        const day = 24 * 60 * 60 * 1000;
         const payments = await Payment.findAll({
           where: {
             provider: 'payme',
             transactionId: { [Op.ne]: null },
+            createdAt: { [Op.between]: [new Date(from - day), new Date(to + day)] },
           },
           order: [['createdAt', 'ASC']],
         });
@@ -425,9 +441,8 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         const stateMap = { pending: 1, paid: 2, failed: -1, refunded: -2 };
         const inRange = payments.filter((payment) => {
           const createTime = Number(payment.providerResponse?.createTime || payment.createdAt.getTime());
-          return createTime >= Number(params.from) && createTime <= Number(params.to);
+          return createTime >= from && createTime <= to;
         });
-
         return reply({
           transactions: inRange.map((p) => ({
             id: p.transactionId,

@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import { toast } from 'react-toastify';
 import {
@@ -65,7 +64,6 @@ const SUP_FAQ = [
 const SUP_CATS = [{ k: 'catGeneral' }, { k: 'catPayment' }, { k: 'catTech' }, { k: 'catComplaint' }];
 
 const HelpPage = () => {
-  const navigate = useNavigate();
   const { role } = useSelector((s) => s.auth);
   const { t, language } = useTranslation();
   const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
@@ -79,6 +77,7 @@ const HelpPage = () => {
   // ответ поддержки доходил до клиента только первыми 140 символами в уведомлении.
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState(null);
+  const [capabilities, setCapabilities] = useState(null);
 
   const supChannels = [
     {
@@ -88,26 +87,26 @@ const HelpPage = () => {
       action: t('help.chatAction'),
       tint: 'rgba(184,149,110,0.16)',
       color: 'var(--accent)',
-      go: () => navigate('/ai-chat'),
+      go: () => document.getElementById('support-ticket-form')?.scrollIntoView({ behavior: 'smooth' }),
     },
-    {
+    ...(capabilities?.support?.phone ? [{
       icon: <PhoneOutlined sx={{ fontSize: 22 }} />,
       title: t('help.phoneTitle'),
-      desc: '+998 71 200-70-70 · 9:00–21:00',
+      desc: capabilities.support.phone,
       action: t('help.phoneAction'),
       tint: 'rgba(90,120,150,0.14)',
       color: '#5A7896',
-      go: () => { window.location.href = 'tel:+998712007070'; },
-    },
-    {
+      go: () => { window.location.href = `tel:${capabilities.support.phone}`; },
+    }] : []),
+    ...(capabilities?.support?.email ? [{
       icon: <EmailOutlined sx={{ fontSize: 22 }} />,
       title: t('help.emailTitle'),
-      desc: 'support@emaslaxat.uz',
+      desc: capabilities.support.email,
       action: t('help.emailAction'),
       tint: '#F5EFE0',
       color: '#C4A35A',
-      go: () => { window.location.href = 'mailto:support@emaslaxat.uz'; },
-    },
+      go: () => { window.location.href = `mailto:${capabilities.support.email}`; },
+    }] : []),
   ];
 
   const disabled = !supSubject.trim() && !supMsg.trim();
@@ -121,7 +120,10 @@ const HelpPage = () => {
       setTicketsError(e);
     }
   };
-  useEffect(() => { loadTickets(); }, []);
+  useEffect(() => {
+    loadTickets();
+    api.get('/system/capabilities').then(({ data }) => setCapabilities(data)).catch(() => setCapabilities(null));
+  }, []);
 
   const handleSubmit = async () => {
     if (!supMsg.trim()) {
@@ -148,7 +150,7 @@ const HelpPage = () => {
       <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* SUPPORT CHANNELS */}
-        <div className="sup-channels" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div className="sup-channels" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, supChannels.length)}, minmax(0, 1fr))`, gap: 16 }}>
           {supChannels.map((c, i) => (
             <div key={i} style={{ ...glassCard, padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ width: 48, height: 48, borderRadius: 'var(--radius)', background: c.tint, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{c.icon}</div>
@@ -196,7 +198,7 @@ const HelpPage = () => {
           </div>
 
           {/* TICKET FORM */}
-          <div style={{ ...glassCard, padding: 24 }}>
+          <div id="support-ticket-form" style={{ ...glassCard, padding: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('help.notFound')}</div>
             <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{t('help.notFoundSub')}</div>
 

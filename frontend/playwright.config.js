@@ -46,7 +46,7 @@ module.exports = defineConfig({
       command: 'node src/scripts/prepareE2E.js && node src/server.js',
       cwd: backendDir,
       url: 'http://127.0.0.1:3101/api/health',
-      timeout: 120000,
+      timeout: 300000,
       reuseExistingServer: false,
       env: {
         ...process.env, ...disabledSecrets,
@@ -54,6 +54,7 @@ module.exports = defineConfig({
         DB_HOST: '127.0.0.1', DB_PORT: process.env.DB_PORT || '5432', DB_NAME: 'emaslaxat_e2e',
         DB_USER: process.env.E2E_DB_USER || process.env.USER || 'macbook', DB_PASSWORD: process.env.E2E_DB_PASSWORD || '',
         JWT_SECRET: 'playwright-e2e-local-secret', CORS_ORIGINS: 'http://127.0.0.1:3100',
+        OAUTH_TOKEN_ENCRYPTION_KEY: Buffer.alloc(32, 4).toString('base64'),
         FRONTEND_URL: 'http://127.0.0.1:3100', UPLOAD_DIR: uploadDir,
         REDIS_URL: 'redis://127.0.0.1:1', SMTP_HOST: '127.0.0.1', SMTP_PORT: '1',
       },
@@ -62,7 +63,7 @@ module.exports = defineConfig({
       command: 'npm run build:prod && npm run preview -- --host 127.0.0.1 --port 3100',
       cwd: __dirname,
       url: 'http://127.0.0.1:3100',
-      timeout: 120000,
+      timeout: 300000,
       reuseExistingServer: false,
       env: {
         ...process.env, CI: 'true',

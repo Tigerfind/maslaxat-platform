@@ -35,6 +35,7 @@ import { useSelector } from 'react-redux';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
 import clientService from '../../services/clientService';
+import api from '../../services/api';
 import { launchConsultation } from '../../services/meetingLauncher';
 import { clientLawyerService } from '../../services/clientService';
 import RatingDialog from '../../components/UI/RatingDialog';
@@ -107,6 +108,7 @@ const ConsultationsPageGlass = () => {
   const [period, setPeriod] = useState('all');
   const [paymentLoading, setPaymentLoading] = useState(null);
   const [now, setNow] = useState(Date.now());
+  const [serverOffset, setServerOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
@@ -122,6 +124,8 @@ const ConsultationsPageGlass = () => {
   const [rsDate, setRsDate] = useState('');
   const [rsTime, setRsTime] = useState('');
   const [rsLoading, setRsLoading] = useState(false);
+  const [rsSlots, setRsSlots] = useState([]);
+  const [rsTimezone, setRsTimezone] = useState('');
 
   useEffect(() => {
     const timer = setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 350);
@@ -148,6 +152,7 @@ const ConsultationsPageGlass = () => {
         ...(period !== 'all' ? { period } : {}),
       });
       setConsultations(data.consultations || []);
+      if (data.serverNow) setServerOffset(new Date(data.serverNow).getTime() - Date.now());
       setCounts(data.counts || {});
       setTotalPages(data.totalPages || 1);
     } catch (err) {
@@ -229,10 +234,14 @@ const ConsultationsPageGlass = () => {
     setRatingDialogOpen(true);
   };
 
-  const openReschedule = (c) => {
+  const openReschedule = async (c) => {
     setRescheduleC(c);
-    setRsDate(c.preferredDate || '');
-    setRsTime((c.preferredTime || '').slice(0, 5));
+    setRsDate(''); setRsTime(''); setRsSlots([]);
+    try {
+      const lawyerId = c.lawyerId || c.lawyer?.id;
+      const { data } = await api.get(`/lawyers/${lawyerId}/available-slots`, { params: { duration: c.duration, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
+      setRsSlots(data.dates || []); setRsTimezone(data.timezone || c.scheduleTimezone || '');
+    } catch (error) { toast.error(error.response?.data?.error || t('consultations.rescheduleErr')); }
   };
 
   const submitReschedule = async () => {
@@ -321,7 +330,7 @@ const ConsultationsPageGlass = () => {
 
   const countdownText = (consultation) => {
     if (consultation.status === 'payment_pending' && consultation.paymentExpiresAt) {
-      const remaining = new Date(consultation.paymentExpiresAt).getTime() - now;
+      const remaining = new Date(consultation.paymentExpiresAt).getTime() - (now + serverOffset);
       return remaining <= 0
         ? t('consultations.paymentExpired')
         : t('consultations.paymentExpiresIn', { minutes: Math.max(1, Math.ceil(remaining / 60000)) });
@@ -329,8 +338,8 @@ const ConsultationsPageGlass = () => {
     const start = new Date(consultation.scheduledStartAt).getTime();
     const end = new Date(consultation.scheduledEndAt).getTime();
     if (!Number.isFinite(start)) return '';
-    if (Number.isFinite(end) && now >= start && now <= end) return t('consultations.countdownNow');
-    const diff = start - now;
+    if (Number.isFinite(end) && now + serverOffset >= start && now + serverOffset <= end) return t('consultations.countdownNow');
+    const diff = start - (now + serverOffset);
     if (diff <= 0) return '';
     const hours = Math.ceil(diff / 3600000);
     if (hours <= 24) return t('consultations.countdownHours', { hours });
@@ -347,14 +356,18 @@ const ConsultationsPageGlass = () => {
     const rating = c.lawyer?.profile?.rating || c.lawyer?.rating || 0;
     const question = c.question || c.topic || '';
     const isVideo = c.type === 'video';
-    const dateValue = c.scheduledStartAt || c.preferredDate || c.date || c.createdAt;
-    const dateStr = new Date(dateValue).toLocaleDateString(locale);
-    const timeStr = c.preferredTime || c.time || '';
-    const when = timeStr ? `${dateStr} · ${timeStr}` : dateStr;
+    const dateValue = c.scheduledStartAt || c.createdAt;
+    const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
+    const when = `${new Date(dateValue).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone: viewerTimezone })} (${viewerTimezone})`;
     const price = (c.price || 0).toLocaleString(locale);
 
     const rated = isRated(c);
-    const canJoin = ['accepted', 'in_progress'].includes(c.status) && c.access?.canJoin === true;
+    const accessNow = now + serverOffset;
+    const withinWindow = c.access?.opensAt && c.access?.closesAt
+      ? accessNow >= new Date(c.access.opensAt).getTime() && accessNow <= new Date(c.access.closesAt).getTime()
+      : c.access?.canJoin === true;
+    const canJoin = ['accepted', 'in_progress'].includes(c.status)
+      && (c.meetingProvider === 'zoom' || withinWindow);
     const joinDisabledReason = c.access?.reason === 'TOO_EARLY' && c.access?.retryAt
       ? t('consultations.joinOpensAt', { time: new Date(c.access.retryAt).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' }) })
       : t('consultations.joinUnavailable');
@@ -729,15 +742,18 @@ const ConsultationsPageGlass = () => {
           <div style={{ display: 'flex', gap: 12 }}>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newDate')}</div>
-              <input type="date" value={rsDate} onChange={(e) => setRsDate(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }} />
+              <select value={rsDate} onChange={(e) => { setRsDate(e.target.value); setRsTime(''); }} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }}>
+                <option value="">—</option>{rsSlots.map((item) => <option key={item.date} value={item.date}>{item.date}</option>)}
+              </select>
             </div>
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newTime')}</div>
-              <input type="time" value={rsTime} onChange={(e) => setRsTime(e.target.value)}
-                style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }} />
+              <select value={rsTime} onChange={(e) => setRsTime(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }}>
+                <option value="">—</option>{(rsSlots.find((item) => item.date === rsDate)?.slots || []).map((slot) => <option key={slot.time} value={slot.time}>{slot.time}{slot.clientTime !== slot.time || slot.clientDate !== rsDate ? ` · ${slot.clientDate} ${slot.clientTime}` : ''}</option>)}
+              </select>
             </div>
           </div>
+          {rsTimezone && <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 10 }}>Время юриста: {rsTimezone}. Ваш часовой пояс: {Intl.DateTimeFormat().resolvedOptions().timeZone}.</div>}
         </DialogContent>
         <DialogActions sx={{ p: 3, pt: 1 }}>
           <button className="cons-foot-btn" style={{ flex: 'none', border: 'none', padding: '10px 18px', color: 'var(--text3)' }} onClick={() => setRescheduleC(null)}>

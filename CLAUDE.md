@@ -478,6 +478,25 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Release/security hardening 24.08.2026: публичный `/api/system/capabilities` и честные offline-состояния
+  AI/support; без Anthropic AI endpoints возвращают 503 и не расходуют лимит; phone/Google/Telegram
+  больше не обходят 2FA; OTP/reset token потребляются атомарно; account-scoped rate limits используют
+  Redis с bounded local fallback; Payme auth сравнивается constant-time, webhook ограничен 128 KB.
+- Upload hardening: единая проверка extension+MIME+magic bytes, DOCX structure/size, атомарные storage
+  quotas через advisory lock, очистка orphan-файлов и старых аватаров. Публичные отзывы больше не
+  раскрывают UUID, avatar и полное имя клиента.
+- Escrow hardening: юрист больше не может сам высвободить себе оплату через status/start/end;
+  `lawyerEndedAt` фиксирует запрос завершения, выплата идёт после подтверждения клиента или решения
+  администратора. Добавлена миграция `20260828000003-add-consultation-lawyer-ended-at`.
+- Readiness `/api/health/ready` проверяет PostgreSQL и показывает degraded Redis. Локальный restore-drill
+  custom-format backup PostgreSQL 16 успешен: 31 таблица и ключевые row counts совпали.
+- Финальный локальный gate: backend 62 suites / 327 tests, frontend 10 files / 37 tests,
+  Chromium E2E 24/24, frontend lint/build зелёные.
+- Production release 24.08.2026: backup `emaslaxat-prod-before-security-20260824.dump`
+  (SHA-256 `29a3635a27ba2546a44c21ca505686a0b101110983dc771a20fa46c5860f50e2`),
+  migrations `20260828000002/00003` applied, backend deployment `a3af832c...`, frontend
+  `b260310d...`; readiness DB/Redis green. 11 fake lawyers and known-password demo admin/client
+  deactivated; public catalog intentionally empty until real lawyers are approved.
 - Каталог доверия: новые/повторно модерируемые юристы обязаны иметь минимум 3
   получасовых слота, существующие approved-профили grandfathered и получают предупреждение;
   default-сортировка «Рекомендуем» считает реальные документы/полноту/стаж/отзывы;
@@ -488,6 +507,12 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   signed/idempotent webhook, безопасным disconnect и WebRTC fallback при deauthorization.
   Миграции `20260825000000..2` проверены на legacy-копии БД с backfill education/certificates;
   DB audit без drift. Zoom webhook не высвобождает escrow без клиентского completion.
+- Production Zoom-консультации: официальный `@zoom/meetingsdk` 6.2.0 (Component View desktop,
+  Client View mobile, официальный Zoom fallback), server-side SDK JWT + host-only ZAK, equipment
+  lobby, server-clock timer 10/5/1, 5-минутный grace, attendance/no-show из signed webhooks,
+  durable versioned create/update/cancel/end queue с lease/backoff/reconciliation, 10-минутный
+  booking buffer, delayed-attendance settlement перед refund, admin diagnostics и безопасные telemetry events. Миграции `20260829000000..4`;
+  архитектура и production checklist: `docs/ZOOM_PRODUCTION_ARCHITECTURE.md`. Live smoke ждёт ключи.
 - CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 19 Chromium E2E
   (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
 - Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;

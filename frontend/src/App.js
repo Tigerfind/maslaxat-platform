@@ -37,6 +37,7 @@ const AIChatPageGlass = lazy(() => import('./pages/AI/AIChatPageGlass'));
 const ConsultationsPageGlass = lazy(() => import('./pages/Consultations/ConsultationsPageGlass'));
 const ConsultationDetailsPage = lazy(() => import('./pages/Consultations/ConsultationDetailsPage'));
 const VideoCallPage = lazy(() => import('./pages/Consultations/VideoCallPage'));
+const ZoomMeetingPage = lazy(() => import('./pages/Consultations/ZoomMeetingPage'));
 const ChatPage = lazy(() => import('./pages/Consultations/ChatPage'));
 const LawyersPageGlass = lazy(() => import('./pages/Lawyers/LawyersPageGlass'));
 const LawyerProfilePage = lazy(() => import('./pages/Lawyers/LawyerProfilePage'));
@@ -150,6 +151,11 @@ const AppContent = () => {
         <Route path="/consultations/video/:consultationId" element={
           <ProtectedRoute allowedRoles={['client', 'lawyer']}>
             <VideoCallPage />
+          </ProtectedRoute>
+        } />
+        <Route path="/consultations/zoom/:consultationId" element={
+          <ProtectedRoute allowedRoles={['client', 'lawyer']}>
+            <ZoomMeetingPage />
           </ProtectedRoute>
         } />
 
