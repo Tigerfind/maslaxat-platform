@@ -11,8 +11,46 @@ const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const emptyExperience = { organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' };
 const emptyEducation = { university: '', faculty: '', specialty: '', degree: '', startYear: '', endYear: '', country: '', city: '' };
 const emptyCertificate = { title: '', organization: '', issuedAt: '', credentialUrl: '' };
-const field = { width: '100%', minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)', boxSizing: 'border-box' };
+const field = { width: '100%', minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 14 };
+const btnPrimary = { minHeight: 44, padding: '0 22px', borderRadius: 10, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: '#fff', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))' };
+const btnGhost = { minHeight: 44, padding: '0 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)' };
 const card = { background: 'var(--card-glass)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: 18 };
+
+// Поле с подписью. Раньше подписи не было вовсе: имя поля подставлялось как
+// placeholder, и юрист видел в интерфейсе служебные слова вроде credentialUrl
+// или university. Подпись должна быть видна и когда поле уже заполнено.
+const Labeled = ({ label, hint, required, children }) => (
+  <label style={{ display: 'grid', gap: 6 }}>
+    <span style={{ fontSize: 12.5, color: 'var(--text2)', fontWeight: 500 }}>
+      {label}
+      {required && <span style={{ color: 'var(--accent-dark)' }}> *</span>}
+    </span>
+    {children}
+    {hint && <span style={{ fontSize: 11.5, color: 'var(--text3)' }}>{hint}</span>}
+  </label>
+);
+
+// Системная кнопка «Выбор файлов» выглядела инородно рядом с остальным сайтом.
+const FilePicker = ({ label, accept, multiple, onFiles, buttonText }) => (
+  <div style={{ display: 'grid', gap: 6 }}>
+    <span style={{ fontSize: 12.5, color: 'var(--text2)', fontWeight: 500 }}>{label}</span>
+    <label style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center', minHeight: 44,
+      padding: '0 18px', borderRadius: 10, cursor: 'pointer', width: 'fit-content',
+      border: '1px solid var(--accent)', color: 'var(--accent-dark)', background: 'transparent',
+      fontSize: 13.5, fontWeight: 600,
+    }}>
+      {buttonText}
+      <input
+        type="file"
+        accept={accept}
+        multiple={multiple}
+        onChange={(e) => { if (e.target.files?.length) onFiles([...e.target.files]); }}
+        style={{ display: 'none' }}
+      />
+    </label>
+  </div>
+);
 
 const OnboardingWizard = ({ onComplete }) => {
   const { t } = useTranslation();
@@ -138,49 +176,195 @@ const OnboardingWizard = ({ onComplete }) => {
         </div>
 
         {step === 0 && <div style={{ ...card, display: 'grid', gap: 14 }}>
-          <input style={field} value={data.name} onChange={(e) => update('name', e.target.value)} placeholder={t('register.fullName')} />
-          <input style={field} value={data.professionalTitle || ''} onChange={(e) => update('professionalTitle', e.target.value)} placeholder="Адвокат по семейному праву" />
-          <textarea style={{ ...field, minHeight: 120 }} value={data.description || ''} onChange={(e) => update('description', e.target.value)} placeholder={t('onboarding.aboutPlaceholder')} />
+          <Labeled label={t('onboarding.lblName')} required>
+            <input style={field} value={data.name} onChange={(e) => update('name', e.target.value)} />
+          </Labeled>
+          <Labeled label={t('onboarding.lblTitle')} hint={t('onboarding.lblTitleHint')} required>
+            <input style={field} value={data.professionalTitle || ''} onChange={(e) => update('professionalTitle', e.target.value)} />
+          </Labeled>
+          <Labeled label={t('onboarding.lblAbout')} hint={t('onboarding.minChars')} required>
+            <textarea style={{ ...field, minHeight: 120 }} value={data.description || ''} onChange={(e) => update('description', e.target.value)} placeholder={t('onboarding.aboutPlaceholder')} />
+          </Labeled>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
-            <input style={field} value={data.location || ''} onChange={(e) => update('location', e.target.value)} placeholder={t('onboarding.city')} />
-            <input style={field} value={data.region || ''} onChange={(e) => update('region', e.target.value)} placeholder="Регион" />
-            <input style={field} value={data.phone || ''} onChange={(e) => update('phone', e.target.value)} placeholder="+998..." />
-            <input style={field} value={data.email || ''} readOnly aria-label="Email" />
+            <Labeled label={t('onboarding.lblCity')} required>
+              <input style={field} value={data.location || ''} onChange={(e) => update('location', e.target.value)} placeholder={t('onboarding.cityPlaceholder')} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblRegion')}>
+              <input style={field} value={data.region || ''} onChange={(e) => update('region', e.target.value)} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblPhone')} required>
+              <input style={field} value={data.phone || ''} onChange={(e) => update('phone', e.target.value)} placeholder="+998 90 123 45 67" />
+            </Labeled>
+            <Labeled label={t('onboarding.lblEmail')}>
+              <input style={{ ...field, opacity: 0.7 }} value={data.email || ''} readOnly />
+            </Labeled>
           </div>
-          <input style={field} value={data.linkedinUrl || ''} onChange={(e) => update('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/in/..." />
-          <label><span>{t('onboarding.photoLabel')}</span><input type="file" accept="image/*" onChange={(e) => e.target.files?.[0] && uploadAvatar(e.target.files[0])} /></label>
+          <Labeled label={t('onboarding.lblLinkedin')}>
+            <input style={field} value={data.linkedinUrl || ''} onChange={(e) => update('linkedinUrl', e.target.value)} placeholder="https://www.linkedin.com/in/..." />
+          </Labeled>
+          <FilePicker
+            label={t('onboarding.lblPhoto')}
+            buttonText={t('onboarding.uploadPhoto')}
+            accept="image/*"
+            onFiles={(files) => uploadAvatar(files[0])}
+          />
         </div>}
 
         {step === 1 && <div style={{ ...card, display: 'grid', gap: 16 }}>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>{SPECIALIZATION_NAMES.map((spec) => <button type="button" key={spec} onClick={() => update('specializations', data.specializations.includes(spec) ? data.specializations.filter((item) => item !== spec) : [...data.specializations, spec])} style={{ minHeight: 44, borderRadius: 999, border: '1px solid var(--border)', background: data.specializations.includes(spec) ? 'var(--accent)' : 'var(--surface)', color: data.specializations.includes(spec) ? '#fff' : 'var(--text)' }}>{specLabel(t, spec)}</button>)}</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 12 }}>
-            <input style={field} value={data.licenseNumber || ''} onChange={(e) => update('licenseNumber', e.target.value)} placeholder="Номер лицензии" />
-            <input style={field} value={data.licenseIssuer || ''} onChange={(e) => update('licenseIssuer', e.target.value)} placeholder="Кем выдана" />
-            <input style={field} type="date" value={data.licenseIssuedAt || ''} onChange={(e) => update('licenseIssuedAt', e.target.value)} />
-            <input style={field} type="date" value={data.licenseExpiresAt || ''} onChange={(e) => update('licenseExpiresAt', e.target.value)} />
-            <input style={field} type="number" min="0" max="80" value={data.experience} onChange={(e) => update('experience', Number(e.target.value))} placeholder={t('onboarding.experience')} />
-            <input style={field} type="number" min="0" value={data.price} onChange={(e) => update('price', Number(e.target.value))} placeholder={t('lawyerProfile.priceLabel')} />
-            <input style={field} value={(data.languages || []).join(', ')} onChange={(e) => update('languages', e.target.value.split(',').map((value) => value.trim()).filter(Boolean))} placeholder="ru, uz, en" />
-            <input style={field} value={data.timezone || ''} onChange={(e) => update('timezone', e.target.value)} placeholder="Asia/Tashkent" />
+            <Labeled label={t('onboarding.lblLicenseNo')} required>
+              <input style={field} value={data.licenseNumber || ''} onChange={(e) => update('licenseNumber', e.target.value)} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblLicenseIssuer')}>
+              <input style={field} value={data.licenseIssuer || ''} onChange={(e) => update('licenseIssuer', e.target.value)} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblLicenseFrom')}>
+              <input style={field} type="date" value={data.licenseIssuedAt || ''} onChange={(e) => update('licenseIssuedAt', e.target.value)} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblLicenseTo')}>
+              <input style={field} type="date" value={data.licenseExpiresAt || ''} onChange={(e) => update('licenseExpiresAt', e.target.value)} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblExperienceYears')} required>
+              <input style={field} type="number" min="0" max="80" value={data.experience} onChange={(e) => update('experience', Number(e.target.value))} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblPrice')} required>
+              <input style={field} type="number" min="0" value={data.price} onChange={(e) => update('price', Number(e.target.value))} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblLanguages')} hint="ru, uz, en">
+              <input style={field} value={(data.languages || []).join(', ')} onChange={(e) => update('languages', e.target.value.split(',').map((value) => value.trim()).filter(Boolean))} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblTimezone')}>
+              <input style={field} value={data.timezone || ''} onChange={(e) => update('timezone', e.target.value)} placeholder="Asia/Tashkent" />
+            </Labeled>
           </div>
-          <div>{['chat', 'audio', 'webrtc', 'zoom'].map((format) => <label key={format} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationFormats.includes(format)} onChange={() => update('consultationFormats', data.consultationFormats.includes(format) ? data.consultationFormats.filter((item) => item !== format) : [...data.consultationFormats, format])} /> {format}</label>)}</div>
-          <div>{[30, 60, 90].map((duration) => <label key={duration} style={{ marginRight: 16 }}><input type="checkbox" checked={data.consultationDurations.includes(duration)} onChange={() => update('consultationDurations', data.consultationDurations.includes(duration) ? data.consultationDurations.filter((item) => item !== duration) : [...data.consultationDurations, duration])} /> {duration} мин</label>)}</div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--text2)', fontWeight: 500 }}>{t('onboarding.lblFormats')}</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[
+                { v: 'chat', label: t('lawyers.fmtChat') },
+                { v: 'audio', label: t('lawyers.fmtAudio') },
+                { v: 'webrtc', label: t('lawyers.fmtVideo') },
+                { v: 'zoom', label: t('lawyers.fmtZoom') },
+              ].map(({ v, label }) => {
+                const on = data.consultationFormats.includes(v);
+                return (
+                  <button
+                    type="button"
+                    key={v}
+                    onClick={() => update('consultationFormats', on ? data.consultationFormats.filter((item) => item !== v) : [...data.consultationFormats, v])}
+                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
+                  >{label}</button>
+                );
+              })}
+            </div>
+          </div>
+          <div style={{ display: 'grid', gap: 8 }}>
+            <span style={{ fontSize: 12.5, color: 'var(--text2)', fontWeight: 500 }}>{t('onboarding.lblDurations')}</span>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {[30, 60, 90].map((duration) => {
+                const on = data.consultationDurations.includes(duration);
+                return (
+                  <button
+                    type="button"
+                    key={duration}
+                    onClick={() => update('consultationDurations', on ? data.consultationDurations.filter((item) => item !== duration) : [...data.consultationDurations, duration])}
+                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
+                  >{duration} {t('lawyers.perMin').replace('{n}', '').replace('за', '').trim() || 'мин'}</button>
+                );
+              })}
+            </div>
+          </div>
           <div style={{ padding: '12px 14px', borderRadius: 10, background: weeklySlots >= MIN_WEEKLY_SLOTS ? 'rgba(122,154,107,0.12)' : 'rgba(196,163,90,0.14)', color: 'var(--text2)' }}>
             {t('onboarding.scheduleProgress', { count: weeklySlots, required: MIN_WEEKLY_SLOTS })}
           </div>
           <div style={{ display: 'grid', gap: 8 }}>{DAYS.map((day) => <div key={day} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 1fr', gap: 8, alignItems: 'center' }}><label><input type="checkbox" checked={Boolean(data.schedule?.[day]?.enabled)} onChange={(e) => update('schedule', { ...data.schedule, [day]: { enabled: e.target.checked, from: data.schedule?.[day]?.from || '09:00', to: data.schedule?.[day]?.to || '18:00' } })} /> {day}</label><input style={field} type="time" value={data.schedule?.[day]?.from || '09:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: e.target.value, to: data.schedule?.[day]?.to || '18:00' } })} /><input style={field} type="time" value={data.schedule?.[day]?.to || '18:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: data.schedule?.[day]?.from || '09:00', to: e.target.value } })} /></div>)}</div>
         </div>}
 
-        {step === 2 && <Repeatable title="Опыт работы" rows={data.experiences} empty={emptyExperience} add={() => update('experiences', [...data.experiences, emptyExperience])} remove={(index) => removeRow('experiences', index)} render={(row, index) => <><input style={field} value={row.organization} onChange={(e) => updateRow('experiences', index, { organization: e.target.value })} placeholder="Организация" /><input style={field} value={row.position} onChange={(e) => updateRow('experiences', index, { position: e.target.value })} placeholder="Должность" /><input style={field} type="date" value={row.startDate || ''} onChange={(e) => updateRow('experiences', index, { startDate: e.target.value })} /><input style={field} type="date" disabled={row.isCurrent} value={row.endDate || ''} onChange={(e) => updateRow('experiences', index, { endDate: e.target.value })} /><label><input type="checkbox" checked={row.isCurrent} onChange={(e) => updateRow('experiences', index, { isCurrent: e.target.checked, endDate: '' })} /> Работаю сейчас</label><textarea style={{ ...field, minHeight: 80 }} value={row.description || ''} onChange={(e) => updateRow('experiences', index, { description: e.target.value })} placeholder="Обязанности и достижения" /></>} />}
-        {step === 3 && <Repeatable title="Образование" rows={data.educations} empty={emptyEducation} add={() => update('educations', [...data.educations, emptyEducation])} remove={(index) => removeRow('educations', index)} render={(row, index) => <>{['university', 'faculty', 'specialty', 'degree', 'startYear', 'endYear', 'country', 'city'].map((key) => <input key={key} style={field} type={key.includes('Year') ? 'number' : 'text'} value={row[key] || ''} onChange={(e) => updateRow('educations', index, { [key]: key.includes('Year') ? Number(e.target.value) : e.target.value })} placeholder={key} />)}</>} />}
-        {step === 4 && <div style={{ display: 'grid', gap: 16 }}><Repeatable title="Сертификаты" rows={data.certificates} empty={emptyCertificate} add={() => update('certificates', [...data.certificates, emptyCertificate])} remove={(index) => removeRow('certificates', index)} render={(row, index) => <>{['title', 'organization', 'issuedAt', 'credentialUrl'].map((key) => <input key={key} style={field} type={key === 'issuedAt' ? 'date' : 'text'} value={row[key] || ''} onChange={(e) => updateRow('certificates', index, { [key]: e.target.value })} placeholder={key} />)}</>} /><div style={card}><select value={docType} onChange={(e) => setDocType(e.target.value)} style={field}><option value="license">Лицензия</option><option value="diploma">Диплом</option><option value="certificate">Сертификат</option><option value="id">Удостоверение</option></select><input type="file" accept=".pdf,.jpg,.jpeg,.png,.webp" multiple onChange={(e) => Promise.all([...e.target.files].map(uploadDocument)).then(() => lawyerService.verification.getDocuments()).then((response) => setDocs(response.documents || []))} /><p>Загружено документов: {docs.length}</p></div></div>}
+        {step === 2 && <Repeatable title={t('onboarding.experience')} rows={data.experiences} empty={emptyExperience} add={() => update('experiences', [...data.experiences, emptyExperience])} remove={(index) => removeRow('experiences', index)} render={(row, index) => <div style={{ display: 'grid', gap: 12 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+            <Labeled label={t('onboarding.lblOrg')}>
+              <input style={field} value={row.organization} onChange={(e) => updateRow('experiences', index, { organization: e.target.value })} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblPosition')}>
+              <input style={field} value={row.position} onChange={(e) => updateRow('experiences', index, { position: e.target.value })} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblFrom')}>
+              <input style={field} type="date" value={row.startDate || ''} onChange={(e) => updateRow('experiences', index, { startDate: e.target.value })} />
+            </Labeled>
+            <Labeled label={t('onboarding.lblTo')}>
+              <input style={field} type="date" disabled={row.isCurrent} value={row.endDate || ''} onChange={(e) => updateRow('experiences', index, { endDate: e.target.value })} />
+            </Labeled>
+          </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--text2)' }}>
+            <input type="checkbox" checked={row.isCurrent} onChange={(e) => updateRow('experiences', index, { isCurrent: e.target.checked, endDate: '' })} />
+            {t('onboarding.lblCurrent')}
+          </label>
+          <Labeled label={t('onboarding.lblDuties')}>
+            <textarea style={{ ...field, minHeight: 80 }} value={row.description || ''} onChange={(e) => updateRow('experiences', index, { description: e.target.value })} />
+          </Labeled>
+        </div>} />}
+        {step === 3 && <Repeatable title={t('lawyerProfile.education')} rows={data.educations} empty={emptyEducation} add={() => update('educations', [...data.educations, emptyEducation])} remove={(index) => removeRow('educations', index)} render={(row, index) => <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+          {[
+            { key: 'university', label: t('onboarding.lblUniversity') },
+            { key: 'faculty', label: t('onboarding.lblFaculty') },
+            { key: 'specialty', label: t('onboarding.lblSpecialty') },
+            { key: 'degree', label: t('onboarding.lblDegree') },
+            { key: 'startYear', label: t('onboarding.lblYearFrom') },
+            { key: 'endYear', label: t('onboarding.lblYearTo') },
+            { key: 'country', label: t('onboarding.lblCountry') },
+            { key: 'city', label: t('onboarding.lblCityEdu') },
+          ].map(({ key, label }) => (
+            <Labeled key={key} label={label}>
+              <input
+                style={field}
+                type={key.includes('Year') ? 'number' : 'text'}
+                value={row[key] || ''}
+                onChange={(e) => updateRow('educations', index, { [key]: key.includes('Year') ? Number(e.target.value) : e.target.value })}
+              />
+            </Labeled>
+          ))}
+        </div>} />}
+        {step === 4 && <div style={{ display: 'grid', gap: 16 }}><Repeatable title={t('lawyerProfile.achievements')} rows={data.certificates} empty={emptyCertificate} add={() => update('certificates', [...data.certificates, emptyCertificate])} remove={(index) => removeRow('certificates', index)} render={(row, index) => <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(200px,1fr))', gap: 12 }}>
+          {[
+            { key: 'title', label: t('onboarding.lblCertTitle') },
+            { key: 'organization', label: t('onboarding.lblCertOrg') },
+            { key: 'issuedAt', label: t('onboarding.lblCertDate'), type: 'date' },
+            { key: 'credentialUrl', label: t('onboarding.lblCertUrl') },
+          ].map(({ key, label, type }) => (
+            <Labeled key={key} label={label}>
+              <input style={field} type={type || 'text'} value={row[key] || ''} onChange={(e) => updateRow('certificates', index, { [key]: e.target.value })} />
+            </Labeled>
+          ))}
+        </div>} /><div style={{ ...card, display: 'grid', gap: 14 }}>
+          <Labeled label={t('onboarding.lblDocType')} required>
+            <select value={docType} onChange={(e) => setDocType(e.target.value)} style={field}>
+              <option value="license">{t('adminManage.docLicense')}</option>
+              <option value="diploma">{t('adminManage.docDiploma')}</option>
+              <option value="certificate">{t('lawyerProfile.achievements')}</option>
+              <option value="id">{t('adminManage.docId')}</option>
+            </select>
+          </Labeled>
+          <FilePicker
+            label={t('onboarding.lblDocFile')}
+            buttonText={t('onboarding.chooseFile')}
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+            multiple
+            onFiles={(files) => Promise.all(files.map(uploadDocument))
+              .then(() => lawyerService.verification.getDocuments())
+              .then((response) => setDocs(response.documents || []))}
+          />
+          <p style={{ margin: 0, fontSize: 13, color: 'var(--text3)' }}>{t('onboarding.uploadedDocs')}: {docs.length}</p>
+        </div></div>}
         {step === 5 && <div style={{ ...card, display: 'grid', gap: 12 }}><h2>{data.name}</h2><strong>{data.professionalTitle}</strong><p>{data.description}</p><p>{data.specializations.join(' · ')}</p><p>{data.location}{data.region ? `, ${data.region}` : ''} · {data.languages.join(', ')}</p><p>{Number(data.price).toLocaleString()} сум · {data.experience} лет</p><h3>Опыт</h3>{data.experiences.map((item) => <p key={`${item.organization}-${item.position}`}>{item.position} — {item.organization}</p>)}<h3>Образование</h3>{data.educations.map((item) => <p key={`${item.university}-${item.specialty}`}>{item.university}, {item.specialty}</p>)}</div>}
 
-        <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap' }}>
-          {step > 0 && <button type="button" onClick={() => setStep((current) => current - 1)}>{t('onboarding.back')}</button>}
-          <button type="button" disabled={saving} onClick={() => saveDraft(step)}>{saving ? t('onboarding.saving') : 'Сохранить черновик'}</button>
-          {step < 5 ? <button type="button" onClick={next}>{t('onboarding.next')}</button> : <button type="button" onClick={submit}>Отправить на проверку</button>}
-          {savedAt && <span style={{ color: 'var(--text3)', alignSelf: 'center' }}>Сохранено {new Date(savedAt).toLocaleTimeString()}</span>}
+        <div style={{ display: 'flex', gap: 12, marginTop: 24, flexWrap: 'wrap', alignItems: 'center' }}>
+          {step > 0 && <button type="button" onClick={() => setStep((current) => current - 1)} style={btnGhost}>{t('onboarding.back')}</button>}
+          <button type="button" disabled={saving} onClick={() => saveDraft(step)} style={btnGhost}>{saving ? t('onboarding.saving') : t('common.save')}</button>
+          {step < 5
+            ? <button type="button" onClick={next} style={btnPrimary}>{t('onboarding.next')}</button>
+            : <button type="button" onClick={submit} style={btnPrimary}>{t('onboarding.publish')}</button>}
+          {savedAt && <span style={{ color: 'var(--text3)', fontSize: 12.5 }}>{t('onboarding.savedToast')} · {new Date(savedAt).toLocaleTimeString()}</span>}
         </div>
       </div>
     </div>
