@@ -27,6 +27,7 @@ const errorHandler = (err, req, res, next) => {
   const isProd = process.env.NODE_ENV === 'production';
   res.status(status).json({
     error: isProd && status === 500 ? 'Внутренняя ошибка сервера' : (err.message || 'Внутренняя ошибка сервера'),
+    ...(err.code ? { code: err.code } : {}),
     ...(isProd ? {} : { stack: err.stack }),
   });
 };

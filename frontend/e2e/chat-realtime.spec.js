@@ -45,7 +45,8 @@ test('client и lawyer получают сообщения realtime и исто�
       headers: { Authorization: `Bearer ${token}` },
     });
     expect(history.status()).toBe(200);
-    const texts = (await history.json()).map((message) => message.text);
+    const historyBody = await history.json();
+    const texts = historyBody.messages.map((message) => message.text);
     expect(texts).toEqual(expect.arrayContaining([clientMessage, lawyerMessage]));
   } finally {
     await clientContext.close();

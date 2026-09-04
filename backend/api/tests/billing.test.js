@@ -1,5 +1,5 @@
-// Модель B — «оплата через 5 минут звонка»: холд при брони → захват на 5-й минуте.
-// Проверяем: бронь = held без предоплаты; captureHold идемпотентен; захват создаёт
+// Legacy hold capture remains covered for existing consultations. New bookings use
+// prepayment and must not claim a card hold.
 // оплаченный Payment + резерв эскроу; завершение отдаёт деньги (released);
 // бесплатная не списывается; джоб берёт только «дозревшие».
 jest.mock('../src/services/emailService', () => ({
@@ -13,8 +13,9 @@ const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 const billing = require('../src/services/billingService');
 const { completeConsultation } = require('../src/services/escrow');
+const { recordPeerConnected } = require('../src/services/webrtcEvidenceService');
 
-const { Consultation, Payment, LawyerProfile } = models;
+const { Consultation, Payment, LawyerProfile, Notification } = models;
 
 beforeAll(async () => { await resetDb(); });
 
@@ -25,17 +26,25 @@ async function book(client, lawyer) {
     .send({ consultationType: 'chat', duration: 60, problems: [{ text: 'Вопрос', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
 }
 
-describe('бронь = холд без предоплаты', () => {
-  test('платная бронь → pending + billingStatus=held, без Payment', async () => {
+async function addPeerEvidence(consultation, client, lawyer) {
+  await recordPeerConnected(consultation.id, client.id);
+  await recordPeerConnected(consultation.id, lawyer.id);
+}
+
+describe('новая бронь = предоплата', () => {
+  test('платная бронь → payment_pending + billingStatus=none', async () => {
     const client = await makeClient('bl-c1@test.uz');
     const { user: lawyer } = await makeLawyer('bl-l1@test.uz', { price: 200000 });
     const res = await book(client, lawyer);
     expect(res.status).toBe(201);
-    expect(res.body.consultation.status).toBe('pending');
-    expect(res.body.consultation.billingStatus).toBe('held');
+    expect(res.body.consultation.status).toBe('payment_pending');
+    expect(res.body.consultation.lifecycleStatus).toBe('pending_payment');
+    expect(res.body.consultation.billingStatus).toBe('none');
+    expect(res.body.consultation.paymentExpiresAt).toBeTruthy();
 
     const pay = await Payment.findOne({ where: { consultationId: res.body.consultation.id } });
-    expect(pay).toBeNull(); // деньги ещё не тронуты
+    expect(pay).toBeNull();
+    expect(await Notification.count({ where: { userId: lawyer.id, type: 'new_booking' } })).toBe(0);
   });
 });
 
@@ -47,6 +56,7 @@ describe('captureHold — захват на 5-й минуте', () => {
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
       question: 'Q', price: 300000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 6 * 60 * 1000),
     });
+    await addPeerEvidence(c, client, lawyer);
 
     const r = await billing.captureHold(c.id);
     expect(r.captured).toBe(true);
@@ -70,6 +80,7 @@ describe('captureHold — захват на 5-й минуте', () => {
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
       question: 'Q', price: 150000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 6 * 60 * 1000),
     });
+    await addPeerEvidence(c, client, lawyer);
     await billing.captureHold(c.id);
     const second = await billing.captureHold(c.id);
     expect(second.captured).toBe(false); // already
@@ -87,6 +98,7 @@ describe('captureHold — захват на 5-й минуте', () => {
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
       question: 'Race', price: 175000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 6 * 60 * 1000),
     });
+    await addPeerEvidence(c, client, lawyer);
     const results = await Promise.all([billing.captureHold(c.id), billing.captureHold(c.id)]);
     expect(results.filter((result) => result.reason === 'captured')).toHaveLength(1);
     expect(await Payment.count({ where: { consultationId: c.id, status: 'paid' } })).toBe(1);
@@ -116,6 +128,7 @@ describe('захват → завершение отдаёт эскроу юри
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
       question: 'Q', price: 250000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 6 * 60 * 1000),
     });
+    await addPeerEvidence(c, client, lawyer);
     await billing.captureHold(c.id);
     await completeConsultation(c.id, undefined, 400);
 
@@ -135,10 +148,23 @@ describe('джоб берёт только дозревшие (≥5 мин)', ()
       clientId: client.id, lawyerId: lawyer.id, type: 'video', status: 'in_progress',
       question: 'Q', price: 100000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 2 * 60 * 1000),
     });
+    await addPeerEvidence(fresh, client, lawyer);
     await billing.checkCaptureDue();
     await fresh.reload();
     expect(fresh.billingStatus).toBe('held'); // ещё не 5 минут
     const pay = await Payment.findOne({ where: { consultationId: fresh.id } });
     expect(pay).toBeNull();
+  });
+
+  test('room-era timestamp without bilateral peer evidence is never captured', async () => {
+    const client = await makeClient('bl-no-evidence-client@test.uz');
+    const { user: lawyer, lp } = await makeLawyer('bl-no-evidence-lawyer@test.uz', { price: 100000 });
+    const consultation = await Consultation.create({
+      clientId: client.id, lawyerId: lawyer.id, type: 'video', meetingProvider: 'webrtc', status: 'in_progress',
+      question: 'No evidence', price: 100000, billingStatus: 'held', callStartedAt: new Date(Date.now() - 10 * 60000),
+    });
+    expect(await billing.captureHold(consultation.id)).toMatchObject({ captured: false, reason: 'peer_evidence_required' });
+    await lp.reload();
+    expect(Number(lp.pendingBalance)).toBe(0);
   });
 });

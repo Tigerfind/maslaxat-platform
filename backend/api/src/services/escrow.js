@@ -18,15 +18,28 @@ const { Consultation, Payment, LawyerProfile, FinancialEvent } = require('../mod
  *
  * @returns {Promise<{consultation, released:boolean, alreadyCompleted:boolean}>}
  */
-async function completeConsultation(consultationId, notes, actualDuration) {
+function durableActualDuration(consultation, completedAt = new Date()) {
+  const startedAt = consultation.conversationStartedAt || consultation.callStartedAt;
+  if (!startedAt) return null;
+  const startMs = new Date(startedAt).getTime();
+  const durableEnd = consultation.finalLeftAt || consultation.lawyerEndedAt || completedAt;
+  const endMs = new Date(durableEnd).getTime();
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs < startMs) return null;
+  return Math.round((endMs - startMs) / 1000);
+}
+
+async function completeConsultation(consultationId, notes, _untrustedActualDuration, options = {}) {
   return Consultation.sequelize.transaction(async (t) => {
     const current = await Consultation.findByPk(consultationId, { transaction: t, lock: t.LOCK.UPDATE });
     if (!current) return { consultation: null, released: false, alreadyCompleted: true };
     if (current.status === 'completed') {
       return { consultation: current, released: false, alreadyCompleted: true };
     }
-    // Никогда не воскрешаем cancelled/rejected/payment_pending и не платим за них.
-    if (!['accepted', 'in_progress'].includes(current.status)) {
+    if (options.precondition && ['accepted', 'in_progress'].includes(current.status)) {
+      await options.precondition(current, t);
+    }
+    // Завершение возможно только после явного перехода сессии в in_progress.
+    if (current.status !== 'in_progress') {
       return { consultation: current, released: false, alreadyCompleted: false };
     }
 
@@ -39,17 +52,18 @@ async function completeConsultation(consultationId, notes, actualDuration) {
       if (paidCount === 0) throw Object.assign(new Error('Оплата консультации не подтверждена'), { status: 409, code: 'PAYMENT_REQUIRED' });
     }
 
+    const completedAt = new Date();
     const patch = { status: 'completed' };
     if (notes) patch.notes = notes;
-    // Фактическая длительность звонка (сек) — только если валидная и положительная
-    if (Number.isFinite(actualDuration) && actualDuration > 0) {
-      patch.actualDuration = Math.round(actualDuration);
-    }
+    // Client clocks and durationSeconds are untrusted. Derive duration while the
+    // consultation row is locked from durable server timestamps only.
+    const actualDuration = durableActualDuration(current, completedAt);
+    if (actualDuration !== null) patch.actualDuration = actualDuration;
 
-    // Атомарный переход в completed (только если ещё НЕ completed). Служит гейтом
+    // Атомарный переход in_progress → completed. Служит гейтом
     // для «первого завершения» (completedCases), но БОЛЬШЕ не гейтит выплату.
     const [statusAffected] = await Consultation.update(patch, {
-      where: { id: consultationId, status: { [Op.in]: ['accepted', 'in_progress'] } },
+      where: { id: consultationId, status: 'in_progress' },
       transaction: t,
     });
 
@@ -185,4 +199,4 @@ async function refundConsultationEscrow(consultationId, options = {}) {
   return { refunded: totalRefund };
 }
 
-module.exports = { completeConsultation, refundConsultationEscrow };
+module.exports = { completeConsultation, durableActualDuration, refundConsultationEscrow };

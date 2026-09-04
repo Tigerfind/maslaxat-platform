@@ -13,6 +13,7 @@ const { Op } = require('sequelize');
 const { Consultation, Payment, LawyerProfile } = require('../models');
 const logger = require('../config/logger');
 const notificationService = require('./notificationService');
+const { hasBilateralPeerEvidence } = require('./webrtcEvidenceService');
 
 const CAPTURE_AFTER_MS = 5 * 60 * 1000; // 5 минут разговора до захвата
 
@@ -39,6 +40,9 @@ async function captureHold(consultationId) {
     if (c.isFree) {
       if (c.billingStatus !== 'none') await c.update({ billingStatus: 'none' }, { transaction: t });
       return { captured: false, reason: 'free' };
+    }
+    if (!c.callStartedAt || !await hasBilateralPeerEvidence(c.id, t)) {
+      return { captured: false, reason: 'peer_evidence_required' };
     }
     if (['charged', 'released'].includes(c.billingStatus)) return { captured: false, reason: 'already' };
     const existingPaid = await Payment.findOne({ where: { consultationId, status: 'paid' }, transaction: t, lock: t.LOCK.UPDATE });
@@ -103,9 +107,8 @@ async function notifyFailure(c, amount) {
 
 // ─── Фоновый джоб: захват оплаты через 5 минут разговора ───
 // Сканирует консультации in_progress с billingStatus='held', у которых оба в звонке
-// (callStartedAt) уже ≥5 минут, и захватывает оплату. captureHold идемпотентен —
-// параллельные прогоны/повторы не двоят. Ранний выход обнуляет callStartedAt (см.
-// signaling.billingOnLeave), поэтому такие сюда не попадают.
+// (callStartedAt) уже ≥5 минут и есть durable evidence обеих ролей. captureHold
+// идемпотентен — параллельные прогоны/повторы не двоят.
 async function checkCaptureDue() {
   try {
     const cutoff = new Date(Date.now() - CAPTURE_AFTER_MS);

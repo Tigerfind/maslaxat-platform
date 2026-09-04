@@ -192,7 +192,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
 
       {/* MAIN COLUMN */}
       <div style={{ position: 'relative', zIndex: 2, flex: 1, display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-        <header
+        <header className="glass-shell-header"
           style={{
             minHeight: 72, flexShrink: 0, background: 'var(--card-glass)',
             backdropFilter: 'blur(30px) saturate(180%)', WebkitBackdropFilter: 'blur(30px) saturate(180%)',
@@ -200,9 +200,9 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
             gap: 20, padding: '14px 32px',
           }}
         >
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0 }}>
+          <div className="glass-shell-title" style={{ display: 'flex', alignItems: 'center', gap: 14, minWidth: 0, flex: 1 }}>
             {!isDesktop && (
-              <button onClick={() => setDrawerOpen(true)} aria-label={t('nav.menu')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+              <button onClick={() => setDrawerOpen(true)} aria-label={t('nav.menu')} style={{ width: 44, height: 44, flexShrink: 0, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
                 <MenuOutlined />
               </button>
             )}
@@ -211,8 +211,8 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
               {subtitle && <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.03em', marginTop: 2 }}>{subtitle}</div>}
             </div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <button onClick={toggleDark} aria-label={t('nav.theme')} title={t('nav.theme')} style={{ width: 42, height: 42, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
+          <div className="glass-shell-actions" style={{ display: 'flex', alignItems: 'center', gap: 14, flexShrink: 0 }}>
+            <button className="glass-shell-theme" onClick={toggleDark} aria-label={t('nav.theme')} aria-pressed={dark} title={t('nav.theme')} style={{ width: 44, height: 44, borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--card-glass)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text2)', cursor: 'pointer' }}>
               {dark ? <LightModeOutlined sx={{ fontSize: 19 }} /> : <DarkModeOutlined sx={{ fontSize: 19 }} />}
             </button>
             {isDesktop && <LanguageSwitcher variant="dropdown" />}
@@ -233,7 +233,7 @@ const GlassShell = ({ active, title, subtitle, role = 'client', children }) => {
 
       {/* На мобиле оставляем место под фиксированную нижнюю панель (MobileBottomNav ~64px),
           чтобы последний ряд контента не уходил под неё. */}
-      <style>{`@media (max-width: 1023px){ .screen { padding: 20px 16px 88px !important; } }`}</style>
+      <style>{`@media (max-width: 1023px){ .screen { padding: 20px 16px calc(88px + env(safe-area-inset-bottom)) !important; overflow-x:hidden; } } @media(max-width:480px){.glass-shell-header{gap:4px !important;padding:8px !important}.glass-shell-title{gap:4px !important}.glass-shell-title>div:last-child>div:first-child{font-size:15px !important;letter-spacing:.03em !important}.glass-shell-title>div:last-child>div:last-child{display:none}.glass-shell-actions{gap:2px !important}} @media(max-width:350px){.glass-shell-theme{display:none !important}}`}</style>
     </div>
   );
 };

@@ -562,7 +562,7 @@ router.post('/consultations/:id/meeting/retry', async (req, res, next) => {
     if (!consultation || consultation.meetingProvider !== 'zoom') return res.status(404).json({ error: 'Zoom-консультация не найдена' });
     const service = require('../services/zoomMeetingService');
     const existing = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['externalMeetingId', 'status'] });
-    const operation = ['cancelled', 'rejected'].includes(consultation.status)
+    const operation = ['cancelled', 'rejected', 'payment_expired'].includes(consultation.status)
       ? 'cancel'
       : consultation.lifecycleStatus === 'completed' ? 'end'
         : existing?.externalMeetingId ? 'update' : 'create';

@@ -42,9 +42,9 @@ test('client и lawyer устанавливают WebRTC видеосоедин�
     await expect.poll(() => hasVideoTrack(clientPage.getByTestId('remote-video'))).toBe(true);
     await expect.poll(() => hasVideoTrack(lawyerPage.getByTestId('remote-video'))).toBe(true);
 
-    await clientPage.getByRole('button', { name: 'toggle-camera' }).click();
+    await clientPage.getByRole('button', { name: 'Включить или выключить камеру' }).click();
     await expect(lawyerPage.getByText('Камера выключена').first()).toBeVisible();
-    await clientPage.getByRole('button', { name: 'toggle-camera' }).click();
+    await clientPage.getByRole('button', { name: 'Включить или выключить камеру' }).click();
     await expect(lawyerPage.getByText('Камера выключена')).toHaveCount(0);
 
     const token = await clientPage.evaluate(() => localStorage.getItem('token'));

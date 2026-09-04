@@ -105,3 +105,44 @@ describe('посторонний не имеет доступа', () => {
     expect(res.status).toBe(401);
   });
 });
+
+describe('архив консультации доступен только для чтения', () => {
+  test('участник может читать список, но не загружать новый файл', async () => {
+    await consultation.update({ status: 'completed', archivedAt: new Date() });
+    expect((await request(app).get(url()).set('Authorization', `Bearer ${clientTok}`)).status).toBe(200);
+    const upload = await request(app).post(url()).set('Authorization', `Bearer ${clientTok}`).attach('file', PDF, 'archived.pdf');
+    expect(upload.status).toBe(409);
+    expect(upload.body.code).toBe('CONSULTATION_READ_ONLY');
+  });
+});
+
+describe('политика записи документов по lifecycle', () => {
+  test.each(['accepted', 'in_progress'])('%s разрешает загрузку', async (status) => {
+    const c = await Consultation.create({ clientId: client.id, lawyerId: lawyerUser.id, type: 'chat', status, question: status });
+    const response = await request(app).post(`/api/consultations/${c.id}/documents`)
+      .set('Authorization', `Bearer ${clientTok}`).attach('file', PDF, `${status}.pdf`);
+    expect(response.status).toBe(201);
+  });
+
+  test.each(['payment_pending', 'payment_expired', 'pending', 'rejected', 'completed', 'cancelled'])('%s разрешает чтение, но запрещает загрузку', async (status) => {
+    const c = await Consultation.create({ clientId: client.id, lawyerId: lawyerUser.id, type: 'chat', status, question: status });
+    const base = `/api/consultations/${c.id}/documents`;
+    const list = await request(app).get(base).set('Authorization', `Bearer ${clientTok}`);
+    expect(list.status).toBe(200);
+    expect(list.body.writable).toBe(false);
+    const upload = await request(app).post(base).set('Authorization', `Bearer ${clientTok}`).attach('file', PDF, `${status}.pdf`);
+    expect(upload.status).toBe(409);
+    expect(upload.body.code).toBe('CONSULTATION_READ_ONLY');
+  });
+
+  test.each(['payment_pending', 'payment_expired', 'pending', 'rejected', 'completed', 'cancelled'])('%s сохраняет скачивание, но запрещает удаление', async (status) => {
+    const c = await Consultation.create({ clientId: client.id, lawyerId: lawyerUser.id, type: 'chat', status: 'accepted', question: `${status} document` });
+    const base = `/api/consultations/${c.id}/documents`;
+    const upload = await request(app).post(base).set('Authorization', `Bearer ${clientTok}`).attach('file', PDF, `${status}-delete.pdf`);
+    await c.update({ status });
+    expect((await request(app).get(`${base}/${upload.body.document.id}/download`).set('Authorization', `Bearer ${lawyerTok}`)).status).toBe(200);
+    const remove = await request(app).delete(`${base}/${upload.body.document.id}`).set('Authorization', `Bearer ${clientTok}`);
+    expect(remove.status).toBe(409);
+    expect(remove.body.code).toBe('CONSULTATION_READ_ONLY');
+  });
+});

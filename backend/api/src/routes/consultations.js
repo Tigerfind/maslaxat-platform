@@ -1,24 +1,17 @@
 const router = require('express').Router();
-const { Op } = require('sequelize');
-const { Consultation, ConsultationMeeting, MeetingEvent, User, LawyerProfile, Review, Promo, Payment, CaseDocument } = require('../models');
+const { Op, fn, col } = require('sequelize');
+const { Consultation, ConsultationMeeting, Message, User, LawyerProfile, Review, Promo, Payment, CaseDocument } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { completeConsultation, refundConsultationEscrow } = require('../services/escrow');
 const availabilityService = require('../services/availabilityService');
 const zoomMeetingService = require('../services/zoomMeetingService');
-const { PAYMENT_RESERVATION_MINUTES } = require('../services/availabilityService');
-const { consultationAccess } = require('../services/consultationAccessService');
+const { expireDueReservations, expireReservationById, expireLockedReservation, unexpiredReservationWhere } = require('../services/reservationExpiryService');
+const policy = require('../services/consultationPolicy');
+const { hasBilateralPeerEvidence } = require('../services/webrtcEvidenceService');
 
-const BUCKETS = ['all', 'payment_pending', 'upcoming', 'completed', 'cancelled', 'archived'];
+const { BUCKETS } = policy;
 const PERIOD_DAYS = { '30d': 30, '365d': 365 };
-
-function applyBucket(where, bucket) {
-  if (bucket === 'payment_pending') where.status = 'payment_pending';
-  if (bucket === 'upcoming') where.status = { [Op.in]: ['pending', 'accepted', 'in_progress'] };
-  if (bucket === 'completed' || bucket === 'archived') where.status = 'completed';
-  if (bucket === 'cancelled') where.status = { [Op.in]: ['cancelled', 'rejected'] };
-  if (bucket === 'completed') where['$consultationReview.id$'] = null;
-}
 
 function paymentPresentation(consultation) {
   if (consultation.isFree) return { status: 'free', amount: 0, currency: 'UZS' };
@@ -37,9 +30,65 @@ function paymentPresentation(consultation) {
   return { status: 'unpaid', amount: Number(consultation.price), currency: 'UZS' };
 }
 
+const participantIncludes = () => [
+  { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
+  { model: User, as: 'lawyer', attributes: ['id', 'name', 'avatar'], required: true, include: [{ model: LawyerProfile, as: 'profile', attributes: ['specialization', 'specializations', 'rating'] }] },
+  { model: Review, as: 'consultationReview', attributes: ['id', 'rating', 'text'] },
+  { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'startedAt', 'endedAt', 'lastSafeError'] },
+  { model: Payment, as: 'payments', separate: true, attributes: ['id', 'amount', 'currency', 'status', 'refundStatus', 'refundedAt', 'escrowReleased', 'updatedAt'], order: [['createdAt', 'DESC']] },
+];
+
+function serializeConsultation(row, role, now, bilateralMessageEvidence = false) {
+  const plain = row.toJSON ? row.toJSON() : { ...row };
+  if (role === 'client') delete plain.lawyerNote;
+  if (plain.status === 'payment_pending' && !plain.paymentExpiresAt && plain.createdAt) {
+    plain.paymentExpiresAt = new Date(new Date(plain.createdAt).getTime() + availabilityService.PAYMENT_RESERVATION_MINUTES * 60000);
+  }
+  plain.bilateralMessageEvidence = bilateralMessageEvidence;
+  plain.payment = paymentPresentation(plain);
+  plain.policy = policy.policyDto(plain, role, now);
+  plain.access = plain.policy;
+  delete plain.bilateralMessageEvidence;
+  delete plain.payments;
+  return plain;
+}
+
+async function bilateralChatEvidence(rows) {
+  const chats = rows.filter((row) => row.type === 'chat');
+  if (!chats.length) return new Set();
+  const messages = await Message.findAll({
+    where: { consultationId: { [Op.in]: chats.map((row) => row.id) } },
+    attributes: ['consultationId', 'senderId'], group: ['consultationId', 'senderId'], raw: true,
+  });
+  const participants = new Map();
+  for (const message of messages) {
+    if (!participants.has(message.consultationId)) participants.set(message.consultationId, new Set());
+    participants.get(message.consultationId).add(message.senderId);
+  }
+  return new Set(chats.filter((row) => {
+    const senders = participants.get(row.id);
+    return senders?.has(row.clientId) && senders.has(row.lawyerId);
+  }).map((row) => row.id));
+}
+
+function countsFromGroups(groups) {
+  const counts = Object.fromEntries(BUCKETS.map((bucket) => [bucket, 0]));
+  for (const group of groups) {
+    const count = Number(group.get ? group.get('count') : group.count) || 0;
+    const item = group.get ? group.get() : group;
+    counts.all += count;
+    const bucket = policy.bucketOf(item);
+    if (counts[bucket] !== undefined && bucket !== 'all') counts[bucket] += count;
+  }
+  return counts;
+}
+
 // GET /api/consultations — мои консультации
-router.get('/', authenticate, async (req, res, next) => {
+router.get('/', authenticate, authorize('client', 'lawyer'), async (req, res, next) => {
   try {
+    const expiryScope = req.userRole === 'client' ? { clientId: req.userId } : { lawyerId: req.userId };
+    await expireDueReservations(new Date(), expiryScope, 500);
+    const serverNow = new Date();
     const { status, search, period = 'all' } = req.query;
     const bucket = BUCKETS.includes(req.query.bucket) ? req.query.bucket : 'all';
     const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
@@ -49,6 +98,7 @@ router.get('/', authenticate, async (req, res, next) => {
     const baseWhere = {};
     if (req.userRole === 'client') baseWhere.clientId = req.userId;
     if (req.userRole === 'lawyer') baseWhere.lawyerId = req.userId;
+    baseWhere[Op.and] = [unexpiredReservationWhere(serverNow)];
     const searchTerm = typeof search === 'string' ? search.trim().slice(0, 100) : '';
     if (searchTerm) {
       const pattern = `%${searchTerm.replace(/[\\%_]/g, '\\$&')}%`;
@@ -57,79 +107,47 @@ router.get('/', authenticate, async (req, res, next) => {
         { description: { [Op.iLike]: pattern } },
         { specialization: { [Op.iLike]: pattern } },
         { '$lawyer.name$': { [Op.iLike]: pattern } },
+        { '$lawyer.profile.specialization$': { [Op.iLike]: pattern } },
       ];
     }
     if (PERIOD_DAYS[period]) {
       const cutoff = new Date(Date.now() - PERIOD_DAYS[period] * 24 * 60 * 60 * 1000);
-      baseWhere[Op.and] = [{
-        [Op.or]: [
-          { scheduledStartAt: { [Op.gte]: cutoff } },
-          { scheduledStartAt: null, createdAt: { [Op.gte]: cutoff } },
-        ],
-      }];
+      baseWhere.scheduledStartAt = { [Op.gte]: cutoff };
     }
     const where = { ...baseWhere };
-    if (status && status !== 'all') where.status = status;
-    else applyBucket(where, bucket);
+    if (status && status !== 'all' && policy.STATUSES.includes(status)) where.status = status;
+    else policy.applyBucket(where, bucket);
 
-    const participantIncludes = (selectedBucket = bucket) => [
-      { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
-      {
-        model: User, as: 'lawyer', attributes: ['id', 'name', 'avatar'], required: true,
-        include: [{ model: LawyerProfile, as: 'profile', attributes: ['specialization', 'rating'] }],
-      },
-      {
-        model: Review, as: 'consultationReview', attributes: ['id', 'rating', 'text'],
-        required: selectedBucket === 'archived',
-      },
-    ];
-
-    const { count, rows } = await Consultation.findAndCountAll({
+    const rows = await Consultation.findAll({
       where,
-      include: [
-        ...participantIncludes(),
-        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'lastSafeError'] },
-        { model: Payment, as: 'payments', separate: true, attributes: ['id', 'amount', 'currency', 'status', 'refundStatus', 'refundedAt', 'escrowReleased', 'updatedAt'], order: [['createdAt', 'DESC']] },
-      ],
-      order: [['createdAt', 'DESC']],
-      distinct: true,
+      include: participantIncludes(),
+      order: policy.orderFor(bucket),
       subQuery: false,
       limit,
       offset,
     });
-
-    const counts = {};
-    await Promise.all(BUCKETS.map(async (countBucket) => {
-      const countWhere = { ...baseWhere };
-      applyBucket(countWhere, countBucket);
-      counts[countBucket] = await Consultation.count({
-        where: countWhere,
-        include: participantIncludes(countBucket),
-        distinct: true,
-        col: 'id',
-      });
-    }));
-
-    const consultations = rows.map((row) => {
-      const plain = row.toJSON();
-      if (req.userRole === 'client') delete plain.lawyerNote;
-      plain.payment = paymentPresentation(plain);
-      plain.access = consultationAccess(row);
-      if (plain.status === 'payment_pending') {
-        plain.paymentExpiresAt = new Date(new Date(plain.createdAt).getTime() + PAYMENT_RESERVATION_MINUTES * 60000);
-      }
-      delete plain.payments;
-      return plain;
+    const countGroups = await Consultation.findAll({
+      where: baseWhere,
+      attributes: ['status', 'archivedAt', [fn('COUNT', col('Consultation.id')), 'count']],
+      include: [{ model: User, as: 'lawyer', attributes: [], required: true, include: [{ model: LawyerProfile, as: 'profile', attributes: [] }] }],
+      group: ['Consultation.status', 'Consultation.archived_at'],
+      raw: false,
     });
+    const counts = countsFromGroups(countGroups);
+    const total = status && status !== 'all'
+      ? countGroups.filter((group) => group.get('status') === status).reduce((sum, group) => sum + Number(group.get('count') || 0), 0)
+      : counts[bucket];
+    const chatEvidence = await bilateralChatEvidence(rows);
+    const consultations = rows.map((row) => serializeConsultation(row, req.userRole, serverNow, chatEvidence.has(row.id)));
 
     res.json({
       consultations,
-      serverNow: new Date().toISOString(),
-      total: count,
+      serverNow: serverNow.toISOString(),
+      total,
       counts,
       page,
       limit,
-      totalPages: Math.ceil(count / limit),
+      totalPages: Math.ceil(total / limit),
     });
   } catch (err) {
     next(err);
@@ -137,30 +155,24 @@ router.get('/', authenticate, async (req, res, next) => {
 });
 
 // GET /api/consultations/upcoming — предстоящие
-router.get('/upcoming', authenticate, async (req, res, next) => {
+router.get('/upcoming', authenticate, authorize('client', 'lawyer'), async (req, res, next) => {
   try {
-    const where = {
-      status: { [Op.in]: ['accepted', 'in_progress'] },
-    };
+    const expiryScope = req.userRole === 'client' ? { clientId: req.userId } : { lawyerId: req.userId };
+    await expireDueReservations(new Date(), expiryScope);
+    const serverNow = new Date();
+    const where = { archivedAt: null, status: { [Op.in]: policy.ACTIVE_STATUSES } };
     if (req.userRole === 'client') where.clientId = req.userId;
     if (req.userRole === 'lawyer') where.lawyerId = req.userId;
 
     const consultations = await Consultation.findAll({
       where,
-      include: [
-        { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
-        {
-          model: User,
-          as: 'lawyer',
-          attributes: ['id', 'name', 'avatar'],
-          include: [{ model: LawyerProfile, as: 'profile' }],
-        },
-      ],
-      order: [['preferredDate', 'ASC']],
+      include: participantIncludes(),
+      order: policy.orderFor('upcoming'),
       limit: 10,
     });
 
-    res.json(consultations);
+    const chatEvidence = await bilateralChatEvidence(consultations);
+    res.json({ consultations: consultations.map((item) => serializeConsultation(item, req.userRole, serverNow, chatEvidence.has(item.id))), serverNow: serverNow.toISOString() });
   } catch (err) {
     next(err);
   }
@@ -194,7 +206,7 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
     // payment_pending/pending — системные (оплата), их через этот роут ставить нельзя.
     // cancelled/rejected идут только через специализированные endpoints с
     // атомарным снятием escrow и постановкой provider-refund в очередь.
-    const ALLOWED_STATUS = ['accepted', 'in_progress', 'completed'];
+    const ALLOWED_STATUS = ['accepted'];
     if (!ALLOWED_STATUS.includes(req.body.status)) {
       return res.status(400).json({ error: 'Недопустимый статус' });
     }
@@ -202,30 +214,16 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
     // МАШИНА СОСТОЯНИЙ для ЮРИСТА: только легальные переходы вперёд. НЕТ перехода ИЗ
     // completed (иначе revert-примитив → повторная выплата эскроу). rejected/cancelled
     // недоступны здесь намеренно — у них отдельные эндпоинты с возвратом эскроу.
-    // Админ сохраняет широту (модерация/разбор спора) и этот гейт минует.
+    // Админ не обходит lifecycle: принудительное завершение требует отдельного
+    // evidence-aware процесса, а не универсального изменения статуса.
     // Юрист принимает заявку здесь. Старт/завершение разрешены только через
     // специализированные endpoints, где проверяется время и факт сессии.
-    const LAWYER_TRANSITIONS = { pending: ['accepted'] };
-    if (req.userRole === 'lawyer') {
-      const allowed = LAWYER_TRANSITIONS[consultation.status] || [];
-      if (!allowed.includes(req.body.status)) {
-        return res.status(400).json({ error: 'Недопустимый переход статуса' });
-      }
-    }
-
-    // Завершение — через единый идемпотентный хелпер (высвобождает эскроу один раз).
-    if (req.body.status === 'completed') {
-      // ДЕНЬГИ: юрист может завершить (и высвободить эскроу) только начатую консультацию.
-      // Админ — может форсировать (модерация/разбор спора).
-      if (req.userRole === 'lawyer' && consultation.status !== 'in_progress') {
-        return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
-      }
-      const { consultation: updated } = await completeConsultation(consultation.id, req.body.notes);
-      return res.json({ consultation: updated });
+    if (!policy.canTransition(req.userRole, consultation.status, req.body.status)) {
+      return res.status(409).json({ error: 'Недопустимый переход статуса', code: 'INVALID_STATUS_TRANSITION' });
     }
 
     consultation.status = req.body.status;
-    if (req.userRole === 'lawyer' && req.body.status === 'accepted' && !consultation.acceptedAt) {
+    if (req.body.status === 'accepted' && !consultation.acceptedAt) {
       consultation.acceptedAt = new Date();
     }
     if (req.body.notes) consultation.notes = req.body.notes;
@@ -243,6 +241,8 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
 // GET /api/consultations/:id — получить детали консультации
 router.get('/:id', authenticate, async (req, res, next) => {
   try {
+    await expireReservationById(req.params.id);
+    const serverNow = new Date();
     const consultation = await Consultation.findByPk(req.params.id, {
       include: [
         { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
@@ -265,23 +265,19 @@ router.get('/:id', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа к этой консультации' });
     }
 
-    const plain = consultation.toJSON();
-    if (req.userRole === 'client') delete plain.lawyerNote;
-    plain.payment = paymentPresentation(plain);
-    if (plain.status === 'payment_pending') {
-      plain.paymentExpiresAt = new Date(new Date(plain.createdAt).getTime() + PAYMENT_RESERVATION_MINUTES * 60000);
-    }
-    delete plain.payments;
+    const chatEvidence = await bilateralChatEvidence([consultation]);
+    const plain = serializeConsultation(consultation, req.userRole, serverNow, chatEvidence.has(consultation.id));
     const statusHistory = [{ status: 'created', at: plain.createdAt }];
     if (plain.acceptedAt) statusHistory.push({ status: 'accepted', at: plain.acceptedAt });
     if (plain.callStartedAt) statusHistory.push({ status: 'in_progress', at: plain.callStartedAt });
     if (!['payment_pending', 'pending', 'accepted', 'in_progress'].includes(plain.status)) {
-      statusHistory.push({ status: plain.status, at: plain.updatedAt });
+      statusHistory.push({ status: plain.status, at: plain.cancelledAt || plain.updatedAt });
     }
     const documentsCount = await CaseDocument.count({ where: { consultationId: consultation.id } });
     res.json({
       consultation: plain,
-      access: consultationAccess(consultation),
+      access: plain.policy,
+      policy: plain.policy,
       payment: plain.payment,
       statusHistory,
       documents: { count: documentsCount },
@@ -291,6 +287,22 @@ router.get('/:id', authenticate, async (req, res, next) => {
   }
 });
 
+// PATCH /api/consultations/:id/archive — явный пользовательский архив.
+router.patch('/:id/archive', authenticate, authorize('client'), async (req, res, next) => {
+  try {
+    if (typeof req.body.archived !== 'boolean') return res.status(400).json({ error: 'Поле archived должно быть boolean', code: 'INVALID_ARCHIVE_VALUE' });
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+    if (consultation.clientId !== req.userId) return res.status(403).json({ error: 'Нет доступа' });
+    if (!policy.ARCHIVABLE_STATUSES.includes(consultation.status)) {
+      return res.status(409).json({ error: 'Активную консультацию нельзя архивировать', code: 'CONSULTATION_NOT_ARCHIVABLE' });
+    }
+    const changed = req.body.archived ? !consultation.archivedAt : Boolean(consultation.archivedAt);
+    if (changed) await consultation.update({ archivedAt: req.body.archived ? new Date() : null });
+    return res.json({ consultation });
+  } catch (error) { return next(error); }
+});
+
 // POST /api/consultations/:id/join — присоединиться к консультации
 router.post('/:id/join', authenticate, async (req, res, next) => {
   try {
@@ -298,6 +310,8 @@ router.post('/:id/join', authenticate, async (req, res, next) => {
       include: [
         { model: User, as: 'client', attributes: ['id', 'name', 'avatar'] },
         { model: User, as: 'lawyer', attributes: ['id', 'name', 'avatar'] },
+        { model: ConsultationMeeting, as: 'meeting', attributes: ['provider', 'status', 'scheduledAt', 'duration', 'startedAt', 'endedAt', 'lastSafeError'] },
+        { model: Payment, as: 'payments', attributes: ['id', 'status', 'refundStatus'] },
       ],
     });
     if (!consultation) {
@@ -308,7 +322,7 @@ router.post('/:id/join', authenticate, async (req, res, next) => {
       return res.status(403).json({ error: 'Нет доступа к этой консультации' });
     }
 
-    const access = consultationAccess(consultation);
+    const access = policy.policyDto(consultation, req.userRole);
     if (!access.canJoin) {
       return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
     }
@@ -350,6 +364,7 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
       return res.status(400).json({ error: 'Некорректное время' });
     }
 
+    await expireReservationById(req.params.id);
     const consultation = await Consultation.findByPk(req.params.id, {
       include: [
         { model: User, as: 'client', attributes: ['id', 'name'] },
@@ -361,8 +376,11 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
     if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
+    if (consultation.status === 'payment_expired') return res.status(410).json({ error: 'Время резервирования оплаты истекло', code: 'PAYMENT_RESERVATION_EXPIRED' });
+    if (consultation.archivedAt) return res.status(409).json({ error: 'Архивную консультацию нельзя перенести', code: 'CONSULTATION_ARCHIVED' });
+    if (![30, 60, 90].includes(Number(consultation.duration))) return res.status(409).json({ error: 'Некорректная длительность консультации', code: 'INVALID_DURATION' });
     // Переносить можно только ещё не начатую/не завершённую консультацию
-    if (!['payment_pending', 'pending', 'accepted'].includes(consultation.status)) {
+    if (!['pending', 'accepted'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Эту консультацию нельзя перенести' });
     }
     let window;
@@ -372,11 +390,10 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
         await availabilityService.lockBookingParticipants(consultation.lawyerId, consultation.clientId, transaction);
         const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
         if (![locked.clientId, locked.lawyerId].includes(req.userId)) throw availabilityService.slotError('ACCESS_DENIED', 'Нет доступа', 403);
-        if (!['payment_pending', 'pending', 'accepted'].includes(locked.status)) {
+        if (locked.archivedAt || !['pending', 'accepted'].includes(locked.status)) {
           throw availabilityService.slotError('INVALID_STATUS', 'Эту консультацию нельзя перенести', 409);
         }
-        if (availabilityService.isPaymentReservationExpired(locked)) {
-          await locked.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
+        if (await expireLockedReservation(locked, transaction)) {
           expiredReservation = true;
           return;
         }
@@ -402,7 +419,10 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
     }
     if (expiredReservation) return res.status(410).json({ error: 'Время резервирования оплаты истекло', code: 'PAYMENT_RESERVATION_EXPIRED' });
     await consultation.reload();
-    if (consultation.meetingProvider === 'zoom') zoomMeetingService.updateMeeting(consultation.id).catch(() => {});
+    if (consultation.meetingProvider === 'zoom' && consultation.status === 'accepted') {
+      const meeting = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['status'] });
+      if (meeting && ['ready', 'started'].includes(meeting.status)) zoomMeetingService.updateMeeting(consultation.id).catch(() => {});
+    }
 
     // Уведомляем другую сторону
     const isClient = consultation.clientId === req.userId;
@@ -419,12 +439,15 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
 // POST /api/consultations/:id/cancel — отменить
 router.post('/:id/cancel', authenticate, async (req, res, next) => {
   try {
+    const reason = typeof req.body.reason === 'string' ? req.body.reason.trim() : '';
+    if (!reason) return res.status(400).json({ error: 'Укажите причину отмены', code: 'CANCELLATION_REASON_REQUIRED' });
+    if (reason.length > 1000) return res.status(400).json({ error: 'Причина отмены слишком длинная', code: 'CANCELLATION_REASON_TOO_LONG' });
     const consultation = await Consultation.findByPk(req.params.id);
     if (!consultation) {
       return res.status(404).json({ error: 'Консультация не найдена' });
     }
 
-    if (consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
+    if (req.userRole !== 'admin' && consultation.clientId !== req.userId && consultation.lawyerId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
@@ -435,30 +458,37 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
     const cancelled = await Consultation.sequelize.transaction(async (transaction) => {
       const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
       if (!locked || !['payment_pending', 'pending', 'accepted'].includes(locked.status)) return false;
-      const reason = req.body.reason || 'Отменено пользователем';
-      await locked.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: reason }, { transaction });
+      const cancelledBy = req.userRole === 'lawyer' ? 'lawyer' : req.userRole === 'admin' ? 'admin' : 'client';
+      await locked.update({
+        status: 'cancelled', lifecycleStatus: 'cancelled', cancelledAt: new Date(), cancelledBy,
+        cancellationType: `${cancelledBy}_cancelled`, cancellationReason: reason,
+      }, { transaction });
       await refundConsultationEscrow(locked.id, {
         transaction, actorUserId: req.userId, source: req.userRole || 'client', reason,
       });
-      if (locked.promoCode) {
+      if (locked.promoCode && locked.promoReservedAt) {
         await Promo.increment('usedCount', {
           by: -1,
           where: { code: locked.promoCode, usedCount: { [Op.gt]: 0 } },
           transaction,
         });
+        locked.promoReservedAt = null;
+        await locked.save({ fields: ['promoReservedAt'], transaction });
       }
       return true;
     });
     if (!cancelled) {
-      return res.status(400).json({ error: 'Эту консультацию нельзя отменить' });
+      return res.status(409).json({ error: 'Эта консультация уже завершена или отменена', code: 'CONSULTATION_NOT_CANCELLABLE' });
     }
 
     await consultation.reload();
 
     // Notify the other party about cancellation
     const canceller = await User.findByPk(req.userId, { attributes: ['name'] });
-    const otherUserId = consultation.clientId === req.userId ? consultation.lawyerId : consultation.clientId;
-    notificationService.notifyConsultationCancelled(otherUserId, canceller?.name || 'Пользователь', consultation);
+    const recipients = req.userRole === 'admin'
+      ? [consultation.clientId, consultation.lawyerId]
+      : [consultation.clientId === req.userId ? consultation.lawyerId : consultation.clientId];
+    await Promise.all(recipients.map((userId) => notificationService.notifyConsultationCancelled(userId, canceller?.name || 'Пользователь', consultation)));
     if (consultation.meetingProvider === 'zoom') zoomMeetingService.cancelMeeting(consultation.id).catch(() => {});
 
     res.json({ message: 'Консультация отменена', consultation });
@@ -479,27 +509,56 @@ router.post('/:id/complete', authenticate, authorize('client'), async (req, res,
     if (consultation.clientId !== req.userId) {
       return res.status(403).json({ error: 'Нет доступа' });
     }
-    if (!['accepted', 'in_progress'].includes(consultation.status)) {
-      return res.status(400).json({ error: 'Завершить можно только активную консультацию' });
+    // Evidence and final status are checked under the same row lock as completion.
+    const outcome = await completeConsultation(consultation.id, undefined, undefined, {
+      precondition: async (locked, transaction) => {
+        if (locked.clientId !== req.userId) throw Object.assign(new Error('Нет доступа'), { status: 403 });
+        if (['no_show_lawyer', 'no_show_client', 'no_show_both'].includes(locked.lifecycleStatus)) {
+          const code = locked.lifecycleStatus === 'no_show_both' ? 'BOTH_NO_SHOW' : locked.lifecycleStatus === 'no_show_lawyer' ? 'LAWYER_NO_SHOW' : 'CLIENT_NO_SHOW';
+          throw Object.assign(new Error('Отмечена неявка участника. Обратитесь за переносом или возвратом.'), { status: 409, code });
+        }
+        if (locked.type === 'chat') {
+          const senders = await Message.findAll({ where: { consultationId: locked.id }, attributes: ['senderId'], group: ['senderId'], raw: true, transaction });
+          const senderIds = new Set(senders.map((item) => item.senderId));
+          if (!senderIds.has(locked.clientId) || !senderIds.has(locked.lawyerId)) {
+            throw Object.assign(new Error('Для завершения нужен обмен сообщениями'), { status: 409, code: 'SESSION_EVIDENCE_REQUIRED' });
+          }
+          if (locked.status !== 'in_progress') {
+            throw Object.assign(new Error('Завершить можно только начатую консультацию'), { status: 409, code: 'CONSULTATION_NOT_STARTED' });
+          }
+          return;
+        }
+        const now = new Date();
+        if (!policy.validSchedule(locked) || new Date(locked.scheduledStartAt) > now) {
+          throw Object.assign(new Error('Консультация ещё не началась'), { status: 409, code: 'CONSULTATION_NOT_STARTED' });
+        }
+        if (locked.meetingProvider === 'zoom' && !locked.conversationStartedAt) {
+          throw Object.assign(new Error('Посещение обоих участников не подтверждено'), { status: 409, code: 'ATTENDANCE_UNVERIFIED' });
+        }
+        if (locked.meetingProvider !== 'zoom' && ['video', 'phone', 'audio'].includes(locked.type)
+          && (!locked.callStartedAt || !await hasBilateralPeerEvidence(locked.id, transaction))) {
+          throw Object.assign(new Error('Нет подтверждения начала звонка'), { status: 409, code: 'SESSION_EVIDENCE_REQUIRED' });
+        }
+        if (locked.status !== 'in_progress') {
+          throw Object.assign(new Error('Завершить можно только начатую консультацию'), { status: 409, code: 'CONSULTATION_NOT_STARTED' });
+        }
+      },
+    });
+    if (!outcome.consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+    if (!outcome.alreadyCompleted && outcome.consultation.status !== 'completed') {
+      return res.status(409).json({ error: 'Консультация уже отменена или недоступна для завершения', code: 'INVALID_STATUS_TRANSITION' });
     }
-    if (consultation.lifecycleStatus === 'no_show_lawyer') {
-      return res.status(409).json({ error: 'Отмечена неявка юриста. Обратитесь за переносом или возвратом.', code: 'LAWYER_NO_SHOW' });
-    }
-    if (consultation.meetingProvider === 'zoom' && !consultation.conversationStartedAt) {
-      const meeting = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['startedAt'] });
-      const fallbackAccess = await MeetingEvent.findOne({ where: { consultationId: consultation.id, eventType: 'external_access_issued', participantRole: 'client' }, attributes: ['id'] });
-      if (!meeting?.startedAt || !fallbackAccess) return res.status(409).json({ error: 'Zoom не подтвердил оказание консультации', code: 'MEETING_EVIDENCE_REQUIRED' });
-    }
-
-    // Единый идемпотентный путь: завершение + высвобождение эскроу
-    const { consultation: updated } = await completeConsultation(consultation.id);
+    const updated = outcome.consultation;
 
     // Уведомляем юриста о завершении
-    const client = await User.findByPk(req.userId, { attributes: ['name'] });
-    notificationService.notifyConsultationCompleted(updated.lawyerId, client?.name || 'Клиент', updated);
+    if (!outcome.alreadyCompleted) {
+      const client = await User.findByPk(req.userId, { attributes: ['name'] });
+      notificationService.notifyConsultationCompleted(updated.lawyerId, client?.name || 'Клиент', updated);
+    }
 
     res.json({ message: 'Консультация завершена', consultation: updated });
   } catch (err) {
+    if (err.status && err.code) return res.status(err.status).json({ error: err.message, code: err.code });
     next(err);
   }
 });

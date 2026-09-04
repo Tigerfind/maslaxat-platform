@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Dialog, DialogTitle, DialogContent, IconButton, Box, Typography, CircularProgress, Button } from '@mui/material';
 import { CloseOutlined, DownloadOutlined, InsertDriveFileOutlined } from '@mui/icons-material';
 import { useTranslation } from '../../i18n';
+import { consultationDialogPaperSx } from '../../utils/consultationLocale';
 
 // Универсальный предпросмотр документа без скачивания.
 // fetchBlob: async () => Blob — загружает файл (у разных мест разные эндпоинты).
@@ -46,13 +47,13 @@ const DocumentPreviewDialog = ({ open, onClose, name = '', fetchBlob, onDownload
   }, [open, fetchBlob, name]);
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: 6 }}>
+    <Dialog open={open} onClose={onClose} aria-labelledby="document-preview-title" maxWidth="md" fullWidth PaperProps={{ sx: consultationDialogPaperSx }}>
+      <DialogTitle id="document-preview-title" sx={{ display: 'flex', alignItems: 'center', gap: 1, pr: 6 }}>
         <InsertDriveFileOutlined sx={{ color: 'var(--accent)' }} />
         <Typography component="span" sx={{ fontSize: 15, fontWeight: 500, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{name}</Typography>
-        <IconButton onClick={onClose} size="small" sx={{ position: 'absolute', right: 8, top: 8 }}><CloseOutlined /></IconButton>
+        <IconButton aria-label={t('preview.close')} onClick={onClose} sx={{ position: 'absolute', right: 8, top: 8 }}><CloseOutlined /></IconButton>
       </DialogTitle>
-      <DialogContent dividers sx={{ minHeight: 200 }}>
+       <DialogContent dividers sx={{ minHeight: 200, overflow: 'auto' }}>
         {loading ? (
           <Box sx={{ textAlign: 'center', py: 6 }}><CircularProgress size={28} /></Box>
         ) : error ? (

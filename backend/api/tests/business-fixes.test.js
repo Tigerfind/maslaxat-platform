@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../src/server');
 const { completeConsultation } = require('../src/services/escrow');
+const { reservePromo } = require('../src/services/promoService');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 
 const { Consultation, LawyerProfile, Promo, Subscription, User } = models;
@@ -37,9 +38,36 @@ describe('бизнес-фиксы из аудита', () => {
 
     // отмена → usedCount возвращается к 0
     const cancel = await request(app).post(`/api/client/consultations/${consId}/cancel`)
-      .set('Authorization', `Bearer ${tokenFor(client)}`);
+      .set('Authorization', `Bearer ${tokenFor(client)}`).send({ reason: 'Планы изменились' });
     expect(cancel.status).toBe(200);
     expect((await Promo.findByPk(promo.id)).usedCount).toBe(0);
+  });
+
+  test('limited promo is reserved atomically by exactly one concurrent booking', async () => {
+    const [first, second] = await Promise.all([
+      makeClient('bf-promo-race-1@test.uz'), makeClient('bf-promo-race-2@test.uz'),
+    ]);
+    const { user: lawyer } = await makeLawyer('bf-promo-race-lawyer@test.uz', { price: 200000 });
+    const promo = await Promo.create({ code: 'BFLAST', discountPercent: 10, isActive: true, usageLimit: 1, usedCount: 0 });
+    const payload = { question: 'q', consultationType: 'chat', promoCode: promo.code, acceptedTerms: true, legalVersion: '2026-08-13' };
+    const responses = await Promise.all([first, second].map((client) => request(app)
+      .post(`/api/client/lawyers/${lawyer.id}/book`).set('Authorization', `Bearer ${tokenFor(client)}`).send(payload)));
+    expect(responses.every((response) => response.status === 201)).toBe(true);
+    const bookings = responses.map((response) => response.body.consultation);
+    expect(bookings.filter((item) => item.promoCode === promo.code && Number(item.price) === 180000)).toHaveLength(1);
+    expect(bookings.filter((item) => item.promoCode === null && Number(item.price) === 200000)).toHaveLength(1);
+    await promo.reload();
+    expect(promo.usedCount).toBe(1);
+  });
+
+  test('promo reservation rolls back when booking transaction fails', async () => {
+    const promo = await Promo.create({ code: 'BFROLLBACK', discountPercent: 10, isActive: true, usageLimit: 1, usedCount: 0 });
+    await expect(Consultation.sequelize.transaction(async (transaction) => {
+      await reservePromo(promo.code, 200000, transaction);
+      throw new Error('booking failed');
+    })).rejects.toThrow('booking failed');
+    await promo.reload();
+    expect(promo.usedCount).toBe(0);
   });
 
   test('апгрейд подписки продлевает срок от текущего, а не от сегодня', async () => {

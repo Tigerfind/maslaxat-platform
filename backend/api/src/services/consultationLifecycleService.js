@@ -4,14 +4,14 @@ const { Consultation, MeetingEvent } = require('../models');
 const STATUSES = [
   'pending_payment', 'confirmed', 'meeting_creating', 'ready',
   'waiting_for_lawyer', 'waiting_for_client', 'in_progress', 'completed',
-  'cancelled', 'failed', 'rescheduled', 'no_show_client', 'no_show_lawyer',
+  'cancelled', 'failed', 'rescheduled', 'no_show_client', 'no_show_lawyer', 'no_show_both',
 ];
 
 const TRANSITIONS = {
   pending_payment: ['confirmed', 'cancelled', 'failed'],
   confirmed: ['meeting_creating', 'ready', 'cancelled', 'rescheduled', 'failed'],
   meeting_creating: ['ready', 'cancelled', 'rescheduled', 'failed'],
-  ready: ['waiting_for_lawyer', 'waiting_for_client', 'in_progress', 'cancelled', 'rescheduled', 'failed', 'no_show_client', 'no_show_lawyer'],
+  ready: ['waiting_for_lawyer', 'waiting_for_client', 'in_progress', 'cancelled', 'rescheduled', 'failed', 'no_show_client', 'no_show_lawyer', 'no_show_both'],
   waiting_for_lawyer: ['in_progress', 'completed', 'cancelled', 'no_show_lawyer', 'failed'],
   waiting_for_client: ['in_progress', 'completed', 'cancelled', 'no_show_client', 'failed'],
   in_progress: ['completed', 'failed'],
@@ -19,6 +19,7 @@ const TRANSITIONS = {
   failed: ['meeting_creating', 'rescheduled', 'cancelled'],
   no_show_client: ['rescheduled', 'cancelled'],
   no_show_lawyer: ['rescheduled', 'cancelled'],
+  no_show_both: ['rescheduled', 'cancelled'],
   completed: [], cancelled: [],
 };
 

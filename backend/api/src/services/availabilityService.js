@@ -68,14 +68,26 @@ async function lockZoomConnection(lawyerId, transaction) {
 const blockingStatusWhere = (now = new Date()) => ({
   [Op.or]: [
     { status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } },
-    { status: 'payment_pending', createdAt: { [Op.gt]: new Date(now.getTime() - PAYMENT_RESERVATION_MINUTES * 60000) } },
+    {
+      status: 'payment_pending',
+      [Op.or]: [
+        { paymentExpiresAt: { [Op.gt]: now } },
+        { paymentExpiresAt: null, createdAt: { [Op.gt]: new Date(now.getTime() - PAYMENT_RESERVATION_MINUTES * 60000) } },
+      ],
+    },
   ],
 });
 
-const isPaymentReservationExpired = (consultation, now = new Date()) => (
-  consultation?.status === 'payment_pending'
-  && now.getTime() - new Date(consultation.createdAt).getTime() >= PAYMENT_RESERVATION_MINUTES * 60000
-);
+const paymentExpiryAt = (consultation) => {
+  if (!consultation) return null;
+  if (consultation.paymentExpiresAt) return new Date(consultation.paymentExpiresAt);
+  if (!consultation.createdAt) return null;
+  return new Date(new Date(consultation.createdAt).getTime() + PAYMENT_RESERVATION_MINUTES * 60000);
+};
+const isPaymentReservationExpired = (consultation, now = new Date()) => {
+  const expiry = paymentExpiryAt(consultation);
+  return consultation?.status === 'payment_pending' && expiry && expiry <= now;
+};
 
 async function assertAvailable({ lawyerId, clientId, window, excludeConsultationId, transaction }) {
   const bufferedStart = window.start.minus({ minutes: BOOKING_BUFFER_MINUTES });
@@ -146,5 +158,5 @@ async function listAvailableSlots(lawyerId, { from, days = 21, duration = 60, cl
 module.exports = {
   DURATIONS, BLOCKING_STATUSES, PAYMENT_RESERVATION_MINUTES, MIN_LEAD_MINUTES, SLOT_STEP_MINUTES, BOOKING_BUFFER_MINUTES,
   validateWindow, lockLawyer, lockBookingParticipants, lockZoomConnection, blockingStatusWhere,
-  isPaymentReservationExpired, assertAvailable, listAvailableSlots, slotError,
+  paymentExpiryAt, isPaymentReservationExpired, assertAvailable, listAvailableSlots, slotError,
 };

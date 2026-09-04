@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, Button, Box, Typography,
-  List, ListItem, ListItemText, IconButton, CircularProgress, Chip,
+  List, ListItem, ListItemText, IconButton, CircularProgress, Chip, Alert,
 } from '@mui/material';
 import {
   UploadFileOutlined, DownloadOutlined, DeleteOutline, DescriptionOutlined,
@@ -11,20 +11,25 @@ import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import DocumentPreviewDialog from '../UI/DocumentPreviewDialog';
+import { consultationDialogPaperSx, localeForLanguage } from '../../utils/consultationLocale';
 
-const fmtSize = (b) => {
+const fmtSize = (b, locale) => {
   if (!b) return '';
-  if (b < 1024) return `${b} B`;
-  if (b < 1024 * 1024) return `${(b / 1024).toFixed(0)} KB`;
-  return `${(b / 1024 / 1024).toFixed(1)} MB`;
+  const formatter = new Intl.NumberFormat(locale, { maximumFractionDigits: b < 1024 * 1024 ? 0 : 1 });
+  if (b < 1024) return `${formatter.format(b)} B`;
+  if (b < 1024 * 1024) return `${formatter.format(b / 1024)} KB`;
+  return `${formatter.format(b / 1024 / 1024)} MB`;
 };
 
 // Рабочие документы по делу — общая папка юриста и клиента для одной консультации.
 // Удалять может только автор загрузки; скачивать — оба участника.
-const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
-  const { t } = useTranslation();
+const CaseDocuments = ({ consultationId, open, onClose, currentUserId, readOnly = false }) => {
+  const { t, language } = useTranslation();
+  const locale = localeForLanguage(language);
   const [docs, setDocs] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+  const [serverWritable, setServerWritable] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [downloading, setDownloading] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -41,15 +46,20 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
 
   const load = useCallback(async () => {
     setLoading(true);
+    setLoadError(null);
     try {
       const res = await api.get(`/consultations/${consultationId}/documents`);
       setDocs(res.data.documents || []);
-    } catch {
-      setDocs([]);
+      setServerWritable(res.data.writable === true);
+    } catch (error) {
+      setLoadError(error);
+      setServerWritable(false);
     } finally {
       setLoading(false);
     }
   }, [consultationId]);
+
+  const writable = !readOnly && serverWritable;
 
   useEffect(() => { if (open) load(); }, [open, load]);
 
@@ -103,8 +113,8 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
   };
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>
-      <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
+    <Dialog open={open} onClose={onClose} aria-labelledby="case-documents-title" maxWidth="sm" fullWidth PaperProps={{ sx: consultationDialogPaperSx }}>
+      <DialogTitle id="case-documents-title" sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
         <FolderOpenOutlined sx={{ color: 'var(--accent)' }} />
         {t('caseDocs.title')}
       </DialogTitle>
@@ -113,7 +123,7 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
           {t('caseDocs.hint')}
         </Typography>
 
-        <Button
+        {writable && <Button
           onClick={() => fileRef.current && fileRef.current.click()}
           disabled={uploading}
           variant="outlined"
@@ -121,13 +131,17 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
           sx={{ textTransform: 'none', mb: 2, borderRadius: '10px' }}
         >
           {t('caseDocs.upload')}
-        </Button>
-        <input ref={fileRef} type="file"
+        </Button>}
+        {writable && <input ref={fileRef} type="file"
           accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.webp"
-          onChange={onFile} style={{ display: 'none' }} />
+          onChange={onFile} style={{ display: 'none' }} />}
 
         {loading ? (
           <Box sx={{ textAlign: 'center', py: 3 }}><CircularProgress size={22} /></Box>
+        ) : loadError ? (
+          <Alert severity="error" action={<Button color="inherit" size="small" onClick={load}>{t('caseDocs.retry')}</Button>}>
+            {t('caseDocs.loadError')}
+          </Alert>
         ) : docs.length === 0 ? (
           <Typography sx={{ fontSize: 13, color: 'var(--text3)', py: 1 }}>{t('caseDocs.empty')}</Typography>
         ) : (
@@ -135,35 +149,32 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId }) => {
             {docs.map((d) => {
               const isMine = d.uploaderId === currentUserId;
               return (
-                <ListItem key={d.id} divider
-                  secondaryAction={
-                    <Box sx={{ display: 'flex', gap: 0.5 }}>
-                      <IconButton size="small" onClick={() => setPreviewDoc(d)} title={t('preview.view')}>
-                        <VisibilityOutlined sx={{ fontSize: 19 }} />
-                      </IconButton>
-                      <IconButton size="small" disabled={downloading === d.id} onClick={() => download(d)} title={t('caseDocs.download')}>
-                        {downloading === d.id ? <CircularProgress size={16} /> : <DownloadOutlined sx={{ fontSize: 19 }} />}
-                      </IconButton>
-                      {isMine && (
-                        <IconButton size="small" onClick={() => remove(d)} title={t('caseDocs.delete')} sx={{ color: 'var(--error, #C0492F)' }}>
-                          <DeleteOutline sx={{ fontSize: 19 }} />
-                        </IconButton>
-                      )}
-                    </Box>
-                  }
-                >
+                <ListItem key={d.id} divider sx={{ px: 0, alignItems: 'flex-start', flexWrap: { xs: 'wrap', sm: 'nowrap' }, gap: 1 }}>
                   <DescriptionOutlined sx={{ fontSize: 20, color: 'var(--accent)', mr: 1.5 }} />
                   <ListItemText
                     primary={d.name}
                     secondary={
                       <span>
-                        {d.uploader?.name || ''}{d.size ? ` · ${fmtSize(d.size)}` : ''}
+                        {d.uploader?.name || ''}{d.size ? ` · ${fmtSize(d.size, locale)}` : ''}
                       </span>
                     }
-                    primaryTypographyProps={{ fontSize: 14, fontWeight: 500, noWrap: true }}
+                    primaryTypographyProps={{ fontSize: 14, fontWeight: 500, sx: { overflowWrap: 'anywhere' } }}
                     secondaryTypographyProps={{ fontSize: 12 }}
                   />
-                  {isMine && <Chip size="small" label={t('caseDocs.mine')} sx={{ mr: 9, height: 20, fontSize: 10.5 }} />}
+                  {isMine && <Chip size="small" label={t('caseDocs.mine')} sx={{ height: 24, fontSize: 10.5 }} />}
+                  <Box sx={{ display: 'flex', gap: 0.5, width: { xs: '100%', sm: 'auto' }, justifyContent: { xs: 'flex-end', sm: 'initial' } }}>
+                    <IconButton aria-label={t('preview.view')} onClick={() => setPreviewDoc(d)} title={t('preview.view')}>
+                      <VisibilityOutlined sx={{ fontSize: 19 }} />
+                    </IconButton>
+                    <IconButton aria-label={t('caseDocs.download')} disabled={downloading === d.id} onClick={() => download(d)} title={t('caseDocs.download')}>
+                      {downloading === d.id ? <CircularProgress size={16} /> : <DownloadOutlined sx={{ fontSize: 19 }} />}
+                    </IconButton>
+                    {isMine && writable && (
+                      <IconButton aria-label={t('caseDocs.delete')} onClick={() => remove(d)} title={t('caseDocs.delete')} sx={{ color: 'var(--error, #C0492F)' }}>
+                        <DeleteOutline sx={{ fontSize: 19 }} />
+                      </IconButton>
+                    )}
+                  </Box>
                 </ListItem>
               );
             })}

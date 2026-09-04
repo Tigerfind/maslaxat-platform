@@ -77,18 +77,42 @@ test('admin diagnostics не раскрывает encrypted URL или OAuth tok
 });
 
 test('client не может подтвердить платную Zoom-консультацию без attendance evidence', async () => {
-  const { client, consultation } = await fixture();
+  const { client, consultation } = await fixture(-5);
   const response = await request(app).post(`/api/consultations/${consultation.id}/complete`).set('Authorization', `Bearer ${tokenFor(client)}`);
   expect(response.status).toBe(409);
-  expect(response.body.code).toBe('MEETING_EVIDENCE_REQUIRED');
+  expect(response.body.code).toBe('ATTENDANCE_UNVERIFIED');
 });
 
-test('официальный external fallback можно подтвердить только при meeting.started', async () => {
-  const { client, consultation } = await fixture();
+test('meeting.started и external access не заменяют подтверждённую посещаемость обоих участников', async () => {
+  const { client, consultation } = await fixture(-5);
   const meeting = await models.ConsultationMeeting.findOne({ where: { consultationId: consultation.id } });
   await meeting.update({ status: 'started', startedAt: new Date() });
   const access = await request(app).post(`/api/zoom/consultations/${consultation.id}/access`).set('Authorization', `Bearer ${tokenFor(client)}`);
   expect(access.status).toBe(200);
   const completed = await request(app).post(`/api/consultations/${consultation.id}/complete`).set('Authorization', `Bearer ${tokenFor(client)}`);
-  expect(completed.status).toBe(200);
+  expect(completed.status).toBe(409);
+  expect(completed.body.code).toBe('ATTENDANCE_UNVERIFIED');
+  await consultation.reload();
+  expect(consultation.status).toBe('accepted');
+});
+
+test.each(['no_show_client', 'no_show_lawyer', 'no_show_both'])('all direct Zoom access paths deny %s', async (lifecycleStatus) => {
+  const { client, consultation } = await fixture(-5);
+  await consultation.update({ lifecycleStatus, noShowCheckedAt: new Date() });
+  const auth = `Bearer ${tokenFor(client)}`;
+  const preflight = await request(app).get(`/api/zoom/consultations/${consultation.id}/preflight`).set('Authorization', auth);
+  const external = await request(app).post(`/api/zoom/consultations/${consultation.id}/access`).set('Authorization', auth);
+  const sdk = await request(app).post(`/api/zoom/consultations/${consultation.id}/sdk-access`).set('Authorization', auth);
+  expect(preflight.body.access.canJoin).toBe(false);
+  expect(preflight.body.access.reason).toBe(lifecycleStatus === 'no_show_both' ? 'BOTH_NO_SHOW' : lifecycleStatus === 'no_show_lawyer' ? 'LAWYER_NO_SHOW' : 'CLIENT_NO_SHOW');
+  expect(external.status).toBe(409);
+  expect(sdk.status).toBe(409);
+});
+
+test('preflight returns authoritative configurable grace deadline', async () => {
+  const { client, consultation } = await fixture(-5);
+  const response = await request(app).get(`/api/zoom/consultations/${consultation.id}/preflight`).set('Authorization', `Bearer ${tokenFor(client)}`);
+  expect(new Date(response.body.graceEndsAt).getTime() - new Date(response.body.scheduledEndAt).getTime())
+    .toBe(require('../src/services/consultationAccessService').GRACE_MINUTES * 60000);
+  expect(response.body.joinExpiresAt).toBe(response.body.graceEndsAt);
 });

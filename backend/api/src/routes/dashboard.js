@@ -21,12 +21,15 @@ const monthKey = (date) => {
 const { authenticate, authorize } = require('../middleware/auth');
 const { withLawyerCounts } = require('../services/specializationStats');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
+const { ACTIVE_STATUSES } = require('../services/consultationPolicy');
+const { expireDueReservations } = require('../services/reservationExpiryService');
 
 // GET /api/dashboard/client/stats
 router.get('/client/stats', authenticate, authorize('client'), async (req, res, next) => {
   try {
+    await expireDueReservations(new Date(), { clientId: req.userId });
     const [active, completed, documents, unreadNotifications, aiChats] = await Promise.all([
-      Consultation.count({ where: { clientId: req.userId, status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } } }),
+      Consultation.count({ where: { clientId: req.userId, archivedAt: null, status: { [Op.in]: ACTIVE_STATUSES } } }),
       Consultation.count({ where: { clientId: req.userId, status: 'completed' } }),
       Document.count({ where: { userId: req.userId } }),
       Notification.count({ where: { userId: req.userId, isRead: false } }),
@@ -48,9 +51,10 @@ router.get('/client/stats', authenticate, authorize('client'), async (req, res, 
 // GET /api/dashboard/lawyer/stats
 router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, next) => {
   try {
+    await expireDueReservations(new Date(), { lawyerId: req.userId });
     const [pending, active, completed, reviews, unreadNotifications] = await Promise.all([
       Consultation.count({ where: { lawyerId: req.userId, status: 'pending' } }),
-      Consultation.count({ where: { lawyerId: req.userId, status: { [Op.in]: ['accepted', 'in_progress'] } } }),
+      Consultation.count({ where: { lawyerId: req.userId, archivedAt: null, status: { [Op.in]: ['accepted', 'in_progress'] } } }),
       Consultation.count({ where: { lawyerId: req.userId, status: 'completed' } }),
       Review.count({ where: { lawyerId: req.userId } }),
       Notification.count({ where: { userId: req.userId, isRead: false } }),
@@ -98,7 +102,7 @@ router.get('/lawyer/stats', authenticate, authorize('lawyer'), async (req, res, 
 
     // Calculate active clients (unique clients with active consultations)
     const activeClients = await Consultation.count({
-      where: { lawyerId: req.userId, status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } },
+      where: { lawyerId: req.userId, archivedAt: null, status: { [Op.in]: ACTIVE_STATUSES } },
       distinct: true,
       col: 'clientId',
     });
@@ -222,7 +226,7 @@ router.get('/admin/reports', authenticate, authorize('admin'), async (req, res, 
     const monthlyRevenue = months.map((m) => ({ month: m.key, revenue: revenueByMonth[m.key] }));
 
     // Консультации по статусам
-    const statuses = ['payment_pending', 'pending', 'accepted', 'in_progress', 'completed', 'rejected', 'cancelled'];
+    const statuses = ['payment_pending', 'payment_expired', 'pending', 'accepted', 'in_progress', 'completed', 'rejected', 'cancelled'];
     const byStatusRaw = await Promise.all(statuses.map((s) => Consultation.count({ where: { status: s } })));
     const consultationsByStatus = Object.fromEntries(statuses.map((s, i) => [s, byStatusRaw[i]]));
 

@@ -1,6 +1,7 @@
 const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, makeClient, makeLawyer, tokenFor } = require('./helpers');
+const { recordPeerConnected } = require('../src/services/webrtcEvidenceService');
 
 beforeEach(resetDb);
 
@@ -15,6 +16,7 @@ async function scheduledFixture(offsetMinutes = 10, duration = 60) {
     acceptedAt: new Date(),
     scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + duration * 60000),
   });
+  await models.Payment.create({ consultationId: consultation.id, userId: client.id, amount: 200000, status: 'paid' });
   return { client, outsider, lawyer, consultation };
 }
 
@@ -48,7 +50,6 @@ test('video endpoint не выдаёт ICE и не стартует звонок
 
 test('detail отдаёт безопасный payment/doc/history DTO и скрывает private note от клиента', async () => {
   const { client, outsider, lawyer, consultation } = await scheduledFixture(10);
-  await models.Payment.create({ consultationId: consultation.id, userId: client.id, amount: 200000, status: 'paid' });
   await models.CaseDocument.create({ consultationId: consultation.id, uploaderId: client.id, name: 'case.pdf', path: '/private/case.pdf' });
   const response = await request(app).get(`/api/client/consultations/${consultation.id}`)
     .set('Authorization', `Bearer ${tokenFor(client)}`);
@@ -77,8 +78,10 @@ test('юрист сохраняет итог, клиент видит его в 
 });
 
 test('завершение из кабинета юриста требует итог и сохраняет его вместе с completed', async () => {
-  const { lawyer, consultation } = await scheduledFixture(-10);
+  const { client, lawyer, consultation } = await scheduledFixture(-10);
   await consultation.update({ status: 'in_progress', isFree: true, price: 0, billingStatus: 'none', callStartedAt: new Date() });
+  await recordPeerConnected(consultation.id, client.id);
+  await recordPeerConnected(consultation.id, lawyer.id);
   const auth = `Bearer ${tokenFor(lawyer)}`;
   expect((await request(app).post(`/api/lawyer/consultations/${consultation.id}/end`)
     .set('Authorization', auth).send({ notes: '' })).status).toBe(400);

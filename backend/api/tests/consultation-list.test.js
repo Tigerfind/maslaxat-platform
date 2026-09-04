@@ -18,17 +18,19 @@ test('pagination не искажает серверные счётчики seman
   await create('in_progress', 'Будущая три');
   const unrated = await create('completed', 'Завершена');
   const rated = await create('completed', 'Архив');
+  const archived = await create('completed', 'Явный архив');
   await create('cancelled', 'Отмена');
   await models.Review.create({ clientId: client.id, lawyerId: lawyer.id, consultationId: rated.id, rating: 5 });
+  await archived.update({ archivedAt: new Date() });
 
   const response = await request(app).get('/api/client/consultations?bucket=all&page=1&limit=2')
     .set('Authorization', `Bearer ${tokenFor(client)}`);
   expect(response.status).toBe(200);
   expect(response.body.consultations).toHaveLength(2);
-  expect(response.body.total).toBe(8);
-  expect(response.body.totalPages).toBe(4);
+  expect(response.body.total).toBe(9);
+  expect(response.body.totalPages).toBe(5);
   expect(response.body.counts).toEqual({
-    all: 8, payment_pending: 2, upcoming: 3, completed: 1, cancelled: 1, archived: 1,
+    all: 9, payment_pending: 2, upcoming: 3, completed: 2, cancelled: 1, archived: 1,
   });
   expect(unrated.id).toBeTruthy();
 });

@@ -3,6 +3,7 @@ const app = require('../src/server');
 const { resetDb, models, makeClient, makeLawyer, tokenFor } = require('./helpers');
 
 const { Consultation, Payment, LawyerProfile, Review } = models;
+const { recordPeerConnected } = require('../src/services/webrtcEvidenceService');
 
 beforeEach(resetDb);
 
@@ -33,8 +34,21 @@ test('юрист не завершает видео без подтверждё�
 test('даже после соединения юрист только запрашивает завершение, escrow выпускает клиент', async () => {
   const client = await makeClient('confirm-client@test.uz');
   const { user: lawyer, lp } = await makeLawyer('confirm-lawyer@test.uz', { pendingBalance: 100000 });
-  const consultation = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'Проверка', status: 'in_progress', type: 'video', price: 100000, callStartedAt: new Date() });
+  const scheduledStartAt = new Date(Date.now() - 10 * 60 * 1000);
+  const consultation = await Consultation.create({
+    clientId: client.id,
+    lawyerId: lawyer.id,
+    question: 'Проверка',
+    status: 'in_progress',
+    type: 'video',
+    price: 100000,
+    scheduledStartAt,
+    scheduledEndAt: new Date(scheduledStartAt.getTime() + 60 * 60 * 1000),
+    callStartedAt: new Date(),
+  });
   await Payment.create({ consultationId: consultation.id, userId: client.id, amount: 100000, provider: 'payme', status: 'paid' });
+  await recordPeerConnected(consultation.id, client.id);
+  await recordPeerConnected(consultation.id, lawyer.id);
   const lawyerEnd = await request(app).post(`/api/video/consultation/${consultation.id}/end`)
     .set('Authorization', `Bearer ${tokenFor(lawyer)}`).send({ durationSeconds: 600 });
   expect(lawyerEnd.body).toMatchObject({ status: 'in_progress', awaitingClientConfirmation: true });

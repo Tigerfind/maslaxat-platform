@@ -4,8 +4,12 @@ const { DateTime } = require('luxon');
 const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
-const { consultationAccess } = require('../services/consultationAccessService');
 const availabilityService = require('../services/availabilityService');
+const { requireSupportedCall } = require('../services/callProviderPolicy');
+const { hasBilateralPeerEvidence } = require('../services/webrtcEvidenceService');
+const consultationPolicy = require('../services/consultationPolicy');
+
+const extensionPaymentsAvailable = () => process.env.NODE_ENV !== 'production' && !process.env.PAYME_KEY;
 
 function buildIceServers(userId) {
   const servers = [
@@ -42,15 +46,14 @@ router.get('/consultation/:id', async (req, res, next) => {
           attributes: ['id', 'name', 'avatar'],
           include: [{ model: LawyerProfile, as: 'profile', attributes: ['specialization'] }],
         },
+        { model: Payment, as: 'payments', separate: true, attributes: ['status', 'refundStatus'] },
       ],
     });
 
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
-    if (consultation.meetingProvider === 'zoom') {
-      return res.status(409).json({ error: 'Используйте защищённый Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
-    }
+    const callPolicy = requireSupportedCall(consultation);
 
     // Only participants can access
     const isParticipant =
@@ -60,12 +63,13 @@ router.get('/consultation/:id', async (req, res, next) => {
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
     }
-    const access = consultationAccess(consultation);
-    const canUseVideo = consultation.type === 'video' && access.canJoin;
+    const access = consultationPolicy.policyDto(consultation, req.userRole, new Date());
+    const canUseVideo = access.canJoin;
 
     res.json({
       id: consultation.id,
       type: consultation.type,
+      callMode: callPolicy.mode,
       status: consultation.status,
       question: consultation.question,
       preferredDate: consultation.preferredDate,
@@ -75,6 +79,7 @@ router.get('/consultation/:id', async (req, res, next) => {
       duration: consultation.duration,
       price: consultation.price,
       actualDuration: consultation.actualDuration,
+      callStartedAt: consultation.callStartedAt,
       clientId: consultation.clientId,
       lawyerId: consultation.lawyerId,
       client: consultation.client,
@@ -84,6 +89,7 @@ router.get('/consultation/:id', async (req, res, next) => {
         ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
         : null,
       access,
+      capabilities: { extensionPayments: extensionPaymentsAvailable() },
     });
   } catch (err) {
     next(err);
@@ -93,11 +99,13 @@ router.get('/consultation/:id', async (req, res, next) => {
 // POST /api/video/consultation/:id/start — mark consultation as in_progress
 router.post('/consultation/:id/start', async (req, res, next) => {
   try {
-    const consultation = await Consultation.findByPk(req.params.id);
+    const consultation = await Consultation.findByPk(req.params.id, {
+      include: [{ model: Payment, as: 'payments', separate: true, attributes: ['status', 'refundStatus'] }],
+    });
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
-    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Используйте Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
+    requireSupportedCall(consultation);
 
     const isParticipant =
       consultation.clientId === req.userId ||
@@ -109,15 +117,15 @@ router.post('/consultation/:id/start', async (req, res, next) => {
     if (!['accepted', 'in_progress'].includes(consultation.status)) {
       return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
     }
-    const access = consultationAccess(consultation);
+    const access = consultationPolicy.policyDto(consultation, req.userRole, new Date());
     if (!access.canJoin) return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
+    if (!consultation.callStartedAt || !await hasBilateralPeerEvidence(consultation.id)) {
+      return res.status(409).json({ error: 'Ожидается соединение второго участника', code: 'PEER_NOT_CONNECTED' });
+    }
 
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
     if (consultation.status === 'accepted') {
-      if (!consultation.callStartedAt) {
-        return res.status(409).json({ error: 'Ожидается соединение второго участника', code: 'PEER_NOT_CONNECTED' });
-      }
       const [affected] = await Consultation.update(
         { status: 'in_progress' },
         { where: { id: consultation.id, status: 'accepted' } }
@@ -139,7 +147,7 @@ router.post('/consultation/:id/end', async (req, res, next) => {
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
-    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Завершение Zoom фиксируется сервером', code: 'ZOOM_PROVIDER_REQUIRED' });
+    requireSupportedCall(consultation);
 
     const isParticipant =
       consultation.clientId === req.userId ||
@@ -149,24 +157,42 @@ router.post('/consultation/:id/end', async (req, res, next) => {
       return res.status(403).json({ error: 'Access denied' });
     }
 
+    if (consultation.status === 'completed') {
+      if (!consultation.callStartedAt || !await hasBilateralPeerEvidence(consultation.id)) {
+        return res.status(409).json({ error: 'Нет подтверждения соединения участников', code: 'SESSION_EVIDENCE_REQUIRED' });
+      }
+      return res.json({ success: true, status: 'completed', alreadyCompleted: true });
+    }
+
     // Завершить можно только идущую сессию (in_progress) — иначе юрист мог бы
     // забрать эскроу за непроведённую консультацию (pending/accepted).
     if (consultation.status !== 'in_progress') {
       return res.status(400).json({ error: 'Завершить можно только начатую консультацию' });
     }
-    if (!consultation.callStartedAt) {
+    if (!consultation.callStartedAt || !await hasBilateralPeerEvidence(consultation.id)) {
       return res.status(400).json({ error: 'Нет подтверждения соединения участников' });
     }
 
-    const durationSeconds = parseInt(req.body?.durationSeconds, 10);
     if (consultation.clientId === req.userId) {
-      await completeConsultation(consultation.id, undefined, durationSeconds);
-      return res.json({ success: true, status: 'completed' });
+      const outcome = await completeConsultation(consultation.id, undefined, undefined, {
+        precondition: async (locked, transaction) => {
+          if (locked.clientId !== req.userId) throw Object.assign(new Error('Access denied'), { status: 403 });
+          if (!locked.scheduledStartAt || !locked.scheduledEndAt || new Date(locked.scheduledEndAt) <= new Date(locked.scheduledStartAt)) {
+            throw Object.assign(new Error('Расписание консультации не подтверждено'), { status: 409, code: 'CONSULTATION_NOT_SCHEDULED' });
+          }
+          if (!locked.callStartedAt || !await hasBilateralPeerEvidence(locked.id, transaction)) throw Object.assign(new Error('Нет подтверждения соединения участников'), { status: 409, code: 'SESSION_EVIDENCE_REQUIRED' });
+        },
+      });
+      if (!outcome.alreadyCompleted && outcome.consultation?.status !== 'completed') {
+        return res.status(409).json({ error: 'Консультация уже отменена или недоступна для завершения', code: 'INVALID_STATUS_TRANSITION' });
+      }
+      return res.json({ success: true, status: 'completed', actualDuration: outcome.consultation.actualDuration });
     }
 
     await consultation.update({
       lawyerEndedAt: consultation.lawyerEndedAt || new Date(),
-      ...(Number.isFinite(durationSeconds) && durationSeconds >= 0 ? { actualDuration: durationSeconds } : {}),
+      ...(typeof req.body?.summary === 'string' && req.body.summary.trim()
+        ? { lawyerSummary: req.body.summary.trim().slice(0, 5000) } : {}),
     });
 
     res.json({ success: true, status: consultation.status, awaitingClientConfirmation: true });
@@ -185,7 +211,7 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
       include: [{ model: User, as: 'lawyer', include: [{ model: LawyerProfile, as: 'profile', attributes: ['price'] }] }],
     });
     if (!consultation) return res.status(404).json({ error: 'Consultation not found' });
-    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Продление Zoom доступно только через подтверждённое предложение', code: 'ZOOM_EXTENSION_REQUIRED' });
+    requireSupportedCall(consultation);
 
     const isParticipant = consultation.clientId === req.userId || consultation.lawyerId === req.userId;
     if (!isParticipant) return res.status(403).json({ error: 'Access denied' });
@@ -201,8 +227,8 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
     const addAmount = Math.round((basePrice * minutes) / 60);
 
     // Реальная оплата продления через Payme — Фаза 6; сейчас тест-режим.
-    if (process.env.NODE_ENV === 'production' || process.env.PAYME_KEY) {
-      return res.status(501).json({ error: 'Оплата продления через Payme ещё не подключена' });
+    if (!extensionPaymentsAvailable()) {
+      return res.status(501).json({ error: 'Оплата продления через Payme ещё не подключена', code: 'EXTENSION_PAYMENT_UNAVAILABLE' });
     }
 
     // Продление + резерв эскроу — в ОДНОЙ транзакции с блокировкой строки
@@ -263,3 +289,4 @@ router.post('/consultation/:id/extend', async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.extensionPaymentsAvailable = extensionPaymentsAvailable;

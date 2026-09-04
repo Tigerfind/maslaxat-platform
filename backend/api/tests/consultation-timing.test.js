@@ -1,4 +1,4 @@
-const { resetDb, models, makeClient, makeLawyer } = require('./helpers');
+const { resetDb, models, makeClient, makeLawyer, makeAdmin } = require('./helpers');
 const { reconcileConsultationTiming } = require('../src/services/consultationTimingService');
 
 beforeEach(resetDb);
@@ -37,6 +37,20 @@ test('отсутствие клиента фиксируется отдельн�
   await reconcileConsultationTiming(now);
   await consultation.reload();
   expect(consultation.lifecycleStatus).toBe('no_show_client');
+});
+
+test('если не подключился никто, фиксируется no_show_both без автоматического возврата', async () => {
+  await makeAdmin('timing-admin@test.uz');
+  const { consultation, lp, now } = await fixture();
+  const payment = await models.Payment.create({ consultationId: consultation.id, userId: consultation.clientId, amount: 100000, provider: 'payme', status: 'paid' });
+  await reconcileConsultationTiming(now);
+  await consultation.reload();
+  expect(consultation.lifecycleStatus).toBe('no_show_both');
+  await reconcileConsultationTiming(new Date(new Date(consultation.scheduledEndAt).getTime() + 30 * 60000));
+  await Promise.all([lp.reload(), payment.reload()]);
+  expect(Number(lp.pendingBalance)).toBe(100000);
+  expect(payment.refundStatus).toBe('none');
+  expect(await models.Notification.count({ where: { type: 'no_show_review' } })).toBe(1);
 });
 
 test('два timing worker не дублируют no-show уведомления', async () => {

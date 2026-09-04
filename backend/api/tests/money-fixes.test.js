@@ -3,6 +3,7 @@ const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 const { computeLoyalty } = require('../src/services/loyaltyService');
 const { DateTime } = require('luxon');
+const { recordPeerConnected } = require('../src/services/webrtcEvidenceService');
 
 const { Consultation, Payment, LawyerProfile } = models;
 
@@ -31,11 +32,13 @@ describe('деньги/эскроу — фиксы аудита', () => {
     expect((await Consultation.findByPk(cons.id)).status).toBe('pending');
   });
 
-  test('video /end завершает in_progress и высвобождает эскроу', async () => {
+  test('video /end юриста запрашивает завершение и не доверяет клиентской длительности', async () => {
     const client = await makeClient('mf-c2@test.uz');
     const { user: lawyer, lp } = await makeLawyer('mf-l2@test.uz', { pendingBalance: 200000 });
     const cons = await paidConsultation(client.id, lawyer.id, { status: 'in_progress' });
     await cons.update({ callStartedAt: new Date() });
+    await recordPeerConnected(cons.id, client.id);
+    await recordPeerConnected(cons.id, lawyer.id);
 
     const res = await request(app).post(`/api/video/consultation/${cons.id}/end`)
       .set('Authorization', `Bearer ${tokenFor(lawyer)}`).send({ durationSeconds: 725 });
@@ -45,8 +48,8 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const after = await LawyerProfile.findByPk(lp.id);
     expect(Number(after.balance)).toBe(0);
     expect(Number(after.pendingBalance)).toBe(200000);
-    // фактическая длительность звонка сохранена
-    expect((await Consultation.findByPk(cons.id)).actualDuration).toBe(725);
+    // Юрист не может подменить длительность: её вычислит сервер при подтверждении клиента.
+    expect((await Consultation.findByPk(cons.id)).actualDuration).toBeNull();
   });
 
   test('video /start только из accepted, не из pending', async () => {
@@ -79,8 +82,8 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const { user: lawyer } = await makeLawyer('mf-l5@test.uz');
     const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'completed', price: 100000 });
     const res = await request(app).post(`/api/client/consultations/${cons.id}/cancel`)
-      .set('Authorization', `Bearer ${tokenFor(client)}`);
-    expect(res.status).toBe(400);
+      .set('Authorization', `Bearer ${tokenFor(client)}`).send({ reason: 'Поздняя отмена' });
+    expect(res.status).toBe(409);
   });
 
   test('нельзя отменить идущую консультацию (in_progress)', async () => {
@@ -88,8 +91,8 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const { user: lawyer } = await makeLawyer('mf-l8@test.uz');
     const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 100000 });
     const res = await request(app).post(`/api/client/consultations/${cons.id}/cancel`)
-      .set('Authorization', `Bearer ${tokenFor(client)}`);
-    expect(res.status).toBe(400);
+      .set('Authorization', `Bearer ${tokenFor(client)}`).send({ reason: 'Поздняя отмена' });
+    expect(res.status).toBe(409);
   });
 
   test('/join НЕ переводит консультацию в in_progress (закрыт бэкдор эскроу)', async () => {
@@ -100,6 +103,7 @@ describe('деньги/эскроу — фиксы аудита', () => {
       clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000,
       scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 60 * 60000),
     });
+    await Payment.create({ userId: client.id, consultationId: cons.id, amount: 100000, currency: 'UZS', provider: 'payme', status: 'paid' });
     const res = await request(app).post(`/api/client/consultations/${cons.id}/join`)
       .set('Authorization', `Bearer ${tokenFor(lawyer)}`);
     expect(res.status).toBe(200);
@@ -121,6 +125,8 @@ describe('деньги/эскроу — фиксы аудита', () => {
     // оплаченная идущая консультация (оригинал 200000 зарезервирован)
     const scheduledStartAt = new Date(Date.now() - 10 * 60000);
     const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 200000, duration: 60, callStartedAt: new Date(), scheduledStartAt, scheduledEndAt: new Date(scheduledStartAt.getTime() + 60 * 60000), scheduleTimezone: 'Asia/Tashkent' });
+    await recordPeerConnected(cons.id, client.id);
+    await recordPeerConnected(cons.id, lawyer.id);
     await Payment.create({ userId: client.id, consultationId: cons.id, amount: 200000, currency: 'UZS', provider: 'payme', status: 'paid' });
 
     // продление на 15 мин → доплата 50000

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
 import {
@@ -6,12 +6,11 @@ import {
   Typography,
   TextField,
   IconButton,
-  CircularProgress,
+  CircularProgress, Button,
 } from '@mui/material';
 import {
   ArrowBackOutlined,
   SendOutlined,
-  AttachFileOutlined,
   FolderOpenOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
@@ -19,6 +18,9 @@ import io from 'socket.io-client';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import ErrorState from '../../components/UI/ErrorState';
+import { createClientMessageId, isConsultationWritable, mergeChatMessages, normalizeMessagePage, sendChatMessage } from '../../utils/chatMessages';
+import { localeForLanguage } from '../../utils/consultationLocale';
 
 // socket.io на корне хоста; VITE_API_URL в проде содержит /api — срезаем.
 const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
@@ -26,50 +28,74 @@ const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`
 const ChatPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const { user, token: authToken } = useSelector((state) => state.auth);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [sending, setSending] = useState(false);
   const [typingUser, setTypingUser] = useState(null);
   const [consultation, setConsultation] = useState(null);
   const [docsOpen, setDocsOpen] = useState(false);
+  const [offline, setOffline] = useState(!navigator.onLine);
+  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [earlierLoading, setEarlierLoading] = useState(false);
+  const [earlierError, setEarlierError] = useState(false);
   const messagesEndRef = useRef(null);
+  const messagesScrollRef = useRef(null);
+  const prependScrollHeightRef = useRef(null);
+  const skipNextAutoScrollRef = useRef(false);
   const socketRef = useRef(null);
   const typingTimeoutRef = useRef(null);
+  const pendingMessageRef = useRef(null);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
 
   // Load consultation info and messages
-  useEffect(() => {
-    const loadData = async () => {
+  const loadData = useCallback(async () => {
       try {
         setLoading(true);
+        setLoadError(null);
+        setConsultation(null);
         const [messagesRes, consultationRes] = await Promise.all([
           api.get(`/chat/${consultationId}/messages`),
           api.get(`/consultations/${consultationId}`),
         ]);
-        setMessages(messagesRes.data || []);
+         const page = normalizeMessagePage(messagesRes.data);
+         setMessages((current) => mergeChatMessages(page.messages, current));
+         setNextCursor(page.nextCursor);
+         setHasMore(page.hasMore);
         if (consultationRes?.data?.consultation) {
           setConsultation(consultationRes.data.consultation);
         }
       } catch (err) {
         console.error('Error loading chat:', err);
-        toast.error(t('chat.loadError'));
+        setLoadError(err);
       } finally {
         setLoading(false);
       }
-    };
+  }, [consultationId]);
+
+  useEffect(() => {
     loadData();
-  }, [consultationId, t]);
+  }, [loadData]);
+
+  useEffect(() => {
+    const online = () => setOffline(false);
+    const offlineHandler = () => setOffline(true);
+    window.addEventListener('online', online);
+    window.addEventListener('offline', offlineHandler);
+    return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offlineHandler); };
+  }, []);
 
   // Socket connection
   useEffect(() => {
     const token = authToken || localStorage.getItem('token');
-    if (!token || !consultationId) return;
+    if (!token || !consultationId || loading || consultation?.id !== consultationId || loadError) return undefined;
 
     const socket = io(API_URL, {
       auth: { token },
@@ -86,8 +112,7 @@ const ChatPage = () => {
     socket.on('message-received', (message) => {
       setMessages((prev) => {
         // Avoid duplicates
-        if (prev.some((m) => m.id === message.id)) return prev;
-        return [...prev, message];
+        return mergeChatMessages(prev, [message]);
       });
     });
 
@@ -104,19 +129,48 @@ const ChatPage = () => {
     return () => {
       socket.disconnect();
     };
-  }, [consultationId, authToken]);
+  }, [consultationId, authToken, consultation, loadError, loading]);
 
-  // Auto-scroll on new messages
+  useLayoutEffect(() => {
+    if (prependScrollHeightRef.current === null || !messagesScrollRef.current) return;
+    messagesScrollRef.current.scrollTop += messagesScrollRef.current.scrollHeight - prependScrollHeightRef.current;
+    prependScrollHeightRef.current = null;
+  }, [messages]);
+
+  // Auto-scroll on initial/realtime messages, but never after prepending history.
   useEffect(() => {
+    if (skipNextAutoScrollRef.current) { skipNextAutoScrollRef.current = false; return; }
     scrollToBottom();
   }, [messages, scrollToBottom]);
+
+  const loadEarlier = async () => {
+    if (!hasMore || !nextCursor || earlierLoading) return;
+    setEarlierLoading(true);
+    setEarlierError(false);
+    skipNextAutoScrollRef.current = true;
+    prependScrollHeightRef.current = messagesScrollRef.current?.scrollHeight ?? null;
+    try {
+      const response = await api.get(`/chat/${consultationId}/messages`, { params: { cursor: nextCursor } });
+      const page = normalizeMessagePage(response.data);
+      setMessages((current) => mergeChatMessages(page.messages, current));
+      setNextCursor(page.nextCursor);
+      setHasMore(page.hasMore);
+    } catch (_) {
+      prependScrollHeightRef.current = null;
+      skipNextAutoScrollRef.current = false;
+      setEarlierError(true);
+    } finally { setEarlierLoading(false); }
+  };
 
   const handleSend = async () => {
     const text = newMessage.trim();
     if (!text || sending) return;
 
     setSending(true);
-    setNewMessage('');
+    const pending = pendingMessageRef.current?.text === text
+      ? pendingMessageRef.current
+      : { text, clientMessageId: createClientMessageId() };
+    pendingMessageRef.current = pending;
 
     // Clear typing indicator
     if (socketRef.current) {
@@ -124,17 +178,19 @@ const ChatPage = () => {
     }
 
     try {
-      if (socketRef.current?.connected) {
-        socketRef.current.emit('send-message', { consultationId, text });
-      } else {
-        // REST fallback
-        const res = await api.post(`/chat/${consultationId}/messages`, { text });
-        setMessages((prev) => [...prev, res.data]);
-      }
+      const message = await sendChatMessage({
+        socket: socketRef.current,
+        api,
+        consultationId,
+        text,
+        clientMessageId: pending.clientMessageId,
+      });
+      setMessages((prev) => mergeChatMessages(prev, [message]));
+      pendingMessageRef.current = null;
+      setNewMessage((current) => (current.trim() === text ? '' : current));
     } catch (err) {
       console.error('Error sending message:', err);
       toast.error(t('chat.sendError'));
-      setNewMessage(text);
     } finally {
       setSending(false);
     }
@@ -189,18 +245,28 @@ const ChatPage = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '100vh',
+          height: '100dvh',
           bgcolor: 'var(--canvas)',
         }}
       >
-        <CircularProgress sx={{ color: 'var(--accent)' }} />
+        <CircularProgress aria-label={t('chat.loading')} sx={{ color: 'var(--accent)' }} />
+      </Box>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <Box sx={{ minHeight: '100dvh', bgcolor: 'var(--canvas)', px: 2, py: 3 }}>
+        <IconButton aria-label={t('chat.back')} onClick={() => navigate(-1)}><ArrowBackOutlined /></IconButton>
+        <ErrorState error={loadError} title={t('chat.loadError')} subtitle={t('chat.loadErrorHint')} onRetry={loadData} />
       </Box>
     );
   }
 
   const partnerName = getPartnerName();
   // Завершённая/отменённая консультация — чат только для чтения (история переписки)
-  const isReadOnly = consultation && ['completed', 'cancelled', 'rejected'].includes(consultation.status);
+  const isReadOnly = !isConsultationWritable(consultation);
+  const locale = localeForLanguage(language);
 
   return (
     <Box
@@ -211,6 +277,7 @@ const ChatPage = () => {
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'var(--canvas)',
+        minHeight: '100dvh',
       }}
     >
       {/* Header */}
@@ -227,6 +294,7 @@ const ChatPage = () => {
         }}
       >
         <IconButton
+          aria-label={t('chat.back')}
           onClick={() => navigate(-1)}
           sx={{ color: 'var(--text2)', p: 0.5, '&:hover': { bgcolor: 'transparent', color: 'var(--text)' } }}
         >
@@ -248,16 +316,17 @@ const ChatPage = () => {
         >
           {getInitials(partnerName)}
         </Box>
-        <Box sx={{ minWidth: 0 }}>
+          <Box sx={{ minWidth: 0, flex: 1 }}>
           <Typography sx={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', lineHeight: 1.3 }}>
             {partnerName}
           </Typography>
           {typingUser && (
-            <Typography sx={{ fontSize: 12, color: '#7A9A6B' }}>{t('chat.typing')}</Typography>
+            <Typography role="status" sx={{ fontSize: 12, color: '#7A9A6B' }}>{t('chat.typing')}</Typography>
           )}
         </Box>
         {/* Документы по делу — общая папка юриста и клиента */}
         <IconButton
+          aria-label={t('caseDocs.title')}
           onClick={() => setDocsOpen(true)}
           title={t('caseDocs.title')}
           sx={{ ml: 'auto', color: 'var(--text2)', '&:hover': { color: 'var(--accent)' } }}
@@ -266,15 +335,18 @@ const ChatPage = () => {
         </IconButton>
       </Box>
 
+      {offline && <Box role="status" sx={{ flexShrink: 0, px: 2, py: 1, bgcolor: 'rgba(176,112,112,.14)', color: 'var(--text)' }}>{t('chat.offline')}</Box>}
+
       <CaseDocuments
         consultationId={consultationId}
         open={docsOpen}
         onClose={() => setDocsOpen(false)}
         currentUserId={user?.id}
+        readOnly={isReadOnly}
       />
 
       {/* Messages */}
-      <Box sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <Box ref={messagesScrollRef} role="log" aria-live="polite" aria-relevant="additions" aria-label={t('chat.messagesLabel')} sx={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <Box
           sx={{
             maxWidth: 820,
@@ -287,6 +359,10 @@ const ChatPage = () => {
             gap: 1.75,
           }}
         >
+          {(hasMore || earlierError) && <Box sx={{ alignSelf: 'center', textAlign: 'center' }}>
+            <Button size="small" onClick={loadEarlier} disabled={earlierLoading}>{earlierLoading ? t('chat.loadingEarlier') : earlierError ? t('chat.retryEarlier') : t('chat.loadEarlier')}</Button>
+            {earlierError && <Typography role="alert" sx={{ color: '#B07070', fontSize: 12 }}>{t('chat.loadEarlierError')}</Typography>}
+          </Box>}
           {messages.length === 0 ? (
             <Box sx={{ textAlign: 'center', py: 8 }}>
               <Typography sx={{ fontSize: 18, fontWeight: 500, color: 'var(--text2)', mb: 1 }}>
@@ -325,7 +401,7 @@ const ChatPage = () => {
                       color: isOwn ? 'rgba(255,255,255,0.7)' : 'var(--text3)',
                     }}
                   >
-                    {new Date(msg.createdAt).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                    {new Date(msg.createdAt).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' })}
                   </Typography>
                 </Box>
               );
@@ -338,7 +414,7 @@ const ChatPage = () => {
       {/* Input / read-only banner */}
       {isReadOnly ? (
         <Box sx={{ flexShrink: 0, borderTop: '1px solid var(--border)', px: { xs: 2, sm: 3.5 }, py: 2.5, textAlign: 'center', ...glassBar }}>
-          <Typography sx={{ color: 'var(--text3)', fontSize: 13 }}>{t('chat.readOnly')}</Typography>
+          <Typography role="status" sx={{ color: 'var(--text3)', fontSize: 13 }}>{t('chat.readOnly')}</Typography>
         </Box>
       ) : (
       <Box
@@ -346,7 +422,8 @@ const ChatPage = () => {
           flexShrink: 0,
           borderTop: '1px solid var(--border)',
           px: { xs: 2, sm: 3.5 },
-          py: 2,
+          pt: 2,
+          pb: 'max(16px, env(safe-area-inset-bottom))',
           ...glassBar,
         }}
       >
@@ -364,18 +441,19 @@ const ChatPage = () => {
             py: 1.25,
           }}
         >
-          <AttachFileOutlined sx={{ color: 'var(--text3)', fontSize: 20, mb: 0.75 }} />
           <TextField
             fullWidth
             multiline
             maxRows={4}
             value={newMessage}
+            disabled={sending}
             onChange={(e) => {
               setNewMessage(e.target.value);
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
             placeholder={t('chat.messagePlaceholder')}
+            inputProps={{ 'aria-label': t('chat.messagePlaceholder') }}
             variant="standard"
             InputProps={{ disableUnderline: true }}
             sx={{
@@ -384,12 +462,13 @@ const ChatPage = () => {
             }}
           />
           <IconButton
+            aria-label={t('chat.send')}
             onClick={handleSend}
             disabled={!newMessage.trim() || sending}
             sx={{
               flexShrink: 0,
-              width: 38,
-              height: 38,
+              width: 44,
+              height: 44,
               borderRadius: 'var(--radius, 8px)',
               bgcolor: 'var(--accent)',
               color: '#FFFFFF',

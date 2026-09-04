@@ -6,7 +6,6 @@ const store = require('../services/oauthTransactionStore');
 const secretBox = require('../services/secretBox');
 const zoomApi = require('../services/zoomApiService');
 const zoomConnectionService = require('../services/zoomConnectionService');
-const { consultationAccess } = require('../services/consultationAccessService');
 const meetingSdk = require('../services/zoomMeetingSdkService');
 const lifecycle = require('../services/consultationLifecycleService');
 const { distributedRateLimit } = require('../middleware/distributedRateLimit');
@@ -96,17 +95,14 @@ router.post('/consultations/:id/access', authenticate, meetingAccessLimiter, asy
   try {
     let consultation = await Consultation.findByPk(req.params.id, { include: [{ model: ConsultationMeeting, as: 'meeting' }] });
     if (!consultation || ![consultation.clientId, consultation.lawyerId].includes(req.userId)) return res.status(403).json({ error: 'Нет доступа' });
-    if (consultation.meetingProvider === 'zoom' && consultation.status === 'accepted'
-      && (!consultation.meeting || !['ready', 'started'].includes(consultation.meeting.status))) {
+    const policy = await meetingSdk.accessPolicy(consultation.id, req.userId);
+    if (policy.denial?.code === 'MEETING_PREPARING') {
       const service = require('../services/zoomMeetingService');
       const queued = await service.ensureProvisionQueued(consultation.id);
       if (queued) setImmediate(() => service.processMeetingOperation(queued.id).catch(() => {}));
       return res.status(202).json({ error: 'Подготавливаем видеовстречу', code: 'MEETING_PREPARING' });
     }
-    if (consultation.meetingProvider !== 'zoom' || !consultation.meeting || !['ready', 'started'].includes(consultation.meeting.status)) return res.status(409).json({ error: 'Zoom-встреча ещё не готова', code: 'MEETING_NOT_READY' });
-    if (!['accepted', 'in_progress'].includes(consultation.status)) return res.status(409).json({ error: 'Консультация недоступна для подключения' });
-    const access = consultationAccess(consultation);
-    if (!access.canJoin) return res.status(403).json({ error: 'Подключение пока недоступно', code: access.reason, ...access });
+    if (policy.denial) throw Object.assign(new Error(policy.denial.message), { status: policy.denial.status, code: policy.denial.code });
     res.set({ 'Cache-Control': 'no-store', Pragma: 'no-cache', 'Referrer-Policy': 'no-referrer' });
     return res.json(await meetingSdk.externalAccess(consultation.id, req.userId));
   } catch (error) { return next(error); }

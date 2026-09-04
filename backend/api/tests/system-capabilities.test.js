@@ -1,7 +1,7 @@
 const request = require('supertest');
 const app = require('../src/server');
 
-const keys = ['ANTHROPIC_API_KEY', 'SMTP_HOST', 'PAYME_KEY', 'PAYME_MERCHANT_ID', 'TURN_URL', 'TURN_SECRET', 'SUPPORT_EMAIL', 'SUPPORT_PHONE', 'ZOOM_MEETING_SDK_ENABLED', 'ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET'];
+const keys = ['NODE_ENV', 'ANTHROPIC_API_KEY', 'SMTP_HOST', 'PAYME_KEY', 'PAYME_MERCHANT_ID', 'TURN_URL', 'TURN_SECRET', 'SUPPORT_EMAIL', 'SUPPORT_PHONE', 'ZOOM_MEETING_SDK_ENABLED', 'ZOOM_CLIENT_ID', 'ZOOM_CLIENT_SECRET'];
 const original = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
 
 afterEach(() => keys.forEach((key) => {
@@ -14,8 +14,17 @@ test('capabilities не раскрывает секреты и честно по
   expect(response.status).toBe(200);
   expect(response.body).toEqual({
     ai: false, email: false, payments: false, turn: false, zoomMeetingSdk: false,
+    consultationExtensions: true,
     support: { tickets: true, email: null, phone: null },
   });
+});
+
+test('production не обещает неподдерживаемую оплату продления', async () => {
+  process.env.NODE_ENV = 'production';
+  delete process.env.PAYME_KEY;
+  const response = await request(app).get('/api/system/capabilities');
+  expect(response.status).toBe(200);
+  expect(response.body.consultationExtensions).toBe(false);
 });
 
 test('capabilities включает только полностью настроенные пары', async () => {

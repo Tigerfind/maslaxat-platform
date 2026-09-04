@@ -102,6 +102,21 @@ test('слот должен целиком помещаться в часы и �
   expect(response.body.code).toBe('INVALID_SLOT');
 });
 
+test('audio booking requires a scheduled slot while chat may remain unscheduled', async () => {
+  const { user: lawyer } = await makeLawyer('slots-audio-lawyer@test.uz', {
+    consultationFormats: ['audio', 'chat'], verificationStatus: 'approved', isAvailable: true,
+  });
+  const client = await makeClient('slots-audio-client@test.uz');
+  const base = { problems: [{ text: 'Вопрос', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' };
+  const audio = await request(app).post(`/api/lawyers/${lawyer.id}/book`)
+    .set('Authorization', `Bearer ${tokenFor(client)}`).send({ ...base, consultationType: 'audio' });
+  expect(audio.status).toBe(400);
+  const chat = await request(app).post(`/api/lawyers/${lawyer.id}/book`)
+    .set('Authorization', `Bearer ${tokenFor(client)}`).send({ ...base, consultationType: 'chat' });
+  expect(chat.status).toBe(201);
+  expect(chat.body.consultation.scheduledStartAt).toBeNull();
+});
+
 test('неоплаченная Zoom-бронь освобождает слот через 15 минут и больше не оплачивается', async () => {
   const { user: lawyer } = await setupLawyer('slots-expired-lawyer@test.uz');
   const client = await makeClient('slots-expired-client@test.uz');
@@ -120,5 +135,5 @@ test('неоплаченная Zoom-бронь освобождает слот �
     .set('Authorization', `Bearer ${tokenFor(client)}`).send({ consultationId: consultation.id });
   expect(payment.status).toBe(410);
   await consultation.reload();
-  expect(consultation.status).toBe('cancelled');
+  expect(consultation.status).toBe('payment_expired');
 });

@@ -31,4 +31,18 @@ async function validatePromo(rawCode, amount) {
   };
 }
 
-module.exports = { validatePromo };
+async function reservePromo(rawCode, amount, transaction) {
+  if (!rawCode || !String(rawCode).trim()) return { valid: false, reason: 'empty' };
+  const code = String(rawCode).trim().toUpperCase();
+  const promo = await Promo.findOne({ where: { code }, transaction, lock: transaction.LOCK.UPDATE });
+  if (!promo || !promo.isActive) return { valid: false, reason: 'notfound' };
+  if (promo.expiresAt && new Date(promo.expiresAt) < new Date()) return { valid: false, reason: 'expired' };
+  if (promo.usageLimit != null && promo.usedCount >= promo.usageLimit) return { valid: false, reason: 'limit' };
+  const amt = Number(amount) || 0;
+  if (amt < (promo.minAmount || 0)) return { valid: false, reason: 'min', minAmount: promo.minAmount };
+  const discountAmount = Math.round((amt * promo.discountPercent) / 100);
+  await promo.increment('usedCount', { by: 1, transaction });
+  return { valid: true, code: promo.code, discountPercent: promo.discountPercent, discountAmount, promo };
+}
+
+module.exports = { validatePromo, reservePromo };

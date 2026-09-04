@@ -248,9 +248,17 @@ const Consultation = sequelize.define('Consultation', {
     defaultValue: 'video',
   },
   status: {
-    type: DataTypes.ENUM('payment_pending', 'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'cancelled'),
+    type: DataTypes.ENUM('payment_pending', 'payment_expired', 'pending', 'accepted', 'rejected', 'in_progress', 'completed', 'cancelled'),
     defaultValue: 'pending',
   },
+  paymentExpiresAt: { type: DataTypes.DATE },
+  archivedAt: { type: DataTypes.DATE },
+  cancelledAt: { type: DataTypes.DATE },
+  cancelledBy: { type: DataTypes.ENUM('client', 'lawyer', 'admin', 'system') },
+  cancellationType: {
+    type: DataTypes.ENUM('client_cancelled', 'lawyer_cancelled', 'admin_cancelled', 'provider_cancelled', 'lawyer_rejected', 'payment_expired'),
+  },
+  cancellationReason: { type: DataTypes.TEXT },
   question: {
     type: DataTypes.TEXT,
     allowNull: false,
@@ -293,10 +301,11 @@ const Consultation = sequelize.define('Consultation', {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
   },
-  // Применённый промокод (чтобы вернуть usedCount при отмене брони)
+  // Применённый промокод и подтверждение его атомарного резервирования.
   promoCode: {
     type: DataTypes.STRING,
   },
+  promoReservedAt: { type: DataTypes.DATE },
   // Источник бесплатной брони: 'loyalty' (первая бесплатно) | 'subscription'
   // (включена в тариф) | null. Нужен, чтобы считать месячный лимит подписки
   // отдельно от акции лояльности.
@@ -816,6 +825,10 @@ const Message = sequelize.define('Message', {
   isRead: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
+  },
+  clientMessageId: {
+    type: DataTypes.STRING(128),
+    allowNull: true,
   },
 });
 

@@ -13,6 +13,7 @@ import { launchConsultation } from '../../services/meetingLauncher';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import { isConsultationWritable } from '../../utils/chatMessages';
 import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
 import { useTranslation } from '../../i18n';
 
@@ -379,6 +380,7 @@ const LawyerConsultationsPage = () => {
         open={Boolean(docsFor)}
         onClose={() => setDocsFor(null)}
         currentUserId={user?.id}
+        readOnly={!isConsultationWritable(docsFor, 'documentsWritable')}
       />
 
       {/* Принятие заявки + приветствие клиенту */}

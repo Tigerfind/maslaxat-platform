@@ -147,6 +147,25 @@ export const clientLawyerService = {
     }
   },
 
+  getBookableLawyerDetails: async (lawyerId) => {
+    const data = await clientLawyerService.getLawyerDetails(lawyerId);
+    const lawyer = data?.lawyer || data;
+    const profile = lawyer?.profile;
+    if (!lawyer?.id || !profile || profile.isAvailable !== true) return null;
+    return {
+      ...lawyer,
+      avatar: resolvePublicAssetUrl(lawyer.avatar || lawyer.photo),
+      rating: profile.rating || 0,
+      specializations: Array.isArray(profile.specializations) && profile.specializations.length
+        ? profile.specializations : (profile.specialization ? [profile.specialization] : []),
+      priceFrom: profile.price || 0,
+      consultationFormats: profile.consultationFormats || [],
+      consultationDurations: profile.consultationDurations || [],
+      zoomAvailable: profile.zoomAvailable === true,
+      isAvailable: true,
+    };
+  },
+
   // Book consultation — directly through API, no localStorage fallback
   bookConsultation: async (lawyerId, consultationData) => {
     const response = await api.post(`/client/lawyers/${lawyerId}/book`, consultationData);
@@ -164,8 +183,12 @@ export const clientLawyerService = {
     const response = await api.post('/payments/create', { consultationId });
     return response.data;
   },
-  // Единый retryable flow: в dev завершает simulation, в production возвращает Payme URL.
+  // Production never touches the test-only simulation endpoint.
   payConsultation: async (consultationId) => {
+    if (import.meta.env.PROD || import.meta.env.MODE === 'production') {
+      const result = await clientLawyerService.createPayment(consultationId);
+      return { completed: false, redirectUrl: result.checkoutUrl, ...result };
+    }
     try {
       const result = await clientLawyerService.simulatePayment(consultationId);
       return { completed: true, ...result };
@@ -205,8 +228,8 @@ export const clientConsultationService = {
       ? { consultations: data, total: data.length, page: 1, limit: data.length, totalPages: 1, counts: {} }
       : data;
   },
-  getConsultationDetails: async (consultationId) => {
-    const response = await api.get(`/client/consultations/${consultationId}`);
+  getConsultationDetails: async (consultationId, options = {}) => {
+    const response = await api.get(`/client/consultations/${consultationId}`, { signal: options.signal });
     return response.data;
   },
 
@@ -245,6 +268,10 @@ export const clientConsultationService = {
       console.error('Error completing consultation:', error);
       throw error;
     }
+  },
+  archive: async (consultationId, archived) => {
+    const response = await api.patch(`/client/consultations/${consultationId}/archive`, { archived });
+    return response.data;
   },
 };
 

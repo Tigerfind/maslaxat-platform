@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Dialog,
   Box,
@@ -11,6 +11,7 @@ import {
 import { Close, Star } from '@mui/icons-material';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
+import { consultationDialogPaperSx } from '../../utils/consultationLocale';
 
 const initialsOf = (name = '') =>
   name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
@@ -20,20 +21,30 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
   const [rating, setRating] = useState(0);
   const [text, setText] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const submitLockRef = useRef(false);
+
+  useEffect(() => {
+    if (!open) { submitLockRef.current = false; setSubmitting(false); setRating(0); setText(''); setError(''); }
+  }, [open]);
 
   const reactions = ['', t('rating.r1'), t('rating.r2'), t('rating.r3'), t('rating.r4'), t('rating.r5')];
 
   const handleSubmit = async () => {
-    if (rating === 0) return;
+    if (rating === 0 || submitLockRef.current) return;
+    submitLockRef.current = true;
     setSubmitting(true);
+    setError('');
     try {
       await onSubmit({ rating, text });
       setRating(0);
       setText('');
       onClose();
-    } catch {
-      // error handled by parent
+    } catch (submitError) {
+      const safeMessage = submitError?.response?.data?.error;
+      setError(typeof safeMessage === 'string' ? safeMessage : t('rating.error'));
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -41,13 +52,15 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
   return (
     <Dialog
       open={open}
-      onClose={onClose}
+      onClose={submitting ? undefined : onClose}
+      aria-labelledby="consultation-rating-title"
       maxWidth="sm"
       fullWidth
       PaperProps={{
         sx: {
+          ...consultationDialogPaperSx,
           borderRadius: '20px',
-          overflow: 'hidden',
+          overflowY: 'auto',
           background: axelionColors.bgLight,
           boxShadow: '0 20px 60px rgba(26, 26, 26, 0.22)',
         },
@@ -65,13 +78,15 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
       >
         <IconButton
           onClick={onClose}
+          disabled={submitting}
+          aria-label={t('consultations.close')}
           size="small"
           sx={{ position: 'absolute', top: 12, right: 12, color: 'rgba(255,255,255,0.85)', '&:hover': { color: '#FFFFFF' } }}
         >
           <Close fontSize="small" />
         </IconButton>
 
-        <Typography sx={{ color: '#FFFFFF', fontSize: '1.2rem', fontWeight: 600, letterSpacing: '0.01em' }}>
+        <Typography id="consultation-rating-title" sx={{ color: '#FFFFFF', fontSize: '1.2rem', fontWeight: 600, letterSpacing: '0.01em' }}>
           {t('rating.title')}
         </Typography>
         {lawyerName && (
@@ -106,6 +121,7 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
       {/* Body */}
       <Box sx={{ px: 3.5, pt: 4.75, pb: 3 }}>
         <Rating
+          aria-label={t('rating.ratingLabel')}
           value={rating}
           onChange={(e, val) => setRating(val)}
           size="large"
@@ -120,6 +136,7 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
           fullWidth
           multiline
           rows={3}
+          label={t('rating.commentLabel')}
           placeholder={t('rating.placeholder')}
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -133,9 +150,10 @@ const RatingDialog = ({ open, onClose, onSubmit, lawyerName }) => {
             },
           }}
         />
+        {error && <Typography role="alert" sx={{ mt: 1.5, color: 'error.main', fontSize: '0.85rem' }}>{error}</Typography>}
 
-        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2, mt: 3 }}>
-          <Button onClick={onClose} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>
+        <Box sx={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 2, mt: 3, flexWrap: 'wrap' }}>
+          <Button onClick={onClose} disabled={submitting} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>
             {t('rating.skip')}
           </Button>
           <Button

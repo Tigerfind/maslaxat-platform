@@ -30,6 +30,11 @@ async function resetDb() {
     ON payments (provider, transaction_id) WHERE transaction_id IS NOT NULL
   `);
   await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS messages_consultation_sender_client_message_unique
+    ON messages (consultation_id, sender_id, client_message_id)
+    WHERE client_message_id IS NOT NULL
+  `);
+  await sequelize.query(`
     CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_lawyer_idempotency_unique
     ON withdrawals (lawyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL
   `);

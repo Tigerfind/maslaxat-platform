@@ -34,6 +34,10 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
+import { createClientMessageId, mergeChatMessages, normalizeMessagePage, sendChatMessage } from '../../utils/chatMessages';
+import { callElapsedSeconds, mediaConstraintsForCall, remoteCallEndAction, safeEndError, videoAccessState } from './videoCallLifecycle';
+import { consultationDialogPaperSx, localeForLanguage } from '../../utils/consultationLocale';
+import { safeRequestError } from '../../utils/consultationPresentation';
 
 // Короткий сигнал (Web Audio, без файлов) — уведомление о времени
 function beep() {
@@ -71,7 +75,8 @@ const VideoCallPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
   const { user, token: authToken } = useSelector((state) => state.auth);
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const locale = localeForLanguage(language);
 
   // State
   const [consultation, setConsultation] = useState(null);
@@ -83,6 +88,9 @@ const VideoCallPage = () => {
   const [remoteRole, setRemoteRole] = useState('');
   const [remoteMedia, setRemoteMedia] = useState({ audio: true, video: true }); // состояние камеры/микрофона собеседника
   const [endSummary, setEndSummary] = useState(null); // { seconds } — сводка после завершения
+  const [endPending, setEndPending] = useState(false);
+  const [endError, setEndError] = useState(null);
+  const [completionRequested, setCompletionRequested] = useState(false);
   const [remoteLeft, setRemoteLeft] = useState(false); // собеседник вышел из звонка (не краткий обрыв)
   const wasConnectedRef = useRef(false); // был ли реальный сеанс (для «переподключение» и сводки)
 
@@ -131,9 +139,11 @@ const VideoCallPage = () => {
   const [chatOpen, setChatOpen] = useState(false);
   const [chatMessages, setChatMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
+  const [chatSending, setChatSending] = useState(false);
   const [chatUnread, setChatUnread] = useState(0);
   const chatOpenRef = useRef(false);
   const chatEndRef = useRef(null);
+  const pendingChatRef = useRef(null);
 
   // Refs
   const localVideoRef = useRef(null);
@@ -149,34 +159,55 @@ const VideoCallPage = () => {
   const callStartedRef = useRef(false);
   const calleeIdRef = useRef(null); // id другой стороны — чтобы отменить ring при отбое
   const peerConnectedRef = useRef(false);
+  const peerSocketIdRef = useRef(null);
+  const acknowledgedPeersRef = useRef(new Set());
   const iceServersRef = useRef([
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ]);
   const callDurationRef = useRef(0);
   const warnedRef = useRef({ five: false, one: false, up: false });
+  const lastAccessRefreshRef = useRef(0);
+  const accessRolloverRef = useRef(new Set());
+
+  const loadConsultation = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const response = await api.get(`/video/consultation/${consultationId}`);
+      const cons = response.data;
+      if (Array.isArray(cons.iceServers) && cons.iceServers.length) iceServersRef.current = cons.iceServers;
+      setConsultation(cons);
+      if (cons.callStartedAt) setCallStartTime(new Date(cons.callStartedAt).getTime());
+      if (cons && user?.id) calleeIdRef.current = cons.clientId === user.id ? cons.lawyerId : cons.clientId;
+    } catch (err) {
+      setError('videoCall.loadError');
+      console.error('Load consultation error:', err);
+    } finally { setLoading(false); }
+  }, [consultationId, user?.id]);
 
   // Load consultation details
   useEffect(() => {
-    const loadConsultation = async () => {
-      try {
-        const response = await api.get(`/video/consultation/${consultationId}`);
-        const cons = response.data;
-        if (Array.isArray(cons.iceServers) && cons.iceServers.length) iceServersRef.current = cons.iceServers;
-        setConsultation(cons);
-        // id собеседника (для отмены ring при отбое до ответа)
-        if (cons && user?.id) {
-          calleeIdRef.current = cons.clientId === user.id ? cons.lawyerId : cons.clientId;
-        }
-      } catch (err) {
-        setError('videoCall.loadError');
-        console.error('Load consultation error:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
     loadConsultation();
-  }, [consultationId, user?.id]);
+  }, [loadConsultation]);
+
+  useEffect(() => {
+    const refresh = () => {
+      const now = Date.now();
+      if (now - lastAccessRefreshRef.current < 500) return;
+      lastAccessRefreshRef.current = now;
+      loadConsultation();
+    };
+    const visible = () => { if (document.visibilityState === 'visible') refresh(); };
+    const retryAt = consultation?.access?.retryAt || consultation?.access?.joinAvailableAt;
+    const retryMs = new Date(retryAt).getTime();
+    const rolloverKey = consultation && retryAt ? `${consultation.id}:${retryAt}` : null;
+    const timer = consultation && consultation.access?.canJoin !== true && Number.isFinite(retryMs) && !accessRolloverRef.current.has(rolloverKey)
+      ? setTimeout(() => { accessRolloverRef.current.add(rolloverKey); refresh(); }, Math.max(0, retryMs - Date.now()) + 100) : null;
+    window.addEventListener('online', refresh);
+    document.addEventListener('visibilitychange', visible);
+    return () => { if (timer) clearTimeout(timer); window.removeEventListener('online', refresh); document.removeEventListener('visibilitychange', visible); };
+  }, [consultation, loadConsultation]);
 
   useEffect(() => {
     if (!consultation?.iceServersExpiresAt) return undefined;
@@ -202,16 +233,6 @@ const VideoCallPage = () => {
     }, refreshIn);
     return () => clearTimeout(timer);
   }, [consultation?.iceServersExpiresAt, consultationId]);
-
-  // Start call timer + перевод в in_progress ТОЛЬКО когда оба реально соединились
-  // (раньше /start дёргался при входе одного — тогда «дозвон без ответа» + отбой
-  // завершал консультацию и выплачивал юристу за несостоявшийся звонок).
-  useEffect(() => {
-    if (peerConnected && !callStartTime) {
-      setCallStartTime(Date.now());
-      api.post(`/video/consultation/${consultationId}/start`).catch(() => {});
-    }
-  }, [peerConnected, callStartTime, consultationId]);
 
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
@@ -285,11 +306,9 @@ const VideoCallPage = () => {
         if (!alive) return;
         // Мержим историю с уже пришедшими realtime-сообщениями (дедуп по id),
         // а не затираем — иначе сообщение, пришедшее до резолва истории, терялось.
-        const hist = res.data || [];
+        const hist = normalizeMessagePage(res.data).messages;
         setChatMessages((prev) => {
-          const ids = new Set(hist.map((m) => m.id));
-          const extra = prev.filter((m) => !ids.has(m.id));
-          return [...hist, ...extra];
+          return mergeChatMessages(hist, prev);
         });
       })
       .catch(() => {});
@@ -299,7 +318,7 @@ const VideoCallPage = () => {
   useEffect(() => {
     if (callStartTime) {
       timerRef.current = setInterval(() => {
-        setCallDuration(Math.floor((Date.now() - callStartTime) / 1000));
+        setCallDuration(callElapsedSeconds(callStartTime));
       }, 1000);
     }
     return () => {
@@ -340,6 +359,20 @@ const VideoCallPage = () => {
         iceCandidatePoolSize: 10,
       },
     });
+    peerSocketIdRef.current = targetSocketId;
+
+    const acknowledgePeer = () => {
+      if (acknowledgedPeersRef.current.has(targetSocketId)) return;
+      acknowledgedPeersRef.current.add(targetSocketId);
+      socketRef.current?.emit('peer-connected', { consultationId, peerSocketId: targetSocketId }, (result) => {
+        if (!result?.ok) {
+          acknowledgedPeersRef.current.delete(targetSocketId);
+          return;
+        }
+        if (result.startedAt) setCallStartTime(new Date(result.startedAt).getTime());
+        if (result.bilateral) api.post(`/video/consultation/${consultationId}/start`).catch(() => {});
+      });
+    };
 
     peer.on('signal', (signal) => {
       socketRef.current?.emit('signal', { to: targetSocketId, signal });
@@ -355,12 +388,19 @@ const VideoCallPage = () => {
       }
       setPeerConnected(true);
       wasConnectedRef.current = true;
+      acknowledgePeer();
       // Синхронизируем своё состояние камеры/микрофона с собеседником при соединении
       const s = localStreamRef.current;
       socketRef.current?.emit('media-state', {
         audio: s?.getAudioTracks()[0]?.enabled ?? true,
-        video: s?.getVideoTracks()[0]?.enabled ?? true,
+        video: consultation.callMode === 'audio' ? false : (s?.getVideoTracks()[0]?.enabled ?? true),
       });
+    });
+
+    peer.on('connect', () => {
+      setPeerConnected(true);
+      wasConnectedRef.current = true;
+      acknowledgePeer();
     });
 
     peer.on('close', () => {
@@ -385,63 +425,55 @@ const VideoCallPage = () => {
         console.error('Error applying pending signal:', e);
       }
     });
-  }, []);
+  }, [consultationId, consultation?.callMode]);
 
-  // End call
-  const handleEndCall = useCallback(async (emitEvent = true) => {
-    // Guard от повторного завершения (гонка call-ended + ручной отбой → двойной navigate)
+  const stopCallTransport = useCallback((emitEvent = true) => {
     if (endedRef.current) return;
+    localStreamRef.current?.getTracks().forEach((track) => track.stop());
+    localStreamRef.current = null;
+    screenStreamRef.current?.getTracks().forEach((track) => track.stop());
+    screenStreamRef.current = null;
+    peerRef.current?.destroy();
+    peerRef.current = null;
+    if (emitEvent) {
+      socketRef.current?.emit('end-call');
+      if (!peerConnectedRef.current && calleeIdRef.current) socketRef.current?.emit('call-cancel', { consultationId, calleeId: calleeIdRef.current });
+    }
+    socketRef.current?.disconnect();
+    socketRef.current = null;
     endedRef.current = true;
+  }, [consultationId]);
 
-    // Stop all media
-    if (localStreamRef.current) {
-      localStreamRef.current.getTracks().forEach((tr) => tr.stop());
-      localStreamRef.current = null;
-    }
-    if (screenStreamRef.current) {
-      screenStreamRef.current.getTracks().forEach((tr) => tr.stop());
-      screenStreamRef.current = null;
-    }
+  // End call. Only an explicit client action settles the consultation.
+  const handleEndCall = useCallback(async (emitEvent = true) => {
+    if (endPending) return;
+    setEndPending(true);
+    setEndError(null);
+    stopCallTransport(emitEvent);
 
-    // Destroy peer
-    if (peerRef.current) {
-      peerRef.current.destroy();
-      peerRef.current = null;
-    }
-
-    // Notify other party and disconnect socket
-    if (emitEvent && socketRef.current) {
-      socketRef.current.emit('end-call');
-      // Если собеседник ещё не ответил (мы только звонили) — гасим у него ring
-      if (!peerConnectedRef.current && calleeIdRef.current) {
-        socketRef.current.emit('call-cancel', { consultationId, calleeId: calleeIdRef.current });
-      }
-    }
-    if (socketRef.current) {
-      socketRef.current.disconnect();
-      socketRef.current = null;
+    if (!wasConnectedRef.current) {
+      setEndPending(false);
+      navigate(user?.role === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
+      return;
     }
 
     // Mark consultation as completed + фактическая длительность звонка
     const seconds = callDurationRef.current;
     try {
-      await api.post(`/video/consultation/${consultationId}/end`, {
-        durationSeconds: seconds,
-      });
+      const { data } = await api.post(`/video/consultation/${consultationId}/end`);
+      setCompletionRequested(false);
+      setEndSummary({ seconds: Number.isFinite(data.actualDuration) ? data.actualDuration : seconds, awaitingClientConfirmation: data.awaitingClientConfirmation === true });
     } catch (err) {
-      // Silently ignore — may already be completed
+      setEndError(safeEndError(err));
+    } finally {
+      setEndPending(false);
     }
+  }, [consultationId, endPending, navigate, stopCallTransport, user?.role]);
 
-    // Если был реальный сеанс — показываем сводку (уходим по кнопке «Готово»),
-    // иначе (недозвон/отмена) — сразу возвращаемся.
-    if (wasConnectedRef.current) {
-      setEndSummary({ seconds });
-    } else if (user?.role === 'lawyer') {
-      navigate('/lawyer/dashboard');
-    } else {
-      navigate('/consultations');
-    }
-  }, [consultationId, navigate, user]);
+  const requestEndCall = () => {
+    if (user?.role === 'client' && wasConnectedRef.current) setCompletionRequested(true);
+    else handleEndCall(true);
+  };
 
   const leaveSummary = () => {
     navigate(user?.role === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
@@ -449,16 +481,19 @@ const VideoCallPage = () => {
 
   // ─── Лобби: превью камеры, список устройств, уровень микрофона ───
   const consultationLoaded = Boolean(consultation);
+  const accessState = videoAccessState(consultation);
+  const extensionAvailable = consultation?.capabilities?.extensionPayments === true;
+  const audioOnly = consultation?.callMode === 'audio';
   useEffect(() => {
-    if (!inLobby || !consultationLoaded) return undefined;
+    if (!inLobby || !consultationLoaded || !accessState.allowed) return undefined;
     let cancelled = false;
     let raf;
     const start = async () => {
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: selectedCam ? { deviceId: { exact: selectedCam } } : true,
-          audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
-        });
+        const stream = await navigator.mediaDevices.getUserMedia(mediaConstraintsForCall(
+          consultation.callMode,
+          { camId: selectedCam, micId: selectedMic },
+        ));
         if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
         lobbyStreamRef.current = stream;
         setPermError(false);
@@ -506,7 +541,7 @@ const VideoCallPage = () => {
       if (lobbyAudioCtxRef.current) { lobbyAudioCtxRef.current.close().catch(() => {}); lobbyAudioCtxRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inLobby, consultationLoaded, selectedCam, selectedMic]);
+  }, [inLobby, consultationLoaded, selectedCam, selectedMic, consultation?.callMode, accessState.allowed]);
 
   const toggleLobbyCam = () => {
     const on = !lobbyCamOn; setLobbyCamOn(on);
@@ -517,7 +552,7 @@ const VideoCallPage = () => {
     lobbyStreamRef.current?.getAudioTracks().forEach((tr) => { tr.enabled = on; });
   };
   const joinCall = () => {
-    joinPrefsRef.current = { camId: selectedCam, micId: selectedMic, cam: lobbyCamOn, mic: lobbyMicOn };
+    joinPrefsRef.current = { camId: selectedCam, micId: selectedMic, cam: !audioOnly && lobbyCamOn, mic: lobbyMicOn };
     setInLobby(false); // init-эффект поднимет звонок с выбранными устройствами
   };
 
@@ -525,7 +560,7 @@ const VideoCallPage = () => {
   // Init-эффект зависит от булевых флагов (загружено/не в лобби), а НЕ от объекта
   // consultation: иначе setConsultation (продление) пересоздавал бы эффект → обрыв.
   useEffect(() => {
-    if (!consultationLoaded || error || inLobby) return;
+    if (!consultationLoaded || error || inLobby || !accessState.allowed) return;
     // Prevent double-start from React StrictMode
     if (callStartedRef.current) return;
     callStartedRef.current = true;
@@ -538,10 +573,7 @@ const VideoCallPage = () => {
       try {
         // Get local media stream с устройствами и состоянием, выбранными в лобби
         const prefs = joinPrefsRef.current;
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: prefs.camId ? { deviceId: { exact: prefs.camId } } : true,
-          audio: prefs.micId ? { deviceId: { exact: prefs.micId } } : true,
-        });
+        stream = await navigator.mediaDevices.getUserMedia(mediaConstraintsForCall(consultation.callMode, prefs));
 
         if (cancelled) {
           stream.getTracks().forEach((tr) => tr.stop());
@@ -551,7 +583,7 @@ const VideoCallPage = () => {
         // Применяем выбор «камера/микрофон вкл/выкл» из лобби
         stream.getVideoTracks().forEach((tr) => { tr.enabled = prefs.cam; });
         stream.getAudioTracks().forEach((tr) => { tr.enabled = prefs.mic; });
-        setVideoEnabled(prefs.cam);
+        setVideoEnabled(!audioOnly && prefs.cam);
         setAudioEnabled(prefs.mic);
 
         localStreamRef.current = stream;
@@ -582,8 +614,8 @@ const VideoCallPage = () => {
         // Сообщение чата во время звонка
         socket.on('message-received', (msg) => {
           if (cancelled || !msg) return;
-          setChatMessages((prev) => (prev.some((m) => m.id === msg.id) ? prev : [...prev, msg]));
-          if (!chatOpenRef.current) setChatUnread((u) => u + 1);
+          setChatMessages((prev) => mergeChatMessages(prev, [msg]));
+          if (!chatOpenRef.current && msg.senderId !== user?.id) setChatUnread((u) => u + 1);
         });
 
         // Состояние медиа собеседника (камера/микрофон вкл/выкл)
@@ -596,6 +628,7 @@ const VideoCallPage = () => {
         socket.on('extend-request', ({ minutes, from }) => {
           // Игнорируем чужое предложение, если сами уже предлагаем/ждём ответ —
           // иначе одновременный обоюдный extend приводил бы к двойному продлению.
+          if (!extensionAvailable) { socket.emit('extend-decline'); return; }
           if (cancelled || extendWaitingRef.current) return;
           setIncomingExtend({ minutes: minutes || 15, from });
         });
@@ -609,7 +642,7 @@ const VideoCallPage = () => {
             toast.success(
               t('videoCall.extendedOk')
                 .replace('{min}', data.minutes || EXTEND_MIN)
-                .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
+                .replace('{sum}', Number(data.addAmount || 0).toLocaleString(locale))
             );
           }
         });
@@ -628,8 +661,9 @@ const VideoCallPage = () => {
         });
 
         // When other user is already in the room — we initiate the peer connection
-        socket.on('room-users', ({ users }) => {
+        socket.on('room-users', ({ users, active = true }) => {
           if (cancelled) return;
+          if (!active) return;
           if (users.length > 0) {
             const remoteUser = users[0];
             setRemoteName(remoteUser.userName);
@@ -693,16 +727,26 @@ const VideoCallPage = () => {
 
         // Call ended by other party
         socket.on('call-ended', () => {
-          if (!cancelled) handleEndCall(false);
+          if (cancelled) return;
+          if (remoteCallEndAction(user?.role) === 'request_client_confirmation') {
+            stopCallTransport(false);
+            setCompletionRequested(true);
+          } else handleEndCall(false);
         });
 
-        socket.on('error', ({ message }) => {
-          if (!cancelled) setError(message);
+        socket.on('error', () => {
+          if (!cancelled) setError(t('videoCall.connectError'));
         });
 
         // Биллинг: оба в звонке → пошёл отсчёт до списания; кто-то вышел раньше 5 мин → сброс.
         socket.on('billing:call-started', ({ at, captureAfterMs }) => {
-          if (!cancelled) setBilling({ startedAt: at || Date.now(), captureAfterMs: captureAfterMs || 300000 });
+          if (!cancelled) {
+            const startedAt = at || (consultation.callStartedAt ? new Date(consultation.callStartedAt).getTime() : null);
+            if (startedAt) {
+              setCallStartTime(startedAt);
+              setBilling({ startedAt, captureAfterMs: captureAfterMs || 300000 });
+            }
+          }
         });
         socket.on('billing:call-paused', () => {
           if (!cancelled) setBilling(null);
@@ -712,7 +756,7 @@ const VideoCallPage = () => {
         if (err.name === 'NotAllowedError') {
           setError(t('videoCall.mediaError'));
         } else {
-          setError(t('videoCall.startError') + err.message);
+          setError(t('videoCall.startError'));
         }
         console.error('Start call error:', err);
       }
@@ -800,7 +844,7 @@ const VideoCallPage = () => {
   const emitMediaState = () => {
     const s = localStreamRef.current;
     const audio = s?.getAudioTracks()[0]?.enabled ?? true;
-    const video = s?.getVideoTracks()[0]?.enabled ?? true;
+    const video = audioOnly ? false : (s?.getVideoTracks()[0]?.enabled ?? true);
     socketRef.current?.emit('media-state', { audio, video });
   };
 
@@ -824,7 +868,7 @@ const VideoCallPage = () => {
 
   // Предлагаем продление собеседнику (применяется только после его согласия)
   const proposeExtend = () => {
-    if (!socketRef.current) return;
+    if (!socketRef.current || !extensionAvailable) return;
     socketRef.current.emit('extend-request', { minutes: extendMin });
     setExtendOpen(false);
     setExtendWaiting(true);
@@ -839,14 +883,14 @@ const VideoCallPage = () => {
     toast.success(
       t('videoCall.extendedOk')
         .replace('{min}', data.minutes || EXTEND_MIN)
-        .replace('{sum}', Number(data.addAmount || 0).toLocaleString('ru-RU'))
+        .replace('{sum}', Number(data.addAmount || 0).toLocaleString(locale))
     );
   };
 
   // Принять входящее предложение продления: применяем на сервере (доплата
   // клиента) и сообщаем инициатору новыми значениями.
   const acceptIncomingExtend = async () => {
-    if (!incomingExtend) return;
+    if (!incomingExtend || !extensionAvailable) return;
     setExtending(true);
     try {
       const res = await api.post(`/video/consultation/${consultationId}/extend`, { minutes: incomingExtend.minutes });
@@ -854,7 +898,7 @@ const VideoCallPage = () => {
       socketRef.current?.emit('extend-accept', res.data || {});
       setIncomingExtend(null);
     } catch (e) {
-      toast.error(e.response?.data?.error || t('videoCall.extendErr'));
+      toast.error(safeRequestError(e, t('videoCall.extendErr'), { language, t }));
     } finally {
       setExtending(false);
     }
@@ -866,11 +910,30 @@ const VideoCallPage = () => {
   };
 
   // Отправка сообщения в чат во время звонка
-  const sendChat = () => {
+  const sendChat = async () => {
     const text = chatInput.trim();
-    if (!text || !socketRef.current) return;
-    socketRef.current.emit('send-message', { consultationId, text });
-    setChatInput('');
+    if (!text || chatSending) return;
+    const pending = pendingChatRef.current?.text === text
+      ? pendingChatRef.current
+      : { text, clientMessageId: createClientMessageId() };
+    pendingChatRef.current = pending;
+    setChatSending(true);
+    try {
+      const message = await sendChatMessage({
+        socket: socketRef.current,
+        api,
+        consultationId,
+        text,
+        clientMessageId: pending.clientMessageId,
+      });
+      setChatMessages((prev) => mergeChatMessages(prev, [message]));
+      pendingChatRef.current = null;
+      setChatInput((current) => (current.trim() === text ? '' : current));
+    } catch (sendError) {
+      toast.error(t('chat.sendError'));
+    } finally {
+      setChatSending(false);
+    }
   };
 
   // Toggle video
@@ -997,6 +1060,8 @@ const VideoCallPage = () => {
       ? consultation.client?.name
       : consultation.lawyer?.name
     : '';
+  const expectedRemoteRole = user?.role === 'lawyer' ? 'client' : 'lawyer';
+  const displayedRemoteRole = remoteRole || expectedRemoteRole;
 
   // Loading state
   if (loading) {
@@ -1006,7 +1071,7 @@ const VideoCallPage = () => {
           display: 'flex',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '100vh',
+          height: '100dvh',
           bgcolor: '#1A1A1A',
         }}
       >
@@ -1025,7 +1090,7 @@ const VideoCallPage = () => {
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          height: '100vh',
+          height: '100dvh',
           bgcolor: '#1A1A1A',
           color: 'white',
           gap: 3,
@@ -1057,6 +1122,22 @@ const VideoCallPage = () => {
           }}
         >
           {t('videoCall.goBack')}
+        </Box>
+      </Box>
+    );
+  }
+
+  if (consultation && !accessState.allowed) {
+    const key = `videoCall.access_${accessState.code}`;
+    const translated = t(key);
+    const explanation = translated === key ? t('videoCall.access_UNAVAILABLE') : translated;
+    return (
+      <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', minHeight: '100dvh', bgcolor: '#1A1A1A', color: '#fff', gap: 2, px: 3, textAlign: 'center' }}>
+        <Typography variant="h5">{t('videoCall.accessTitle')}</Typography>
+        <Typography sx={{ color: axelionColors.textMuted, maxWidth: 520 }}>{explanation}</Typography>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
+          <button onClick={() => navigate(-1)} style={{ padding: '12px 24px', borderRadius: 10, border: '1px solid #555', background: 'transparent', color: '#fff', cursor: 'pointer' }}>{t('videoCall.goBack')}</button>
+          <button onClick={loadConsultation} style={{ padding: '12px 24px', borderRadius: 10, border: 0, background: '#B8956E', color: '#fff', cursor: 'pointer' }}>{t('videoCall.retryAccess')}</button>
         </Box>
       </Box>
     );
@@ -1114,11 +1195,12 @@ const VideoCallPage = () => {
   if (endSummary) {
     const planned = (consultation?.duration || 60) * 60;
     return (
-      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, animation: `${fadeIn} 0.3s ease-out` }}>
+      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, pt: 'max(16px, env(safe-area-inset-top))', pb: 'max(16px, env(safe-area-inset-bottom))', overflowY: 'auto', animation: `${fadeIn} 0.3s ease-out` }}>
         <Box sx={{ width: 72, height: 72, mb: 2.5, borderRadius: '50%', bgcolor: 'rgba(90,160,106,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <CallEndOutlined sx={{ fontSize: 34, color: '#5AA06A' }} />
         </Box>
-        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 1 }}>{t('videoCall.callEnded')}</Typography>
+        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 1 }}>{t(endSummary.awaitingClientConfirmation ? 'videoCall.completionRequestedTitle' : 'videoCall.callEnded')}</Typography>
+        {endSummary.awaitingClientConfirmation && <Typography sx={{ color: '#C9C4BC', maxWidth: 460, textAlign: 'center', mb: 2 }}>{t('videoCall.completionRequestedLawyer')}</Typography>}
         <Typography sx={{ fontSize: 32, fontWeight: 300, color: '#C9A980', mb: 0.5 }}>{formatDuration(endSummary.seconds)}</Typography>
         <Typography sx={{ fontSize: 13, color: '#9A9A9A', mb: 3 }}>
           {t('videoCall.callDurationOf').replace('{planned}', Math.round(planned / 60))}
@@ -1134,23 +1216,24 @@ const VideoCallPage = () => {
   if (inLobby) {
     const selStyle = { width: '100%', marginTop: 6, padding: '9px 10px', borderRadius: 8, background: '#2C2C2C', color: '#EEE', border: '1px solid #3A3A3A', fontSize: 13, fontFamily: 'inherit' };
     return (
-      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, animation: `${fadeIn} 0.3s ease-out` }}>
-        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 0.5 }}>{t('videoCall.lobbyTitle')}</Typography>
+      <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, pt: 'max(16px, env(safe-area-inset-top))', pb: 'max(16px, env(safe-area-inset-bottom))', overflowY: 'auto', animation: `${fadeIn} 0.3s ease-out` }}>
+        <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 0.5 }}>{audioOnly ? t('videoCall.audioCall') : t('videoCall.lobbyTitle')}</Typography>
         <Typography sx={{ fontSize: 13, color: '#9A9A9A', mb: 2.5 }}>
           {t('videoCall.lobbyWith')} {otherPartyName || t('videoCall.participant')}
         </Typography>
 
         {/* Превью камеры */}
         <Box sx={{ position: 'relative', width: 'min(440px, 92vw)', aspectRatio: '16/9', bgcolor: '#000', borderRadius: '14px', overflow: 'hidden', mb: 1.5, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <video data-testid="lobby-video" ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />
-          {permError && (
+          {!audioOnly && <video data-testid="lobby-video" ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />}
+          {audioOnly && <CallOutlined sx={{ fontSize: 56, color: '#C9A980' }} />}
+           {permError && (
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 3, textAlign: 'center' }}>
               <VideocamOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} />
               <Typography sx={{ fontSize: 14, color: '#E0E0E0' }}>{t('videoCall.permDenied')}</Typography>
               <Typography sx={{ fontSize: 12, color: '#9A9A9A' }}>{t('videoCall.permHint')}</Typography>
             </Box>
           )}
-          {!permError && !lobbyCamOn && (
+           {!audioOnly && !permError && !lobbyCamOn && (
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
               <VideocamOffOutlined sx={{ fontSize: 36, color: '#888' }} />
               <Typography sx={{ fontSize: 13, color: '#888' }}>{t('videoCall.camOff')}</Typography>
@@ -1158,7 +1241,7 @@ const VideoCallPage = () => {
           )}
           {/* индикатор уровня микрофона */}
           {!permError && (
-            <Box sx={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.5)', px: 1, py: 0.5, borderRadius: '12px' }}>
+           <Box role="progressbar" aria-label={t('videoCall.micLevel')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={lobbyMicOn ? micLevel : 0} sx={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.5)', px: 1, py: 0.5, borderRadius: '12px' }}>
               {lobbyMicOn ? <MicOutlined sx={{ fontSize: 15, color: '#FFF' }} /> : <MicOffOutlined sx={{ fontSize: 15, color: '#E06B6B' }} />}
               <Box sx={{ width: 60, height: 5, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' }}>
                 <Box sx={{ width: `${lobbyMicOn ? micLevel : 0}%`, height: '100%', bgcolor: micLevel > 60 ? '#E0A24A' : '#5AA06A', transition: 'width 0.1s' }} />
@@ -1169,29 +1252,29 @@ const VideoCallPage = () => {
 
         {/* Кнопки микрофон/камера */}
         <Box sx={{ display: 'flex', gap: 1.5, mb: 2 }}>
-          <IconButton onClick={toggleLobbyMic} sx={controlBtnSx(!lobbyMicOn)}>
+          <IconButton aria-label={t('videoCall.toggleMic')} aria-pressed={!lobbyMicOn} onClick={toggleLobbyMic} sx={controlBtnSx(!lobbyMicOn)}>
             {lobbyMicOn ? <MicOutlined /> : <MicOffOutlined />}
           </IconButton>
-          <IconButton onClick={toggleLobbyCam} sx={controlBtnSx(!lobbyCamOn)}>
+          {!audioOnly && <IconButton aria-label={t('videoCall.toggleCamera')} aria-pressed={!lobbyCamOn} onClick={toggleLobbyCam} sx={controlBtnSx(!lobbyCamOn)}>
             {lobbyCamOn ? <VideocamOutlined /> : <VideocamOffOutlined />}
-          </IconButton>
+          </IconButton>}
         </Box>
 
         {/* Выбор устройств */}
         {!permError && (
           <Box sx={{ width: 'min(440px, 92vw)', mb: 2 }}>
-            {devices.cameras.length > 1 && (
-              <select value={selectedCam} onChange={(e) => setSelectedCam(e.target.value)} style={selStyle}>
+            {!audioOnly && devices.cameras.length > 1 && (
+              <select aria-label={t('videoCall.selectCamera')} value={selectedCam} onChange={(e) => setSelectedCam(e.target.value)} style={selStyle}>
                 {devices.cameras.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.camera')} ${i + 1}`}</option>)}
               </select>
             )}
             {devices.mics.length > 1 && (
-              <select value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)} style={selStyle}>
+              <select aria-label={t('videoCall.selectMic')} value={selectedMic} onChange={(e) => setSelectedMic(e.target.value)} style={selStyle}>
                 {devices.mics.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.mic')} ${i + 1}`}</option>)}
               </select>
             )}
             {devices.speakers.length > 1 && typeof document.createElement('video').setSinkId === 'function' && (
-              <select value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)} style={selStyle}>
+              <select aria-label={t('videoCall.selectSpeaker')} value={selectedSpeaker} onChange={(e) => setSelectedSpeaker(e.target.value)} style={selStyle}>
                 <option value="">{t('videoCall.speakerDefault')}</option>
                 {devices.speakers.map((d, i) => <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('videoCall.speaker')} ${i + 1}`}</option>)}
               </select>
@@ -1200,7 +1283,7 @@ const VideoCallPage = () => {
         )}
 
         {/* Войти */}
-        <Box sx={{ display: 'flex', gap: 1.5 }}>
+        <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px 24px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
             {t('videoCall.cancel')}
           </button>
@@ -1268,7 +1351,7 @@ const VideoCallPage = () => {
         </Box>
 
         {/* Status */}
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.25 }}>
+        <Box aria-live="off" sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 1, minWidth: 0, flexWrap: { xs: 'wrap', md: 'nowrap' } }}>
           <Box
             sx={{
               width: 8,
@@ -1284,7 +1367,8 @@ const VideoCallPage = () => {
               fontSize: 13,
               fontWeight: peerConnected && remaining <= 300 ? 700 : 400,
               letterSpacing: '0.06em',
-              whiteSpace: 'nowrap',
+              whiteSpace: { xs: 'normal', sm: 'nowrap' },
+              textAlign: 'center',
             }}
           >
             {statusText}
@@ -1316,7 +1400,7 @@ const VideoCallPage = () => {
             const bars = quality === 'good' ? 3 : quality === 'ok' ? 2 : 1;
             const qLabel = t(quality === 'good' ? 'videoCall.qGood' : quality === 'ok' ? 'videoCall.qOk' : 'videoCall.qPoor');
             return (
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75, ml: 1.25 }} title={qLabel}>
+              <Box sx={{ display: { xs: 'none', sm: 'flex' }, alignItems: 'center', gap: 0.75, ml: 1.25 }} title={qLabel} aria-label={qLabel}>
                 <Box sx={{ display: 'flex', gap: '2px', alignItems: 'flex-end', height: 13 }}>
                   {[1, 2, 3].map((n) => (
                     <Box key={n} sx={{ width: 3, height: 3 + n * 3, borderRadius: '1px', bgcolor: n <= bars ? qColor : 'rgba(255,255,255,0.22)' }} />
@@ -1357,19 +1441,19 @@ const VideoCallPage = () => {
                 width: '100%',
                 height: '100%',
                 objectFit: 'cover',
-                visibility: remoteMedia.video ? 'visible' : 'hidden',
+                visibility: !audioOnly && remoteMedia.video ? 'visible' : 'hidden',
               }}
             />
             {/* Камера собеседника выключена → аватар вместо чёрного кадра */}
-            {!remoteMedia.video && (
+            {(audioOnly || !remoteMedia.video) && (
               <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
                 <Box sx={{ width: 120, height: 120, borderRadius: '50%', background: 'linear-gradient(135deg, #B8956E, #8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFF', fontSize: 44, fontWeight: 300 }}>
                   {(otherPartyName || remoteName)?.charAt(0) || '?'}
                 </Box>
                 <Typography sx={{ color: '#FFF', fontSize: 18 }}>{otherPartyName || remoteName || t('videoCall.participant')}</Typography>
-                <Typography sx={{ color: '#9A9A9A', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
+                {!audioOnly && <Typography sx={{ color: '#9A9A9A', fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 0.75 }}>
                   <VideocamOffOutlined sx={{ fontSize: 16 }} /> {t('videoCall.remoteCameraOff')}
-                </Typography>
+                </Typography>}
               </Box>
             )}
             {/* Плашка с именем + индикатор выключенного микрофона собеседника */}
@@ -1410,7 +1494,7 @@ const VideoCallPage = () => {
                 mt: 0.75,
               }}
             >
-              {remoteRole === 'client' ? t('videoCall.roleClient') : t('videoCall.roleLawyer')}
+              {displayedRemoteRole === 'client' ? t('videoCall.roleClient') : t('videoCall.roleLawyer')}
             </Typography>
             {remoteLeft ? (
               <>
@@ -1514,22 +1598,25 @@ const VideoCallPage = () => {
           justifyContent: 'center',
           flexWrap: 'wrap',
           gap: { xs: 1.25, sm: 2 },
-          py: 1.5,
+          pt: 1.5,
+          pb: 'max(12px, env(safe-area-inset-bottom))',
           borderTop: '1px solid #3A3A3A',
         }}
       >
         {/* Mic toggle */}
-        <IconButton aria-label="toggle-microphone" onClick={toggleAudio} sx={controlBtnSx(!audioEnabled)}>
+        <IconButton aria-label={t('videoCall.toggleMic')} aria-pressed={!audioEnabled} onClick={toggleAudio} sx={controlBtnSx(!audioEnabled)}>
           {audioEnabled ? <MicOutlined /> : <MicOffOutlined />}
         </IconButton>
 
         {/* Camera toggle */}
-        <IconButton aria-label="toggle-camera" onClick={toggleVideo} sx={controlBtnSx(!videoEnabled)}>
+        {!audioOnly && <IconButton aria-label={t('videoCall.toggleCamera')} aria-pressed={!videoEnabled} onClick={toggleVideo} sx={controlBtnSx(!videoEnabled)}>
           {videoEnabled ? <VideocamOutlined /> : <VideocamOffOutlined />}
-        </IconButton>
+        </IconButton>}
 
         {/* Screen share */}
-        <IconButton
+        {!audioOnly && <IconButton
+          aria-label={t('videoCall.toggleScreen')}
+          aria-pressed={screenSharing}
           onClick={toggleScreenShare}
           sx={{
             width: 52,
@@ -1545,40 +1632,42 @@ const VideoCallPage = () => {
           }}
         >
           {screenSharing ? <StopScreenShareOutlined /> : <ScreenShareOutlined />}
-        </IconButton>
+        </IconButton>}
 
         {/* Fullscreen */}
-        <IconButton onClick={toggleFullscreen} sx={controlBtnSx(false)}>
+        <IconButton aria-label={t('videoCall.toggleFullscreen')} aria-pressed={isFullscreen} onClick={toggleFullscreen} sx={controlBtnSx(false)}>
           {isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
         </IconButton>
 
         {/* Мини-режим (Picture-in-Picture) — только когда есть видео собеседника */}
         {peerConnected && (
-          <IconButton onClick={togglePiP} sx={controlBtnSx(false)} title={t('videoCall.pip')}>
+          <IconButton aria-label={t('videoCall.pip')} onClick={togglePiP} sx={controlBtnSx(false)} title={t('videoCall.pip')}>
             <PictureInPictureAltOutlined />
           </IconButton>
         )}
 
         {/* Extend consultation */}
-        <IconButton onClick={() => setExtendOpen(true)} sx={controlBtnSx(false)} title={t('videoCall.extend')}>
+        {extensionAvailable ? <IconButton aria-label={t('videoCall.extend')} onClick={() => setExtendOpen(true)} sx={controlBtnSx(false)} title={t('videoCall.extend')}>
           <MoreTimeOutlined />
-        </IconButton>
+        </IconButton> : <Typography sx={{ maxWidth: 150, color: '#9A9A9A', fontSize: 11, textAlign: 'center' }}>{t('videoCall.extensionUnavailable')}</Typography>}
 
         {/* Шпаргалка горячих клавиш */}
-        <IconButton onClick={() => setShortcutsOpen((o) => !o)} sx={controlBtnSx(shortcutsOpen)} title={t('videoCall.shortcuts')}>
+        <IconButton aria-label={t('videoCall.shortcuts')} aria-pressed={shortcutsOpen} onClick={() => setShortcutsOpen((o) => !o)} sx={controlBtnSx(shortcutsOpen)} title={t('videoCall.shortcuts')}>
           <KeyboardOutlined />
         </IconButton>
 
         {/* Chat toggle */}
         <Badge badgeContent={chatUnread} color="error" overlap="circular">
-          <IconButton onClick={() => setChatOpen((o) => !o)} sx={controlBtnSx(chatOpen)}>
+          <IconButton aria-label={t('videoCall.toggleChat')} aria-pressed={chatOpen} onClick={() => setChatOpen((o) => !o)} sx={controlBtnSx(chatOpen)}>
             <ChatBubbleOutline />
           </IconButton>
         </Badge>
 
         {/* End call */}
         <IconButton
-          onClick={() => handleEndCall(true)}
+          aria-label={t('videoCall.endCall')}
+          disabled={endPending}
+          onClick={requestEndCall}
           sx={{
             width: 64,
             height: 52,
@@ -1593,6 +1682,26 @@ const VideoCallPage = () => {
           <CallEndOutlined />
         </IconButton>
       </Box>
+
+      {endError && (
+        <Box role="alert" sx={{ position: 'absolute', inset: 0, zIndex: 40, bgcolor: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>
+          <Box sx={{ maxWidth: 420, textAlign: 'center', color: '#fff' }}>
+            <Typography sx={{ mb: 2 }}>{t(endError.translationKey)}</Typography>
+            <button disabled={endPending} onClick={() => handleEndCall(false)} style={{ padding: '12px 24px', border: 0, borderRadius: 10, cursor: 'pointer' }}>{endPending ? t('videoCall.ending') : t('videoCall.retryEnd')}</button>
+          </Box>
+        </Box>
+      )}
+
+      <Dialog open={completionRequested} onClose={() => { if (!endedRef.current) setCompletionRequested(false); }} aria-labelledby="confirm-call-completion-title" maxWidth="xs" fullWidth PaperProps={{ sx: { ...consultationDialogPaperSx, bgcolor: '#1E1E1E', color: '#FFF' } }}>
+        <Box sx={{ p: 3 }}>
+          <Typography id="confirm-call-completion-title" sx={{ fontSize: 19, fontWeight: 600, mb: 1 }}>{t('videoCall.confirmCompletionTitle')}</Typography>
+          <Typography sx={{ color: '#C9C4BC', mb: 3 }}>{t(endedRef.current ? 'videoCall.lawyerRequestedCompletion' : 'videoCall.confirmCompletionBody')}</Typography>
+          <Box sx={{ display: 'flex', gap: 1.5, justifyContent: 'flex-end', flexWrap: 'wrap' }}>
+            <button onClick={() => navigate('/consultations')} style={{ padding: '11px 18px', borderRadius: 10, border: '1px solid #555', background: 'transparent', color: '#fff', cursor: 'pointer' }}>{t('videoCall.confirmLater')}</button>
+            <button disabled={endPending} onClick={() => handleEndCall(!endedRef.current)} style={{ padding: '11px 18px', borderRadius: 10, border: 0, background: '#B8956E', color: '#fff', cursor: 'pointer' }}>{endPending ? t('videoCall.ending') : t('videoCall.confirmCompletion')}</button>
+          </Box>
+        </Box>
+      </Dialog>
 
       {/* ─── Шпаргалка горячих клавиш ─── */}
       {shortcutsOpen && (
@@ -1614,7 +1723,7 @@ const VideoCallPage = () => {
               <Typography sx={{ color: '#F5F1EB', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 1 }}>
                 <KeyboardOutlined sx={{ fontSize: 20, color: '#C9A980' }} /> {t('videoCall.shortcuts')}
               </Typography>
-              <IconButton onClick={() => setShortcutsOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
+              <IconButton aria-label={t('videoCall.closeShortcuts')} onClick={() => setShortcutsOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
             </Box>
             {[
               ['M', t('videoCall.shortcutMic')],
@@ -1647,7 +1756,7 @@ const VideoCallPage = () => {
         >
           <Box sx={{ height: 56, flexShrink: 0, px: 2, display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #3A3A3A' }}>
             <Typography sx={{ color: '#FFF', fontSize: 15, fontWeight: 600 }}>{t('videoCall.chatTitle')}</Typography>
-            <IconButton onClick={() => setChatOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
+            <IconButton aria-label={t('videoCall.closeChat')} onClick={() => setChatOpen(false)} sx={{ color: '#AAA' }}><CloseOutlined /></IconButton>
           </Box>
           <Box sx={{ flex: 1, overflowY: 'auto', p: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
             {chatMessages.length === 0 ? (
@@ -1664,29 +1773,31 @@ const VideoCallPage = () => {
             })}
             <div ref={chatEndRef} />
           </Box>
-          <Box sx={{ flexShrink: 0, p: 1.5, borderTop: '1px solid #3A3A3A', display: 'flex', gap: 1 }}>
+          <Box sx={{ flexShrink: 0, pt: 1.5, px: 1.5, pb: 'max(12px, env(safe-area-inset-bottom))', borderTop: '1px solid #3A3A3A', display: 'flex', gap: 1 }}>
             <input
               value={chatInput}
+              disabled={chatSending}
               onChange={(e) => setChatInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') sendChat(); }}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); sendChat(); } }}
               placeholder={t('videoCall.chatPlaceholder')}
+              aria-label={t('videoCall.chatPlaceholder')}
               style={{ flex: 1, background: '#2C2C2C', border: '1px solid #3A3A3A', borderRadius: 10, color: '#FFF', padding: '10px 12px', fontSize: 13.5, fontFamily: 'inherit', outline: 'none' }}
             />
-            <IconButton onClick={sendChat} disabled={!chatInput.trim()} sx={{ bgcolor: '#B8956E', color: '#1A1A1A', borderRadius: '10px', '&:hover': { bgcolor: '#C9A980' }, '&.Mui-disabled': { bgcolor: '#3A3A3A', color: '#666' } }}>
-              <SendOutlined sx={{ fontSize: 20 }} />
+            <IconButton aria-label={t('chat.send')} onClick={sendChat} disabled={!chatInput.trim() || chatSending} sx={{ bgcolor: '#B8956E', color: '#1A1A1A', borderRadius: '10px', '&:hover': { bgcolor: '#C9A980' }, '&.Mui-disabled': { bgcolor: '#3A3A3A', color: '#666' } }}>
+              {chatSending ? <CircularProgress size={18} /> : <SendOutlined sx={{ fontSize: 20 }} />}
             </IconButton>
           </Box>
         </Box>
       )}
 
       {/* ─── Диалог предложения продления (выбор 15/30) ─── */}
-      <Dialog open={extendOpen} onClose={() => setExtendOpen(false)} maxWidth="xs" fullWidth
-        PaperProps={{ sx: { borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
+      <Dialog open={extendOpen} onClose={() => setExtendOpen(false)} aria-labelledby="extend-consultation-title" maxWidth="xs" fullWidth
+        PaperProps={{ sx: { ...consultationDialogPaperSx, borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
         <Box sx={{ p: 3, textAlign: 'center' }}>
           <Box sx={{ width: 56, height: 56, mx: 'auto', mb: 2, borderRadius: '50%', bgcolor: 'rgba(184,149,110,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MoreTimeOutlined sx={{ fontSize: 28, color: '#C9A980' }} />
           </Box>
-          <Typography sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{t('videoCall.extendTitle')}</Typography>
+          <Typography id="extend-consultation-title" sx={{ fontSize: 18, fontWeight: 600, mb: 1.5 }}>{t('videoCall.extendTitle')}</Typography>
           {/* выбор длительности */}
           <Box sx={{ display: 'flex', gap: 1, justifyContent: 'center', mb: 2 }}>
             {[30].map((m) => (
@@ -1701,7 +1812,7 @@ const VideoCallPage = () => {
           </Box>
           {consultation && consultation.duration > 0 && (
             <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 0.5 }}>
-              {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * extendMin).toLocaleString('ru-RU')} {t('videoCall.sum')}
+              {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * extendMin).toLocaleString(locale)} {t('videoCall.sum')}
             </Typography>
           )}
           <Typography sx={{ fontSize: 12, color: '#888', mb: 2.5 }}>{t('videoCall.extendNeedsConsent')}</Typography>
@@ -1719,19 +1830,19 @@ const VideoCallPage = () => {
       </Dialog>
 
       {/* ─── Входящее предложение продления ─── */}
-      <Dialog open={!!incomingExtend} onClose={() => !extending && declineIncomingExtend()} maxWidth="xs" fullWidth
-        PaperProps={{ sx: { borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
+      <Dialog open={!!incomingExtend} onClose={() => !extending && declineIncomingExtend()} aria-labelledby="incoming-extension-title" maxWidth="xs" fullWidth
+        PaperProps={{ sx: { ...consultationDialogPaperSx, borderRadius: '18px', bgcolor: '#1E1E1E', color: '#FFF' } }}>
         {incomingExtend && (
           <Box sx={{ p: 3, textAlign: 'center' }}>
             <Box sx={{ width: 56, height: 56, mx: 'auto', mb: 2, borderRadius: '50%', bgcolor: 'rgba(184,149,110,0.18)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
               <MoreTimeOutlined sx={{ fontSize: 28, color: '#C9A980' }} />
             </Box>
-            <Typography sx={{ fontSize: 17, fontWeight: 600, mb: 1 }}>
+            <Typography id="incoming-extension-title" sx={{ fontSize: 17, fontWeight: 600, mb: 1 }}>
               {t('videoCall.extendIncoming').replace('{name}', incomingExtend.from || t('videoCall.participant')).replace('{min}', incomingExtend.minutes)}
             </Typography>
             {consultation && consultation.duration > 0 && (
               <Typography sx={{ fontSize: 15, fontWeight: 600, color: '#C9A980', mb: 2.5 }}>
-                {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * incomingExtend.minutes).toLocaleString('ru-RU')} {t('videoCall.sum')}
+                {t('videoCall.extendSurcharge')}: {Math.round((consultation.price / consultation.duration) * incomingExtend.minutes).toLocaleString(locale)} {t('videoCall.sum')}
               </Typography>
             )}
             <Box sx={{ display: 'flex', gap: 1.5 }}>

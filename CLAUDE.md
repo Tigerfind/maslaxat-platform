@@ -478,6 +478,14 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Клиентские консультации 04.09.2026: единый status/bucket/action contract, настоящий архив,
+  persisted payment expiry и причины отмены, server-side counts/sorting/join policy, безопасные
+  cancel/reschedule/complete/refund transitions. Чат получил idempotent `clientMessageId`, ack/retry
+  и cursor pagination; WebRTC требует bilateral peer evidence, audio работает без камеры, Zoom/no-show
+  fail-closed и `no_show_both` уходит на ручную проверку. `/consultations` и detail переведены на
+  server time, URL filters, RU/UZ/EN, mobile/a11y. Миграции `20260830000002`, `20260903000000..1`.
+  Финальный локальный gate: backend 68 suites / 417 tests, frontend 20 files / 94 tests,
+  Chromium E2E 33/33, lint/build и production audits зелёные.
 - Регистрация и подтверждение контактов 26.08.2026: атомарное создание user+lawyer profile,
   нормализация и ограничения полей, обязательная специализация юриста, защита от double-submit,
   доступный/mobile wizard, общий email-banner для клиента и юриста, одноразовые email-токены с TTL,

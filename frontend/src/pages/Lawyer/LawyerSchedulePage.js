@@ -11,6 +11,7 @@ import { toast } from 'react-toastify';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
+import { isConsultationWritable } from '../../utils/chatMessages';
 import { useTranslation } from '../../i18n';
 import { MIN_WEEKLY_SLOTS, countWeeklySlots } from '../../utils/schedulePolicy';
 
@@ -467,6 +468,7 @@ const LawyerSchedulePage = () => {
         open={Boolean(docsFor)}
         onClose={() => setDocsFor(null)}
         currentUserId={user?.id}
+        readOnly={!isConsultationWritable(docsFor, 'documentsWritable')}
       />
     </GlassShell>
   );

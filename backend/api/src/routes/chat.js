@@ -1,6 +1,22 @@
 const router = require('express').Router();
-const { Message, Consultation, User, LawyerProfile } = require('../models');
+const { Message, Consultation, LawyerProfile } = require('../models');
 const { authenticate } = require('../middleware/auth');
+const consultationPolicy = require('../services/consultationPolicy');
+const { MESSAGE_INCLUDE, normalizeClientMessageId, sanitizeChatText, createIdempotentMessage } = require('../services/chatService');
+const { Op } = require('sequelize');
+
+const DEFAULT_PAGE_SIZE = 30;
+const MAX_PAGE_SIZE = 100;
+const encodeCursor = (message) => Buffer.from(JSON.stringify({ createdAt: message.createdAt, id: message.id })).toString('base64url');
+const decodeCursor = (value) => {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(Buffer.from(String(value), 'base64url').toString('utf8'));
+    const createdAt = new Date(parsed.createdAt);
+    if (!parsed.id || Number.isNaN(createdAt.getTime())) return undefined;
+    return { createdAt, id: parsed.id };
+  } catch (_) { return undefined; }
+};
 
 // GET /api/chat/:consultationId/messages — get chat history
 router.get('/:consultationId/messages', authenticate, async (req, res, next) => {
@@ -15,30 +31,42 @@ router.get('/:consultationId/messages', authenticate, async (req, res, next) => 
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
+    const limit = Math.min(MAX_PAGE_SIZE, Math.max(1, Number.parseInt(req.query.limit, 10) || DEFAULT_PAGE_SIZE));
+    const cursor = decodeCursor(req.query.cursor);
+    if (cursor === undefined) return res.status(400).json({ error: 'Некорректный курсор', code: 'INVALID_CURSOR' });
+    const where = { consultationId: req.params.consultationId };
+    if (cursor) where[Op.or] = [
+      { createdAt: { [Op.lt]: cursor.createdAt } },
+      { createdAt: cursor.createdAt, id: { [Op.lt]: cursor.id } },
+    ];
     let messages = await Message.findAll({
-      where: { consultationId: req.params.consultationId },
-      include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
-      order: [['createdAt', 'ASC']],
+      where,
+      include: MESSAGE_INCLUDE,
+      order: [['createdAt', 'DESC'], ['id', 'DESC']],
+      limit: limit + 1,
     });
 
     // Автоприветствие: когда клиент открывает чат, а сообщений ещё нет и у юриста
     // задан greeting — публикуем его первым сообщением от юриста (один раз).
-    if (messages.length === 0 && req.userId === consultation.clientId) {
+    if (!cursor && messages.length === 0 && req.userId === consultation.clientId && consultationPolicy.isWritable(consultation)) {
       const lawyerProfile = await LawyerProfile.findOne({
         where: { userId: consultation.lawyerId },
         attributes: ['greeting'],
       });
       const greeting = lawyerProfile && lawyerProfile.greeting && lawyerProfile.greeting.trim();
       if (greeting) {
-        await Message.create({
-          consultationId: req.params.consultationId,
+        await createIdempotentMessage({
+          consultation,
           senderId: consultation.lawyerId,
-          text: greeting,
+          text: sanitizeChatText(greeting),
+          clientMessageId: 'auto-greeting-v1',
+          notify: false,
         });
         messages = await Message.findAll({
           where: { consultationId: req.params.consultationId },
-          include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
-          order: [['createdAt', 'ASC']],
+          include: MESSAGE_INCLUDE,
+          order: [['createdAt', 'DESC'], ['id', 'DESC']],
+          limit: limit + 1,
         });
       }
     }
@@ -55,7 +83,13 @@ router.get('/:consultationId/messages', authenticate, async (req, res, next) => 
       }
     );
 
-    res.json(messages);
+    const hasMore = messages.length > limit;
+    const page = messages.slice(0, limit).reverse();
+    res.json({
+      messages: page,
+      nextCursor: hasMore && page.length ? encodeCursor(page[0]) : null,
+      hasMore,
+    });
   } catch (err) {
     next(err);
   }
@@ -73,33 +107,20 @@ router.post('/:consultationId/messages', authenticate, async (req, res, next) =>
       return res.status(403).json({ error: 'Нет доступа' });
     }
 
-    // В завершённую/отменённую консультацию писать нельзя — только читать историю
-    if (['completed', 'cancelled', 'rejected'].includes(consultation.status)) {
-      return res.status(403).json({ error: 'Консультация завершена — чат доступен только для чтения' });
+    if (!consultationPolicy.isWritable(consultation)) {
+      return res.status(409).json({ error: 'Чат доступен только для чтения', code: 'CONSULTATION_READ_ONLY' });
     }
 
     const { text } = req.body;
     if (!text || !text.trim()) {
-      return res.status(400).json({ error: 'Сообщение не может быть пустым' });
+      return res.status(400).json({ error: 'Сообщение не может быть пустым', code: 'INVALID_MESSAGE' });
     }
-
-    // Filter phone numbers and emails to prevent bypassing the platform
-    const filteredText = text.trim()
-      .replace(/(\+?998[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2})/g, '***')
-      .replace(/(\+?\d{10,13})/g, '***')
-      .replace(/([\w.+-]+@[\w-]+\.[\w.-]+)/g, '***');
-
-    const message = await Message.create({
-      consultationId: req.params.consultationId,
-      senderId: req.userId,
-      text: filteredText,
-    });
-
-    const fullMessage = await Message.findByPk(message.id, {
-      include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
-    });
-
-    res.status(201).json(fullMessage);
+    const clientMessageId = normalizeClientMessageId(req.body.clientMessageId);
+    if (clientMessageId === undefined) {
+      return res.status(400).json({ error: 'Некорректный идентификатор сообщения', code: 'INVALID_CLIENT_MESSAGE_ID' });
+    }
+    const { message, created } = await createIdempotentMessage({ consultation, senderId: req.userId, text, clientMessageId });
+    res.status(created ? 201 : 200).json(message);
   } catch (err) {
     next(err);
   }
@@ -135,3 +156,4 @@ router.get('/:consultationId/unread', authenticate, async (req, res, next) => {
 });
 
 module.exports = router;
+module.exports.decodeCursor = decodeCursor;

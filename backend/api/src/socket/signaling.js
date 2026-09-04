@@ -1,9 +1,21 @@
 const jwt = require('jsonwebtoken');
-const { User, LawyerProfile, Consultation, Message } = require('../models');
+const { User, LawyerProfile, Consultation, Payment } = require('../models');
 const logger = require('../config/logger');
 const presenceService = require('../services/presenceService');
 const { isRedisAdapterAttached } = require('./redisAdapter');
 const { consultationAccess } = require('../services/consultationAccessService');
+const consultationPolicy = require('../services/consultationPolicy');
+const { normalizeClientMessageId, createIdempotentMessage } = require('../services/chatService');
+const { callProviderPolicy } = require('../services/callProviderPolicy');
+const { recordPeerConnected } = require('../services/webrtcEvidenceService');
+
+const socketUserId = (candidate) => candidate?.data?.userId;
+const socketRole = (candidate) => candidate?.data?.role;
+const canonicalSocket = (sockets) => [...sockets].sort((left, right) => {
+  const joinedDiff = Number(left.data?.callJoinedAt || 0) - Number(right.data?.callJoinedAt || 0);
+  return joinedDiff || String(left.id).localeCompare(String(right.id));
+})[0];
+const hasUserSocket = (sockets, userId) => sockets.some((candidate) => socketUserId(candidate) === userId);
 
 /**
  * WebRTC Signaling Server
@@ -40,7 +52,7 @@ function initSignaling(io) {
       }
 
       socket.data.userId = user.id;
-      socket.data.userRole = user.role;
+      socket.data.role = user.role;
       socket.data.publicPresence = user.role === 'lawyer' && user.profile?.verificationStatus === 'approved';
       socket.userId = user.id;
       socket.userName = user.name;
@@ -75,68 +87,61 @@ function initSignaling(io) {
     socket.on('join-room', async ({ consultationId }) => {
       try {
         // Verify user is participant of this consultation
-        const consultation = await Consultation.findByPk(consultationId);
+        const consultation = await Consultation.findByPk(consultationId, {
+          include: [{ model: Payment, as: 'payments', separate: true, attributes: ['status', 'refundStatus'] }],
+        });
         if (!consultation) {
           return socket.emit('error', { message: 'Consultation not found' });
         }
 
         const isParticipant =
-          consultation.clientId === socket.userId ||
-          consultation.lawyerId === socket.userId;
+          consultation.clientId === socket.data.userId ||
+          consultation.lawyerId === socket.data.userId;
 
         if (!isParticipant) {
-          return socket.emit('error', { message: 'Access denied' });
+          return socket.emit('error', { message: 'Access denied', code: 'ACCESS_DENIED' });
         }
-        const access = consultationAccess(consultation);
+        const providerPolicy = callProviderPolicy(consultation);
+        if (!providerPolicy.allowed) return socket.emit('error', { message: 'Call provider unavailable', code: providerPolicy.code });
+        const access = consultationPolicy.policyDto(consultation, socket.data.role, new Date());
         if (!access.canJoin) return socket.emit('error', { message: 'Consultation access unavailable', code: access.reason, ...access });
 
         const roomId = `consultation:${consultationId}`;
         socket.join(roomId);
         socket.consultationId = consultationId;
         socket.roomId = roomId;
+        socket.data.consultationId = consultationId;
+        socket.data.callJoinedAt = Date.now();
 
         // Get existing users in room
         const roomSockets = await io.in(roomId).fetchSockets();
-        const usersInRoom = roomSockets
-          .filter((s) => s.id !== socket.id)
-          .map((s) => ({
+        const ownSockets = roomSockets.filter((s) => socketUserId(s) === socket.data.userId);
+        const oppositeSockets = roomSockets.filter((s) => socketUserId(s)
+          && socketUserId(s) !== socket.data.userId
+          && socketRole(s) !== socket.data.role);
+        const activeOwnSocket = canonicalSocket(ownSockets);
+        const activeOppositeSocket = canonicalSocket(oppositeSockets);
+        const usersInRoom = activeOwnSocket?.id === socket.id && activeOppositeSocket
+          ? [activeOppositeSocket].map((s) => ({
             socketId: s.id,
-            userId: s.userId,
+            userId: socketUserId(s),
             userName: s.userName,
-            userRole: s.userRole,
+            userRole: socketRole(s),
             userAvatar: s.userAvatar,
-          }));
+          })) : [];
 
         // Tell the new user who's already in the room
-        socket.emit('room-users', { users: usersInRoom });
+        socket.emit('room-users', { users: usersInRoom, active: activeOwnSocket?.id === socket.id });
 
         // Tell existing users about the new participant
-        socket.to(roomId).emit('user-joined', {
-          socketId: socket.id,
-          userId: socket.userId,
-          userName: socket.userName,
-          userRole: socket.userRole,
-          userAvatar: socket.userAvatar,
-        });
-
-        // Биллинг (модель B): засекаем момент, когда ОБА участника в звонке — от него
-        // пойдут 5 минут до захвата оплаты. Ставим один раз (атомарно, идемпотентно).
-        try {
-          const present = new Set(roomSockets.map((s) => s.userId));
-          const bothHere = present.has(consultation.clientId) && present.has(consultation.lawyerId);
-          if (bothHere && !consultation.callStartedAt) {
-            const [aff] = await Consultation.update(
-              { callStartedAt: new Date() },
-              { where: { id: consultationId, callStartedAt: null } }
-            );
-            if (aff) {
-              io.in(roomId).emit('billing:call-started', {
-                consultationId, at: Date.now(), captureAfterMs: 5 * 60 * 1000,
-              });
-            }
-          }
-        } catch (e) {
-          logger.error('[Socket] billing call-start error', { error: e.message });
+        if (activeOwnSocket?.id === socket.id && activeOppositeSocket) {
+          io.to(activeOppositeSocket.id).emit('user-joined', {
+            socketId: socket.id,
+            userId: socket.data.userId,
+            userName: socket.userName,
+            userRole: socket.data.role,
+            userAvatar: socket.userAvatar,
+          });
         }
 
         logger.debug(`[Socket] ${socket.userName} joined room ${roomId} (${roomSockets.length} users)`);
@@ -148,16 +153,48 @@ function initSignaling(io) {
 
     // Relay WebRTC signaling data between peers — только участнику ТОЙ ЖЕ комнаты
     // (раньше релеили на любой socketId; теперь проверяем принадлежность к комнате).
-    socket.on('signal', ({ to, signal }) => {
+    socket.on('signal', async ({ to, signal }) => {
       if (!socket.roomId || !to) return;
-      const target = io.sockets.sockets.get(to);
-      if (!target || !target.rooms.has(socket.roomId)) return;
+      const roomSockets = await io.in(socket.roomId).fetchSockets();
+      const target = roomSockets.find((candidate) => candidate.id === to);
+      if (!target || socketUserId(target) === socket.data.userId || socketRole(target) === socket.data.role) return;
       io.to(to).emit('signal', {
         from: socket.id,
         signal,
         userName: socket.userName,
         userRole: socket.userRole,
       });
+    });
+
+    socket.on('peer-connected', async ({ consultationId, peerSocketId } = {}, acknowledge) => {
+      const ack = typeof acknowledge === 'function' ? acknowledge : () => {};
+      try {
+        if (!consultationId || socket.consultationId !== consultationId || !socket.roomId || !peerSocketId) {
+          return ack({ ok: false, code: 'INVALID_PEER_EVIDENCE' });
+        }
+        const consultation = await Consultation.findByPk(consultationId);
+        const providerPolicy = callProviderPolicy(consultation);
+        if (!providerPolicy.allowed) return ack({ ok: false, code: providerPolicy.code });
+        const roomSockets = await io.in(socket.roomId).fetchSockets();
+        const target = roomSockets.find((candidate) => candidate.id === peerSocketId);
+        if (!target || socketUserId(target) === socket.data.userId || socketRole(target) === socket.data.role) {
+          return ack({ ok: false, code: 'INVALID_PEER_EVIDENCE' });
+        }
+        const result = await recordPeerConnected(consultationId, socket.data.userId, {
+          socketId: socket.id,
+          peerSocketId,
+          mode: providerPolicy.mode,
+        });
+        if (result.started) {
+          io.in(socket.roomId).emit('billing:call-started', {
+            consultationId, at: new Date(result.consultation.callStartedAt).getTime(), captureAfterMs: 5 * 60 * 1000,
+          });
+        }
+        return ack({ ok: true, bilateral: result.bilateral, startedAt: result.consultation.callStartedAt });
+      } catch (err) {
+        logger.error('[Socket] peer-connected error', { error: err.message });
+        return ack({ ok: false, code: err.code || 'PEER_EVIDENCE_FAILED' });
+      }
     });
 
     // ─── CALL INVITATION (ring) ──────────────────────────────
@@ -174,19 +211,21 @@ function initSignaling(io) {
         const consultation = await Consultation.findByPk(consultationId);
         if (!consultation) return;
         const isParticipant =
-          consultation.clientId === socket.userId || consultation.lawyerId === socket.userId;
+          consultation.clientId === socket.data.userId || consultation.lawyerId === socket.data.userId;
         if (!isParticipant) return;
+        const providerPolicy = callProviderPolicy(consultation);
+        if (!providerPolicy.allowed) return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации', code: providerPolicy.code });
         const access = consultationAccess(consultation);
         if (!access.canJoin) return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации', code: access.reason, ...access });
         const calleeId =
-          consultation.clientId === socket.userId ? consultation.lawyerId : consultation.clientId;
+          consultation.clientId === socket.data.userId ? consultation.lawyerId : consultation.clientId;
 
         const payload = {
           consultationId,
-          callerId: socket.userId,
+          callerId: socket.data.userId,
           callerName: socket.userName,
           callerAvatar: socket.userAvatar,
-          callerRole: socket.userRole,
+          callerRole: socket.data.role,
           type: consultation.type,
         };
 
@@ -297,93 +336,79 @@ function initSignaling(io) {
     });
 
     // Send a chat message
-    socket.on('send-message', async ({ consultationId, text }) => {
+    socket.on('send-message', async (payload = {}, acknowledge) => {
+      const ack = typeof acknowledge === 'function' ? acknowledge : () => {};
       try {
-        if (!text || !text.trim()) return;
+        const { consultationId, text } = payload;
+        const clientMessageId = normalizeClientMessageId(payload.clientMessageId);
+        if (!consultationId || typeof text !== 'string' || !text.trim()) {
+          return ack({ ok: false, code: 'INVALID_MESSAGE', error: 'Message text is required' });
+        }
+        if (clientMessageId === undefined) {
+          return ack({ ok: false, code: 'INVALID_CLIENT_MESSAGE_ID', error: 'Invalid message identifier' });
+        }
 
         const consultation = await Consultation.findByPk(consultationId);
-        if (!consultation) return;
+        if (!consultation) return ack({ ok: false, code: 'CONSULTATION_NOT_FOUND', error: 'Consultation not found' });
 
         const isParticipant =
           consultation.clientId === socket.userId ||
           consultation.lawyerId === socket.userId;
-        if (!isParticipant) return;
+        if (!isParticipant) return ack({ ok: false, code: 'ACCESS_DENIED', error: 'Access denied' });
 
-        // Завершённая консультация — только чтение, новые сообщения не принимаем
-        if (['completed', 'cancelled', 'rejected'].includes(consultation.status)) return;
+        if (!consultationPolicy.isWritable(consultation)) {
+          return ack({ ok: false, code: 'CONSULTATION_READ_ONLY', error: 'Consultation is read-only' });
+        }
 
-        // Filter out phone numbers to prevent bypassing the platform
-        let filteredText = text.trim()
-          .replace(/(\+?998[\s.-]?\d{2}[\s.-]?\d{3}[\s.-]?\d{2}[\s.-]?\d{2})/g, '***')
-          .replace(/(\+?\d{10,13})/g, '***')
-          .replace(/([\w.+-]+@[\w-]+\.[\w.-]+)/g, '***');
-
-        // Save message to DB
-        const message = await Message.create({
-          consultationId,
-          senderId: socket.userId,
-          text: filteredText,
-        });
-
-        const fullMessage = await Message.findByPk(message.id, {
-          include: [{ model: User, as: 'sender', attributes: ['id', 'name', 'avatar', 'role'] }],
+        const { message: fullMessage, created } = await createIdempotentMessage({
+          consultation, senderId: socket.userId, text, clientMessageId,
         });
 
         const chatRoomId = `chat:${consultationId}`;
-        // Emit to everyone in the chat room (including sender for confirmation)
-        io.in(chatRoomId).emit('message-received', fullMessage.toJSON());
+        if (created) io.in(chatRoomId).emit('message-received', fullMessage.toJSON());
+        return ack({ ok: true, message: fullMessage.toJSON(), duplicate: !created });
       } catch (err) {
         logger.error('[Socket] send-message error', { error: err.message });
+        return ack({ ok: false, code: 'MESSAGE_SEND_FAILED', error: 'Failed to send message' });
       }
     });
 
     // Typing indicator
-    socket.on('typing', ({ consultationId }) => {
+    socket.on('typing', async ({ consultationId } = {}) => {
       const chatRoomId = `chat:${consultationId}`;
+      if (socket.chatConsultationId !== consultationId || socket.chatRoomId !== chatRoomId) return;
+      const consultation = await Consultation.findByPk(consultationId).catch(() => null);
+      if (!consultationPolicy.isParticipant(consultation, socket.userId) || !consultationPolicy.isWritable(consultation)) return;
       socket.to(chatRoomId).emit('user-typing', {
         userId: socket.userId,
         userName: socket.userName,
       });
     });
 
-    socket.on('stop-typing', ({ consultationId }) => {
+    socket.on('stop-typing', async ({ consultationId } = {}) => {
       const chatRoomId = `chat:${consultationId}`;
+      if (socket.chatConsultationId !== consultationId || socket.chatRoomId !== chatRoomId) return;
+      const consultation = await Consultation.findByPk(consultationId).catch(() => null);
+      if (!consultationPolicy.isParticipant(consultation, socket.userId) || !consultationPolicy.isWritable(consultation)) return;
       socket.to(chatRoomId).emit('user-stop-typing', {
         userId: socket.userId,
       });
     });
 
-    // Биллинг (модель B): участник вышел РАНЬШЕ 5 минут → сбрасываем таймер, чтобы
-    // списания не было. Оплата спишется, только если оба пробудут в звонке 5 минут подряд.
-    async function billingOnLeave() {
-      const cid = socket.consultationId;
-      const room = socket.roomId;
-      if (!cid) return;
-      try {
-        const c = await Consultation.findByPk(cid);
-        if (!c || !c.callStartedAt) return;
-        if (['charged', 'released'].includes(c.billingStatus)) return; // уже списано — поздно
-        const elapsed = Date.now() - new Date(c.callStartedAt).getTime();
-        if (elapsed < 5 * 60 * 1000) {
-          await Consultation.update({ callStartedAt: null }, { where: { id: cid } });
-          if (room) io.in(room).emit('billing:call-paused', { consultationId: cid });
-        }
-      } catch (e) {
-        logger.error('[Socket] billing leave error', { error: e.message });
-      }
-    }
-
     // Handle disconnection
-    socket.on('disconnect', () => {
+    socket.on('disconnect', async () => {
       if (socket.roomId) {
-        socket.to(socket.roomId).emit('user-left', {
-          socketId: socket.id,
-          userId: socket.userId,
-          userName: socket.userName,
-        });
+        const remaining = await io.in(socket.roomId).fetchSockets().catch(() => []);
+        const sameUserRemains = hasUserSocket(remaining, socket.data.userId);
+        if (!sameUserRemains) {
+          io.in(socket.roomId).emit('user-left', {
+            socketId: socket.id,
+            userId: socket.data.userId,
+            userName: socket.userName,
+          });
+        }
         logger.debug(`[Socket] ${socket.userName} left room ${socket.roomId}`);
       }
-      billingOnLeave();
       const presenceUpdate = socket.data.publicPresence ? presenceService.unregisterSocket(socket) : null;
       if (presenceUpdate && !isRedisAdapterAttached()) {
         io.emit('presence:update', presenceUpdate);
@@ -397,11 +422,10 @@ function initSignaling(io) {
           userId: socket.userId,
           userName: socket.userName,
         });
-        billingOnLeave();
         socket.leave(socket.roomId);
       }
     });
   });
 }
 
-module.exports = { initSignaling };
+module.exports = { initSignaling, canonicalSocket, hasUserSocket };

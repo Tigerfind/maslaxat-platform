@@ -5,6 +5,7 @@ const fs = require('fs');
 const { Consultation, CaseDocument, User } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
+const consultationPolicy = require('../services/consultationPolicy');
 const { CASE_DOCUMENT_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
 
 // Рабочие документы по делу: файлы конкретной консультации, видны ОБОИМ участникам
@@ -49,6 +50,13 @@ async function requireParticipant(req, res, next) {
   }
 }
 
+function requireWritableConsultation(req, res, next) {
+  if (!consultationPolicy.isWritable(req.consultation)) {
+    return res.status(409).json({ error: 'Документы консультации доступны только для чтения', code: 'CONSULTATION_READ_ONLY' });
+  }
+  return next();
+}
+
 // GET /:consultationId/documents — список документов по делу
 router.get('/:consultationId/documents', authenticate, requireParticipant, async (req, res, next) => {
   try {
@@ -58,14 +66,18 @@ router.get('/:consultationId/documents', authenticate, requireParticipant, async
       include: [{ model: User, as: 'uploader', attributes: ['id', 'name', 'role'] }],
       order: [['createdAt', 'DESC']],
     });
-    res.json({ documents: docs });
+    res.json({
+      documents: docs,
+      writable: consultationPolicy.isWritable(req.consultation),
+      consultation: { status: req.consultation.status, archivedAt: req.consultation.archivedAt },
+    });
   } catch (err) {
     next(err);
   }
 });
 
 // POST /:consultationId/documents — загрузить документ по делу
-router.post('/:consultationId/documents', authenticate, requireParticipant, upload.single('file'), validateUploadSignatures(CASE_DOCUMENT_EXTENSIONS), async (req, res, next) => {
+router.post('/:consultationId/documents', authenticate, requireParticipant, requireWritableConsultation, upload.single('file'), validateUploadSignatures(CASE_DOCUMENT_EXTENSIONS), async (req, res, next) => {
   try {
     if (!req.file) return res.status(400).json({ error: 'Файл не загружен' });
     const doc = await createWithinUploadQuota({
@@ -116,7 +128,7 @@ router.get('/:consultationId/documents/:docId/download', authenticate, requirePa
 });
 
 // DELETE /:consultationId/documents/:docId — удалить (только автор загрузки)
-router.delete('/:consultationId/documents/:docId', authenticate, requireParticipant, async (req, res, next) => {
+router.delete('/:consultationId/documents/:docId', authenticate, requireParticipant, requireWritableConsultation, async (req, res, next) => {
   try {
     const doc = await CaseDocument.findOne({
       where: { id: req.params.docId, consultationId: req.params.consultationId },

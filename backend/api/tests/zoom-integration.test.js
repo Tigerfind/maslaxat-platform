@@ -162,7 +162,7 @@ test('параллельные participant.joined не теряют начало
   expect(consultation.conversationStartedAt).toBeTruthy();
 });
 
-test('out-of-order attendance после meeting.ended корректирует сторону no-show', async () => {
+test('out-of-order attendance после no_show_both уходит на ручную проверку', async () => {
   const client = await makeClient('zoom-order-client@test.uz');
   const { user: lawyer } = await makeLawyer('zoom-order-lawyer@test.uz');
   const connection = await connectionFor(lawyer.id);
@@ -173,12 +173,15 @@ test('out-of-order attendance после meeting.ended корректирует 
   expect(consultation.lifecycleStatus).toBe('ready');
   await require('../src/services/consultationTimingService').reconcileConsultationTiming(new Date());
   await consultation.reload();
-  expect(consultation.lifecycleStatus).toBe('no_show_lawyer');
+  expect(consultation.lifecycleStatus).toBe('no_show_both');
   const sdk = require('../src/services/zoomMeetingSdkService');
   await signedWebhook({ event: 'participant.joined', event_ts: Date.now() - 30000, payload: { object: { id: 'order-meeting', participant: { customer_key: sdk.customerKey(consultation.id, lawyer.id) } } } }, 'order-late-join');
   await settle(); await consultation.reload();
-  expect(consultation.lifecycleStatus).toBe('no_show_client');
+  expect(consultation.lifecycleStatus).toBe('no_show_both');
   expect(consultation.conversationStartedAt).toBeNull();
+  expect(await models.MeetingEvent.count({
+    where: { consultationId: consultation.id, eventType: 'attendance.late_manual_review', participantRole: 'lawyer' },
+  })).toBe(1);
 });
 
 test('webhook отклоняет replay с тем же request id и другим payload', async () => {

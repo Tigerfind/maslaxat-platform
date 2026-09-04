@@ -1,781 +1,446 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import {
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  InputAdornment,
-  IconButton,
-  Button,
-  Pagination,
-  Tooltip,
-} from '@mui/material';
-import {
-  CalendarMonthOutlined,
-  VideocamOutlined,
-  CallOutlined,
-  ChatBubbleOutline,
-  AddOutlined,
-  ReplayOutlined,
-  EventRepeatOutlined,
-  CheckOutlined,
-  CloseOutlined,
-  AccessTimeRounded,
-  CheckCircleOutlined,
-  AutorenewRounded,
-  CancelOutlined,
-  FolderOpenOutlined,
-  PaymentOutlined,
-  EventAvailableOutlined,
-  SearchOutlined,
-} from '@mui/icons-material';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useSelector } from 'react-redux';
+import {
+  Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle,
+  IconButton, InputAdornment, LinearProgress, Pagination, TextField,
+} from '@mui/material';
+import { AddOutlined, CloseOutlined, SearchOutlined } from '@mui/icons-material';
+import { toast } from 'react-toastify';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import ConsultationCard from '../../components/Consultations/ConsultationCard';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
-import ConsultationTimeline from '../../components/Consultations/ConsultationTimeline';
-import clientService from '../../services/clientService';
-import api from '../../services/api';
-import { launchConsultation } from '../../services/meetingLauncher';
-import { clientLawyerService } from '../../services/clientService';
+import { isConsultationWritable } from '../../utils/chatMessages';
 import RatingDialog from '../../components/UI/RatingDialog';
 import BookingModal from '../../components/BookingModal';
 import { SkeletonCard } from '../../components/UI/Skeleton';
-import { toast } from 'react-toastify';
-import GlassShell from '../../components/GlassKit/GlassShell';
-import { useTranslation } from '../../i18n';
 import ErrorState from '../../components/UI/ErrorState';
 import EmptyState from '../../components/UI/EmptyState';
-
-/*
-  ─────────────────────────────────────────────────────────────
-  MY CONSULTATIONS  (/consultations)
-  Ported 1:1 from ClaudeDesign → client/06_CONSULTATIONS.html.
-  What it shows / how it works:
-   • Pill tab row  Все / Предстоящие / Завершённые / Отменённые  (with counts)
-   • Glass consultation cards ← clientService.consultations.getConsultations('all')
-       avatar · name · status chip · spec ★ rating · question · date/type/price
-   • "Войти в видео"/"Открыть чат"  → joinConsultation → video/chat route
-   • "Отменить"  → cancel dialog (reason) → cancelConsultation
-   • "Оценить"   → RatingDialog → clientLawyerService.leaveReview  (completed w/o rating)
-  Chrome (sidebar + topbar + dark toggle + lang + bell) = <GlassShell>.
-  ─────────────────────────────────────────────────────────────
-*/
+import clientService, { clientLawyerService } from '../../services/clientService';
+import api from '../../services/api';
+import { launchConsultation } from '../../services/meetingLauncher';
+import { useTranslation } from '../../i18n';
+import {
+  CONSULTATION_TABS, getServerOffset, isPaymentExpired, safeRequestError,
+} from '../../utils/consultationPresentation';
+import { consultationQueryKey, parseConsultationQuery, serializeConsultationQuery } from '../../utils/consultationQuery';
+import { consultationDialogPaperSx, localeForLanguage } from '../../utils/consultationLocale';
+import { isAuthoritativeUnavailableLawyerError, joinPolicyRefreshKey, nextJoinPolicyRefreshDelay } from '../../utils/consultationRefresh';
 
 const glassCard = {
-  background: 'var(--card-glass)',
-  backdropFilter: 'blur(24px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-  border: '1px solid var(--card-brd)',
-  boxShadow: 'var(--card-shadow)',
-  borderRadius: 'var(--radius)',
+  background: 'var(--card-glass)', backdropFilter: 'blur(24px) saturate(180%)',
+  WebkitBackdropFilter: 'blur(24px) saturate(180%)', border: '1px solid var(--card-brd)',
+  boxShadow: 'var(--card-shadow)', borderRadius: 'var(--radius)',
 };
 
-const AV_BG = [
-  'linear-gradient(135deg,#B8956E,#8B7355)',
-  'linear-gradient(135deg,#6A8A9A,#4A6A7A)',
-  'linear-gradient(135deg,#7A9A6B,#5A7A4B)',
-];
-
-const initialsOf = (name = '') =>
-  name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '—';
-
-const STATUS = {
-  accepted: { key: 'statusAccepted', color: '#7A9A6B', bg: 'rgba(122,154,107,0.14)', icon: CheckCircleOutlined },
-  pending: { key: 'statusPending', color: '#C4A35A', bg: 'rgba(196,163,90,0.14)', icon: AccessTimeRounded },
-  in_progress: { key: 'statusInProgress', color: 'var(--accent)', bg: 'rgba(184,149,110,0.14)', icon: AutorenewRounded },
-  completed: { key: 'statusCompleted', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)', icon: CheckCircleOutlined },
-  rejected: { key: 'statusRejected', color: '#B07070', bg: 'rgba(176,112,112,0.14)', icon: CancelOutlined },
-  cancelled: { key: 'statusCancelled', color: '#B07070', bg: 'rgba(176,112,112,0.14)', icon: CancelOutlined },
-  payment_pending: { key: 'statusPaymentPending', color: '#B06A35', bg: 'rgba(176,106,53,0.14)', icon: PaymentOutlined },
-};
+const legacyTabs = ['all', 'upcoming', 'completed', 'cancelled', 'archived'];
 
 const ConsultationsPageGlass = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const [params, setParams] = useSearchParams();
   const { t, language } = useTranslation();
-
-  // Начальная вкладка может прийти из навигации (напр. с карточек дашборда):
-  // navigate('/consultations', { state: { tab: 1 } }). Иначе — «Все» (0).
-  const legacyTab = Number.isInteger(location.state?.tab) ? ['all', 'upcoming', 'completed', 'cancelled', 'archived'][location.state.tab] : null;
-  const [currentTab, setCurrentTab] = useState(legacyTab || 'all');
-  const [consultations, setConsultations] = useState([]);
-  const [counts, setCounts] = useState({ all: 0, payment_pending: 0, upcoming: 0, completed: 0, cancelled: 0, archived: 0 });
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [period, setPeriod] = useState('all');
-  const [paymentLoading, setPaymentLoading] = useState(null);
-  const [now, setNow] = useState(Date.now());
-  const [serverOffset, setServerOffset] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [cancelDialogOpen, setCancelDialogOpen] = useState(false);
-  const [selectedConsultation, setSelectedConsultation] = useState(null);
-  const [cancelReason, setCancelReason] = useState('');
-  const [actionLoading, setActionLoading] = useState(false);
-  const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
-  const [ratingConsultation, setRatingConsultation] = useState(null);
-  const [rebookLawyer, setRebookLawyer] = useState(null);
-  const [docsFor, setDocsFor] = useState(null); // консультация, чью папку документов открыли
   const { user } = useSelector((state) => state.auth);
-  const [rescheduleC, setRescheduleC] = useState(null);
-  const [rsDate, setRsDate] = useState('');
-  const [rsTime, setRsTime] = useState('');
-  const [rsLoading, setRsLoading] = useState(false);
-  const [rsSlots, setRsSlots] = useState([]);
-  const [rsTimezone, setRsTimezone] = useState('');
-
-  useEffect(() => {
-    const timer = setTimeout(() => { setDebouncedSearch(search.trim()); setPage(1); }, 350);
-    return () => clearTimeout(timer);
-  }, [search]);
-
-  useEffect(() => {
-    fetchConsultations();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [currentTab, page, debouncedSearch, period]);
-
-  useEffect(() => {
-    const timer = setInterval(() => setNow(Date.now()), 30000);
-    return () => clearInterval(timer);
+  const legacyTab = Number.isInteger(location.state?.tab) ? legacyTabs[location.state.tab] : null;
+  const query = parseConsultationQuery(params, legacyTab);
+  const { tab: currentTab, search: querySearch, period, page } = query;
+  const [search, setSearch] = useState(querySearch);
+  const [consultations, setConsultations] = useState([]);
+  const [counts, setCounts] = useState(Object.fromEntries(CONSULTATION_TABS.map((key) => [key, 0])));
+  const [totalPages, setTotalPages] = useState(1);
+  const [serverOffset, setServerOffset] = useState(0);
+  const [now, setNow] = useState(Date.now());
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
+  const [offline, setOffline] = useState(!navigator.onLine);
+  const [reloadToken, setReloadToken] = useState(0);
+  const [loadingActions, setLoadingActions] = useState(new Set());
+  const [cancelFor, setCancelFor] = useState(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [ratingFor, setRatingFor] = useState(null);
+  const [rebookLawyer, setRebookLawyer] = useState(null);
+  const [docsFor, setDocsFor] = useState(null);
+  const [rescheduleFor, setRescheduleFor] = useState(null);
+  const [slotsState, setSlotsState] = useState({ loading: false, error: '', dates: [], timezone: '' });
+  const [slotDate, setSlotDate] = useState('');
+  const [slotTime, setSlotTime] = useState('');
+  const loadedRef = useRef(false);
+  const displayedQueryRef = useRef('');
+  const tabsRef = useRef(null);
+  const slotsControllerRef = useRef(null);
+  const actionLocksRef = useRef(new Set());
+  const [unavailableLawyers, setUnavailableLawyers] = useState(new Set());
+  const expiryRefetchedRef = useRef(new Set());
+  const lastRefreshRequestRef = useRef(0);
+  const joinRefetchedRef = useRef(new Set());
+  const locale = localeForLanguage(language);
+  const queryKey = consultationQueryKey(query);
+  const refetch = useCallback(() => {
+    const requestedAt = Date.now();
+    if (requestedAt - lastRefreshRequestRef.current < 250) return;
+    lastRefreshRequestRef.current = requestedAt;
+    setReloadToken((value) => value + 1);
   }, []);
 
-  const fetchConsultations = async () => {
+  const updateQuery = useCallback((patch, replace = false) => {
+    const next = serializeConsultationQuery({ ...query, ...patch });
+    setParams(next, { replace });
+  }, [currentTab, page, period, querySearch, setParams]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (location.state?.tab == null || params.has('tab')) return;
+    const next = serializeConsultationQuery({ ...query, tab: legacyTab });
+    setParams(next, { replace: true, state: null });
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (querySearch !== search) setSearch(querySearch);
+  }, [querySearch]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const activeTab = tabsRef.current?.querySelector('[aria-selected="true"]');
+    activeTab?.scrollIntoView({ block: 'nearest', inline: 'center' });
+  }, [currentTab]);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (search.trim() !== querySearch) updateQuery({ search: search.trim(), page: 1 }, true);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [querySearch, search, updateQuery]);
+
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    const online = () => { setOffline(false); refetch(); };
+    const wentOffline = () => setOffline(true);
+    const visible = () => { if (document.visibilityState === 'visible') refetch(); };
+    window.addEventListener('online', online);
+    window.addEventListener('offline', wentOffline);
+    document.addEventListener('visibilitychange', visible);
+    return () => { clearInterval(tick); window.removeEventListener('online', online); window.removeEventListener('offline', wentOffline); document.removeEventListener('visibilitychange', visible); };
+  }, [refetch]);
+
+  const fetchConsultations = useCallback(async (signal) => {
+    const sameQuery = displayedQueryRef.current === queryKey;
+    if (loadedRef.current && sameQuery) setRefreshing(true);
+    else setInitialLoading(true);
+    setError(null);
     try {
-      setLoading(true);
-      setError(null);
       const data = await clientService.consultations.getConsultations({
         bucket: currentTab, page, limit: 10,
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
+        ...(querySearch ? { search: querySearch } : {}),
         ...(period !== 'all' ? { period } : {}),
-      });
-      setConsultations(data.consultations || []);
-      if (data.serverNow) setServerOffset(new Date(data.serverNow).getTime() - Date.now());
-      setCounts(data.counts || {});
-      setTotalPages(data.totalPages || 1);
-    } catch (err) {
-      console.error('Error fetching consultations:', err);
-      setError(t('consultations.loadError'));
-      setConsultations([]);
+      }, { signal });
+      if (signal?.aborted) return;
+      const rows = data.consultations || [];
+      const nextTotalPages = Math.max(1, data.totalPages || 1);
+      if (!rows.length && page > nextTotalPages) {
+        updateQuery({ page: nextTotalPages }, true);
+        return;
+      }
+      setConsultations(rows);
+      setCounts((previous) => ({ ...previous, ...(data.counts || {}) }));
+      setTotalPages(nextTotalPages);
+      setServerOffset(getServerOffset(data.serverNow));
+      displayedQueryRef.current = queryKey;
+      loadedRef.current = true;
+    } catch (requestError) {
+      if (requestError?.name === 'CanceledError' || requestError?.code === 'ERR_CANCELED' || signal?.aborted) return;
+      setError(requestError);
     } finally {
-      setLoading(false);
+      if (!signal?.aborted) { setInitialLoading(false); setRefreshing(false); }
     }
+  }, [currentTab, page, period, queryKey, querySearch, updateQuery]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetchConsultations(controller.signal);
+    return () => controller.abort();
+  }, [fetchConsultations, reloadToken]);
+
+  useEffect(() => {
+    const nextExpiry = consultations
+      .filter((item) => item.status === 'payment_pending' && item.paymentExpiresAt)
+      .map((item) => ({ id: item.id, expiresAt: item.paymentExpiresAt, at: new Date(item.paymentExpiresAt).getTime() }))
+      .filter((item) => Number.isFinite(item.at) && !expiryRefetchedRef.current.has(`${item.id}:${item.expiresAt}`))
+      .sort((a, b) => a.at - b.at)[0];
+    if (!nextExpiry) return undefined;
+    const key = `${nextExpiry.id}:${nextExpiry.expiresAt}`;
+    const delay = Math.max(0, nextExpiry.at - (Date.now() + serverOffset)) + 100;
+    const timer = setTimeout(() => { expiryRefetchedRef.current.add(key); refetch(); }, delay);
+    return () => clearTimeout(timer);
+  }, [consultations, serverOffset]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const pending = consultations.filter((item) => {
+      const key = joinPolicyRefreshKey(item);
+      return key && !joinRefetchedRef.current.has(key);
+    }).sort((left, right) => new Date(left.policy.joinAvailableAt) - new Date(right.policy.joinAvailableAt));
+    const next = pending[0];
+    const delay = nextJoinPolicyRefreshDelay(next, serverOffset);
+    if (delay === null) return undefined;
+    const timer = setTimeout(() => {
+      joinRefetchedRef.current.add(joinPolicyRefreshKey(next));
+      refetch();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [consultations, refetch, serverOffset]);
+  const beginAction = (key) => {
+    const consultationId = key.split(':')[0];
+    if ([...actionLocksRef.current].some((activeKey) => activeKey.startsWith(`${consultationId}:`))) return false;
+    actionLocksRef.current.add(key);
+    setLoadingActions(new Set(actionLocksRef.current));
+    return true;
   };
-
-  // Оценена ли консультация — единственный признак берём из таблицы Review
-  // (association consultationReview). Consultation.rating не используется (всегда NULL).
-  const isRated = (c) => Boolean(c.consultationReview);
-
-  const locale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
-
-  const handleCancelConsultation = async () => {
-    if (!selectedConsultation || !cancelReason.trim()) {
-      toast.error(t('consultations.cancelReasonRequired'));
-      return;
-    }
+  const endAction = (key) => {
+    actionLocksRef.current.delete(key);
+    setLoadingActions(new Set(actionLocksRef.current));
+  };
+  const mutate = async (consultation, action, request, successKey) => {
+    const key = `${consultation.id}:${action}`;
+    if (!beginAction(key)) return false;
     try {
-      setActionLoading(true);
-      await clientService.consultations.cancelConsultation(selectedConsultation.id, cancelReason);
-      toast.success(t('consultations.cancelSuccess'));
-      setCancelDialogOpen(false);
-      setCancelReason('');
-      setSelectedConsultation(null);
-      fetchConsultations();
-    } catch (err) {
-      console.error('Error canceling consultation:', err);
-      toast.error(t('consultations.cancelError'));
-    } finally {
-      setActionLoading(false);
-    }
+      await request();
+      if (successKey) toast.success(t(`consultations.${successKey}`));
+      refetch();
+      return true;
+    } catch (requestError) {
+      toast.error(safeRequestError(requestError, t('consultations.actionError'), { language, t }));
+      if (requestError?.response?.status === 410) refetch();
+      throw requestError;
+    } finally { endAction(key); }
   };
 
-  const handleJoinConsultation = async (consultation) => {
-    // Просто открываем комнату. В in_progress переводим только когда стороны
-    // реально соединились (видео — по peer-connect на странице звонка), чтобы
-    // «дозвон без ответа» не завершал консультацию и не выплачивал юристу.
+  const openRebook = async (consultation) => {
+    const lawyerId = consultation.lawyerId || consultation.lawyer?.id;
+    if (!lawyerId || unavailableLawyers.has(lawyerId)) return;
+    const key = `${consultation.id}:rebook`;
+    if (!beginAction(key)) return;
     try {
-      await launchConsultation(consultation, navigate);
-    } catch (error) {
-      toast.info(error.code === 'POPUP_BLOCKED'
-        ? 'Разрешите всплывающие окна, чтобы открыть Zoom'
-        : error.response?.data?.error || 'Zoom-встреча ещё создаётся');
-    }
-  };
-
-  const handleCompleteConsultation = async (consultation) => {
-    if (!window.confirm(t('consultations.completeConfirm'))) return;
-    try {
-      setActionLoading(true);
-      await clientService.consultations.completeConsultation(consultation.id);
-      toast.success(t('consultations.completeSuccess'));
-      fetchConsultations();
-    } catch (err) {
-      toast.error(err.response?.data?.error || t('consultations.completeError'));
-    } finally {
-      setActionLoading(false);
-    }
-  };
-
-  const openCancelDialog = (consultation) => {
-    setSelectedConsultation(consultation);
-    setCancelDialogOpen(true);
-  };
-
-  const closeCancelDialog = () => {
-    setCancelDialogOpen(false);
-    setCancelReason('');
-    setSelectedConsultation(null);
-  };
-
-  const openRatingDialog = (consultation) => {
-    setRatingConsultation(consultation);
-    setRatingDialogOpen(true);
-  };
-
-  const openReschedule = async (c) => {
-    setRescheduleC(c);
-    setRsDate(''); setRsTime(''); setRsSlots([]);
-    try {
-      const lawyerId = c.lawyerId || c.lawyer?.id;
-      const { data } = await api.get(`/lawyers/${lawyerId}/available-slots`, { params: { duration: c.duration, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone } });
-      setRsSlots(data.dates || []); setRsTimezone(data.timezone || c.scheduleTimezone || '');
-    } catch (error) { toast.error(error.response?.data?.error || t('consultations.rescheduleErr')); }
-  };
-
-  const submitReschedule = async () => {
-    if (!rescheduleC || !rsDate || !rsTime) return;
-    setRsLoading(true);
-    try {
-      await clientService.consultations.reschedule(rescheduleC.id, rsDate, rsTime);
-      toast.success(t('consultations.rescheduleOk'));
-      setRescheduleC(null);
-      fetchConsultations();
-    } catch (e) {
-      toast.error(e.response?.data?.error || t('consultations.rescheduleErr'));
-    } finally {
-      setRsLoading(false);
-    }
-  };
-
-  const handleSubmitRating = async ({ rating, text }) => {
-    if (!ratingConsultation) return;
-    await clientLawyerService.leaveReview(ratingConsultation.lawyerId || ratingConsultation.lawyer?.id, {
-      consultationId: ratingConsultation.id,
-      rating,
-      text,
-    });
-    toast.success(t('consultations.reviewThanks'));
-    fetchConsultations();
-  };
-
-  const tabs = [
-    { key: 'all', label: t('consultations.tabAll') },
-    { key: 'payment_pending', label: t('consultations.tabPaymentPending') },
-    { key: 'upcoming', label: t('consultations.tabUpcoming') },
-    { key: 'completed', label: t('consultations.tabCompleted') },
-    { key: 'cancelled', label: t('consultations.tabCancelled') },
-    { key: 'archived', label: t('consultations.tabArchive') },
-  ];
-
-  const tabBtn = (active) => ({
-    background: active ? 'var(--accent)' : 'transparent',
-    color: active ? '#FFFFFF' : 'var(--text2)',
-    border: 'none',
-    fontSize: 13,
-    fontWeight: 500,
-    letterSpacing: '0.04em',
-    padding: '10px 18px',
-    borderRadius: 'var(--radius)',
-    cursor: 'pointer',
-    fontFamily: 'inherit',
-    whiteSpace: 'nowrap',
-    flexShrink: 0,
-    transition: 'background 0.2s, color 0.2s',
-  });
-
-  const handlePay = async (consultation) => {
-    setPaymentLoading(consultation.id);
-    try {
-      const result = await clientService.lawyers.payConsultation(consultation.id);
-      if (result.redirectUrl) { window.location.assign(result.redirectUrl); return; }
-      toast.success(t('consultations.paymentSuccess'));
-      await fetchConsultations();
-    } catch (error) {
-      toast.error(error.response?.data?.error || t('consultations.paymentError'));
-    } finally {
-      setPaymentLoading(null);
-    }
+      const lawyer = await clientService.lawyers.getBookableLawyerDetails(lawyerId);
+      if (!lawyer) {
+        setUnavailableLawyers((current) => new Set(current).add(lawyerId));
+        toast.error(t('consultations.rebookUnavailable'));
+        return;
+      }
+      setRebookLawyer(lawyer);
+    } catch (requestError) {
+      if (isAuthoritativeUnavailableLawyerError(requestError)) setUnavailableLawyers((current) => new Set(current).add(lawyerId));
+      toast.error(safeRequestError(requestError, t('consultations.rebookRetry'), { language, t }));
+    } finally { endAction(key); }
   };
 
   const addToCalendar = (consultation) => {
     const start = new Date(consultation.scheduledStartAt);
     const end = new Date(consultation.scheduledEndAt);
     if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return;
-    const fmt = (value) => value.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-    const esc = (value) => String(value || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
-    const content = [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//eMaslaXat//Consultation//RU', 'CALSCALE:GREGORIAN',
-      'BEGIN:VEVENT', `UID:${consultation.id}@maslaxat.uz`, `DTSTAMP:${fmt(new Date())}`,
-      `DTSTART:${fmt(start)}`, `DTEND:${fmt(end)}`,
-      `SUMMARY:${esc(`${t('consultations.calendarTitle')} — ${consultation.lawyer?.name || ''}`)}`,
-      `DESCRIPTION:${esc(consultation.question || '')}`, 'END:VEVENT', 'END:VCALENDAR', '',
-    ].join('\r\n');
-    const url = URL.createObjectURL(new Blob([content], { type: 'text/calendar;charset=utf-8' }));
-    const anchor = document.createElement('a');
-    anchor.href = url; anchor.download = `consultation-${consultation.id}.ics`;
-    document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+    const format = (value) => value.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+    const escape = (value) => String(value || '').replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
+    const body = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//eMaslaXat//Consultation//EN', 'BEGIN:VEVENT',
+      `UID:${consultation.id}@maslaxat.uz`, `DTSTART:${format(start)}`, `DTEND:${format(end)}`,
+      `SUMMARY:${escape(t('consultations.calendarTitle'))}`, `DESCRIPTION:${escape(consultation.question)}`, 'END:VEVENT', 'END:VCALENDAR', ''].join('\r\n');
+    const url = URL.createObjectURL(new Blob([body], { type: 'text/calendar;charset=utf-8' }));
+    const anchor = document.createElement('a'); anchor.href = url; anchor.download = `consultation-${consultation.id}.ics`; anchor.click(); URL.revokeObjectURL(url);
   };
 
-  const countdownText = (consultation) => {
-    if (consultation.status === 'payment_pending' && consultation.paymentExpiresAt) {
-      const remaining = new Date(consultation.paymentExpiresAt).getTime() - (now + serverOffset);
-      return remaining <= 0
-        ? t('consultations.paymentExpired')
-        : t('consultations.paymentExpiresIn', { minutes: Math.max(1, Math.ceil(remaining / 60000)) });
+  const loadSlots = async (consultation) => {
+    slotsControllerRef.current?.abort();
+    const controller = new AbortController();
+    slotsControllerRef.current = controller;
+    setSlotsState({ loading: true, error: '', dates: [], timezone: '' });
+    try {
+      const lawyerId = consultation.lawyerId || consultation.lawyer?.id;
+      const { data } = await api.get(`/lawyers/${lawyerId}/available-slots`, {
+        params: { duration: consultation.duration, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        signal: controller.signal,
+      });
+      if (controller.signal.aborted) return;
+      setSlotsState({ loading: false, error: '', dates: data.dates || [], timezone: data.timezone || consultation.scheduleTimezone || '' });
+    } catch (requestError) {
+      if (controller.signal.aborted || requestError?.code === 'ERR_CANCELED') return;
+      setSlotsState({ loading: false, error: safeRequestError(requestError, t('consultations.rescheduleSlotsError'), { language, t }), dates: [], timezone: '' });
     }
-    const start = new Date(consultation.scheduledStartAt).getTime();
-    const end = new Date(consultation.scheduledEndAt).getTime();
-    if (!Number.isFinite(start)) return '';
-    if (Number.isFinite(end) && now + serverOffset >= start && now + serverOffset <= end) return t('consultations.countdownNow');
-    const diff = start - (now + serverOffset);
-    if (diff <= 0) return '';
-    const hours = Math.ceil(diff / 3600000);
-    if (hours <= 24) return t('consultations.countdownHours', { hours });
-    return t('consultations.countdownDate', {
-      date: new Date(start).toLocaleDateString(locale, { day: 'numeric', month: 'short' }),
-      time: new Date(start).toLocaleTimeString(locale, { hour: '2-digit', minute: '2-digit' }),
-    });
   };
 
-  const renderCard = (c, i) => {
-    const name = c.lawyer?.name || t('consultations.lawyer');
-    const st = STATUS[c.status] || STATUS.pending;
-    const spec = c.lawyer?.profile?.specialization || c.lawyer?.specialization || t('consultations.lawyer');
-    const rating = c.lawyer?.profile?.rating || c.lawyer?.rating || 0;
-    const question = c.question || c.topic || '';
-    const isVideo = c.type === 'video';
-    const dateValue = c.scheduledStartAt || c.createdAt;
-    const viewerTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
-    const when = `${new Date(dateValue).toLocaleString(locale, { dateStyle: 'medium', timeStyle: 'short', timeZone: viewerTimezone })} (${viewerTimezone})`;
-    const price = (c.price || 0).toLocaleString(locale);
-
-    const rated = isRated(c);
-    const accessNow = now + serverOffset;
-    const withinWindow = c.access?.opensAt && c.access?.closesAt
-      ? accessNow >= new Date(c.access.opensAt).getTime() && accessNow <= new Date(c.access.closesAt).getTime()
-      : c.access?.canJoin === true;
-    const canJoin = ['accepted', 'in_progress'].includes(c.status)
-      && (c.meetingProvider === 'zoom' || withinWindow);
-    const joinDisabledReason = c.access?.reason === 'TOO_EARLY' && c.access?.retryAt
-      ? t('consultations.joinOpensAt', { time: new Date(c.access.retryAt).toLocaleString(locale, { dateStyle: 'short', timeStyle: 'short' }) })
-      : t('consultations.joinUnavailable');
-    const canComplete = ['accepted', 'in_progress'].includes(c.status);
-    const canCancel = ['payment_pending', 'accepted', 'pending'].includes(c.status);
-    const paymentExpired = c.status === 'payment_pending' && c.paymentExpiresAt && new Date(c.paymentExpiresAt).getTime() <= now;
-    const canPay = c.status === 'payment_pending' && !paymentExpired;
-    // Оценивать можно только завершённую и ещё не оценённую (признак — Review, не c.rating).
-    const canRate = c.status === 'completed' && !rated;
-    const canRebook = (c.status === 'completed' || paymentExpired) && Boolean(c.lawyer);
-    // История переписки доступна после завершения/отмены (read-only)
-    const canChatHistory = ['completed', 'cancelled', 'rejected'].includes(c.status);
-    // Перенос — пока консультация не началась/не завершена
-    const canReschedule = ['payment_pending', 'pending', 'accepted'].includes(c.status);
-    // Документы по делу — доступны с момента подтверждения и в архиве (общая папка)
-    const canDocs = ['accepted', 'in_progress', 'completed'].includes(c.status);
-
-    const canCalendar = ['payment_pending', 'pending', 'accepted'].includes(c.status) && c.scheduledStartAt && c.scheduledEndAt;
-    const hasActions = canPay || canJoin || ['accepted', 'in_progress'].includes(c.status) || canComplete || canRate || canCancel || canRebook || canChatHistory || canReschedule || canDocs || canCalendar;
-    const StatusIcon = st.icon;
-
-    return (
-      <div key={c.id} style={{ ...glassCard, overflow: 'hidden' }}>
-        {/* Статусный хедер: цвет по статусу, иконка + название, дата справа */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '11px 20px', background: st.bg, color: st.color, fontSize: 12, fontWeight: 600, letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-          <StatusIcon sx={{ fontSize: 15 }} />
-          {t('consultations.' + st.key)}
-          <span style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 500, textTransform: 'none', letterSpacing: 0, opacity: 0.92 }}>
-            <CalendarMonthOutlined sx={{ fontSize: 14 }} /> {when}
-          </span>
-        </div>
-
-        <div role="button" tabIndex={0} onClick={() => navigate(`/consultations/${c.id}`)} onKeyDown={(event) => { if (event.key === 'Enter') navigate(`/consultations/${c.id}`); }} style={{ padding: '16px 20px', cursor: 'pointer' }}>
-          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 15, flexWrap: 'wrap' }}>
-            <div
-              style={{
-                width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                background: AV_BG[i % AV_BG.length],
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                color: '#FFFFFF', fontSize: 16,
-              }}
-            >
-              {initialsOf(name)}
-            </div>
-
-            <div style={{ flex: 1, minWidth: 200 }}>
-              <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{name}</div>
-
-              <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 3 }}>
-                {spec} · ★ {rating}
-              </div>
-
-              {question && (
-                <p style={{ fontSize: 14, color: 'var(--text2)', lineHeight: 1.55, margin: '12px 0' }}>
-                  «{question}»
-                </p>
-              )}
-
-              <div style={{ display: 'flex', gap: 24, flexWrap: 'wrap', fontSize: 13, color: 'var(--text2)', marginTop: question ? 0 : 12 }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                  {isVideo ? <VideocamOutlined sx={{ fontSize: 16 }} /> : <ChatBubbleOutline sx={{ fontSize: 16 }} />}
-                  {isVideo ? t('consultations.typeVideo') : t('consultations.typeChat')}
-                </span>
-                <span style={{ color: 'var(--text)', fontWeight: 500 }}>{price} {t('consultations.sum')}</span>
-                <span>{t(`consultations.payment_${c.payment?.status || 'unpaid'}`)}</span>
-                {c.payment?.paidAt && <span>{new Date(c.payment.paidAt).toLocaleDateString(locale)}</span>}
-                {c.actualDuration > 0 && (
-                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                    <AccessTimeRounded sx={{ fontSize: 16 }} />
-                    {t('consultations.callDuration')}: {Math.floor(c.actualDuration / 60)}:{String(c.actualDuration % 60).padStart(2, '0')}
-                  </span>
-                )}
-              </div>
-              {countdownText(c) && <div style={{ marginTop: 10, color: 'var(--accent-dark)', fontSize: 13, fontWeight: 600 }}>{countdownText(c)}</div>}
-
-              {/* Архив: показываем оценку, которую поставил клиент (звёзды + текст) */}
-              {rated && c.consultationReview && (
-                <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--canvas)' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: c.consultationReview.text ? 6 : 0 }}>
-                    <span style={{ fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)' }}>
-                      {t('consultations.yourRating')}
-                    </span>
-                    <span style={{ color: 'var(--accent)', fontSize: 14, letterSpacing: 1 }}>
-                      {'★'.repeat(c.consultationReview.rating)}
-                      <span style={{ color: 'var(--border-strong)' }}>{'★'.repeat(Math.max(0, 5 - c.consultationReview.rating))}</span>
-                    </span>
-                  </div>
-                  {c.consultationReview.text && (
-                    <p style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55, margin: 0, fontStyle: 'italic' }}>
-                      «{c.consultationReview.text}»
-                    </p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Таймлайн статуса — понятно, где бронь и что дальше */}
-        <div style={{ padding: '14px 20px', borderTop: '1px solid var(--border)' }}>
-          <ConsultationTimeline status={c.status} role="client" />
-        </div>
-
-        {hasActions && (
-          <div style={{ display: 'flex', borderTop: '1px solid var(--border)' }}>
-            {canPay && (
-              <button className="cons-foot-btn" onClick={() => handlePay(c)} disabled={paymentLoading === c.id} style={{ color: '#B06A35' }}>
-                <PaymentOutlined sx={{ fontSize: 17 }} /> {paymentLoading === c.id ? t('consultations.paying') : t('consultations.pay')}
-              </button>
-            )}
-            {['accepted', 'in_progress'].includes(c.status) && (
-              <Tooltip title={canJoin ? '' : joinDisabledReason}>
-                <span style={{ flex: 1, display: 'flex' }}>
-              <button className="cons-foot-btn" onClick={() => handleJoinConsultation(c)} disabled={actionLoading || !canJoin} style={{ color: '#C0492F', width: '100%' }}>
-                {isVideo ? <CallOutlined sx={{ fontSize: 17 }} /> : <ChatBubbleOutline sx={{ fontSize: 17 }} />}
-                {isVideo ? (c.status === 'in_progress' ? t('consultations.joinCall') : t('consultations.call')) : t('consultations.openChat')}
-              </button>
-                </span>
-              </Tooltip>
-            )}
-            {canCalendar && (
-              <button className="cons-foot-btn" onClick={() => addToCalendar(c)} style={{ color: 'var(--text2)' }}>
-                <EventAvailableOutlined sx={{ fontSize: 17 }} /> {t('consultations.addCalendar')}
-              </button>
-            )}
-            {canComplete && (
-              <button className="cons-foot-btn" onClick={() => handleCompleteConsultation(c)} disabled={actionLoading} style={{ color: '#C0492F' }}>
-                <CheckOutlined sx={{ fontSize: 17 }} />
-                {t('consultations.complete')}
-              </button>
-            )}
-            {canReschedule && (
-              <button className="cons-foot-btn" onClick={() => openReschedule(c)} style={{ color: 'var(--text2)' }}>
-                <EventRepeatOutlined sx={{ fontSize: 16 }} />
-                {t('consultations.reschedule')}
-              </button>
-            )}
-            {canRate && (
-              <button className="cons-foot-btn" onClick={() => openRatingDialog(c)} style={{ color: 'var(--accent-dark)' }}>
-                {t('consultations.rate')}
-              </button>
-            )}
-            {canRebook && (
-              <button className="cons-foot-btn" onClick={() => setRebookLawyer(c.lawyer)} style={{ color: 'var(--accent)' }}>
-                <ReplayOutlined sx={{ fontSize: 17 }} />
-                {t('consultations.rebook')}
-              </button>
-            )}
-            {canChatHistory && (
-              <button className="cons-foot-btn" onClick={() => navigate(`/consultations/chat/${c.id}`)} style={{ color: 'var(--text2)' }}>
-                <ChatBubbleOutline sx={{ fontSize: 16 }} />
-                {t('consultations.chatHistory')}
-              </button>
-            )}
-            {canDocs && (
-              <button className="cons-foot-btn" onClick={() => setDocsFor(c)} style={{ color: 'var(--accent-dark)' }}>
-                <FolderOpenOutlined sx={{ fontSize: 16 }} />
-                {t('caseDocs.title')}
-              </button>
-            )}
-            {canCancel && (
-              <button className="cons-foot-btn" onClick={() => openCancelDialog(c)} disabled={actionLoading} style={{ color: 'var(--text3)' }}>
-                {c.status === 'pending' ? t('consultations.cancelRequest') : t('consultations.cancel')}
-              </button>
-            )}
-          </div>
-        )}
-      </div>
-    );
+  const openReschedule = (consultation) => {
+    setRescheduleFor(consultation); setSlotDate(''); setSlotTime('');
+    if (![30, 60, 90].includes(Number(consultation.duration))) {
+      setSlotsState({ loading: false, error: t('consultations.invalidDuration'), dates: [], timezone: '' });
+      return;
+    }
+    loadSlots(consultation);
   };
 
-  const emptyStates = {
-    all: { title: t('consultations.emptyAllTitle'), sub: t('consultations.emptyAllSub'), action: true },
-    payment_pending: { title: t('consultations.emptyPaymentTitle'), sub: t('consultations.emptyPaymentSub') },
-    upcoming: { title: t('consultations.emptyUpcomingTitle'), sub: t('consultations.emptyUpcomingSub'), action: true },
-    completed: { title: t('consultations.emptyCompletedTitle'), sub: t('consultations.emptyCompletedSub') },
-    cancelled: { title: t('consultations.emptyCancelledTitle'), sub: t('consultations.emptyCancelledSub') },
-    archived: { title: t('consultations.emptyArchiveTitle'), sub: t('consultations.emptyArchiveSub') },
+  const closeReschedule = () => {
+    slotsControllerRef.current?.abort();
+    setRescheduleFor(null);
   };
-  const empty = debouncedSearch
-    ? { title: t('consultations.emptySearchTitle'), sub: t('consultations.emptySearchSub') }
-    : emptyStates[currentTab];
+
+  useEffect(() => () => slotsControllerRef.current?.abort(), []);
+
+  const handleAction = async (action, consultation) => {
+    if (action === 'view_details') { navigate(`/consultations/${consultation.id}`, { state: { from: `${location.pathname}${location.search}` } }); return; }
+    if (action === 'join') {
+      const key = `${consultation.id}:join`;
+      if (!beginAction(key)) return;
+      try { await launchConsultation(consultation, navigate, { now: now + serverOffset }); }
+      catch (requestError) { toast.error(safeRequestError(requestError, t('consultations.joinUnavailable'), { language, t })); }
+      finally { endAction(key); }
+      return;
+    }
+    if (action === 'pay') {
+      if (isPaymentExpired(consultation, now, serverOffset)) { await openRebook(consultation); return; }
+      const key = `${consultation.id}:pay`;
+      if (!beginAction(key)) return;
+      let expired = false;
+      try {
+        const result = await clientService.lawyers.payConsultation(consultation.id);
+        if (result.redirectUrl) { window.location.assign(result.redirectUrl); return; }
+        toast.success(t('consultations.paymentSuccess')); refetch();
+      } catch (requestError) {
+        expired = requestError?.response?.status === 410;
+        toast.error(safeRequestError(requestError, t('consultations.paymentError'), { language, t }));
+        if (expired) refetch();
+      }
+      finally { endAction(key); }
+      if (expired) await openRebook(consultation);
+      return;
+    }
+    if (action === 'cancel') { setCancelFor(consultation); setCancelReason(''); return; }
+    if (action === 'reschedule') { openReschedule(consultation); return; }
+    if (action === 'rate') { setRatingFor(consultation); return; }
+    if (action === 'rebook') { await openRebook(consultation); return; }
+    if (action === 'open_chat' || action === 'read_chat') { navigate(`/consultations/chat/${consultation.id}`); return; }
+    if (action === 'documents') { setDocsFor(consultation); return; }
+    if (action === 'calendar') { addToCalendar(consultation); return; }
+    if (action === 'complete') {
+      if (!window.confirm(t('consultations.completeConfirm'))) return;
+      await mutate(consultation, action, () => clientService.consultations.completeConsultation(consultation.id), 'completeSuccess').catch(() => {});
+      return;
+    }
+    if (action === 'archive' || action === 'unarchive') {
+      await mutate(consultation, action, () => clientService.consultations.archive(consultation.id, action === 'archive'), action === 'archive' ? 'archiveSuccess' : 'unarchiveSuccess').catch(() => {});
+    }
+  };
+
+  const submitCancellation = async () => {
+    if (!cancelReason.trim()) return;
+    try {
+      if (await mutate(cancelFor, 'cancel', () => clientService.consultations.cancelConsultation(cancelFor.id, cancelReason.trim()), 'cancelSuccess')) {
+        setCancelFor(null); setCancelReason('');
+      }
+    } catch { /* error is already shown by mutate */ }
+  };
+
+  const submitReschedule = async () => {
+    if (!slotDate || !slotTime || !rescheduleFor) return;
+    try {
+      if (await mutate(rescheduleFor, 'reschedule', () => clientService.consultations.reschedule(rescheduleFor.id, slotDate, slotTime), 'rescheduleOk')) closeReschedule();
+    } catch (requestError) {
+      if (requestError?.response?.status === 410) {
+        const expiredConsultation = rescheduleFor;
+        closeReschedule();
+        await openRebook(expiredConsultation);
+      }
+    }
+  };
+
+  const submitRating = async ({ rating, text }) => {
+    const key = `${ratingFor.id}:rate`;
+    if (!beginAction(key)) return;
+    try {
+      await clientLawyerService.leaveReview(ratingFor.lawyerId || ratingFor.lawyer?.id, { consultationId: ratingFor.id, rating, text });
+      toast.success(t('consultations.reviewThanks')); setRatingFor(null); refetch();
+    } finally { endAction(key); }
+  };
+
+  const tabs = [
+    ['all', 'tabAll'], ['payment_pending', 'tabPaymentPending'], ['upcoming', 'tabUpcoming'],
+    ['completed', 'tabCompleted'], ['cancelled', 'tabCancelled'], ['archived', 'tabArchive'],
+  ];
+  const emptyKey = querySearch ? 'Search' : ({ all: 'All', payment_pending: 'Payment', upcoming: 'Upcoming', completed: 'Completed', cancelled: 'Cancelled', archived: 'Archive' }[currentTab]);
+  const emptyHasAction = !querySearch && ['all', 'upcoming'].includes(currentTab);
+  const selectedSlots = slotsState.dates.find((item) => item.date === slotDate)?.slots || [];
+  const selectedSlot = selectedSlots.find((slot) => slot.time === slotTime);
+  const actionBusy = loadingActions.size > 0;
+  const showingCurrentQuery = displayedQueryRef.current === queryKey;
+  const visibleConsultations = showingCurrentQuery ? consultations : [];
+
+  const selectTab = (key, element) => {
+    updateQuery({ tab: key, page: 1 });
+    element?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+  };
+
+  const handleTabKeyDown = (event, index) => {
+    let nextIndex = index;
+    if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') nextIndex = 0;
+    else if (event.key === 'End') nextIndex = tabs.length - 1;
+    else return;
+    event.preventDefault();
+    const next = event.currentTarget.parentElement.querySelectorAll('[role="tab"]')[nextIndex];
+    next?.focus();
+    selectTab(tabs[nextIndex][0], next);
+  };
 
   return (
     <GlassShell active="/consultations" title={t('consultations.title')} subtitle={t('consultations.subtitle')}>
       <div style={{ maxWidth: 980, margin: '0 auto' }}>
-        {/* Top row: tabs + Book New */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, marginBottom: 22, flexWrap: 'wrap' }}>
-          <div
-            className="cons-tabs"
-            style={{
-              display: 'flex', gap: 4, ...glassCard, padding: 5,
-              maxWidth: '100%', overflowX: 'auto', scrollbarWidth: 'none',
-            }}
-          >
-            {tabs.map((tab) => (
-              <button key={tab.key} onClick={() => { setCurrentTab(tab.key); setPage(1); }} style={tabBtn(currentTab === tab.key)}>
-                {tab.label} ({counts[tab.key] || 0})
-              </button>
-            ))}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
+          <div ref={tabsRef} role="tablist" aria-label={t('consultations.tabsLabel')} className="consultation-tabs" style={{ ...glassCard, display: 'flex', gap: 4, padding: 5, maxWidth: '100%', overflowX: 'auto' }}>
+            {tabs.map(([key, label], index) => <button type="button" role="tab" id={`consultation-tab-${key}`} aria-controls="consultation-panel" aria-selected={currentTab === key} tabIndex={currentTab === key ? 0 : -1} key={key} onClick={(event) => selectTab(key, event.currentTarget)} onKeyDown={(event) => handleTabKeyDown(event, index)} className={currentTab === key ? 'consultation-tab active' : 'consultation-tab'}>{t(`consultations.${label}`)} ({counts[key] || 0})</button>)}
           </div>
-          <button
-            onClick={() => navigate('/lawyers')}
-            style={{
-              display: 'inline-flex', alignItems: 'center', gap: 8,
-              background: 'var(--accent)', color: '#FFFFFF', border: 'none',
-              fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase',
-              padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
-            }}
-          >
-            <AddOutlined sx={{ fontSize: 18 }} /> {t('consultations.book')}
-          </button>
+          <Button variant="contained" startIcon={<AddOutlined />} onClick={() => navigate('/lawyers')}>{t('consultations.book')}</Button>
         </div>
-
         <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 18 }}>
-          <TextField
-            size="small" value={search} onChange={(event) => setSearch(event.target.value)}
-            placeholder={t('consultations.searchPlaceholder')}
-            InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined sx={{ fontSize: 18 }} /></InputAdornment> }}
-            sx={{ flex: '1 1 260px' }}
-          />
-          <select value={period} onChange={(event) => { setPeriod(event.target.value); setPage(1); }} aria-label={t('consultations.periodLabel')} style={{ minHeight: 40, padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)' }}>
-            <option value="all">{t('consultations.periodAll')}</option>
-            <option value="30d">{t('consultations.period30')}</option>
-            <option value="365d">{t('consultations.period365')}</option>
+          <TextField size="small" value={search} onChange={(event) => setSearch(event.target.value)} placeholder={t('consultations.searchPlaceholder')} inputProps={{ 'aria-label': t('consultations.searchPlaceholder') }} InputProps={{ startAdornment: <InputAdornment position="start"><SearchOutlined /></InputAdornment> }} sx={{ flex: '1 1 260px' }} />
+          <select value={period} onChange={(event) => updateQuery({ period: event.target.value, page: 1 })} aria-label={t('consultations.periodLabel')} className="consultation-select">
+            <option value="all">{t('consultations.periodAll')}</option><option value="30d">{t('consultations.period30')}</option><option value="365d">{t('consultations.period365')}</option>
           </select>
         </div>
-
-        {/* Content */}
-        {loading ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {Array.from({ length: 3 }).map((_, i) => <SkeletonCard key={i} avatar={false} lines={3} />)}
-          </div>
-        ) : error ? (
-          <ErrorState error={error} onRetry={fetchConsultations} />
-        ) : consultations.length > 0 ? (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-            {consultations.map((c, i) => renderCard(c, i))}
-            {totalPages > 1 && <Pagination count={totalPages} page={page} onChange={(_, value) => setPage(value)} sx={{ alignSelf: 'center', mt: 1 }} />}
-          </div>
-        ) : (
-          <EmptyState title={empty.title} subtitle={empty.sub} actionLabel={empty.action ? t('consultations.findLawyer') : undefined} onAction={empty.action ? () => navigate('/lawyers') : undefined} />
-        )}
+        {refreshing && <LinearProgress aria-label={t('consultations.refreshing')} sx={{ mb: 1, borderRadius: 2 }} />}
+        {offline && <div role="status" style={{ ...glassCard, padding: 14, marginBottom: 14 }}>{t('consultations.offline')}</div>}
+        <div role="tabpanel" id="consultation-panel" aria-labelledby={`consultation-tab-${currentTab}`} tabIndex={0}>
+        {(initialLoading || (!showingCurrentQuery && !error)) ? <div style={{ display: 'grid', gap: 16 }}>{[1, 2, 3].map((key) => <SkeletonCard key={key} lines={3} />)}</div>
+          : error && visibleConsultations.length === 0 ? <ErrorState error={t('consultations.loadError')} onRetry={refetch} />
+            : visibleConsultations.length ? <div style={{ display: 'grid', gap: 16 }}>{visibleConsultations.map((consultation) => <ConsultationCard key={consultation.id} consultation={consultation} now={now} serverOffset={serverOffset} loadingAction={loadingActions} disabledActions={unavailableLawyers.has(consultation.lawyerId || consultation.lawyer?.id) ? ['rebook'] : []} onAction={handleAction} from={`${location.pathname}${location.search}`} />)}{totalPages > 1 && <Pagination page={page} count={totalPages} onChange={(_, value) => updateQuery({ page: value })} sx={{ justifySelf: 'center' }} />}</div>
+              : <EmptyState title={t(`consultations.empty${emptyKey}Title`)} subtitle={t(`consultations.empty${emptyKey}Sub`)} actionLabel={emptyHasAction ? t('consultations.findLawyer') : undefined} onAction={emptyHasAction ? () => navigate('/lawyers') : undefined} />}
+        {error && visibleConsultations.length > 0 && <div role="alert" style={{ marginTop: 12, color: '#B07070' }}>{t('consultations.refreshError')} <button type="button" onClick={refetch}>{t('consultations.retry')}</button></div>}
+        </div>
       </div>
 
-      {/* Rating Dialog */}
-      <RatingDialog
-        open={ratingDialogOpen}
-        onClose={() => { setRatingDialogOpen(false); setRatingConsultation(null); }}
-        onSubmit={handleSubmitRating}
-        lawyerName={ratingConsultation?.lawyer?.name}
-      />
-
-      {/* Cancel Dialog */}
-      <Dialog
-        open={cancelDialogOpen}
-        onClose={closeCancelDialog}
-        maxWidth="sm"
-        fullWidth
-        PaperProps={{
-          sx: {
-            borderRadius: 'var(--radius)',
-            background: 'var(--card-glass)',
-            backdropFilter: 'blur(24px) saturate(180%)',
-            WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-            border: '1px solid var(--card-brd)',
-            boxShadow: 'var(--card-shadow)',
-            color: 'var(--text)',
-          },
-        }}
-      >
-        <DialogTitle>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontWeight: 300, fontSize: 18, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text)' }}>
-              {t('consultations.cancelModalTitle')}
-            </span>
-            <IconButton onClick={closeCancelDialog} size="small">
-              <CloseOutlined sx={{ color: 'var(--text3)', fontSize: 20 }} />
-            </IconButton>
-          </div>
-        </DialogTitle>
-        <DialogContent>
-          {selectedConsultation && (
-            <div style={{ marginBottom: 20, padding: 16, borderRadius: 'var(--radius)', background: 'var(--canvas)', border: '1px solid var(--border)' }}>
-              <div style={{ color: 'var(--text3)', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 4 }}>
-                {t('consultations.consultationWith')}
-              </div>
-              <div style={{ fontWeight: 500, color: 'var(--text)' }}>
-                {selectedConsultation.lawyer?.name || t('consultations.lawyer')}
-              </div>
-              <div style={{ color: 'var(--text3)', fontSize: 13, marginTop: 2 }}>
-                {new Date(selectedConsultation.scheduledStartAt || selectedConsultation.preferredDate || selectedConsultation.date || selectedConsultation.createdAt).toLocaleDateString(locale)}
-                {(selectedConsultation.preferredTime || selectedConsultation.time) ? ` · ${selectedConsultation.preferredTime || selectedConsultation.time}` : ''}
-              </div>
-            </div>
-          )}
-          <TextField
-            label={t('consultations.cancelReasonLabel')}
-            value={cancelReason}
-            onChange={(e) => setCancelReason(e.target.value)}
-            multiline
-            rows={4}
-            fullWidth
-            placeholder={t('consultations.cancelReasonPlaceholder')}
-            sx={{
-              '& .MuiOutlinedInput-root': {
-                borderRadius: 'var(--radius)',
-                '& fieldset': { borderColor: 'var(--border)' },
-                '&:hover fieldset': { borderColor: 'var(--accent)' },
-                '&.Mui-focused fieldset': { borderColor: 'var(--accent)', borderWidth: 1 },
-              },
-              '& .MuiInputBase-input': { color: 'var(--text)' },
-              '& .MuiInputLabel-root': { color: 'var(--text3)' },
-              '& .MuiInputLabel-root.Mui-focused': { color: 'var(--accent)' },
-            }}
-          />
-        </DialogContent>
-        <DialogActions sx={{ p: 3 }}>
-          <Button
-            onClick={closeCancelDialog}
-            sx={{
-              color: 'var(--text2)',
-              border: '1px solid var(--border)',
-              fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em',
-              fontSize: '0.72rem', borderRadius: 'var(--radius)', px: 3, py: 1,
-              '&:hover': { borderColor: 'var(--accent)', bgcolor: 'transparent' },
-            }}
-          >
-            {t('consultations.back')}
-          </Button>
-          <Button
-            onClick={handleCancelConsultation}
-            disabled={!cancelReason.trim() || actionLoading}
-            sx={{
-              bgcolor: '#B07070', color: '#FFFFFF',
-              fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.08em',
-              fontSize: '0.72rem', borderRadius: 'var(--radius)', px: 3, py: 1, boxShadow: 'none',
-              '&:hover': { bgcolor: '#9A5A5A', boxShadow: 'none' },
-              '&:disabled': { bgcolor: 'var(--border)', color: 'var(--text3)' },
-            }}
-          >
-            {t('consultations.cancelConfirm')}
-          </Button>
-        </DialogActions>
+      <Dialog open={Boolean(cancelFor)} onClose={actionBusy ? undefined : () => setCancelFor(null)} aria-labelledby="cancel-consultation-title" maxWidth="sm" fullWidth PaperProps={{ sx: consultationDialogPaperSx }}>
+        <DialogTitle id="cancel-consultation-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>{t('consultations.cancelModalTitle')}<IconButton aria-label={t('consultations.close')} onClick={() => setCancelFor(null)} disabled={actionBusy}><CloseOutlined /></IconButton></DialogTitle>
+        <DialogContent><TextField required autoFocus fullWidth multiline minRows={4} label={t('consultations.cancelReasonLabel')} placeholder={t('consultations.cancelReasonPlaceholder')} value={cancelReason} onChange={(event) => setCancelReason(event.target.value)} error={Boolean(cancelFor && !cancelReason.trim())} helperText={!cancelReason.trim() ? t('consultations.cancelReasonRequired') : ' '} /></DialogContent>
+        <DialogActions><Button onClick={() => setCancelFor(null)} disabled={actionBusy}>{t('consultations.back')}</Button><Button color="error" variant="contained" disabled={!cancelReason.trim() || actionBusy} onClick={submitCancellation}>{actionBusy ? t('consultations.actionLoading') : t('consultations.cancelConfirm')}</Button></DialogActions>
       </Dialog>
 
+      <Dialog open={Boolean(rescheduleFor)} onClose={actionBusy ? undefined : closeReschedule} aria-labelledby="reschedule-consultation-title" maxWidth="sm" fullWidth PaperProps={{ sx: consultationDialogPaperSx }}>
+        <DialogTitle id="reschedule-consultation-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>{t('consultations.reschedule')}<IconButton aria-label={t('consultations.close')} onClick={closeReschedule} disabled={actionBusy}><CloseOutlined /></IconButton></DialogTitle>
+        {slotsState.loading && <LinearProgress aria-label={t('consultations.loadingSlots')} />}
+        <DialogContent>
+          <p style={{ color: 'var(--text2)', marginTop: 0 }}>{t('consultations.rescheduleSub')}</p>
+          {slotsState.error && <div role="alert" style={{ color: '#B07070', marginBottom: 14 }}>{slotsState.error} <Button onClick={() => loadSlots(rescheduleFor)}>{t('consultations.retry')}</Button></div>}
+          {!slotsState.loading && !slotsState.error && slotsState.dates.length === 0 && <EmptyState title={t('consultations.noSlotsTitle')} subtitle={t('consultations.noSlotsSub')} />}
+          {slotsState.dates.length > 0 && <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+            <label style={{ flex: '1 1 190px' }}>{t('consultations.newDate')}<select className="consultation-select full" value={slotDate} onChange={(event) => { setSlotDate(event.target.value); setSlotTime(''); }}><option value="">{t('consultations.selectOption')}</option>{slotsState.dates.map((item) => <option key={item.date} value={item.date}>{new Date(`${item.date}T12:00:00`).toLocaleDateString(locale, { dateStyle: 'full' })}</option>)}</select></label>
+            <label style={{ flex: '1 1 150px' }}>{t('consultations.newTime')}<select className="consultation-select full" value={slotTime} onChange={(event) => setSlotTime(event.target.value)} disabled={!slotDate}><option value="">{t('consultations.selectOption')}</option>{selectedSlots.map((slot) => <option key={`${slot.clientDate || slotDate}-${slot.time}`} value={slot.time}>{slot.clientDate && slot.clientDate !== slotDate ? `${new Date(`${slot.clientDate}T12:00:00`).toLocaleDateString(locale, { dateStyle: 'medium' })} ` : ''}{slot.clientTime || slot.time}</option>)}</select></label>
+          </div>}
+          {slotsState.timezone && <p style={{ color: 'var(--text3)', fontSize: 13 }}>{t('consultations.rescheduleTimezones', { lawyer: slotsState.timezone, client: Intl.DateTimeFormat().resolvedOptions().timeZone })}</p>}
+          {selectedSlot && <div role="status" style={{ ...glassCard, padding: 14, marginTop: 14 }}>{t('consultations.rescheduleConfirm', { date: new Date(`${selectedSlot.clientDate || slotDate}T12:00:00`).toLocaleDateString(locale, { dateStyle: 'long' }), time: selectedSlot.clientTime || slotTime, duration: rescheduleFor?.duration })}</div>}
+        </DialogContent>
+        <DialogActions><Button onClick={closeReschedule} disabled={actionBusy}>{t('consultations.cancel')}</Button><Button variant="contained" onClick={submitReschedule} disabled={!selectedSlot || actionBusy || slotsState.loading}>{actionBusy ? <CircularProgress size={18} /> : t('consultations.rescheduleSave')}</Button></DialogActions>
+      </Dialog>
+
+      <RatingDialog open={Boolean(ratingFor)} onClose={() => setRatingFor(null)} onSubmit={submitRating} lawyerName={ratingFor?.lawyer?.name} />
+      <BookingModal open={Boolean(rebookLawyer)} onClose={() => setRebookLawyer(null)} lawyer={rebookLawyer || {}} />
+      <CaseDocuments consultationId={docsFor?.id} open={Boolean(docsFor)} onClose={() => setDocsFor(null)} currentUserId={user?.id} readOnly={!isConsultationWritable(docsFor, 'documentsWritable')} />
       <style>{`
-        .cons-foot-btn{
-          flex: 1; display: flex; align-items: center; justify-content: center; gap: 8px;
-          padding: 14px; background: transparent; border: none; border-right: 1px solid var(--border);
-          font-family: inherit; font-size: 12px; font-weight: 500; letter-spacing: 0.05em;
-          text-transform: uppercase; cursor: pointer; transition: background .15s ease;
-        }
-        .cons-foot-btn:last-child{ border-right: none; }
-        .cons-foot-btn:hover{ background: rgba(184,149,110,0.09); }
-        .cons-foot-btn:disabled{ opacity: .55; cursor: default; }
-        .cons-tabs::-webkit-scrollbar{ display: none; }
+        .consultation-tabs{scrollbar-width:none;scroll-padding-inline:10px}.consultation-tabs::-webkit-scrollbar{display:none}.consultation-tab{min-height:44px;padding:9px 15px;border:0;border-radius:var(--radius);background:transparent;color:var(--text2);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;scroll-margin-inline:10px}.consultation-tab.active{background:var(--accent);color:#fff}.consultation-tab:focus-visible{outline:2px solid var(--text);outline-offset:2px}.consultation-select{min-height:44px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;max-width:100%}.consultation-select.full{display:block;width:100%;margin-top:6px}
+        @media(max-width:600px){.consultation-tabs{width:100%}}
       `}</style>
-
-      {/* Записаться снова — открываем окно брони с тем же юристом */}
-      <BookingModal
-        open={Boolean(rebookLawyer)}
-        onClose={() => setRebookLawyer(null)}
-        lawyer={rebookLawyer || {}}
-      />
-
-      {/* Перенос времени консультации */}
-      <Dialog open={Boolean(rescheduleC)} onClose={() => setRescheduleC(null)} maxWidth="xs" fullWidth>
-        <DialogTitle sx={{ fontWeight: 500 }}>{t('consultations.reschedule')}</DialogTitle>
-        <DialogContent>
-          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>{t('consultations.rescheduleSub')}</div>
-          <div style={{ display: 'flex', gap: 12 }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newDate')}</div>
-              <select value={rsDate} onChange={(e) => { setRsDate(e.target.value); setRsTime(''); }} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }}>
-                <option value="">—</option>{rsSlots.map((item) => <option key={item.date} value={item.date}>{item.date}</option>)}
-              </select>
-            </div>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('consultations.newTime')}</div>
-              <select value={rsTime} onChange={(e) => setRsTime(e.target.value)} style={{ width: '100%', padding: '10px 12px', borderRadius: 8, border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 14 }}>
-                <option value="">—</option>{(rsSlots.find((item) => item.date === rsDate)?.slots || []).map((slot) => <option key={slot.time} value={slot.time}>{slot.time}{slot.clientTime !== slot.time || slot.clientDate !== rsDate ? ` · ${slot.clientDate} ${slot.clientTime}` : ''}</option>)}
-              </select>
-            </div>
-          </div>
-          {rsTimezone && <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 10 }}>Время юриста: {rsTimezone}. Ваш часовой пояс: {Intl.DateTimeFormat().resolvedOptions().timeZone}.</div>}
-        </DialogContent>
-        <DialogActions sx={{ p: 3, pt: 1 }}>
-          <button className="cons-foot-btn" style={{ flex: 'none', border: 'none', padding: '10px 18px', color: 'var(--text3)' }} onClick={() => setRescheduleC(null)}>
-            {t('consultations.cancel')}
-          </button>
-          <button
-            onClick={submitReschedule}
-            disabled={rsLoading || !rsDate || !rsTime}
-            style={{ border: 'none', padding: '10px 22px', borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', fontSize: 13, fontWeight: 500, cursor: (rsLoading || !rsDate || !rsTime) ? 'default' : 'pointer', opacity: (rsLoading || !rsDate || !rsTime) ? 0.6 : 1 }}
-          >
-            {rsLoading ? t('consultations.rescheduleSaving') : t('consultations.rescheduleSave')}
-          </button>
-        </DialogActions>
-      </Dialog>
-
-      {/* Документы по делу — общая папка юриста и клиента */}
-      <CaseDocuments
-        consultationId={docsFor?.id}
-        open={Boolean(docsFor)}
-        onClose={() => setDocsFor(null)}
-        currentUserId={user?.id}
-      />
     </GlassShell>
   );
 };

@@ -16,12 +16,14 @@ const zoomMeetingService = require('../services/zoomMeetingService');
 const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 const { scheduleMeetsMinimum } = require('../services/schedulePolicy');
 const { consultationAccess } = require('../services/consultationAccessService');
+const consultationPolicy = require('../services/consultationPolicy');
+const { hasBilateralPeerEvidence } = require('../services/webrtcEvidenceService');
 const { AVATAR_EXTENSIONS, VERIFICATION_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
 
 // Источники-статусы, из которых юрист вправе делать переход (машина состояний).
 // Запрещаем откат из completed/in_progress назад — это ломало «выплата один раз».
-const ACCEPTABLE_FROM = ['pending']; // принять/подтвердить можно только новую заявку
-const REJECTABLE_FROM = ['payment_pending', 'pending', 'accepted']; // до начала сессии
+const ACCEPTABLE_FROM = consultationPolicy.STATUSES.filter((status) => consultationPolicy.canTransition('lawyer', status, 'accepted'));
+const REJECTABLE_FROM = consultationPolicy.STATUSES.filter((status) => consultationPolicy.canTransition('lawyer', status, 'rejected'));
 const STARTABLE_FROM = ['accepted']; // начать можно только подтверждённую
 
 // Канонический формат недельного расписания: { mon:{enabled,from,to}, …, sun:{…} }.
@@ -152,6 +154,8 @@ router.get('/consultation-requests', async (req, res, next) => {
       preferredDate: c.preferredDate,
       preferredTime: c.preferredTime,
       status: c.status,
+      archivedAt: c.archivedAt,
+      readOnly: !consultationPolicy.isWritable(c),
       lawyerEndedAt: c.lawyerEndedAt,
       createdAt: c.createdAt,
       price: c.price,
@@ -214,6 +218,8 @@ router.post('/consultation-requests/:id/accept', async (req, res, next) => {
 // POST /consultation-requests/:id/reject — reject a booking request
 router.post('/consultation-requests/:id/reject', async (req, res, next) => {
   try {
+    const reason = cleanText(req.body.reason, 1000);
+    if (!reason) return res.status(400).json({ error: 'Укажите причину отклонения', code: 'CANCELLATION_REASON_REQUIRED' });
     const consultation = await Consultation.findByPk(req.params.id);
     if (!consultation) {
       return res.status(404).json({ error: 'Запрос не найден' });
@@ -227,12 +233,12 @@ router.post('/consultation-requests/:id/reject', async (req, res, next) => {
     // completed/in_progress, поэтому возврат всегда идёт из pendingBalance (не balance).
     const rejected = await Consultation.sequelize.transaction(async (tx) => {
       const [affected] = await Consultation.update(
-        { status: 'rejected', lifecycleStatus: 'cancelled', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { status: 'rejected', lifecycleStatus: 'cancelled', cancelledAt: new Date(), cancelledBy: 'lawyer', cancellationType: 'lawyer_rejected', cancellationReason: reason },
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
       await refundConsultationEscrow(consultation.id, {
-        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason: req.body.reason,
+        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason,
       });
       return true;
     });
@@ -327,6 +333,8 @@ router.post('/consultations/:id/confirm', async (req, res, next) => {
 // POST /consultations/:id/reject — reject consultation
 router.post('/consultations/:id/reject', async (req, res, next) => {
   try {
+    const reason = cleanText(req.body.reason, 1000);
+    if (!reason) return res.status(400).json({ error: 'Укажите причину отклонения', code: 'CANCELLATION_REASON_REQUIRED' });
     const consultation = await Consultation.findByPk(req.params.id);
     if (!consultation) {
       return res.status(404).json({ error: 'Консультация не найдена' });
@@ -338,12 +346,12 @@ router.post('/consultations/:id/reject', async (req, res, next) => {
     // Атомарно: источник-гейт (только до начала сессии) + rejected + возврат эскроу.
     const rejected = await Consultation.sequelize.transaction(async (tx) => {
       const [affected] = await Consultation.update(
-        { status: 'rejected', lifecycleStatus: 'cancelled', ...(req.body.reason ? { notes: req.body.reason } : {}) },
+        { status: 'rejected', lifecycleStatus: 'cancelled', cancelledAt: new Date(), cancelledBy: 'lawyer', cancellationType: 'lawyer_rejected', cancellationReason: reason },
         { where: { id: consultation.id, status: { [Op.in]: REJECTABLE_FROM } }, transaction: tx }
       );
       if (affected === 0) return null;
       await refundConsultationEscrow(consultation.id, {
-        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason: req.body.reason,
+        transaction: tx, actorUserId: req.userId, source: 'lawyer', reason,
       });
       return true;
     });
@@ -376,15 +384,23 @@ router.post('/consultations/:id/start', async (req, res, next) => {
     if (consultation.type === 'video') {
       return res.status(400).json({ error: 'Видеоконсультация начинается после соединения участников' });
     }
-    const access = consultationAccess(consultation);
-    if (!access.canJoin) {
-      return res.status(403).json({ error: 'Начать консультацию сейчас нельзя', code: access.reason });
+    if (consultation.type !== 'chat') {
+      const access = consultationAccess(consultation);
+      if (!access.canJoin) return res.status(403).json({ error: 'Начать консультацию сейчас нельзя', code: access.reason });
+      if (!consultation.callStartedAt) return res.status(409).json({ error: 'Нет подтверждения начала звонка', code: 'SESSION_EVIDENCE_REQUIRED' });
     }
 
     // Источник-гейт: начать можно ТОЛЬКО подтверждённую (accepted). Идемпотентно, если
     // уже in_progress. Запрет старта из completed убирает revert-примитив (повторную
     // выплату эскроу через start→end по уже завершённой консультации).
     if (STARTABLE_FROM.includes(consultation.status)) {
+      if (consultation.type === 'chat') {
+        const senders = await Message.findAll({ where: { consultationId: consultation.id }, attributes: ['senderId'], group: ['senderId'], raw: true });
+        const senderIds = new Set(senders.map((item) => item.senderId));
+        if (!senderIds.has(consultation.clientId) || !senderIds.has(consultation.lawyerId)) {
+          return res.json({ success: true, message: 'Чат принят, ожидается обмен сообщениями', consultation, awaitingMessageExchange: true });
+        }
+      }
       const [affected] = await Consultation.update(
         { status: 'in_progress' },
         { where: { id: consultation.id, status: { [Op.in]: STARTABLE_FROM } } }
@@ -420,10 +436,11 @@ router.post('/consultations/:id/end', async (req, res, next) => {
       return res.status(400).json({ error: 'Сначала начните консультацию, затем завершайте' });
     }
 
-    if (consultation.type === 'video' && !consultation.callStartedAt) {
+    if (['video', 'phone', 'audio'].includes(consultation.type)
+      && (!consultation.callStartedAt || !await hasBilateralPeerEvidence(consultation.id))) {
       return res.status(400).json({ error: 'Нет подтверждения соединения участников' });
     }
-    if (consultation.type !== 'video') {
+    if (consultation.type === 'chat') {
       const [clientMessages, lawyerMessages] = await Promise.all([
         Message.count({ where: { consultationId: consultation.id, senderId: consultation.clientId } }),
         Message.count({ where: { consultationId: consultation.id, senderId: consultation.lawyerId } }),
@@ -532,6 +549,8 @@ router.get('/schedule', async (req, res, next) => {
         topic: c.question,
         type: c.type,
         status: c.status,
+        archivedAt: c.archivedAt,
+        readOnly: !consultationPolicy.isWritable(c),
         price: c.price,
       });
     });

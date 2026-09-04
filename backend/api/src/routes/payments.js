@@ -2,16 +2,11 @@ const router = require('express').Router();
 const logger = require('../config/logger');
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal, FinancialEvent } = require('../models');
+const { sequelize, Payment, Consultation, User, LawyerProfile, Withdrawal, FinancialEvent, Promo } = require('../models');
 const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { isPaymentReservationExpired } = require('../services/availabilityService');
-
-const expireReservation = async (consultation, transaction) => {
-  if (!isPaymentReservationExpired(consultation)) return false;
-  await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled', notes: 'Время резервирования оплаты истекло' }, { transaction });
-  return true;
-};
+const { expireLockedReservation, expireReservationById } = require('../services/reservationExpiryService');
 
 // ─── Payme JSON-RPC Error Codes ───────────────────────────────
 const ERRORS = {
@@ -70,12 +65,12 @@ router.post('/create', authenticate, authorize('client'), async (req, res, next)
         where: { id: consultationId, clientId: req.userId }, transaction, lock: transaction.LOCK.UPDATE,
       });
       if (!consultation) throw paymentError(404, 'Консультация не найдена');
+      if (consultation.status === 'payment_expired') throw paymentError(410, 'Время резервирования слота истекло', 'PAYMENT_RESERVATION_EXPIRED');
       if (consultation.status !== 'payment_pending') throw paymentError(400, 'Консультация уже оплачена или отменена');
       let payment = await Payment.findOne({
         where: { consultationId, provider: 'payme' }, order: [['createdAt', 'ASC']], transaction, lock: transaction.LOCK.UPDATE,
       });
-      if (await expireReservation(consultation, transaction)) {
-        if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
+      if (await expireLockedReservation(consultation, transaction)) {
         return { expired: true };
       }
       if (payment?.status === 'paid') throw paymentError(400, 'Консультация уже оплачена');
@@ -135,11 +130,11 @@ router.post('/simulate', authenticate, authorize('client'), async (req, res, nex
         where: { consultationId, provider: 'payme' }, order: [['createdAt', 'ASC']], transaction, lock: transaction.LOCK.UPDATE,
       });
       if (consultation.status !== 'payment_pending') {
+        if (consultation.status === 'payment_expired') throw paymentError(410, 'Время резервирования слота истекло', 'PAYMENT_RESERVATION_EXPIRED');
         if (consultation.status === 'pending' && payment?.status === 'paid') return { consultation, payment, performed: false };
         throw paymentError(400, 'Консультацию нельзя оплатить (уже оплачена или отменена)');
       }
-      if (await expireReservation(consultation, transaction)) {
-        if (payment?.status === 'pending') await payment.update({ status: 'failed' }, { transaction });
+      if (await expireLockedReservation(consultation, transaction)) {
         return { expired: true };
       }
       if (!payment) {
@@ -205,7 +200,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         if (params.amount !== expectedTiyin) return replyError(ERRORS.INVALID_AMOUNT);
 
         if (payment.status !== 'pending') return replyError(ERRORS.CANT_PERFORM);
-        if (!payment.Consultation || payment.Consultation.status !== 'payment_pending' || isPaymentReservationExpired(payment.Consultation)) return replyError(ERRORS.CANT_PERFORM);
+        if (!payment.Consultation || payment.Consultation.status !== 'payment_pending') return replyError(ERRORS.CANT_PERFORM);
+        if (isPaymentReservationExpired(payment.Consultation)) {
+          await expireReservationById(payment.Consultation.id);
+          return replyError(ERRORS.CANT_PERFORM);
+        }
 
         return reply({ allow: true });
       }
@@ -229,9 +228,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (params.amount !== Number(payment.amount) * 100) return { error: ERRORS.INVALID_AMOUNT };
           if (payment.status === 'paid') return { error: ERRORS.ALREADY_DONE };
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') return { error: ERRORS.CANT_PERFORM };
-          if (await expireReservation(consultation, transaction)) {
-            const cancelTime = Date.now();
-            await payment.update({ status: 'failed', providerResponse: { ...payment.providerResponse, cancelTime, reason: 'reservation_expired' } }, { transaction });
+          if (await expireLockedReservation(consultation, transaction)) {
             return { error: ERRORS.CANT_PERFORM };
           }
           if (payment.transactionId && payment.transactionId !== params.id) return { error: ERRORS.CANT_PERFORM };
@@ -280,9 +277,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           if (payment.status === 'failed' || consultation.status !== 'payment_pending') {
             return { error: ERRORS.CANT_PERFORM };
           }
-          if (await expireReservation(consultation, transaction)) {
-            const cancelTime = Date.now();
-            await payment.update({ status: 'failed', providerResponse: { ...payment.providerResponse, cancelTime, reason: 'reservation_expired' } }, { transaction });
+          if (await expireLockedReservation(consultation, transaction)) {
             return { error: ERRORS.CANT_PERFORM };
           }
 
@@ -343,7 +338,7 @@ router.post('/webhook', verifyPayme, async (req, res) => {
           });
           if (!payment || !consultation) return { error: ERRORS.TRANSACTION_NOT_FOUND };
           if (payment.status === 'refunded') {
-            return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 }, cancelledConsultationId: consultation.id };
+            return { result: { cancel_time: payment.providerResponse?.cancelTime || 0, transaction: payment.id, state: -2 } };
           }
           if (payment.status === 'paid') {
             if (payment.escrowReleased || ['in_progress', 'completed'].includes(consultation.status)) return { error: ERRORS.CANT_CANCEL };
@@ -359,7 +354,17 @@ router.post('/webhook', verifyPayme, async (req, res) => {
                   idempotencyKey: `refund_requested:${payment.id}`, metadata: { rpcId: id },
                 }, transaction,
               });
-              await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' }, { transaction });
+            }
+            const transitioned = ['payment_pending', 'pending', 'accepted'].includes(consultation.status);
+            if (transitioned) {
+              await consultation.update({
+                status: 'cancelled', lifecycleStatus: 'cancelled', cancelledAt: new Date(), cancelledBy: 'system',
+                cancellationType: 'provider_cancelled', cancellationReason: String(params.reason ?? '') || null,
+              }, { transaction });
+              if (consultation.promoCode && consultation.promoReservedAt) {
+                await Promo.increment('usedCount', { by: -1, where: { code: consultation.promoCode, usedCount: { [Op.gt]: 0 } }, transaction });
+                await consultation.update({ promoReservedAt: null }, { transaction });
+              }
             }
             const cancelTime = Date.now();
             await payment.update({
@@ -376,7 +381,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
               },
               transaction,
             });
-            return { result: { cancel_time: cancelTime, transaction: payment.id, state: -2 }, cancelledConsultationId: consultation.id };
+            return {
+              result: { cancel_time: cancelTime, transaction: payment.id, state: -2 },
+              cancelledConsultationId: transitioned ? consultation.id : null,
+              notifyParticipants: transitioned ? { clientId: consultation.clientId, lawyerId: consultation.lawyerId } : null,
+            };
           }
           if (payment.status === 'failed') {
             return {
@@ -394,11 +403,31 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             status: 'failed',
             providerResponse: { ...payment.providerResponse, cancelTime, reason: params.reason },
           }, { transaction });
-          await consultation.update({ status: 'cancelled', lifecycleStatus: 'cancelled' }, { transaction });
-          return { result: { cancel_time: cancelTime, transaction: payment.id, state: -1 }, cancelledConsultationId: consultation.id };
+          await consultation.update({
+            status: 'cancelled', lifecycleStatus: 'cancelled', cancelledAt: new Date(), cancelledBy: 'system',
+            cancellationType: 'provider_cancelled', cancellationReason: String(params.reason ?? '') || null,
+          }, { transaction });
+          if (consultation.promoCode && consultation.promoReservedAt) {
+            await Promo.increment('usedCount', { by: -1, where: { code: consultation.promoCode, usedCount: { [Op.gt]: 0 } }, transaction });
+            await consultation.update({ promoReservedAt: null }, { transaction });
+          }
+          return {
+            result: { cancel_time: cancelTime, transaction: payment.id, state: -1 },
+            cancelledConsultationId: consultation.id,
+            notifyParticipants: { clientId: consultation.clientId, lawyerId: consultation.lawyerId },
+          };
         });
 
-        if (outcome.cancelledConsultationId) require('../services/zoomMeetingService').cancelMeeting(outcome.cancelledConsultationId).catch(() => {});
+        if (outcome.cancelledConsultationId) {
+          require('../services/zoomMeetingService').cancelMeeting(outcome.cancelledConsultationId).catch(() => {});
+          const cancelled = await Consultation.findByPk(outcome.cancelledConsultationId);
+          try {
+            await Promise.all([outcome.notifyParticipants.clientId, outcome.notifyParticipants.lawyerId].map((userId) =>
+              notificationService.notifyConsultationCancelled(userId, 'Payme', cancelled)));
+          } catch (notificationError) {
+            logger.error('Payme cancellation notification failed', { consultationId: outcome.cancelledConsultationId, message: notificationError.message });
+          }
+        }
         return outcome.error ? replyError(outcome.error) : reply(outcome.result);
       }
 

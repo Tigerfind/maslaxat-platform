@@ -36,7 +36,7 @@ async function computeSubscriptionBenefit(userId, opts = {}) {
     where: {
       clientId: userId,
       freeSource: 'subscription',
-      status: { [Op.notIn]: ['cancelled', 'rejected'] },
+      status: { [Op.notIn]: ['cancelled', 'rejected', 'payment_expired'] },
       createdAt: { [Op.gte]: startOfMonth() },
     },
     transaction,

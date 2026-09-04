@@ -1,5 +1,6 @@
 import React from 'react';
 import { useTranslation } from '../../i18n';
+import { getConsultationStatus } from '../../utils/consultationPresentation';
 
 /*
   ConsultationTimeline — понятный статус консультации для ОБЕИХ ролей.
@@ -11,34 +12,27 @@ import { useTranslation } from '../../i18n';
 const STEPS = ['booked', 'confirmed', 'active', 'done'];
 
 // Статус консультации → индекс активного шага (0..3)
-const stepOf = (status) => {
-  if (['payment_pending', 'pending'].includes(status)) return 0;
-  if (status === 'accepted') return 1;
-  if (status === 'in_progress') return 2;
-  if (status === 'completed') return 3;
-  return 0;
-};
-
-const ConsultationTimeline = ({ status, role = 'client' }) => {
+const ConsultationTimeline = ({ consultation, status: legacyStatus, role = 'client' }) => {
   const { t } = useTranslation();
-  const terminal = ['rejected', 'cancelled'].includes(status);
+  const presentation = getConsultationStatus(consultation || legacyStatus);
+  const status = presentation.status;
+  const terminal = presentation.terminal || status === 'unknown';
 
   if (terminal) {
-    const isRejected = status === 'rejected';
     return (
       <div style={{
         display: 'flex', alignItems: 'center', gap: 9, padding: '9px 12px', borderRadius: 10,
         background: 'rgba(192,73,47,0.08)', border: '1px solid rgba(192,73,47,0.25)',
       }}>
-        <span style={{ fontSize: 14 }}>{isRejected ? '✕' : '⊘'}</span>
+        <span style={{ fontSize: 14 }}>×</span>
         <span style={{ fontSize: 12.5, color: 'var(--text2)' }}>
-          {t(isRejected ? 'timeline.rejected' : 'timeline.cancelled')}
+          {t(`consultations.${presentation.labelKey}`)}
         </span>
       </div>
     );
   }
 
-  const cur = stepOf(status);
+  const cur = presentation.step;
   const labels = {
     booked: t('timeline.booked'),
     confirmed: t('timeline.confirmed'),
@@ -61,7 +55,7 @@ const ConsultationTimeline = ({ status, role = 'client' }) => {
           const active = i === cur;
           return (
             <React.Fragment key={s}>
-              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, minWidth: 0 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, minWidth: 0, width: '25%' }}>
                 <div style={{
                   width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -69,7 +63,7 @@ const ConsultationTimeline = ({ status, role = 'client' }) => {
                   background: done ? 'var(--success, #6E9A5F)' : active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--border)',
                   boxShadow: active ? '0 0 0 4px rgba(184,149,110,0.16)' : 'none',
                 }}>{done ? '✓' : i + 1}</div>
-                <span style={{ fontSize: 10.5, fontWeight: active ? 600 : 400, color: active ? 'var(--text)' : 'var(--text3)', whiteSpace: 'nowrap' }}>{labels[s]}</span>
+                <span style={{ fontSize: 10.5, fontWeight: active ? 600 : 400, color: active ? 'var(--text)' : 'var(--text3)', textAlign: 'center', overflowWrap: 'anywhere' }}>{labels[s]}</span>
               </div>
               {i < STEPS.length - 1 && (
                 <div style={{ flex: 1, height: 2, margin: '0 6px', marginBottom: 16, borderRadius: 2, background: i < cur ? 'var(--success, #6E9A5F)' : 'var(--border-strong)', transition: 'background .25s' }} />

@@ -4,7 +4,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, makeClient, makeLawyer } = require('./helpers');
 
-const { Consultation, Payment, LawyerProfile, Notification, FinancialEvent } = models;
+const { Consultation, Payment, LawyerProfile, Notification, FinancialEvent, Promo } = models;
 const auth = `Basic ${Buffer.from('Paycom:test-payme-key').toString('base64')}`;
 
 beforeAll(async () => {
@@ -51,7 +51,8 @@ test('два параллельных PerformTransaction резервируют 
 test('Payme может напрямую отменить невысвобождённый paid-платёж ровно один раз', async () => {
   const client = await makeClient('payme-cancel-client@test.uz');
   const { user: lawyer, lp } = await makeLawyer('payme-cancel-lawyer@test.uz', { pendingBalance: 210000 });
-  const consultation = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'refund', status: 'accepted', price: 210000 });
+  const promo = await Promo.create({ code: 'PAYMECANCEL', discountPercent: 10, isActive: true, usedCount: 1 });
+  const consultation = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'refund', status: 'accepted', price: 210000, promoCode: promo.code, promoReservedAt: new Date() });
   const payment = await Payment.create({
     consultationId: consultation.id, userId: client.id, amount: 210000, provider: 'payme',
     status: 'paid', transactionId: 'payme-direct-cancel', providerResponse: { createTime: Date.now(), performTime: Date.now() },
@@ -62,11 +63,42 @@ test('Payme может напрямую отменить невысвобожд�
   const second = await cancel(11);
   expect(first.body.result.state).toBe(-2);
   expect(second.body.result.state).toBe(-2);
-  await Promise.all([payment.reload(), consultation.reload(), lp.reload()]);
+  await Promise.all([payment.reload(), consultation.reload(), lp.reload(), promo.reload()]);
   expect(payment.status).toBe('refunded');
   expect(consultation.status).toBe('cancelled');
+  expect(consultation.cancellationType).toBe('provider_cancelled');
   expect(Number(lp.pendingBalance)).toBe(0);
+  expect(promo.usedCount).toBe(0);
   expect(await FinancialEvent.count({ where: { paymentId: payment.id } })).toBe(2);
+  expect(await Notification.count({ where: { userId: client.id, type: 'consultation_cancelled' } })).toBe(1);
+  expect(await Notification.count({ where: { userId: lawyer.id, type: 'consultation_cancelled' } })).toBe(1);
+});
+
+test('Payme pending cancellation sets complete metadata and restores promo once', async () => {
+  const client = await makeClient('payme-pending-cancel-client@test.uz');
+  const { user: lawyer } = await makeLawyer('payme-pending-cancel-lawyer@test.uz');
+  const promo = await Promo.create({ code: 'PAYMEPENDING', discountPercent: 10, isActive: true, usedCount: 1 });
+  const consultation = await Consultation.create({
+    clientId: client.id, lawyerId: lawyer.id, question: 'pending cancel', status: 'payment_pending',
+    price: 90000, promoCode: promo.code, promoReservedAt: new Date(),
+  });
+  const payment = await Payment.create({
+    consultationId: consultation.id, userId: client.id, amount: 90000, provider: 'payme',
+    status: 'pending', transactionId: 'payme-pending-cancel', providerResponse: { createTime: Date.now() },
+  });
+  const cancel = (id) => request(app).post('/api/payments/webhook').set('Authorization', auth)
+    .send({ jsonrpc: '2.0', id, method: 'CancelTransaction', params: { id: payment.transactionId, reason: 4 } });
+  expect((await cancel(30)).body.result.state).toBe(-1);
+  expect((await cancel(31)).body.result.state).toBe(-1);
+  await Promise.all([consultation.reload(), payment.reload(), promo.reload()]);
+  expect(consultation).toMatchObject({
+    status: 'cancelled', lifecycleStatus: 'cancelled', cancelledBy: 'system', cancellationType: 'provider_cancelled', cancellationReason: '4',
+  });
+  expect(consultation.cancelledAt).toBeTruthy();
+  expect(payment.status).toBe('failed');
+  expect(promo.usedCount).toBe(0);
+  expect(await Notification.count({ where: { userId: client.id, type: 'consultation_cancelled' } })).toBe(1);
+  expect(await Notification.count({ where: { userId: lawyer.id, type: 'consultation_cancelled' } })).toBe(1);
 });
 
 test('GetStatement возвращает только Payme и все четыре состояния по createTime', async () => {

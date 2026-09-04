@@ -1,10 +1,11 @@
 const crypto = require('crypto');
 const { Op } = require('sequelize');
-const { sequelize, Consultation, ConsultationMeeting, MeetingEvent, Payment, User, ZoomConnection, ZoomWebhookEvent } = require('../models');
+const { sequelize, Consultation, ConsultationMeeting, MeetingEvent, User, ZoomConnection, ZoomWebhookEvent } = require('../models');
 const zoomConnectionService = require('./zoomConnectionService');
 const lifecycle = require('./consultationLifecycleService');
 const notificationService = require('./notificationService');
 const logger = require('../config/logger');
+const { GRACE_MINUTES } = require('./consultationAccessService');
 
 function verify(rawBody, timestamp, signature) {
   const seconds = Number(timestamp);
@@ -52,7 +53,7 @@ async function processEventById(id) {
         const consultation = await Consultation.findByPk(meeting.consultationId);
         const occurredAt = new Date(data.occurredAt);
         const role = await participantRole(consultation, data.customerKey, data.providerUserId, meeting);
-        if (['cancelled', 'rejected'].includes(consultation.status) || ['cancelled'].includes(meeting.status)) {
+        if (['cancelled', 'rejected', 'payment_expired'].includes(consultation.status) || ['cancelled'].includes(meeting.status)) {
           await event.update({ status: 'processed', processedAt: new Date() });
           return;
         }
@@ -63,15 +64,11 @@ async function processEventById(id) {
             const locked = await Consultation.findByPk(consultation.id, { transaction, lock: transaction.LOCK.UPDATE });
             if (['completed', 'cancelled'].includes(locked.lifecycleStatus)) return;
             if (meeting.endedAt && occurredAt > new Date(meeting.endedAt)) return;
-            const correctingDelayedEvent = String(locked.lifecycleStatus).startsWith('no_show_')
-              && locked.noShowCheckedAt && occurredAt <= new Date(locked.noShowCheckedAt);
-            if (String(locked.lifecycleStatus).startsWith('no_show_') && !correctingDelayedEvent) return;
-            if (correctingDelayedEvent) {
-              const refund = await Payment.findOne({ where: { consultationId: locked.id, refundStatus: { [Op.in]: ['requested', 'completed'] } }, transaction, attributes: ['id'] });
-              if (refund) {
-                await MeetingEvent.create({ consultationId: locked.id, meetingId: meeting.id, providerEventId: event.requestId, eventType: 'attendance.late_after_refund', participantRole: role, occurredAt, correlationId: lifecycle.correlationIdFor(locked.id), metadata: {} }, { transaction });
-                return;
-              }
+            if (String(locked.lifecycleStatus).startsWith('no_show_') || locked.noShowCheckedAt) {
+              await MeetingEvent.create({ consultationId: locked.id, meetingId: meeting.id, providerEventId: event.requestId, eventType: 'attendance.late_manual_review', participantRole: role, occurredAt, correlationId: lifecycle.correlationIdFor(locked.id), metadata: { noShowCheckedAt: locked.noShowCheckedAt } }, { transaction });
+              const admins = await User.findAll({ where: { role: 'admin', isActive: true }, attributes: ['id'], transaction });
+              await Promise.allSettled(admins.map((admin) => notificationService.createNotification(admin.id, 'attendance_late_review', 'Позднее подтверждение участия', 'Zoom attendance получен после фиксации неявки; требуется ручная проверка.', { consultationId: locked.id })));
+              return;
             }
             const field = role === 'lawyer' ? 'lawyerFirstJoinedAt' : 'clientFirstJoinedAt';
             if (!locked[field] || occurredAt < locked[field]) locked[field] = occurredAt;
@@ -80,15 +77,12 @@ async function processEventById(id) {
               locked.conversationStartedAt ||= new Date(Math.max(new Date(locked[field]).getTime(), new Date(locked[otherField]).getTime()));
               locked.callStartedAt ||= locked.conversationStartedAt;
               if (locked.status === 'accepted') locked.status = 'in_progress';
-              locked.graceEndsAt ||= new Date(new Date(locked.scheduledEndAt).getTime() + 5 * 60000);
+              locked.graceEndsAt ||= new Date(new Date(locked.scheduledEndAt).getTime() + GRACE_MINUTES * 60000);
               await locked.save({ transaction });
               await lifecycle.transition(locked, meeting.status === 'ended' ? 'completed' : 'in_progress', { transaction, meetingId: meeting.id, providerEventId: event.requestId, participantRole: role, occurredAt, force: true });
             } else {
               await locked.save({ transaction });
-              if (String(locked.lifecycleStatus).startsWith('no_show_') && correctingDelayedEvent) {
-                const corrected = locked.lawyerFirstJoinedAt ? 'no_show_client' : 'no_show_lawyer';
-                await lifecycle.transition(locked, corrected, { transaction, meetingId: meeting.id, providerEventId: event.requestId, participantRole: role, occurredAt, force: true });
-              } else if (!String(locked.lifecycleStatus).startsWith('no_show_')) {
+              if (!String(locked.lifecycleStatus).startsWith('no_show_')) {
                 await lifecycle.transition(locked, role === 'lawyer' ? 'waiting_for_client' : 'waiting_for_lawyer', { transaction, meetingId: meeting.id, providerEventId: event.requestId, participantRole: role, occurredAt, force: true });
               }
             }
@@ -117,6 +111,8 @@ async function processEventById(id) {
           if (consultation.lifecycleStatus === 'completed') {
             logger.info('meeting_completed', { consultationId: consultation.id, correlationId: lifecycle.correlationIdFor(consultation.id), source: 'zoom_webhook' });
             await notificationService.createNotification(consultation.clientId, 'consultation_completion_requested', 'Zoom-консультация завершена', 'Подтвердите результат консультации в кабинете.', { consultationId: consultation.id });
+          } else if (consultation.lifecycleStatus === 'no_show_both') {
+            logger.info('no_show_both_awaiting_manual_review', { consultationId: consultation.id });
           } else if (String(consultation.lifecycleStatus).startsWith('no_show_')) {
             const absentId = consultation.lifecycleStatus === 'no_show_client' ? consultation.clientId : consultation.lawyerId;
             const waitingId = consultation.lifecycleStatus === 'no_show_client' ? consultation.lawyerId : consultation.clientId;

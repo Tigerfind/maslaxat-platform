@@ -556,7 +556,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     const requestedFormat = req.body.consultationType || 'webrtc';
     if (!['chat', 'audio', 'webrtc', 'video', 'zoom'].includes(requestedFormat)) return res.status(400).json({ error: 'Некорректный формат консультации' });
     const normalizedFormat = requestedFormat === 'video' ? 'webrtc' : requestedFormat;
-    if (['zoom', 'webrtc'].includes(normalizedFormat) && !scheduledWindow) return res.status(400).json({ error: 'Для видеоконсультации выберите свободное время' });
+    if (['zoom', 'webrtc', 'audio'].includes(normalizedFormat) && !scheduledWindow) return res.status(400).json({ error: 'Для звонка выберите свободное время' });
     if (!lawyer.profile.consultationFormats?.includes(normalizedFormat)) return res.status(400).json({ error: 'Юрист не поддерживает выбранный формат' });
     const assertZoomConnected = async (transaction) => {
       if (normalizedFormat !== 'zoom') return;
@@ -589,31 +589,22 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
     let price = fullPrice;
     let notes = req.body.notes || null;
     let appliedPromo = null;
-    // Промокод — отдельный (НЕ бесплатный) путь; скидку считаем на сервере.
-    if (!req.body.useFreePromo && !req.body.useSubscriptionFree && req.body.promoCode) {
-      const { validatePromo } = require('../services/promoService');
-      const result = await validatePromo(req.body.promoCode, fullPrice);
-      if (result.valid) {
-        price = Math.max(0, fullPrice - result.discountAmount);
-        appliedPromo = result.promo;
-        notes = `Промокод ${result.code} (−${result.discountPercent}%)${notes ? '. ' + notes : ''}`;
-      }
-    }
 
     const wantsFree = Boolean(req.body.useFreePromo || req.body.useSubscriptionFree);
     let isFree = false;
     let freeSource = null;
     let consultation;
 
-    // Модель B «оплата через 5 минут звонка»: платная бронь НЕ требует предоплаты.
-    // Карта «замораживается» (billingStatus='held'), бронь сразу уходит юристу (pending);
-    // деньги захватываются на 5-й минуте разговора (billingService.captureHold).
+    // Все платные форматы используют один prepayment-flow. До подтверждения оплаты
+    // заявка резервирует слот, но не показывается юристу как новая работа.
     const paidFields = () => ({
-      ...baseFields, price, isFree: false, freeSource: null, notes,
+      ...baseFields, price, isFree: price === 0, freeSource: null, notes,
       promoCode: appliedPromo ? appliedPromo.code : null,
-      status: normalizedFormat === 'zoom' ? 'payment_pending' : 'pending',
-      lifecycleStatus: normalizedFormat === 'zoom' ? 'pending_payment' : 'confirmed',
-      billingStatus: normalizedFormat === 'zoom' ? 'none' : 'held',
+      promoReservedAt: appliedPromo ? new Date() : null,
+      status: price > 0 ? 'payment_pending' : 'pending',
+      lifecycleStatus: price > 0 ? 'pending_payment' : 'confirmed',
+      billingStatus: 'none',
+      paymentExpiresAt: price > 0 ? new Date(Date.now() + availabilityService.PAYMENT_RESERVATION_MINUTES * 60000) : null,
     });
 
     if (!wantsFree) {
@@ -621,6 +612,15 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
         await availabilityService.lockBookingParticipants(lawyer.id, req.userId, transaction);
         await assertZoomConnected(transaction);
         if (scheduledWindow) await availabilityService.assertAvailable({ lawyerId: lawyer.id, clientId: req.userId, window: scheduledWindow, transaction });
+        if (req.body.promoCode) {
+          const { reservePromo } = require('../services/promoService');
+          const result = await reservePromo(req.body.promoCode, fullPrice, transaction);
+          if (result.valid) {
+            price = Math.max(0, fullPrice - result.discountAmount);
+            appliedPromo = result.promo;
+            notes = `Промокод ${result.code} (−${result.discountPercent}%)${notes ? '. ' + notes : ''}`;
+          }
+        }
         consultation = await Consultation.create(paidFields(), { transaction });
       });
     } else {
@@ -640,14 +640,14 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
             const loyalty = await computeLoyalty(req.userId, { transaction: t });
             if (loyalty.freeNow) {
               isFree = true; freeSource = 'loyalty';
-              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'loyalty', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', notes: 'Бесплатно по акции «первая консультация бесплатно»' };
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'loyalty', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', billingStatus: 'none', notes: 'Бесплатно по акции «первая консультация бесплатно»' };
             }
           } else if (req.body.useSubscriptionFree) {
             const { computeSubscriptionBenefit } = require('../services/subscriptionService');
             const benefit = await computeSubscriptionBenefit(req.userId, { transaction: t });
             if (benefit.remaining > 0) {
               isFree = true; freeSource = 'subscription';
-              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
+              fields = { ...baseFields, price: 0, isFree: true, freeSource: 'subscription', promoCode: null, status: 'pending', lifecycleStatus: 'confirmed', billingStatus: 'none', notes: `Бесплатно по подписке «${benefit.plan === 'pro' ? 'Про' : 'Базовый'}»` };
             }
           }
           consultation = await Consultation.create(fields, { transaction: t });
@@ -669,17 +669,8 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
       }
     }
 
-    // Промо-инкремент и уведомления — ПОСЛЕ commit (не внутри транзакции, чтобы не
-    // трогать бронь, которая могла откатиться). Атомарный гейт used_count < usage_limit.
-    if (appliedPromo) {
-      const { literal } = require('sequelize');
-      await appliedPromo.increment('usedCount', {
-        where: { [Op.or]: [{ usageLimit: null }, literal('used_count < usage_limit')] },
-      });
-    }
-    // Уведомляем юриста о новой брони — теперь и платная сразу уходит ему (pending),
-    // без шага предоплаты (оплата спишется на 5-й минуте звонка).
-    {
+    // Платная заявка станет видна юристу и отправит уведомление только после оплаты.
+    if (consultation.status === 'pending') {
       const client = await User.findByPk(req.userId, { attributes: ['name'] });
       notifications.notifyNewBooking(lawyer.id, client?.name || 'Клиент', consultation);
     }
@@ -718,6 +709,9 @@ router.post('/:id/review', authenticate, authorize('client'), async (req, res, n
     }
     if (consultation.status !== 'completed') {
       return res.status(400).json({ error: 'Оценить можно только завершённую консультацию' });
+    }
+    if (consultation.archivedAt) {
+      return res.status(409).json({ error: 'Верните консультацию из архива, чтобы оставить отзыв' });
     }
 
     // Один отзыв на консультацию. Уникальный индекс reviews_consultation_id_unique

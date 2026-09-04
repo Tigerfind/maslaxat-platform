@@ -13,7 +13,7 @@ const WORKER_ID = `${os.hostname()}:${process.pid}`;
 const MAX_ATTEMPTS = Math.min(12, Math.max(1, Number(process.env.ZOOM_MEETING_MAX_ATTEMPTS) || 6));
 const markerFor = (consultationId) => `emaslaxat:${consultationId}`;
 const idempotencyKeyFor = (consultationId, operation, version) => crypto.createHash('sha256').update(`${consultationId}:${operation}:${version}`).digest('hex');
-const terminalConsultation = (status) => ['completed', 'cancelled', 'rejected'].includes(status);
+const terminalConsultation = (status) => ['completed', 'cancelled', 'rejected', 'payment_expired'].includes(status);
 const safeError = (error) => ({
   code: error.code || 'ZOOM_OPERATION_FAILED',
   message: ['ZOOM_TIMEOUT', 'ZOOM_NETWORK_ERROR', 'ZOOM_RATE_LIMITED', 'ZOOM_UPSTREAM_ERROR'].includes(error.code)

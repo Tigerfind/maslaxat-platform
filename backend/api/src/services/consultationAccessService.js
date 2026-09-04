@@ -1,5 +1,6 @@
 const JOIN_EARLY_MINUTES = 10;
-const JOIN_LATE_MINUTES = 5;
+const configuredGrace = Number(process.env.CONSULTATION_GRACE_MINUTES);
+const JOIN_LATE_MINUTES = Number.isFinite(configuredGrace) && configuredGrace >= 0 ? configuredGrace : 5;
 
 function consultationAccess(consultation, now = new Date()) {
   const start = consultation?.scheduledStartAt ? new Date(consultation.scheduledStartAt) : null;
@@ -18,4 +19,4 @@ function consultationAccess(consultation, now = new Date()) {
   return { canJoin: true, reason: null, serverNow, opensAt, closesAt };
 }
 
-module.exports = { JOIN_EARLY_MINUTES, JOIN_LATE_MINUTES, consultationAccess };
+module.exports = { JOIN_EARLY_MINUTES, JOIN_LATE_MINUTES, GRACE_MINUTES: JOIN_LATE_MINUTES, consultationAccess };

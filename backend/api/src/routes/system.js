@@ -11,6 +11,7 @@ router.get('/capabilities', (req, res) => {
     ai: configured(process.env.ANTHROPIC_API_KEY),
     email: configured(process.env.SMTP_HOST),
     payments: configured(process.env.PAYME_KEY) && configured(process.env.PAYME_MERCHANT_ID),
+    consultationExtensions: process.env.NODE_ENV !== 'production' && !process.env.PAYME_KEY,
     turn: configured(turnUrl) && configured(turnAuth),
     zoomMeetingSdk: process.env.ZOOM_MEETING_SDK_ENABLED === '1'
       && configured(process.env.ZOOM_CLIENT_ID) && configured(process.env.ZOOM_CLIENT_SECRET)

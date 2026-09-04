@@ -70,7 +70,7 @@ describe('resolvePublicAssetUrl', () => {
 });
 
 describe('consultation pagination and payment recovery', () => {
-  beforeEach(() => { api.get.mockReset(); api.post.mockReset(); });
+  beforeEach(() => { api.get.mockReset(); api.post.mockReset(); vi.unstubAllEnvs(); });
 
   test('сохраняет серверные counts и pagination metadata', async () => {
     const envelope = { consultations: [{ id: 'c1' }], counts: { all: 25 }, total: 25, page: 2, totalPages: 3 };
@@ -82,12 +82,40 @@ describe('consultation pagination and payment recovery', () => {
     });
   });
 
-  test('production fallback после запрещённой simulation возвращает checkout URL', async () => {
+  test('dev fallback после запрещённой simulation возвращает checkout URL', async () => {
+    vi.stubEnv('MODE', 'development');
     api.post.mockRejectedValueOnce({ response: { status: 403 } });
     api.post.mockResolvedValueOnce({ data: { paymentId: 'p1', checkoutUrl: 'https://checkout.test/pay' } });
     const result = await clientLawyerService.payConsultation('c1');
     expect(result).toMatchObject({ completed: false, redirectUrl: 'https://checkout.test/pay', paymentId: 'p1' });
     expect(api.post).toHaveBeenNthCalledWith(1, '/payments/simulate', { consultationId: 'c1' });
     expect(api.post).toHaveBeenNthCalledWith(2, '/payments/create', { consultationId: 'c1' });
+  });
+
+  test('production payment never calls simulation', async () => {
+    vi.stubEnv('MODE', 'production');
+    vi.stubEnv('PROD', true);
+    api.post.mockResolvedValueOnce({ data: { paymentId: 'p2', checkoutUrl: 'https://checkout.test/prod' } });
+    const result = await clientLawyerService.payConsultation('c2');
+    expect(result.redirectUrl).toBe('https://checkout.test/prod');
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(api.post).toHaveBeenCalledWith('/payments/create', { consultationId: 'c2' });
+  });
+
+  test('rebook profile is normalized only when the lawyer remains available', async () => {
+    api.get.mockResolvedValueOnce({ data: { lawyer: { id: 'l1', name: 'Юрист', profile: { isAvailable: true, price: 250000, specialization: 'civil', consultationFormats: ['chat'], consultationDurations: [30] } } } });
+    await expect(clientLawyerService.getBookableLawyerDetails('l1')).resolves.toMatchObject({
+      id: 'l1', priceFrom: 250000, specializations: ['civil'], consultationFormats: ['chat'], consultationDurations: [30], isAvailable: true,
+    });
+    expect(api.get).toHaveBeenCalledWith('/client/lawyers/l1');
+
+    api.get.mockResolvedValueOnce({ data: { lawyer: { id: 'l2', profile: { isAvailable: false } } } });
+    await expect(clientLawyerService.getBookableLawyerDetails('l2')).resolves.toBeNull();
+  });
+
+  test('archive uses the explicit archive endpoint', async () => {
+    api.patch.mockResolvedValueOnce({ data: { consultation: { id: 'c1' } } });
+    await clientConsultationService.archive('c1', true);
+    expect(api.patch).toHaveBeenCalledWith('/client/consultations/c1/archive', { archived: true });
   });
 });
