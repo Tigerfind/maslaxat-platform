@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import { axelionColors } from '../../theme/axelionTheme';
+import { LEGAL_VERSION } from '../../constants/legal';
 
 /*
   Соц-вход (Google / Telegram). Кнопки показываются только если провайдер
@@ -50,7 +51,7 @@ const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
         client_id: config.google.clientId,
         callback: async (resp) => {
           try {
-            const { data } = await api.post('/auth/google', { credential: resp.credential, acceptedTerms: true, legalVersion: '2026-08-13' });
+            const { data } = await api.post('/auth/google', { credential: resp.credential, acceptedTerms: true, legalVersion: LEGAL_VERSION });
             onSuccess(data);
           } catch (e) { if (onError) onError(e); }
         },
@@ -60,7 +61,7 @@ const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
       });
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [config, acceptedTerms]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, acceptedTerms, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Telegram Login Widget ──
   useEffect(() => {
@@ -68,7 +69,7 @@ const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
     // Виджет вызывает глобальную функцию по имени из data-onauth
     window.__maslaxatTelegramAuth = async (user) => {
       try {
-        const { data } = await api.post('/auth/telegram', { ...user, acceptedTerms: true, legalVersion: '2026-08-13' });
+        const { data } = await api.post('/auth/telegram', { ...user, acceptedTerms: true, legalVersion: LEGAL_VERSION });
         onSuccess(data);
       } catch (e) { if (onError) onError(e); }
     };
@@ -83,10 +84,10 @@ const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
     tgRef.current.innerHTML = '';
     tgRef.current.appendChild(s);
     return () => {};
-  }, [config, acceptedTerms]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, acceptedTerms, role]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const googleOn = config && config.google && config.google.enabled;
-  const telegramOn = config && config.telegram && config.telegram.enabled;
+  const googleOn = role !== 'lawyer' && config && config.google && config.google.enabled;
+  const telegramOn = role !== 'lawyer' && config && config.telegram && config.telegram.enabled;
   const linkedinOn = role === 'lawyer' && config?.linkedin?.enabled;
   if (!googleOn && !telegramOn && !linkedinOn) return null;
 
@@ -94,7 +95,7 @@ const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
     try {
       const { data } = await api.post('/auth/linkedin/start', {
         acceptedTerms: true,
-        legalVersion: '2026-08-13',
+        legalVersion: LEGAL_VERSION,
       });
       window.location.assign(data.authorizationUrl);
     } catch (error) {

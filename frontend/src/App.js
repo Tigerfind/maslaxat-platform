@@ -19,6 +19,7 @@ import GlobalCallListener from './components/Call/GlobalCallListener';
 import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
+import EmailVerificationBanner from './components/Auth/EmailVerificationBanner';
 import { axelionTheme } from './theme/axelionTheme';
 
 // Pages
@@ -109,6 +110,7 @@ const AppContent = () => {
   return (
     <Router>
       {isAuthenticated && <GlobalCallListener />}
+      {isAuthenticated && <EmailVerificationBanner />}
       <Suspense fallback={(
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
           <LoadingSpinner />

@@ -25,6 +25,9 @@ const User = sequelize.define('User', {
   phone: {
     type: DataTypes.STRING,
   },
+  phoneVerifiedAt: {
+    type: DataTypes.DATE,
+  },
   address: {
     type: DataTypes.STRING,
   },
@@ -57,6 +60,9 @@ const User = sequelize.define('User', {
   },
   verificationToken: {
     type: DataTypes.STRING,
+  },
+  verificationTokenExpiry: {
+    type: DataTypes.DATE,
   },
   // Момент смены пароля — токены, выданные ДО него, отклоняются (сброс пароля
   // при компрометации выкидывает старые сессии).
@@ -96,7 +102,9 @@ const User = sequelize.define('User', {
       }
     },
   },
-  indexes: [{ name: 'users_email_key', unique: true, fields: ['email'] }],
+  indexes: [
+    { name: 'users_email_key', unique: true, fields: ['email'] },
+  ],
 });
 
 User.prototype.comparePassword = function (password) {
@@ -109,6 +117,7 @@ User.prototype.toJSON = function () {
   delete values.resetToken;
   delete values.resetTokenExpiry;
   delete values.verificationToken;
+  delete values.verificationTokenExpiry;
   // Секрет и резервные коды 2FA не отдаём наружу никогда; флаг enabled — можно
   delete values.twoFactorSecret;
   delete values.twoFactorBackupCodes;

@@ -129,7 +129,7 @@ const ProfilePageGlass = () => {
   // Телефон-аккаунт с email-плейсхолдером → предлагаем привязать настоящий email.
   const isPhoneAccount = (user?.email || '').endsWith('@phone.maslaxat.uz');
   // Клиент без подтверждённого контакта — предлагаем подтвердить телефон (нужно для брони).
-  const needsVerify = user?.role === 'client' && !user?.isVerified;
+  const needsVerify = user?.role === 'client' && (!user?.phoneVerifiedAt || isEditMode);
 
   const requestOtp = async () => {
     setOtpSending(true); setDevCode('');
@@ -250,7 +250,6 @@ const ProfilePageGlass = () => {
     try {
       const payload = new FormData();
       payload.append('name', formData.name);
-      payload.append('phone', formData.phone || '');
       payload.append('address', formData.address || '');
       if (formData.avatarFile) payload.append('avatar', formData.avatarFile);
 
@@ -318,7 +317,7 @@ const ProfilePageGlass = () => {
   const fields = [
     { label: t('profile.fullName'), name: 'name', value: formData.name, type: 'text' },
     { label: t('profile.email'), name: 'email', value: formData.email, type: 'email', readOnly: true },
-    { label: t('profile.phone'), name: 'phone', value: formData.phone, type: 'tel' },
+    { label: t('profile.phone'), name: 'phone', value: formData.phone, type: 'tel', readOnly: true },
     { label: t('profile.address'), name: 'address', value: formData.address, type: 'text' },
   ];
 

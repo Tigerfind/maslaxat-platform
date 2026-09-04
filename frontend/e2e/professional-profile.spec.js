@@ -7,6 +7,7 @@ test('черновик профессионального профиля пер�
   const registration = await request.post('http://127.0.0.1:3101/api/auth/register', {
     data: {
       name: 'Onboarding Lawyer', email, password, role: 'lawyer',
+      specializations: ['Гражданское право'],
       acceptedTerms: true, legalVersion: '2026-08-13',
     },
   });
@@ -19,16 +20,16 @@ test('черновик профессионального профиля пер�
   await expect(page).toHaveURL(/\/lawyer\/dashboard$/);
   await expect(page.getByRole('heading', { name: 'Заполните профессиональный профиль' })).toBeVisible();
 
-  await page.getByPlaceholder('Адвокат по семейному праву').fill('Адвокат по договорному праву');
-  await page.getByPlaceholder('Расскажите о вашем опыте').fill('Практикующий адвокат с опытом сопровождения договорных споров и судебных процессов в Узбекистане.');
-  await page.getByPlaceholder('Город').fill('Ташкент');
-  await page.getByPlaceholder('+998...').fill('+998901234568');
-  await page.getByRole('button', { name: 'Сохранить черновик' }).click();
-  await expect(page.getByText(/Сохранено/)).toBeVisible();
+  await page.getByRole('textbox', { name: /Профессиональное звание/ }).fill('Адвокат по договорному праву');
+  await page.getByRole('textbox', { name: /О себе/ }).fill('Практикующий адвокат с опытом сопровождения договорных споров и судебных процессов в Узбекистане.');
+  await page.getByRole('textbox', { name: /^Город/ }).fill('Ташкент');
+  await page.getByRole('textbox', { name: /^Телефон/ }).fill('+998901234568');
+  await page.getByRole('button', { name: 'Сохранить' }).click();
+  await expect(page.getByText(/Профиль заполнен/)).toBeVisible();
 
   await page.reload();
-  await expect(page.getByPlaceholder('Адвокат по семейному праву')).toHaveValue('Адвокат по договорному праву');
-  await expect(page.getByPlaceholder('Город')).toHaveValue('Ташкент');
+  await expect(page.getByRole('textbox', { name: /Профессиональное звание/ })).toHaveValue('Адвокат по договорному праву');
+  await expect(page.getByRole('textbox', { name: /^Город/ })).toHaveValue('Ташкент');
 });
 
 test('без credentials LinkedIn и Zoom остаются честно выключенными', async ({ page }) => {

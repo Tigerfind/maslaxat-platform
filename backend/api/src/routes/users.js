@@ -3,7 +3,7 @@ const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
-const { Op } = require('sequelize');
+const { Op, UniqueConstraintError } = require('sequelize');
 const { User } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const { sendVerificationEmail } = require('../services/emailService');
@@ -11,6 +11,9 @@ const logger = require('../config/logger');
 const { disconnectUserSockets } = require('../socket/io');
 const { AVATAR_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles } = require('../services/uploadSecurity');
 const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+const smsService = require('../services/smsService');
+
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 
 const emailChangeLimiter = distributedRateLimit({
   prefix: 'email-change-user', windowSeconds: 60 * 60,
@@ -44,7 +47,16 @@ router.put('/profile', authenticate, upload.single('avatar'), validateUploadSign
     // Update allowed fields
     const { name, phone, address } = req.body;
     if (name && name.trim()) user.name = name.trim();
-    if (phone !== undefined) user.phone = phone;
+    if (phone !== undefined) {
+      const normalizedPhone = phone ? smsService.normalizePhone(phone) : null;
+      if (normalizedPhone !== user.phone) {
+        cleanupUploadedFiles(req);
+        return res.status(400).json({
+          error: 'Измените телефон через подтверждение кодом из SMS',
+          code: 'PHONE_VERIFICATION_REQUIRED',
+        });
+      }
+    }
     if (address !== undefined) user.address = address;
 
     // Avatar upload
@@ -63,6 +75,9 @@ router.put('/profile', authenticate, upload.single('avatar'), validateUploadSign
     res.json({ user: user.toJSON() });
   } catch (err) {
     cleanupUploadedFiles(req);
+    if (err instanceof UniqueConstraintError) {
+      return res.status(409).json({ error: 'Этот номер телефона уже используется' });
+    }
     next(err);
   }
 });
@@ -117,7 +132,7 @@ router.put('/password', authenticate, async (req, res, next) => {
 router.put('/email', authenticate, emailChangeLimiter, async (req, res, next) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
-    if (!/^\S+@\S+\.\S+$/.test(email)) {
+    if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email)) {
       return res.status(400).json({ error: 'Неверный формат email' });
     }
     const user = await User.findByPk(req.userId);
@@ -125,25 +140,39 @@ router.put('/email', authenticate, emailChangeLimiter, async (req, res, next) =>
     if (email === user.email) {
       return res.json({ success: true, user: user.toJSON() });
     }
-    const exists = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } });
+    const exists = await User.findOne({ where: { email: { [Op.iLike]: email }, id: { [Op.ne]: user.id } } });
     if (exists) return res.status(409).json({ error: 'Этот email уже используется' });
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    try {
-      const delivery = await sendVerificationEmail(email, verificationToken);
-      if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
-    } catch (e) {
-      logger.error('Failed to send verification email (email change):', e.message);
-      return res.status(502).json({ error: 'Не удалось отправить письмо подтверждения' });
-    }
-
+    const previousEmail = user.email;
+    const previousToken = user.verificationToken;
+    const previousExpiry = user.verificationTokenExpiry;
+    const previousVerified = user.isVerified;
     user.email = email;
     user.verificationToken = verificationToken;
+    user.verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
     user.isVerified = false;
     await user.save();
 
+    try {
+      const delivery = await sendVerificationEmail(email, verificationToken);
+      if (delivery?.skipped) throw new Error('EMAIL_UNAVAILABLE');
+    } catch (e) {
+      await User.update({
+        email: previousEmail,
+        verificationToken: previousToken,
+        verificationTokenExpiry: previousExpiry,
+        isVerified: previousVerified,
+      }, { where: { id: user.id, verificationToken } });
+      if (e.message !== 'EMAIL_UNAVAILABLE') logger.error('Failed to send verification email (email change):', e.message);
+      return res.status(503).json({ error: 'Не удалось отправить письмо подтверждения' });
+    }
+
     res.json({ success: true, user: user.toJSON(), message: 'Email обновлён. Подтвердите по ссылке в письме.' });
   } catch (err) {
+    if (err instanceof UniqueConstraintError) {
+      return res.status(409).json({ error: 'Этот email уже используется' });
+    }
     next(err);
   }
 });

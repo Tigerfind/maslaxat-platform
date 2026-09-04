@@ -12,9 +12,10 @@ import {
   CheckOutlined,
   RestartAltOutlined,
   CloseOutlined,
+  PhoneOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
-import { logout } from '../../store/slices/authSlice';
+import { logout, updateProfile } from '../../store/slices/authSlice';
 import pushService from '../../services/pushService';
 import TwoFactorSection from '../../components/Settings/TwoFactorSection';
 import ZoomConnectionSection from '../../components/Settings/ZoomConnectionSection';
@@ -147,7 +148,7 @@ const Row = ({ label, description, control, last }) => (
 const SettingsPageGlass = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
-  const { role } = useSelector((s) => s.auth);
+  const { role, user } = useSelector((s) => s.auth);
   const { t } = useTranslation();
 
   // ── appSettings: local-only preferences (NOT theme/language) ──
@@ -177,6 +178,42 @@ const SettingsPageGlass = () => {
   const [settings, setSettings] = useState(loadSettings);
   const [hasChanges, setHasChanges] = useState(false);
   const [confirmDialog, setConfirmDialog] = useState(false);
+  const [phoneInput, setPhoneInput] = useState(user?.phone || '');
+  const [phoneCode, setPhoneCode] = useState('');
+  const [phoneSent, setPhoneSent] = useState(false);
+  const [phoneBusy, setPhoneBusy] = useState(false);
+
+  const requestPhoneCode = async () => {
+    if (!phoneInput.trim() || phoneBusy) return;
+    setPhoneBusy(true);
+    try {
+      const { data } = await api.post('/auth/phone/request', { phone: phoneInput });
+      setPhoneSent(true);
+      if (data.devCode) setPhoneCode(data.devCode);
+      toast.success(t('profile.otpSent'));
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('phoneAuth.requestErr'));
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
+
+  const confirmPhone = async () => {
+    if (!phoneCode.trim() || phoneBusy) return;
+    setPhoneBusy(true);
+    try {
+      const { data } = await api.post('/auth/phone/confirm', { phone: phoneInput, code: phoneCode.trim() });
+      dispatch(updateProfile(data.user));
+      setPhoneInput(data.user.phone || '');
+      setPhoneCode('');
+      setPhoneSent(false);
+      toast.success(t('profile.phoneVerified'));
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('phoneAuth.verifyErr'));
+    } finally {
+      setPhoneBusy(false);
+    }
+  };
 
   // ── Web-push на это устройство (реальная подписка через Push API) ──
   const [devicePush, setDevicePush] = useState({ supported: false, subscribed: false, enabledOnServer: false, busy: false });
@@ -317,6 +354,45 @@ const SettingsPageGlass = () => {
         {/* ── Двухфакторная аутентификация (юристы/админ) ── */}
         <TwoFactorSection />
         <ZoomConnectionSection />
+
+        <Section
+          icon={<PhoneOutlined sx={{ fontSize: 20 }} />}
+          title={t('profile.verifyPhoneTitle')}
+          subtitle={t('profile.verifyPhoneHint')}
+        >
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <input
+              value={phoneInput}
+              onChange={(event) => { setPhoneInput(event.target.value); setPhoneSent(false); setPhoneCode(''); }}
+              placeholder="+998 90 123 45 67"
+              inputMode="tel"
+              autoComplete="tel"
+              disabled={phoneBusy}
+              style={{ flex: 1, minWidth: 200, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit' }}
+            />
+            {!phoneSent ? (
+              <button type="button" onClick={requestPhoneCode} disabled={phoneBusy || !phoneInput.trim()} style={{ padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
+                {phoneBusy ? t('profile.saving') : t('profile.otpRequest')}
+              </button>
+            ) : (
+              <>
+                <input
+                  value={phoneCode}
+                  onChange={(event) => setPhoneCode(event.target.value)}
+                  placeholder={t('profile.otpPlaceholder')}
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  disabled={phoneBusy}
+                  style={{ width: 150, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit' }}
+                />
+                <button type="button" onClick={confirmPhone} disabled={phoneBusy || phoneCode.trim().length !== 6} style={{ padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
+                  {phoneBusy ? t('profile.saving') : t('profile.otpConfirm')}
+                </button>
+              </>
+            )}
+          </div>
+        </Section>
 
         {/* ── Приватность ── */}
         <Section

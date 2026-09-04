@@ -49,12 +49,16 @@ let lawyerSequence = 0;
 async function makeClient(email = 'client@test.uz', overrides = {}) {
   // isVerified:true по умолчанию — тестовый клиент «с подтверждённым контактом»
   // (гейт бронирования требует верификацию). Тест на гейт передаёт isVerified:false.
-  return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true, isVerified: true, ...overrides });
+  return User.create({
+    name: 'Test Client', email, password: 'passw0rd', role: 'client', isActive: true, isVerified: true,
+    ...(overrides.phone && !Object.prototype.hasOwnProperty.call(overrides, 'phoneVerifiedAt') ? { phoneVerifiedAt: new Date() } : {}),
+    ...overrides,
+  });
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
   lawyerSequence += 1;
   const phone = `+998${String(900000000 + lawyerSequence).slice(-9)}`;
-  const user = await User.create({ name: 'Test Lawyer', email, phone, password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
+  const user = await User.create({ name: 'Test Lawyer', email, phone, phoneVerifiedAt: new Date(), password: 'passw0rd', role: 'lawyer', isActive: true, isVerified: true });
   // verificationStatus по умолчанию 'approved' — большинство тестов ждут, что юрист
   // сразу виден в каталоге и бронируется. Тест на модерацию передаёт своё значение.
   const lp = await LawyerProfile.create({

@@ -103,6 +103,14 @@ const LoginPage = () => {
     navigate(dashboardMap[role] || '/dashboard');
   };
 
+  const finishAlternativeLogin = (data) => {
+    if (data.twoFactorRequired) {
+      setTwoFA({ required: true, tempToken: data.tempToken, code: '', error: '', loading: false, email: '' });
+      return;
+    }
+    finishLogin(data, data.user?.email || '');
+  };
+
   const performLogin = async (email, password) => {
     dispatch(loginStart());
     try {
@@ -477,7 +485,7 @@ const LoginPage = () => {
             <Box sx={{ mt: 2 }}>
               {phoneMode ? (
                 <>
-                  <PhoneAuth onSuccess={(data) => finishLogin(data, data.user?.email || '')} />
+                  <PhoneAuth onSuccess={finishAlternativeLogin} />
                   <Button fullWidth onClick={() => setPhoneMode(false)} sx={{ mt: 1, textTransform: 'none', color: axelionColors.textMuted }}>
                     {t('phoneAuth.useEmail')}
                   </Button>
@@ -494,7 +502,7 @@ const LoginPage = () => {
           {!twoFA.required && !phoneMode && (
             <SocialLogin
               role={currentUserType.role}
-              onSuccess={(data) => finishLogin(data, data.user?.email)}
+              onSuccess={finishAlternativeLogin}
               onError={(err) => dispatch(loginFailure(err.response?.data?.error || t('login.loginError')))}
             />
           )}

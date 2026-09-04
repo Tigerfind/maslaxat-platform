@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
@@ -7,7 +7,7 @@ import {
   InputAdornment, IconButton, Card, Checkbox,
 } from '@mui/material';
 import {
-  Visibility, VisibilityOff, Person, Lock, Email, Phone, Gavel, ArrowBack,
+  Visibility, VisibilityOff, Person, Lock, Email, Gavel, ArrowBack,
   ArrowForward, CheckCircle,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -18,6 +18,8 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 import { specLabel } from '../../utils/specLabel';
+import LanguageSwitcher from '../../components/LanguageSwitcher';
+import { LEGAL_VERSION } from '../../constants/legal';
 
 // Оценка силы пароля: 0..4 (по длине и разнообразию символов)
 const getPasswordScore = (pw) => {
@@ -43,11 +45,12 @@ const RegisterPage = () => {
   // navigate после регистрации; login полагается на редирект маршрута, а мы — на navigate).
   const [submitting, setSubmitting] = useState(false);
   const [formData, setFormData] = useState({
-    name: '', email: '', phone: '', password: '', confirmPassword: '', specializations: [],
+    name: '', email: '', password: '', confirmPassword: '', specializations: [],
   });
   const [showPassword, setShowPassword] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
+  const submittingRef = useRef(false);
 
   // Шаги зависят от роли: у юриста добавляется выбор специализации.
   const steps = role === 'lawyer'
@@ -64,9 +67,10 @@ const RegisterPage = () => {
   const validateStep = () => {
     const key = steps[step];
     if (key === 'account') {
-      if (!formData.name || formData.name.length < 2) { setError(t('register.nameMin')); return false; }
-      if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) { setError(t('register.emailInvalid')); return false; }
+      if (formData.name.trim().length < 2) { setError(t('register.nameMin')); return false; }
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formData.email.trim())) { setError(t('register.emailInvalid')); return false; }
       if (!formData.password || formData.password.length < 8) { setError(t('register.passwordMin')); return false; }
+      if (new TextEncoder().encode(formData.password).length > 72) { setError(t('register.passwordMax')); return false; }
       if (formData.password !== formData.confirmPassword) { setError(t('register.passwordsMismatch')); return false; }
       if (!acceptedTerms) { setError(t('register.acceptRequired')); return false; }
     }
@@ -83,18 +87,19 @@ const RegisterPage = () => {
   const back = () => { setError(''); if (step === 0) navigate('/login'); else setStep((s) => s - 1); };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (!acceptedTerms) { setError(t('register.acceptRequired')); return; }
+    submittingRef.current = true;
     setSubmitting(true);
     setError('');
     try {
       const payload = {
-        name: formData.name,
-        email: formData.email,
+        name: formData.name.trim(),
+        email: formData.email.trim().toLowerCase(),
         password: formData.password,
-        phone: formData.phone || undefined,
         role,
         acceptedTerms: true,
-        legalVersion: '2026-08-13',
+        legalVersion: LEGAL_VERSION,
         ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
@@ -102,20 +107,27 @@ const RegisterPage = () => {
       dispatch(loginSuccess({ user, token, role: user.role }));
       navigate(user.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
     } catch (err) {
-      const message = err.response?.data?.error || t('register.regError');
+      const errorKey = {
+        EMAIL_EXISTS: 'register.emailExists',
+        PHONE_EXISTS: 'register.phoneExists',
+        PHONE_VERIFICATION_REQUIRED: 'register.phoneVerificationRequired',
+        SPECIALIZATION_REQUIRED: 'register.specRequired',
+      }[err.response?.data?.code];
+      const message = errorKey ? t(errorKey) : (err.response?.data?.error || t('register.regError'));
       setError(message);
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   const handleLinkedInSuccess = (data) => {
     if (data.twoFactorRequired) {
-      toast.error(t('login.twoFA.required'));
+      navigate('/login', { replace: true, state: { twoFactor: { tempToken: data.tempToken, email: '' } } });
       return;
     }
     dispatch(loginSuccess({ user: data.user, token: data.token, role: data.role }));
-    navigate('/lawyer/dashboard', { replace: true });
+    navigate(data.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
   };
 
   const inputStyles = {
@@ -133,9 +145,14 @@ const RegisterPage = () => {
     const active = role === value;
     return (
       <Card
+        component="button"
+        type="button"
+        role="radio"
+        aria-checked={active}
+        disabled={submitting}
         onClick={() => { setRole(value); setError(''); }}
         sx={{
-          flex: 1, p: 2.5, cursor: 'pointer', textAlign: 'center', borderRadius: '12px', boxShadow: 'none',
+          flex: 1, p: 2.5, cursor: 'pointer', textAlign: 'center', borderRadius: '12px', boxShadow: 'none', font: 'inherit',
           border: `1.5px solid ${active ? axelionColors.gold : axelionColors.borderLight}`,
           background: active ? `${axelionColors.gold}12` : axelionColors.bgLight,
           transition: 'all .18s',
@@ -162,7 +179,7 @@ const RegisterPage = () => {
         <Box>
           <Typography sx={stepTitleSx}>{t('register.stepRoleTitle')}</Typography>
           <Typography sx={stepSubSx}>{t('register.stepRoleSub')}</Typography>
-          <Box sx={{ display: 'flex', gap: 1.5, mt: 2 }}>
+           <Box role="radiogroup" aria-label={t('register.stepRoleTitle')} sx={{ display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 1.5, mt: 2 }}>
             <RoleCard value="client" icon={<Person />} title={t('register.roleClient')} desc={t('register.roleClientDesc')} />
             <RoleCard value="lawyer" icon={<Gavel />} title={t('register.roleLawyer')} desc={t('register.roleLawyerDesc')} />
           </Box>
@@ -184,21 +201,19 @@ const RegisterPage = () => {
           <Typography sx={stepSubSx}>{t('register.stepAccountSub')}</Typography>
           <Box sx={{ mt: 2 }}>
             <TextField fullWidth label={t('register.fullName')} name="name" value={formData.name} onChange={handleChange}
-              placeholder={role === 'lawyer' ? 'Иванов Иван Иванович' : t('register.namePlaceholder')}
+              placeholder={t('register.namePlaceholder')} autoComplete="name" inputProps={{ maxLength: 100 }} disabled={submitting}
               sx={{ mb: 2, ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Person sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
             <TextField fullWidth label="Email" name="email" type="email" value={formData.email} onChange={handleChange}
-              placeholder="your@email.com" sx={{ mb: 2, ...inputStyles }}
+              placeholder="your@email.com" autoComplete="email" inputProps={{ maxLength: 254 }} disabled={submitting} sx={{ mb: 2, ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Email sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
-            <TextField fullWidth label={t('register.phoneOptional')} name="phone" value={formData.phone} onChange={handleChange}
-              placeholder="+998 90 123 45 67" sx={{ mb: 2, ...inputStyles }}
-              InputProps={{ startAdornment: <InputAdornment position="start"><Phone sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
             <TextField fullWidth label={t('register.password')} name="password" type={showPassword ? 'text' : 'password'}
               value={formData.password} onChange={handleChange} placeholder={t('register.passwordPlaceholder')}
+              autoComplete="new-password" disabled={submitting}
               sx={{ mb: formData.password ? 1 : 2, ...inputStyles }}
               InputProps={{
                 startAdornment: <InputAdornment position="start"><Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment>,
-                endAdornment: <InputAdornment position="end"><IconButton onClick={() => setShowPassword(!showPassword)} edge="end" sx={{ color: axelionColors.textMuted }}>{showPassword ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment>,
+                endAdornment: <InputAdornment position="end"><IconButton type="button" aria-label={showPassword ? t('register.hidePassword') : t('register.showPassword')} onClick={() => setShowPassword(!showPassword)} edge="end" sx={{ color: axelionColors.textMuted }}>{showPassword ? <VisibilityOff /> : <Visibility />}</IconButton></InputAdornment>,
               }} />
             {formData.password && (
               <Box sx={{ mb: 2 }}>
@@ -212,10 +227,11 @@ const RegisterPage = () => {
             )}
             <TextField fullWidth label={t('register.confirmPassword')} name="confirmPassword" type={showPassword ? 'text' : 'password'}
               value={formData.confirmPassword} onChange={handleChange} placeholder={t('register.confirmPlaceholder')}
+              autoComplete="new-password" disabled={submitting}
               sx={{ ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
             <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'flex-start' }}>
-              <Checkbox inputProps={{ 'aria-label': t('register.acceptRequired') }} checked={acceptedTerms} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />
+              <Checkbox inputProps={{ 'aria-label': t('register.acceptRequired') }} checked={acceptedTerms} disabled={submitting} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />
               <Typography component="span" sx={{ pt: 1, fontSize: '0.76rem', color: axelionColors.textSecondary, lineHeight: 1.5 }}>
                 {t('register.acceptPrefix')} <Box component="a" href="/terms" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.terms')}</Box>{' '}
                 {t('register.and')} <Box component="a" href="/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
@@ -250,9 +266,9 @@ const RegisterPage = () => {
               }));
             };
             return (
-              <Box key={sp} onClick={toggle}
+              <Box key={sp} component="button" type="button" aria-pressed={on} disabled={submitting} onClick={toggle}
                 sx={{
-                  cursor: 'pointer', px: 1.6, py: 0.9, borderRadius: '10px', fontSize: '0.83rem', fontWeight: on ? 600 : 400,
+                  cursor: 'pointer', px: 1.6, py: 0.9, borderRadius: '10px', fontSize: '0.83rem', fontWeight: on ? 600 : 400, fontFamily: 'inherit',
                   border: `1px solid ${on ? axelionColors.gold : axelionColors.borderLight}`,
                   background: on ? axelionColors.gold : axelionColors.bgLight,
                   color: on ? '#fff' : axelionColors.textSecondary, transition: 'all .15s',
@@ -273,9 +289,10 @@ const RegisterPage = () => {
   return (
     <Box sx={{ minHeight: '100vh', backgroundColor: axelionColors.bgCream, display: 'flex', alignItems: 'center', justifyContent: 'center', py: 4 }}>
       <Container maxWidth="sm">
-        <Card sx={{ p: { xs: 3, sm: 5 }, boxShadow: '0 8px 40px rgba(26, 26, 26, 0.08)', border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', backgroundColor: axelionColors.bgLight }}>
+        <Card component="form" onSubmit={(event) => { event.preventDefault(); next(); }} noValidate sx={{ p: { xs: 2, sm: 5 }, boxShadow: '0 8px 40px rgba(26, 26, 26, 0.08)', border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', backgroundColor: axelionColors.bgLight }}>
           {/* Logo */}
-          <Box sx={{ textAlign: 'center', mb: 2.5 }}>
+          <Box sx={{ textAlign: 'center', mb: 2.5, position: 'relative' }}>
+            <LanguageSwitcher variant="minimal" sx={{ position: 'absolute', right: 0, top: 0 }} />
             <Typography sx={{ fontWeight: 300, fontSize: '2rem', letterSpacing: '0.3em', color: axelionColors.gold, mb: 0.5 }}>M</Typography>
             <Typography sx={{ fontWeight: 300, fontSize: '1.1rem', letterSpacing: '0.2em', textTransform: 'uppercase', color: axelionColors.textDark }}>{t('register.title')}</Typography>
           </Box>
@@ -308,11 +325,11 @@ const RegisterPage = () => {
 
           {/* Nav buttons */}
           <Box sx={{ display: 'flex', gap: 1.5, mt: 3.5 }}>
-            <Button startIcon={<ArrowBack />} onClick={back}
+             <Button type="button" startIcon={<ArrowBack />} onClick={back} disabled={submitting}
               sx={{ color: axelionColors.textMuted, textTransform: 'none', flexShrink: 0, '&:hover': { color: axelionColors.gold } }}>
               {step === 0 ? t('register.backToLogin') : t('register.back')}
             </Button>
-            <Button fullWidth onClick={next} disabled={submitting}
+             <Button type="submit" fullWidth disabled={submitting}
               endIcon={!isLast && !submitting ? <ArrowForward /> : null}
               sx={{
                 background: `linear-gradient(135deg, ${axelionColors.gold} 0%, ${axelionColors.goldDark} 100%)`,

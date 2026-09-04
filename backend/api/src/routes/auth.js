@@ -3,13 +3,14 @@ const logger = require('../config/logger');
 const crypto = require('crypto');
 const jwt = require('jsonwebtoken');
 const Joi = require('joi');
-const { Op } = require('sequelize');
+const { Op, UniqueConstraintError } = require('sequelize');
 const rateLimit = require('express-rate-limit');
 const { sequelize, User, LawyerProfile, PhoneOtp } = require('../models');
 const { isEmailConfigured, sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
 const { distributedRateLimit } = require('../middleware/distributedRateLimit');
 const LEGAL_VERSION = '2026-08-13';
+const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const productionMax = (value) => process.env.NODE_ENV === 'production' ? value : 1000;
 const normalizedEmailKey = (req) => String(req.body?.email || '').trim().toLowerCase() || req.ip;
 const normalizedPhoneKey = (req) => smsService.normalizePhone(req.body?.phone) || req.ip;
@@ -87,13 +88,15 @@ const consumePhoneOtp = (phone, code, onValid) => sequelize.transaction(async (t
 router.post('/register', emailLimiter, async (req, res, next) => {
   try {
     const schema = Joi.object({
-      email: Joi.string().email().required(),
-      password: Joi.string().min(8).required(),
-      name: Joi.string().min(2).required(),
-      phone: Joi.string().optional(),
+      email: Joi.string().trim().lowercase().email().max(254).required(),
+      password: Joi.string().min(8).max(72).custom((password, helpers) => (
+        Buffer.byteLength(password, 'utf8') <= 72 ? password : helpers.error('string.maxBytes')
+      )).messages({ 'string.maxBytes': 'Пароль должен занимать не более 72 байт' }).required(),
+      name: Joi.string().trim().min(2).max(100).required(),
+      phone: Joi.string().trim().max(30).empty('').optional(),
       role: Joi.string().valid('client', 'lawyer').default('client'),
-      specialization: Joi.string().optional(),
-      specializations: Joi.array().items(Joi.string()).optional(),
+      specialization: Joi.string().trim().min(1).max(100).optional(),
+      specializations: Joi.array().items(Joi.string().trim().min(1).max(100)).max(12).optional(),
       acceptedTerms: Joi.boolean().valid(true).required(),
       legalVersion: Joi.string().valid(LEGAL_VERSION).required(),
     });
@@ -104,45 +107,53 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    // Email — канонично в нижнем регистре, чтобы User@x и user@x не стали двумя
-    // аккаунтами. Проверка занятости — регистронезависимая (iLike ловит и старые).
-    value.email = String(value.email).trim().toLowerCase();
-    const exists = await User.findOne({ where: { email: { [Op.iLike]: value.email } } });
-    if (exists) {
-      return res.status(409).json({ error: 'Email уже зарегистрирован' });
-    }
-
-    // Дедуп по телефону: один номер — один аккаунт (иначе обход лимитов free/AI).
-    // Нормализуем к единому виду (+998…), проверяем занятость.
-    let phone;
     if (value.phone) {
-      phone = smsService.normalizePhone(value.phone);
-      if (!phone) return res.status(400).json({ error: 'Неверный формат номера (пример: +998901234567)' });
-      const phoneUsed = await User.findOne({ where: { phone } });
-      if (phoneUsed) return res.status(409).json({ error: 'Этот номер телефона уже используется' });
+      return res.status(400).json({
+        error: 'Добавьте телефон после регистрации и подтвердите его кодом из SMS',
+        code: 'PHONE_VERIFICATION_REQUIRED',
+      });
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
     const { specialization, specializations, phone: _rawPhone, acceptedTerms: _acceptedTerms, legalVersion, ...userData } = value;
-    const user = await User.create({ ...userData, phone: phone || null, verificationToken, legalAcceptedAt: new Date(), legalVersion });
-
-    if (value.role === 'lawyer') {
-      // Мультиспециализация: принимаем массив ИЛИ одиночную строку (legacy). Дедуп,
-      // максимум 12; основная specialization = первая (совместимость каталога/карточки).
-      const raw = Array.isArray(specializations) && specializations.length
-        ? specializations
-        : (specialization ? [specialization] : []);
-      const specs = [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))].slice(0, 12);
-      const primary = specs[0] || 'Не указана';
-      await LawyerProfile.create({
-        userId: user.id,
-        specialization: primary,
-        specializations: specs,
-        price: 0,
-        isAvailable: false, // скрыт до завершения онбординга
-        verificationStatus: 'draft',
-      });
+    const raw = Array.isArray(specializations) && specializations.length
+      ? specializations
+      : (specialization ? [specialization] : []);
+    const specs = [...new Set(raw.map((s) => String(s).trim()).filter(Boolean))].slice(0, 12);
+    if (value.role === 'lawyer' && specs.length === 0) {
+      return res.status(400).json({ error: 'Укажите хотя бы одну специализацию', code: 'SPECIALIZATION_REQUIRED' });
     }
+
+    const user = await sequelize.transaction(async (transaction) => {
+      const exists = await User.findOne({ where: { email: { [Op.iLike]: value.email } }, transaction });
+      if (exists) {
+        const conflict = new Error('Email уже зарегистрирован');
+        conflict.status = 409;
+        conflict.code = 'EMAIL_EXISTS';
+        throw conflict;
+      }
+      const created = await User.create({
+        ...userData,
+        phone: null,
+        verificationToken,
+        verificationTokenExpiry,
+        legalAcceptedAt: new Date(),
+        legalVersion,
+      }, { transaction });
+
+      if (value.role === 'lawyer') {
+        await LawyerProfile.create({
+          userId: created.id,
+          specialization: specs[0],
+          specializations: specs,
+          price: 0,
+          isAvailable: false,
+          verificationStatus: 'draft',
+        }, { transaction });
+      }
+      return created;
+    });
 
     // Отправляем письмо верификации в фоне — НЕ блокируем ответ регистрации.
     // Без SMTP (или при медленном/недоступном почтовом сервере) ответ клиенту
@@ -159,6 +170,13 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       role: user.role,
     });
   } catch (err) {
+    if (err.status === 409) return res.status(409).json({ error: err.message, code: err.code });
+    if (err instanceof UniqueConstraintError) {
+      const phoneConflict = err.errors?.some((item) => item.path === 'phone');
+      return res.status(409).json(phoneConflict
+        ? { error: 'Этот номер телефона уже используется', code: 'PHONE_EXISTS' }
+        : { error: 'Email уже зарегистрирован', code: 'EMAIL_EXISTS' });
+    }
     next(err);
   }
 });
@@ -207,7 +225,11 @@ router.post('/phone/verify', twoFactorLimiter, phoneVerifyLimiter, async (req, r
 
     let user;
     const consumed = await consumePhoneOtp(phone, code, async (transaction) => {
-      user = await User.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
+      user = await User.findOne({
+        where: { phone, phoneVerifiedAt: { [Op.ne]: null } },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
       if (user) return { user, created: false };
       // Код уже проверен под блокировкой, но не сжигаем его, пока клиент не
       // передал обязательные поля регистрации.
@@ -215,9 +237,17 @@ router.post('/phone/verify', twoFactorLimiter, phoneVerifyLimiter, async (req, r
       if (req.body.acceptedTerms !== true || req.body.legalVersion !== LEGAL_VERSION) {
         return { status: 400, error: 'Примите условия использования', needLegal: true };
       }
+      const unverifiedHolder = await User.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
+      if (unverifiedHolder) {
+        return {
+          status: 409,
+          error: 'Номер требует подтверждения из существующего аккаунта',
+          code: 'PHONE_LINK_REQUIRED',
+        };
+      }
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const genEmail = `${phone.replace(/\D/g, '')}@phone.maslaxat.uz`;
-      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true, legalAcceptedAt: new Date(), legalVersion: LEGAL_VERSION }, { transaction });
+      user = await User.create({ name, phone, phoneVerifiedAt: new Date(), email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true, legalAcceptedAt: new Date(), legalVersion: LEGAL_VERSION }, { transaction });
       return { user, created: true };
     });
     if (consumed.error) {
@@ -417,11 +447,22 @@ router.post('/phone/confirm', authenticate, phoneVerifyLimiter, async (req, res,
 
     let user;
     const consumed = await consumePhoneOtp(phone, code, async (transaction) => {
-      const taken = await User.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
-      if (taken && taken.id !== req.userId) return { status: 409, error: 'Этот номер уже используется другим аккаунтом' };
-      user = await User.findByPk(req.userId, { transaction, lock: transaction.LOCK.UPDATE });
+      const candidates = await User.findAll({
+        where: { [Op.or]: [{ id: req.userId }, { phone }] },
+        order: [['id', 'ASC']],
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      user = candidates.find((candidate) => candidate.id === req.userId);
+      const taken = candidates.find((candidate) => candidate.phone === phone && candidate.id !== req.userId);
+      if (taken && taken.id !== req.userId) {
+        if (taken.phoneVerifiedAt) return { status: 409, error: 'Этот номер уже используется другим аккаунтом' };
+        taken.phone = null;
+        await taken.save({ transaction });
+      }
       if (!user) return { status: 404, error: 'Пользователь не найден' };
       user.phone = phone;
+      user.phoneVerifiedAt = new Date();
       user.isVerified = true;
       await user.save({ transaction });
       return { user };
@@ -430,6 +471,12 @@ router.post('/phone/confirm', authenticate, phoneVerifyLimiter, async (req, res,
 
     res.json({ success: true, user: user.toJSON() });
   } catch (err) {
+    if (err instanceof UniqueConstraintError) {
+      return res.status(409).json({
+        error: 'Этот номер уже используется другим аккаунтом',
+        code: 'PHONE_EXISTS',
+      });
+    }
     next(err);
   }
 });
@@ -508,15 +555,26 @@ router.post('/reset-password', resetTokenLimiter, async (req, res, next) => {
 // GET /api/auth/verify-email/:token
 router.get('/verify-email/:token', async (req, res, next) => {
   try {
-    const user = await User.findOne({ where: { verificationToken: req.params.token } });
+    const verified = await sequelize.transaction(async (transaction) => {
+      const user = await User.findOne({
+        where: {
+          verificationToken: req.params.token,
+          verificationTokenExpiry: { [Op.gt]: new Date() },
+        },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!user) return false;
+      user.isVerified = true;
+      user.verificationToken = null;
+      user.verificationTokenExpiry = null;
+      await user.save({ transaction });
+      return true;
+    });
 
-    if (!user) {
-      return res.status(400).json({ error: 'Недействительная ссылка подтверждения' });
+    if (!verified) {
+      return res.status(400).json({ error: 'Недействительная или просроченная ссылка подтверждения' });
     }
-
-    user.isVerified = true;
-    user.verificationToken = null;
-    await user.save();
 
     res.json({ message: 'Email успешно подтверждён' });
   } catch (err) {
@@ -527,19 +585,35 @@ router.get('/verify-email/:token', async (req, res, next) => {
 // POST /api/auth/resend-verification
 router.post('/resend-verification', emailLimiter, authenticate, resendUserLimiter, async (req, res, next) => {
   try {
-    const user = await User.findByPk(req.userId);
-    if (!user) {
-      return res.status(404).json({ error: 'Пользователь не найден' });
-    }
-    if (user.isVerified) {
-      return res.status(400).json({ error: 'Email уже подтверждён' });
-    }
+    const tokenState = await sequelize.transaction(async (transaction) => {
+      const user = await User.findByPk(req.userId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!user) return { status: 404, error: 'Пользователь не найден' };
+      if (user.isVerified) return { status: 400, error: 'Email уже подтверждён' };
 
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const delivery = await sendVerificationEmail(user.email, verificationToken);
-    if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
-    user.verificationToken = verificationToken;
-    await user.save();
+      const hasUsableToken = user.verificationToken
+        && user.verificationTokenExpiry
+        && new Date(user.verificationTokenExpiry) > new Date();
+      const verificationToken = hasUsableToken
+        ? user.verificationToken
+        : crypto.randomBytes(32).toString('hex');
+      if (!hasUsableToken) {
+        user.verificationToken = verificationToken;
+        user.verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+        await user.save({ transaction });
+      }
+      return { email: user.email, verificationToken };
+    });
+    if (tokenState.error) return res.status(tokenState.status).json({ error: tokenState.error });
+
+    try {
+      const delivery = await sendVerificationEmail(tokenState.email, tokenState.verificationToken);
+      if (delivery?.skipped) throw new Error('EMAIL_UNAVAILABLE');
+    } catch (emailError) {
+      if (emailError.message !== 'EMAIL_UNAVAILABLE') {
+        logger.error('Failed to resend verification email:', emailError.message);
+      }
+      return res.status(503).json({ error: 'Отправка email временно недоступна' });
+    }
 
     res.json({ message: 'Письмо отправлено повторно' });
   } catch (err) {

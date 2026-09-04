@@ -29,19 +29,12 @@ const reg = (email, phone) => request(app).post('/api/auth/register').send({
   ...legal,
 });
 
-describe('дедуп по телефону при регистрации', () => {
-  test('первый номер регистрируется, второй тот же → 409', async () => {
-    const r1 = await reg('pd-a@test.uz', '+998901112233');
-    expect(r1.status).toBe(201);
-
-    const r2 = await reg('pd-b@test.uz', '998901112233'); // тот же номер, другой формат
-    expect(r2.status).toBe(409);
-    expect(r2.body.error).toMatch(/телефон/i);
-  });
-
-  test('невалидный номер → 400', async () => {
-    const r = await reg('pd-c@test.uz', '12345');
+describe('телефон при email-регистрации', () => {
+  test('неподтверждённый номер не сохраняется', async () => {
+    const r = await reg('pd-a@test.uz', '+998901112233');
     expect(r.status).toBe(400);
+    expect(r.body.code).toBe('PHONE_VERIFICATION_REQUIRED');
+    expect(await User.count({ where: { email: 'pd-a@test.uz' } })).toBe(0);
   });
 
   test('без телефона регистрация проходит', async () => {
@@ -108,6 +101,20 @@ test('регистрация без принятия legal terms отклоня�
 });
 
 describe('подтверждение телефона залогиненным клиентом (/auth/phone/confirm)', () => {
+  test('профиль не позволяет привязать номер без SMS-кода', async () => {
+    const client = await makeClient('profile-phone@test.uz', { phone: null });
+    const response = await request(app)
+      .put('/api/users/profile')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .field('name', client.name)
+      .field('phone', '+998901119999');
+
+    expect(response.status).toBe(400);
+    expect(response.body.code).toBe('PHONE_VERIFICATION_REQUIRED');
+    await client.reload();
+    expect(client.phone).toBeNull();
+  });
+
   test('код верный → phone привязан, isVerified=true', async () => {
     const client = await makeClient('confirm-c@test.uz', { isVerified: false });
     const phone = '+998901112255';
@@ -124,6 +131,7 @@ describe('подтверждение телефона залогиненным �
 
     await client.reload();
     expect(client.phone).toBe(phone);
+    expect(client.phoneVerifiedAt).toBeTruthy();
     expect(client.isVerified).toBe(true);
   });
 
@@ -147,5 +155,25 @@ describe('подтверждение телефона залогиненным �
       .set('Authorization', `Bearer ${tokenFor(other)}`)
       .send({ phone: '+998901112277', code: reqRes.body.devCode });
     expect(conf.status).toBe(409);
+  });
+});
+
+describe('исторические неподтверждённые номера', () => {
+  test('OTP-владелец номера не входит в аккаунт, который сохранил номер без подтверждения', async () => {
+    const staleHolder = await makeClient('stale-phone@test.uz', {
+      phone: '+998901112288', phoneVerifiedAt: null,
+    });
+    const reqRes = await request(app).post('/api/auth/phone/request').send({ phone: staleHolder.phone });
+    const response = await request(app).post('/api/auth/phone/verify').send({
+      phone: staleHolder.phone,
+      code: reqRes.body.devCode,
+      name: 'Настоящий владелец',
+      ...legal,
+    });
+
+    expect(response.status).toBe(409);
+    expect(response.body.code).toBe('PHONE_LINK_REQUIRED');
+    await staleHolder.reload();
+    expect(staleHolder.phone).toBe('+998901112288');
   });
 });

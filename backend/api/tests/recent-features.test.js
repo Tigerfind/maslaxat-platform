@@ -144,6 +144,17 @@ describe('привязка настоящего email (PUT /client/users/email)'
     expect(res.status).toBe(400);
   });
 
+  test('email длиннее 254 символов отклоняется до записи в БД', async () => {
+    const client = await makeClient('em-too-long@test.uz');
+    const originalEmail = client.email;
+    const res = await request(app).put('/api/client/users/email')
+      .set('Authorization', `Bearer ${tokenFor(client)}`)
+      .send({ email: `${'a'.repeat(250)}@x.uz` });
+    expect(res.status).toBe(400);
+    await client.reload();
+    expect(client.email).toBe(originalEmail);
+  });
+
   test('email занят другим → 409', async () => {
     await makeClient('taken@test.uz');
     const b = await makeClient('em-c3@test.uz');

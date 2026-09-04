@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
 import { Box, Typography, CircularProgress, Button } from '@mui/material';
@@ -13,9 +13,10 @@ const VerifyEmailPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
   const { t } = useTranslation();
-  const { isAuthenticated } = useSelector((state) => state.auth);
+  const { isAuthenticated, role } = useSelector((state) => state.auth);
   const [status, setStatus] = useState('loading'); // loading | success | error
   const [message, setMessage] = useState('');
+  const verificationStarted = useRef(false);
 
   useEffect(() => {
     const token = searchParams.get('token');
@@ -24,13 +25,21 @@ const VerifyEmailPage = () => {
       setMessage('authFlow.verifyNoToken');
       return;
     }
+    if (verificationStarted.current) return;
+    verificationStarted.current = true;
 
     api.get(`/auth/verify-email/${token}`)
-      .then(() => {
+      .then(async () => {
         setStatus('success');
         setMessage('authFlow.verifyOk');
-        // Обновляем redux/localStorage, чтобы баннер «подтвердите email» исчез сразу
-        if (isAuthenticated) dispatch(updateProfile({ isVerified: true }));
+        if (isAuthenticated) {
+          try {
+            const { data } = await api.get('/auth/me');
+            if (data.user) dispatch(updateProfile(data.user));
+          } catch {
+            // Verification succeeded; stale session data will refresh on next login.
+          }
+        }
       })
       .catch((err) => {
         setStatus('error');
@@ -39,7 +48,7 @@ const VerifyEmailPage = () => {
   }, [searchParams, isAuthenticated, dispatch]);
 
   // Куда вести после успеха: залогинен → кабинет, иначе → вход
-  const goHome = () => navigate(isAuthenticated ? '/dashboard' : '/login');
+  const goHome = () => navigate(isAuthenticated ? (role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard') : '/login');
   const messageText = message.startsWith?.('authFlow.') ? t(message) : message;
 
   return (

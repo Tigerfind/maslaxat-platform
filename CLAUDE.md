@@ -478,6 +478,11 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Регистрация и подтверждение контактов 26.08.2026: атомарное создание user+lawyer profile,
+  нормализация и ограничения полей, обязательная специализация юриста, защита от double-submit,
+  доступный/mobile wizard, общий email-banner для клиента и юриста, одноразовые email-токены с TTL,
+  безопасный resend, корректный 2FA handoff и OTP-only привязка телефона с `phoneVerifiedAt`.
+  Добавлены миграции `20260830000000..1`, backend regression tests и client/lawyer/mobile E2E.
 - Release/security hardening 24.08.2026: публичный `/api/system/capabilities` и честные offline-состояния
   AI/support; без Anthropic AI endpoints возвращают 503 и не расходуют лимит; phone/Google/Telegram
   больше не обходят 2FA; OTP/reset token потребляются атомарно; account-scoped rate limits используют

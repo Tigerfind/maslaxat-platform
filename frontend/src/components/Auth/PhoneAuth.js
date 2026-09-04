@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import { axelionColors } from '../../theme/axelionTheme';
+import { LEGAL_VERSION } from '../../constants/legal';
 
 /**
  * Вход/регистрация по номеру телефона + одноразовый код (SMS).
@@ -38,7 +39,7 @@ export default function PhoneAuth({ onSuccess }) {
     setLoading(true);
     try {
       const res = await api.post('/auth/phone/verify', {
-        phone, code, ...(name ? { name } : {}), acceptedTerms, legalVersion: '2026-08-13',
+        phone, code, ...(name ? { name } : {}), acceptedTerms, legalVersion: LEGAL_VERSION,
       });
       onSuccess(res.data);
     } catch (e) {
