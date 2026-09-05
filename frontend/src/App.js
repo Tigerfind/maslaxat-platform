@@ -11,7 +11,7 @@ import './styles/toast.css';
 import store from './store/store';
 import { initializeApp } from './store/slices/appSlice';
 import { updateToken } from './store/slices/authSlice';
-import { LanguageProvider } from './i18n';
+import { LanguageProvider, useTranslation } from './i18n';
 
 // Components
 import Layout from './components/Layout/Layout';
@@ -20,6 +20,9 @@ import ProtectedRoute from './components/ProtectedRoute';
 import LoadingSpinner from './components/UI/LoadingSpinner';
 import ErrorBoundary from './components/ErrorBoundary';
 import EmailVerificationBanner from './components/Auth/EmailVerificationBanner';
+import PWAUpdatePrompt from './components/PWAUpdatePrompt';
+import PWAInstallPrompt from './components/PWAInstallPrompt';
+import ConnectivityStatus from './components/ConnectivityStatus';
 import { axelionTheme } from './theme/axelionTheme';
 
 // Pages
@@ -79,6 +82,7 @@ const queryClient = new QueryClient({
 // App content component
 const AppContent = () => {
   const dispatch = useDispatch();
+  const { t } = useTranslation();
   const { isAuthenticated, loading } = useSelector((state) => state.auth);
 
   useEffect(() => {
@@ -109,8 +113,13 @@ const AppContent = () => {
 
   return (
     <Router>
+      <a className="skip-link" href="#main-content">{t('pwa.skipToContent')}</a>
+      <PWAUpdatePrompt />
+      <PWAInstallPrompt hasBottomNav={isAuthenticated} />
+      <ConnectivityStatus hasBottomNav={isAuthenticated} />
       {isAuthenticated && <GlobalCallListener />}
       {isAuthenticated && <EmailVerificationBanner />}
+      <div id="main-content" tabIndex="-1">
       <Suspense fallback={(
         <Box display="flex" justifyContent="center" alignItems="center" minHeight="100vh">
           <LoadingSpinner />
@@ -262,6 +271,7 @@ const AppContent = () => {
         } />
         </Routes>
       </Suspense>
+      </div>
     </Router>
   );
 };

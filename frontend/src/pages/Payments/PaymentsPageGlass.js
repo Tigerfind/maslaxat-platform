@@ -30,20 +30,20 @@ const PaymentsPageGlass = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      setError(false);
-      try {
-        const data = await clientService.payments.getMy();
-        setPayments(Array.isArray(data) ? data : []);
-      } catch (e) {
-        setError(true);
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+  const loadPayments = async () => {
+    setLoading(true);
+    setError(false);
+    try {
+      const data = await clientService.payments.getMy();
+      setPayments(Array.isArray(data) ? data : []);
+    } catch (e) {
+      setError(true);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { loadPayments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const fmtDate = (d) => {
     if (!d) return '';
@@ -62,7 +62,7 @@ const PaymentsPageGlass = () => {
     const Icon = isSub ? WorkspacePremiumOutlined : GavelOutlined;
 
     return (
-      <div key={p.id} style={{ ...glassCard, padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
+      <div key={p.id} className="payment-row" style={{ ...glassCard, padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
         <div style={{
           width: 46, height: 46, flexShrink: 0, borderRadius: 12,
           background: 'rgba(184,149,110,0.14)', color: 'var(--accent)',
@@ -74,7 +74,7 @@ const PaymentsPageGlass = () => {
           <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
           <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 3 }}>{fmtDate(p.createdAt)}</div>
         </div>
-        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+        <div className="payment-total" style={{ textAlign: 'right', flexShrink: 0, maxWidth: '100%' }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
             {(p.amount || 0).toLocaleString('ru-RU')} <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text3)' }}>{t('payments.sum')}</span>
           </div>
@@ -98,7 +98,8 @@ const PaymentsPageGlass = () => {
           </div>
         ) : error ? (
           <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: '#B07070', fontSize: 14 }}>
-            {t('payments.loadError')}
+            <div>{t('payments.loadError')}</div>
+            <button type="button" onClick={loadPayments} style={{ marginTop: 16, minHeight: 44, padding: '9px 18px', border: '1px solid var(--border)', borderRadius: 10, background: 'transparent', color: 'var(--text)' }}>{t('common.retry')}</button>
           </div>
         ) : payments.length === 0 ? (
           <div style={{ ...glassCard, padding: '48px 24px', textAlign: 'center' }}>
@@ -114,6 +115,7 @@ const PaymentsPageGlass = () => {
           </div>
         )}
       </div>
+      <style>{`@media(max-width:420px){.payment-row{align-items:flex-start !important;flex-wrap:wrap;padding:16px !important}.payment-row>div:nth-child(2){flex-basis:calc(100% - 62px)}.payment-total{margin-left:62px;text-align:left !important;overflow-wrap:anywhere}.payment-total>div{font-size:15px !important}}`}</style>
     </GlassShell>
   );
 };

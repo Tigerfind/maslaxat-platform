@@ -478,6 +478,13 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Полная mobile/PWA-адаптация 04.09.2026: role-aware bottom navigation для client/lawyer/admin,
+  `100dvh` и safe-area shell/dialogs, responsive client/lawyer/admin cards и таблицы, keyboard-safe
+  AI/chat/booking, mobile uploads/PDF fallback, WebRTC camera→audio recovery, Safari playback action,
+  Zoom audio-only guidance, install/update/offline UX без кэширования private API. Проверены
+  `320/375/768` для всех ролей и media flows; финальный gate: frontend 32 files / 179 tests,
+  Chromium E2E 62/62, lint/build и production audit зелёные. Реальный iOS Safari и live Zoom остаются
+  device/provider smoke после получения инфраструктуры.
 - Клиентские консультации 04.09.2026: единый status/bucket/action contract, настоящий архив,
   persisted payment expiry и причины отмены, server-side counts/sorting/join policy, безопасные
   cancel/reschedule/complete/refund transitions. Чат получил idempotent `clientMessageId`, ack/retry

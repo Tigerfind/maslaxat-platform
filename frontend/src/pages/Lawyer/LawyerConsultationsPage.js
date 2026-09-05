@@ -50,6 +50,8 @@ const LawyerConsultationsPage = () => {
   const [noteFor, setNoteFor] = useState(null); // id консультации с открытым редактором заметки
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
+  const [finishFor, setFinishFor] = useState(null);
+  const [finishSummary, setFinishSummary] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -141,18 +143,21 @@ const LawyerConsultationsPage = () => {
     }
     catch (error) { toast.error(error.code === 'POPUP_BLOCKED' ? 'Разрешите всплывающие окна, чтобы открыть Zoom' : t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
-  const finish = async (id) => {
-    if (!window.confirm(t('lawyerConsult.finishConfirm'))) return;
-    const summary = window.prompt(t('lawyerConsult.summaryPrompt'));
-    if (summary === null) return;
-    if (!summary.trim()) { toast.error(t('lawyerConsult.summaryRequired')); return; }
-    setActing(id);
-    try { await lawyerService.consultation.endConsultation(id, summary.trim()); toast.success(t('lawyerConsult.awaitingConfirmation')); await load(); }
-    catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
+  const finish = async () => {
+    if (!finishFor) return;
+    if (!finishSummary.trim()) { toast.error(t('lawyerConsult.summaryRequired')); return; }
+    setActing(finishFor.id);
+    try {
+      await lawyerService.consultation.endConsultation(finishFor.id, finishSummary.trim());
+      toast.success(t('lawyerConsult.awaitingConfirmation'));
+      setFinishFor(null);
+      setFinishSummary('');
+      await load();
+    } catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
 
   const footBtn = (color) => ({
-    display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent',
+    minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'transparent',
     border: '1px solid var(--card-brd)', color, borderRadius: 10, padding: '8px 14px',
     fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit',
   });
@@ -242,7 +247,7 @@ const LawyerConsultationsPage = () => {
               return (
                 <div key={c.id} style={{ ...glassCard, padding: 0, overflow: 'hidden' }}>
                   {/* ── Хедер: клиент · статус · тип/дата · цена ── */}
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', background: 'linear-gradient(180deg, rgba(184,149,110,0.09), transparent)' }}>
+                  <div className="lawyer-consult-header" style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '18px 20px', background: 'linear-gradient(180deg, rgba(184,149,110,0.09), transparent)' }}>
                     <div style={{ width: 46, height: 46, flexShrink: 0, borderRadius: '50%', background: c.client?.avatar ? `center/cover url(${c.client.avatar})` : 'linear-gradient(135deg,#B8956E,#8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 15, fontWeight: 600 }}>
                       {!c.client?.avatar && initials(c.client?.name)}
                     </div>
@@ -303,7 +308,7 @@ const LawyerConsultationsPage = () => {
                           placeholder={t('lawyerConsult.notePlaceholder')}
                           rows={3}
                           autoFocus
-                          style={{ width: '100%', boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 13, padding: 12, resize: 'vertical' }}
+                          style={{ width: '100%', boxSizing: 'border-box', borderRadius: 12, border: '1px solid var(--card-brd)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 16, padding: 12, resize: 'vertical' }}
                         />
                         <div style={{ display: 'flex', gap: 8, marginTop: 9 }}>
                           <button onClick={saveNote} disabled={noteSaving} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
@@ -313,12 +318,12 @@ const LawyerConsultationsPage = () => {
                         </div>
                       </div>
                     ) : c.lawyerNote ? (
-                      <div onClick={() => openNote(c)} title={t('lawyerConsult.noteEdit')} style={{ cursor: 'text', display: 'flex', gap: 11, alignItems: 'flex-start', background: 'var(--surface)', border: '1px solid var(--card-brd)', borderRadius: 12, padding: '13px 15px' }}>
+                      <button type="button" onClick={() => openNote(c)} title={t('lawyerConsult.noteEdit')} style={{ width: '100%', minHeight: 44, cursor: 'pointer', display: 'flex', gap: 11, alignItems: 'flex-start', textAlign: 'left', background: 'var(--surface)', color: 'inherit', border: '1px solid var(--card-brd)', borderRadius: 12, padding: '13px 15px', fontFamily: 'inherit' }}>
                         <span style={{ width: 30, height: 30, flexShrink: 0, borderRadius: 9, background: 'rgba(184,149,110,0.14)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                           <EditNoteOutlined sx={{ fontSize: 18, color: 'var(--accent-dark)' }} />
                         </span>
                         <div style={{ fontSize: 13, color: 'var(--text2)', lineHeight: 1.55, whiteSpace: 'pre-wrap', paddingTop: 4 }}>{c.lawyerNote}</div>
-                      </div>
+                      </button>
                     ) : (
                       <button onClick={() => openNote(c)} style={{ width: '100%', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7, background: 'var(--surface)', border: '1px dashed var(--border-strong)', color: 'var(--text3)', borderRadius: 12, padding: '12px 13px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit' }}>
                         <EditNoteOutlined sx={{ fontSize: 18 }} /> {t('lawyerConsult.noteAddPrompt')}
@@ -327,7 +332,7 @@ const LawyerConsultationsPage = () => {
                   </div>
 
                   {/* ── Действия ── */}
-                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '16px 20px', borderTop: '1px solid var(--border)', background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
+                  <div className="lawyer-consult-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', padding: '16px 20px', borderTop: '1px solid var(--border)', background: 'color-mix(in srgb, var(--accent) 4%, transparent)' }}>
                     {c.status === 'pending' && (
                       <>
                         <button disabled={busy} onClick={() => openAccept(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
@@ -350,7 +355,7 @@ const LawyerConsultationsPage = () => {
                       </button>
                     )}
                     {c.status === 'in_progress' && !c.lawyerEndedAt && (
-                      <button disabled={busy} onClick={() => finish(c.id)} style={footBtn('#7A9A6B')}>
+                      <button disabled={busy} onClick={() => { setFinishFor(c); setFinishSummary(''); }} style={footBtn('#7A9A6B')}>
                         <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerConsult.finish')}
                       </button>
                     )}
@@ -384,7 +389,7 @@ const LawyerConsultationsPage = () => {
       />
 
       {/* Принятие заявки + приветствие клиенту */}
-      <Dialog open={Boolean(acceptFor)} onClose={() => setAcceptFor(null)} maxWidth="sm" fullWidth>
+      <Dialog open={Boolean(acceptFor)} onClose={() => setAcceptFor(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' } } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <CheckOutlined sx={{ color: 'var(--accent)' }} /> {t('lawyerConsult.acceptTitle')}
         </DialogTitle>
@@ -404,7 +409,7 @@ const LawyerConsultationsPage = () => {
             inputProps={{ maxLength: 2000 }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
           <Button onClick={() => setAcceptFor(null)} sx={{ textTransform: 'none', color: 'var(--text2)' }}>
             {t('lawyerConsult.cancel')}
           </Button>
@@ -416,7 +421,7 @@ const LawyerConsultationsPage = () => {
       </Dialog>
 
       {/* Отклонение заявки: готовые причины + необязательный комментарий */}
-      <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="sm" fullWidth>
+      <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' } } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <CloseOutlined sx={{ color: 'var(--error, #C0492F)' }} /> {t('lawyerConsult.rejectTitle')}
         </DialogTitle>
@@ -442,7 +447,7 @@ const LawyerConsultationsPage = () => {
             inputProps={{ maxLength: 500 }}
           />
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
           <Button onClick={() => setRejectFor(null)} sx={{ textTransform: 'none', color: 'var(--text2)' }}>
             {t('lawyerConsult.cancel')}
           </Button>
@@ -452,6 +457,37 @@ const LawyerConsultationsPage = () => {
           </Button>
         </DialogActions>
       </Dialog>
+
+      <Dialog open={Boolean(finishFor)} onClose={() => !acting && setFinishFor(null)} maxWidth="sm" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' } } }}>
+        <DialogTitle>{t('lawyerConsult.finishConfirm')}</DialogTitle>
+        <DialogContent dividers>
+          <TextField
+            autoFocus
+            fullWidth
+            multiline
+            minRows={4}
+            label={t('lawyerConsult.summaryPrompt')}
+            value={finishSummary}
+            onChange={(event) => setFinishSummary(event.target.value)}
+            inputProps={{ maxLength: 4000 }}
+          />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
+          <Button onClick={() => setFinishFor(null)} disabled={Boolean(acting)} sx={{ textTransform: 'none' }}>{t('lawyerConsult.cancel')}</Button>
+          <Button onClick={finish} disabled={Boolean(acting) || !finishSummary.trim()} variant="contained" sx={{ textTransform: 'none', background: 'var(--accent)' }}>
+            {acting ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : t('lawyerConsult.finish')}
+          </Button>
+        </DialogActions>
+      </Dialog>
+      <style>{`
+        @media(max-width:600px){
+          .lawyer-consult-header{align-items:flex-start !important;flex-wrap:wrap;padding:16px !important}
+          .lawyer-consult-header>div:nth-child(2){flex-basis:calc(100% - 60px) !important}
+          .lawyer-consult-header>div:last-child{margin-left:60px}
+          .lawyer-consult-actions{padding:14px 16px !important}
+          .lawyer-consult-actions>button{flex:1 1 130px;justify-content:center}
+        }
+      `}</style>
     </GlassShell>
   );
 };

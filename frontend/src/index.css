@@ -14,6 +14,8 @@ html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 body {
@@ -24,6 +26,93 @@ body {
   color: #2D2D2D;
   line-height: 1.6;
   letter-spacing: 0.01em;
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+#root {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: 20000;
+  top: max(8px, env(safe-area-inset-top));
+  left: max(8px, env(safe-area-inset-left));
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: #1A1A1A;
+  color: #FFFFFF;
+  transform: translateY(-160%);
+}
+
+.skip-link:focus-visible { transform: translateY(0); }
+
+.global-status-banner,
+.pwa-install-prompt {
+  position: fixed;
+  z-index: 1400;
+  left: max(12px, env(safe-area-inset-left));
+  right: max(12px, env(safe-area-inset-right));
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: 680px;
+  margin-inline: auto;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 14px;
+  background: #322A22;
+  color: #FFFFFF;
+  box-shadow: 0 12px 32px rgba(25, 20, 16, 0.24);
+}
+
+.global-status-banner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  padding: 12px 16px;
+}
+
+.global-status-banner span { font-size: 0.875rem; }
+.global-status-banner--online { background: #315C49; }
+
+.pwa-install-prompt {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 12px;
+}
+
+.pwa-install-prompt__icon { display: grid; place-items: center; color: #E1C19B; }
+.pwa-install-prompt__copy { display: flex; min-width: 0; flex-direction: column; }
+.pwa-install-prompt__copy span { font-size: 0.82rem; line-height: 1.4; }
+.pwa-install-prompt button { border: 0; font: inherit; cursor: pointer; }
+.pwa-install-prompt__action { padding: 8px 12px; border-radius: 9px; background: #C7A477; color: #211A14; font-weight: 700; }
+.pwa-install-prompt__close { display: grid; place-items: center; border-radius: 50%; background: transparent; color: #FFFFFF; }
+
+@media (max-width: 1023px) {
+  .global-status-banner--with-nav,
+  .pwa-install-prompt--with-nav { bottom: calc(64px + 12px + env(safe-area-inset-bottom)); }
+}
+
+@media (max-width: 480px) {
+  .pwa-install-prompt { grid-template-columns: auto minmax(0, 1fr) auto; }
+  .pwa-install-prompt__action { grid-column: 2; justify-self: start; }
+  .pwa-install-prompt__close { grid-column: 3; grid-row: 1 / span 2; }
+}
+
+.glass-shell {
+  width: 100%;
+  min-height: 100vh;
+  height: 100vh;
+}
+
+@supports (height: 100dvh) {
+  .glass-shell {
+    min-height: 100dvh;
+    height: 100dvh;
+  }
 }
 
 /* Selection color */
@@ -314,7 +403,6 @@ select,
 
   body {
     -webkit-tap-highlight-color: transparent;
-    -webkit-touch-callout: none;
   }
 
   /* Hide scrollbar on mobile */
@@ -352,10 +440,38 @@ select,
 
   /* MUI Dialog fullscreen on mobile */
   .MuiDialog-paper {
-    margin: 8px !important;
-    width: calc(100% - 16px) !important;
-    max-height: calc(100vh - 16px) !important;
-    border-radius: 8px !important;
+    margin: 8px;
+    margin: max(8px, env(safe-area-inset-top)) max(8px, env(safe-area-inset-right)) max(8px, env(safe-area-inset-bottom)) max(8px, env(safe-area-inset-left));
+    width: calc(100% - 16px);
+    width: calc(100% - max(16px, env(safe-area-inset-left) + env(safe-area-inset-right)));
+    max-height: calc(100vh - 16px);
+    max-height: calc(100dvh - max(16px, env(safe-area-inset-top) + env(safe-area-inset-bottom)));
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .MuiDialogContent-root {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .MuiDialogActions-root {
+    flex-wrap: wrap;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
+  }
+
+  @media (max-width: 480px) {
+    .MuiDialogActions-root {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .MuiDialogActions-root > :not(style) {
+      width: 100%;
+      margin-left: 0;
+    }
   }
 
   /* MUI Table responsive scroll */
@@ -437,11 +553,13 @@ select,
 
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
+  html:focus-within { scroll-behavior: auto !important; }
   *,
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

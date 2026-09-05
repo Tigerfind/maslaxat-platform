@@ -8,6 +8,8 @@ import {
   CircularProgress,
   Badge,
   Dialog,
+  Menu,
+  MenuItem,
   keyframes,
 } from '@mui/material';
 import {
@@ -27,6 +29,8 @@ import {
   MoreTimeOutlined,
   PictureInPictureAltOutlined,
   KeyboardOutlined,
+  MoreVertOutlined,
+  PlayArrowOutlined,
 } from '@mui/icons-material';
 import { io } from 'socket.io-client';
 import Peer from 'simple-peer';
@@ -38,6 +42,7 @@ import { createClientMessageId, mergeChatMessages, normalizeMessagePage, sendCha
 import { callElapsedSeconds, mediaConstraintsForCall, remoteCallEndAction, safeEndError, videoAccessState } from './videoCallLifecycle';
 import { consultationDialogPaperSx, localeForLanguage } from '../../utils/consultationLocale';
 import { safeRequestError } from '../../utils/consultationPresentation';
+import { classifyMediaError, playMediaElement, reconcileMediaSelection } from '../../utils/mediaSession';
 
 // Короткий сигнал (Web Audio, без файлов) — уведомление о времени
 function beep() {
@@ -103,10 +108,15 @@ const VideoCallPage = () => {
   const [lobbyCamOn, setLobbyCamOn] = useState(true);
   const [lobbyMicOn, setLobbyMicOn] = useState(true);
   const [micLevel, setMicLevel] = useState(0);
-  const [permError, setPermError] = useState(false);
+  const [permError, setPermError] = useState(null);
+  const [audioFallback, setAudioFallback] = useState(false);
+  const [mediaRetry, setMediaRetry] = useState(0);
+  const [meterState, setMeterState] = useState('idle');
+  const [mediaStatus, setMediaStatus] = useState('prompt');
   const lobbyVideoRef = useRef(null);
   const lobbyStreamRef = useRef(null);
   const lobbyAudioCtxRef = useRef(null);
+  const meterRequestedRef = useRef(false);
   // выбранные устройства/состояние переносим в звонок
   const joinPrefsRef = useRef({ camId: '', micId: '', cam: true, mic: true });
 
@@ -115,6 +125,8 @@ const VideoCallPage = () => {
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [moreAnchor, setMoreAnchor] = useState(null);
+  const [playbackBlocked, setPlaybackBlocked] = useState(false);
 
   // Call state
   const [callDuration, setCallDuration] = useState(0);
@@ -483,39 +495,61 @@ const VideoCallPage = () => {
   const consultationLoaded = Boolean(consultation);
   const accessState = videoAccessState(consultation);
   const extensionAvailable = consultation?.capabilities?.extensionPayments === true;
-  const audioOnly = consultation?.callMode === 'audio';
+  const nativeAudioOnly = consultation?.callMode === 'audio';
+  const audioOnly = nativeAudioOnly || audioFallback;
   useEffect(() => {
     if (!inLobby || !consultationLoaded || !accessState.allowed) return undefined;
     let cancelled = false;
     let raf;
     const start = async () => {
+      setMediaStatus('checking');
       try {
         const stream = await navigator.mediaDevices.getUserMedia(mediaConstraintsForCall(
           consultation.callMode,
-          { camId: selectedCam, micId: selectedMic },
+          { camId: selectedCam, micId: selectedMic, audioOnly },
         ));
         if (cancelled) { stream.getTracks().forEach((tr) => tr.stop()); return; }
         lobbyStreamRef.current = stream;
-        setPermError(false);
+        setPermError(null);
+        setMediaStatus('granted');
         if (lobbyVideoRef.current) lobbyVideoRef.current.srcObject = stream;
         stream.getVideoTracks().forEach((tr) => { tr.enabled = lobbyCamOn; });
         stream.getAudioTracks().forEach((tr) => { tr.enabled = lobbyMicOn; });
+        stream.getTracks().forEach((track) => {
+          track.onended = () => {
+            if (cancelled) return;
+            const device = track.kind === 'audio' ? 'microphone' : 'camera';
+            setPermError({ reason: 'revoked', device, canUseAudioOnly: device === 'camera' && !audioOnly });
+            setMediaStatus('revoked');
+          };
+        });
 
         const list = await navigator.mediaDevices.enumerateDevices();
         if (!cancelled) {
-          setDevices({
+          const nextDevices = {
             cameras: list.filter((d) => d.kind === 'videoinput'),
             mics: list.filter((d) => d.kind === 'audioinput'),
             speakers: list.filter((d) => d.kind === 'audiooutput'),
-          });
+          };
+          setDevices(nextDevices);
+          const nextSelection = reconcileMediaSelection(
+            { camera: selectedCam, microphone: selectedMic, speaker: selectedSpeaker },
+            { cameras: nextDevices.cameras, microphones: nextDevices.mics, speakers: nextDevices.speakers },
+          );
+          if (selectedCam && !nextSelection.camera) setSelectedCam('');
+          if (selectedMic && !nextSelection.microphone) setSelectedMic('');
+          if (selectedSpeaker && !nextSelection.speaker) setSelectedSpeaker('');
           if (!selectedCam) { const c = stream.getVideoTracks()[0]?.getSettings().deviceId; if (c) setSelectedCam(c); }
           if (!selectedMic) { const m = stream.getAudioTracks()[0]?.getSettings().deviceId; if (m) setSelectedMic(m); }
         }
 
         const AC = window.AudioContext || window.webkitAudioContext;
-        if (AC) {
+        if (meterRequestedRef.current && AC) {
           const ctx = new AC();
           lobbyAudioCtxRef.current = ctx;
+          if (ctx.state === 'suspended') await ctx.resume().catch(() => {});
+          if (ctx.state === 'suspended') setMeterState('suspended');
+          else setMeterState('active');
           const analyser = ctx.createAnalyser();
           analyser.fftSize = 256;
           ctx.createMediaStreamSource(stream).connect(analyser);
@@ -528,9 +562,13 @@ const VideoCallPage = () => {
             raf = requestAnimationFrame(tick);
           };
           tick();
-        }
+        } else if (meterRequestedRef.current) setMeterState('unsupported');
       } catch (e) {
-        if (!cancelled) setPermError(true);
+        if (!cancelled) {
+          const failure = classifyMediaError(e, { audioOnly });
+          setPermError(failure);
+          setMediaStatus(failure.reason);
+        }
       }
     };
     start();
@@ -541,7 +579,27 @@ const VideoCallPage = () => {
       if (lobbyAudioCtxRef.current) { lobbyAudioCtxRef.current.close().catch(() => {}); lobbyAudioCtxRef.current = null; }
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inLobby, consultationLoaded, selectedCam, selectedMic, consultation?.callMode, accessState.allowed]);
+  }, [inLobby, consultationLoaded, selectedCam, selectedMic, consultation?.callMode, accessState.allowed, audioOnly, mediaRetry]);
+
+  useEffect(() => {
+    if (!inLobby || !navigator.mediaDevices?.addEventListener) return undefined;
+    const refreshDevices = async () => {
+      const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      const nextDevices = {
+        cameras: list.filter((d) => d.kind === 'videoinput'),
+        mics: list.filter((d) => d.kind === 'audioinput'),
+        speakers: list.filter((d) => d.kind === 'audiooutput'),
+      };
+      setDevices(nextDevices);
+      const next = reconcileMediaSelection(
+        { camera: selectedCam, microphone: selectedMic, speaker: selectedSpeaker },
+        { cameras: nextDevices.cameras, microphones: nextDevices.mics, speakers: nextDevices.speakers },
+      );
+      setSelectedCam(next.camera); setSelectedMic(next.microphone); setSelectedSpeaker(next.speaker);
+    };
+    navigator.mediaDevices.addEventListener('devicechange', refreshDevices);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', refreshDevices);
+  }, [inLobby, selectedCam, selectedMic, selectedSpeaker]);
 
   const toggleLobbyCam = () => {
     const on = !lobbyCamOn; setLobbyCamOn(on);
@@ -552,8 +610,23 @@ const VideoCallPage = () => {
     lobbyStreamRef.current?.getAudioTracks().forEach((tr) => { tr.enabled = on; });
   };
   const joinCall = () => {
-    joinPrefsRef.current = { camId: selectedCam, micId: selectedMic, cam: !audioOnly && lobbyCamOn, mic: lobbyMicOn };
+    if (permError || !lobbyStreamRef.current?.getAudioTracks().length) return;
+    joinPrefsRef.current = { camId: selectedCam, micId: selectedMic, cam: !audioOnly && lobbyCamOn, mic: lobbyMicOn, audioOnly };
     setInLobby(false); // init-эффект поднимет звонок с выбранными устройствами
+  };
+
+  const retryMedia = (withMeter = true) => {
+    meterRequestedRef.current = withMeter;
+    setMeterState(withMeter ? 'checking' : 'idle');
+    setPermError(null);
+    setMediaStatus('checking');
+    setMediaRetry((value) => value + 1);
+  };
+
+  const continueAudioOnly = () => {
+    setAudioFallback(true);
+    setSelectedCam('');
+    retryMedia(true);
   };
 
   // Initialize media and socket connection.
@@ -583,7 +656,7 @@ const VideoCallPage = () => {
         // Применяем выбор «камера/микрофон вкл/выкл» из лобби
         stream.getVideoTracks().forEach((tr) => { tr.enabled = prefs.cam; });
         stream.getAudioTracks().forEach((tr) => { tr.enabled = prefs.mic; });
-        setVideoEnabled(!audioOnly && prefs.cam);
+        setVideoEnabled(!prefs.audioOnly && prefs.cam);
         setAudioEnabled(prefs.mic);
 
         localStreamRef.current = stream;
@@ -753,11 +826,11 @@ const VideoCallPage = () => {
         });
       } catch (err) {
         if (cancelled) return;
-        if (err.name === 'NotAllowedError') {
-          setError(t('videoCall.mediaError'));
-        } else {
-          setError(t('videoCall.startError'));
-        }
+        const failure = classifyMediaError(err, { audioOnly });
+        setPermError(failure);
+        setMediaStatus(failure.reason);
+        setInLobby(true);
+        callStartedRef.current = false;
         console.error('Start call error:', err);
       }
     };
@@ -823,9 +896,13 @@ const VideoCallPage = () => {
     if (!el || !stream) return;
     if (el.srcObject !== stream) el.srcObject = stream;
     // play() на случай строгой autoplay-политики (Safari): жест пользователя уже был
-    const p = el.play?.();
-    if (p && p.catch) p.catch(() => {});
+    playMediaElement(el).then((played) => setPlaybackBlocked(!played));
   }, [peerConnected, remoteMedia.video]);
+
+  const recoverRemotePlayback = async () => {
+    const played = await playMediaElement(remoteVideoRef.current);
+    setPlaybackBlocked(!played);
+  };
 
   // Применяем выбранный динамик к элементу с аудио собеседника (setSinkId —
   // Chrome/Edge; в Safari/Firefox метода нет → тихо игнорируем). Пустой id = дефолт.
@@ -1179,8 +1256,8 @@ const VideoCallPage = () => {
 
   // Shared control-button recipe
   const controlBtnSx = (active) => ({
-    width: 52,
-    height: 52,
+    width: { xs: 46, sm: 52 },
+    height: { xs: 46, sm: 52 },
     borderRadius: '50%',
     bgcolor: active ? '#B07070' : 'rgba(255,255,255,0.08)',
     color: '#FFFFFF',
@@ -1215,11 +1292,15 @@ const VideoCallPage = () => {
   // ─── Экран подготовки (лобби) ───
   if (inLobby) {
     const selStyle = { width: '100%', marginTop: 6, padding: '9px 10px', borderRadius: 8, background: '#2C2C2C', color: '#EEE', border: '1px solid #3A3A3A', fontSize: 13, fontFamily: 'inherit' };
+    const permissionKey = permError ? `videoCall.media_${permError.device}_${permError.reason}` : '';
     return (
       <Box sx={{ position: 'fixed', inset: 0, bgcolor: '#1A1A1A', color: '#FFF', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', p: 2, pt: 'max(16px, env(safe-area-inset-top))', pb: 'max(16px, env(safe-area-inset-bottom))', overflowY: 'auto', animation: `${fadeIn} 0.3s ease-out` }}>
         <Typography sx={{ fontSize: 20, fontWeight: 600, mb: 0.5 }}>{audioOnly ? t('videoCall.audioCall') : t('videoCall.lobbyTitle')}</Typography>
         <Typography sx={{ fontSize: 13, color: '#9A9A9A', mb: 2.5 }}>
           {t('videoCall.lobbyWith')} {otherPartyName || t('videoCall.participant')}
+        </Typography>
+        <Typography role="status" data-testid="media-permission-state" sx={{ fontSize: 12, color: mediaStatus === 'granted' ? '#8FBF7F' : '#C9A980', mb: 1 }}>
+          {audioOnly && mediaStatus === 'granted' ? t('videoCall.audioCall') : t(`videoCall.permission_${mediaStatus}`)}
         </Typography>
 
         {/* Превью камеры */}
@@ -1227,11 +1308,11 @@ const VideoCallPage = () => {
           {!audioOnly && <video data-testid="lobby-video" ref={lobbyVideoRef} autoPlay playsInline muted style={{ width: '100%', height: '100%', objectFit: 'cover', transform: 'scaleX(-1)', visibility: lobbyCamOn && !permError ? 'visible' : 'hidden' }} />}
           {audioOnly && <CallOutlined sx={{ fontSize: 56, color: '#C9A980' }} />}
            {permError && (
-            <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 3, textAlign: 'center' }}>
-              <VideocamOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} />
-              <Typography sx={{ fontSize: 14, color: '#E0E0E0' }}>{t('videoCall.permDenied')}</Typography>
-              <Typography sx={{ fontSize: 12, color: '#9A9A9A' }}>{t('videoCall.permHint')}</Typography>
-            </Box>
+             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1, px: 3, textAlign: 'center' }}>
+               {permError.device === 'microphone' ? <MicOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} /> : <VideocamOffOutlined sx={{ fontSize: 40, color: '#E06B6B' }} />}
+               <Typography role="alert" sx={{ fontSize: 14, color: '#E0E0E0' }}>{t(permissionKey)}</Typography>
+               <Typography sx={{ fontSize: 12, color: '#9A9A9A' }}>{t('videoCall.permHint')}</Typography>
+             </Box>
           )}
            {!audioOnly && !permError && !lobbyCamOn && (
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1 }}>
@@ -1240,8 +1321,8 @@ const VideoCallPage = () => {
             </Box>
           )}
           {/* индикатор уровня микрофона */}
-          {!permError && (
-           <Box role="progressbar" aria-label={t('videoCall.micLevel')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={lobbyMicOn ? micLevel : 0} sx={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.5)', px: 1, py: 0.5, borderRadius: '12px' }}>
+           {!permError && (
+            <Box role="progressbar" aria-label={t('videoCall.micLevel')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={lobbyMicOn ? micLevel : 0} sx={{ position: 'absolute', bottom: 10, left: 10, display: 'flex', alignItems: 'center', gap: 0.75, bgcolor: 'rgba(0,0,0,0.5)', px: 1, py: 0.5, borderRadius: '12px' }}>
               {lobbyMicOn ? <MicOutlined sx={{ fontSize: 15, color: '#FFF' }} /> : <MicOffOutlined sx={{ fontSize: 15, color: '#E06B6B' }} />}
               <Box sx={{ width: 60, height: 5, bgcolor: 'rgba(255,255,255,0.15)', borderRadius: 3, overflow: 'hidden' }}>
                 <Box sx={{ width: `${lobbyMicOn ? micLevel : 0}%`, height: '100%', bgcolor: micLevel > 60 ? '#E0A24A' : '#5AA06A', transition: 'width 0.1s' }} />
@@ -1259,6 +1340,12 @@ const VideoCallPage = () => {
             {lobbyCamOn ? <VideocamOutlined /> : <VideocamOffOutlined />}
           </IconButton>}
         </Box>
+
+        {!permError && meterState !== 'active' && (
+          <button onClick={() => retryMedia(true)} style={{ minHeight: 44, marginBottom: 12, padding: '9px 16px', borderRadius: 10, border: '1px solid #555', background: 'transparent', color: '#DDD', cursor: 'pointer' }}>
+            {meterState === 'suspended' ? t('videoCall.meterSuspended') : meterState === 'unsupported' ? t('videoCall.meterUnsupported') : t('videoCall.testMic')}
+          </button>
+        )}
 
         {/* Выбор устройств */}
         {!permError && (
@@ -1283,11 +1370,17 @@ const VideoCallPage = () => {
         )}
 
         {/* Войти */}
+        {permError && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', justifyContent: 'center', mb: 1.5 }}>
+            <button onClick={() => retryMedia(true)} style={{ minHeight: 44, padding: '10px 18px', borderRadius: 10, border: '1px solid #666', background: '#2C2C2C', color: '#FFF', cursor: 'pointer' }}>{t('videoCall.retryMedia')}</button>
+            {permError.canUseAudioOnly && !nativeAudioOnly && <button onClick={continueAudioOnly} style={{ minHeight: 44, padding: '10px 18px', borderRadius: 10, border: 0, background: '#B8956E', color: '#FFF', cursor: 'pointer' }}>{t('videoCall.continueAudioOnly')}</button>}
+          </Box>
+        )}
         <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap', justifyContent: 'center' }}>
           <button onClick={() => navigate(-1)} style={{ background: 'transparent', border: '1px solid #444', color: '#DDD', padding: '12px 24px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14 }}>
             {t('videoCall.cancel')}
           </button>
-          <button onClick={joinCall} style={{ background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px 32px', borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+          <button disabled={Boolean(permError) || !lobbyStreamRef.current?.getAudioTracks().length} onClick={joinCall} style={{ background: 'linear-gradient(135deg,#B8956E,#8B7355)', border: 'none', color: '#FFF', padding: '12px 32px', borderRadius: 12, cursor: permError ? 'not-allowed' : 'pointer', opacity: permError ? 0.5 : 1, fontFamily: 'inherit', fontSize: 14, fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 8 }}>
             <CallOutlined sx={{ fontSize: 18 }} /> {t('videoCall.joinCall')}
           </button>
         </Box>
@@ -1443,7 +1536,13 @@ const VideoCallPage = () => {
                 objectFit: 'cover',
                 visibility: !audioOnly && remoteMedia.video ? 'visible' : 'hidden',
               }}
+              onPlaying={() => setPlaybackBlocked(false)}
             />
+            {playbackBlocked && (
+              <button type="button" onClick={recoverRemotePlayback} style={{ position: 'absolute', zIndex: 4, minHeight: 48, padding: '12px 18px', borderRadius: 12, border: 0, background: '#B8956E', color: '#fff', font: 'inherit', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                <PlayArrowOutlined /> {t('videoCall.playRemoteMedia')}
+              </button>
+            )}
             {/* Камера собеседника выключена → аватар вместо чёрного кадра */}
             {(audioOnly || !remoteMedia.video) && (
               <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
@@ -1529,7 +1628,7 @@ const VideoCallPage = () => {
         )}
 
         {/* Local video (picture-in-picture) */}
-        <Box
+        {!audioOnly && <Box
           sx={{
             position: 'absolute',
             bottom: 24,
@@ -1585,7 +1684,7 @@ const VideoCallPage = () => {
           >
             {t('videoCall.you')}
           </Typography>
-        </Box>
+        </Box>}
       </Box>
 
       {/* Controls bar */}
@@ -1596,8 +1695,9 @@ const VideoCallPage = () => {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          flexWrap: 'wrap',
+          flexWrap: 'nowrap',
           gap: { xs: 1.25, sm: 2 },
+          px: { xs: 1, sm: 2 },
           pt: 1.5,
           pb: 'max(12px, env(safe-area-inset-bottom))',
           borderTop: '1px solid #3A3A3A',
@@ -1619,6 +1719,7 @@ const VideoCallPage = () => {
           aria-pressed={screenSharing}
           onClick={toggleScreenShare}
           sx={{
+            display: { xs: 'none', sm: 'inline-flex' },
             width: 52,
             height: 52,
             borderRadius: '50%',
@@ -1635,24 +1736,24 @@ const VideoCallPage = () => {
         </IconButton>}
 
         {/* Fullscreen */}
-        <IconButton aria-label={t('videoCall.toggleFullscreen')} aria-pressed={isFullscreen} onClick={toggleFullscreen} sx={controlBtnSx(false)}>
+        <IconButton aria-label={t('videoCall.toggleFullscreen')} aria-pressed={isFullscreen} onClick={toggleFullscreen} sx={{ ...controlBtnSx(false), display: { xs: 'none', sm: 'inline-flex' } }}>
           {isFullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
         </IconButton>
 
         {/* Мини-режим (Picture-in-Picture) — только когда есть видео собеседника */}
         {peerConnected && (
-          <IconButton aria-label={t('videoCall.pip')} onClick={togglePiP} sx={controlBtnSx(false)} title={t('videoCall.pip')}>
+          <IconButton aria-label={t('videoCall.pip')} onClick={togglePiP} sx={{ ...controlBtnSx(false), display: { xs: 'none', sm: 'inline-flex' } }} title={t('videoCall.pip')}>
             <PictureInPictureAltOutlined />
           </IconButton>
         )}
 
         {/* Extend consultation */}
-        {extensionAvailable ? <IconButton aria-label={t('videoCall.extend')} onClick={() => setExtendOpen(true)} sx={controlBtnSx(false)} title={t('videoCall.extend')}>
+        {extensionAvailable ? <IconButton aria-label={t('videoCall.extend')} onClick={() => setExtendOpen(true)} sx={{ ...controlBtnSx(false), display: { xs: 'none', sm: 'inline-flex' } }} title={t('videoCall.extend')}>
           <MoreTimeOutlined />
-        </IconButton> : <Typography sx={{ maxWidth: 150, color: '#9A9A9A', fontSize: 11, textAlign: 'center' }}>{t('videoCall.extensionUnavailable')}</Typography>}
+        </IconButton> : <Typography sx={{ maxWidth: 150, color: '#9A9A9A', fontSize: 11, textAlign: 'center', display: { xs: 'none', sm: 'block' } }}>{t('videoCall.extensionUnavailable')}</Typography>}
 
         {/* Шпаргалка горячих клавиш */}
-        <IconButton aria-label={t('videoCall.shortcuts')} aria-pressed={shortcutsOpen} onClick={() => setShortcutsOpen((o) => !o)} sx={controlBtnSx(shortcutsOpen)} title={t('videoCall.shortcuts')}>
+        <IconButton aria-label={t('videoCall.shortcuts')} aria-pressed={shortcutsOpen} onClick={() => setShortcutsOpen((o) => !o)} sx={{ ...controlBtnSx(shortcutsOpen), display: { xs: 'none', sm: 'inline-flex' } }} title={t('videoCall.shortcuts')}>
           <KeyboardOutlined />
         </IconButton>
 
@@ -1663,14 +1764,18 @@ const VideoCallPage = () => {
           </IconButton>
         </Badge>
 
+        <IconButton aria-label={t('videoCall.moreControls')} aria-haspopup="menu" aria-expanded={Boolean(moreAnchor)} onClick={(event) => setMoreAnchor(event.currentTarget)} sx={{ ...controlBtnSx(Boolean(moreAnchor)), display: { xs: 'inline-flex', sm: 'none' } }}>
+          <MoreVertOutlined />
+        </IconButton>
+
         {/* End call */}
         <IconButton
           aria-label={t('videoCall.endCall')}
           disabled={endPending}
           onClick={requestEndCall}
           sx={{
-            width: 64,
-            height: 52,
+            width: { xs: 56, sm: 64 },
+            height: { xs: 46, sm: 52 },
             borderRadius: '26px',
             bgcolor: '#B07070',
             color: '#FFFFFF',
@@ -1682,6 +1787,14 @@ const VideoCallPage = () => {
           <CallEndOutlined />
         </IconButton>
       </Box>
+
+      <Menu anchorEl={moreAnchor} open={Boolean(moreAnchor)} onClose={() => setMoreAnchor(null)} MenuListProps={{ 'aria-label': t('videoCall.moreControls') }}>
+        {!audioOnly && <MenuItem onClick={() => { setMoreAnchor(null); toggleScreenShare(); }}>{screenSharing ? t('videoCall.stopScreen') : t('videoCall.toggleScreen')}</MenuItem>}
+        <MenuItem onClick={() => { setMoreAnchor(null); toggleFullscreen(); }}>{t('videoCall.toggleFullscreen')}</MenuItem>
+        {peerConnected && <MenuItem onClick={() => { setMoreAnchor(null); togglePiP(); }}>{t('videoCall.pip')}</MenuItem>}
+        {extensionAvailable && <MenuItem onClick={() => { setMoreAnchor(null); setExtendOpen(true); }}>{t('videoCall.extend')}</MenuItem>}
+        <MenuItem onClick={() => { setMoreAnchor(null); setShortcutsOpen(true); }}>{t('videoCall.shortcuts')}</MenuItem>
+      </Menu>
 
       {endError && (
         <Box role="alert" sx={{ position: 'absolute', inset: 0, zIndex: 40, bgcolor: 'rgba(0,0,0,.82)', display: 'flex', alignItems: 'center', justifyContent: 'center', p: 3 }}>

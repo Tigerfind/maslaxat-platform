@@ -77,6 +77,7 @@ const HelpPage = () => {
   // ответ поддержки доходил до клиента только первыми 140 символами в уведомлении.
   const [tickets, setTickets] = useState([]);
   const [ticketsError, setTicketsError] = useState(null);
+  const [ticketsLoading, setTicketsLoading] = useState(true);
   const [capabilities, setCapabilities] = useState(null);
 
   const supChannels = [
@@ -113,11 +114,14 @@ const HelpPage = () => {
 
   const loadTickets = async () => {
     try {
+      setTicketsLoading(true);
       const { data } = await api.get('/support/my');
       setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
       setTicketsError(null);
     } catch (e) {
       setTicketsError(e);
+    } finally {
+      setTicketsLoading(false);
     }
   };
   useEffect(() => {
@@ -246,8 +250,10 @@ const HelpPage = () => {
         <div>
           <div style={sectionLabel}>{t('help.myTickets')}</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {ticketsError ? (
-              <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.ticketsError')}</div>
+            {ticketsLoading ? (
+              <div role="status" style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('common.loading')}</div>
+            ) : ticketsError ? (
+              <div role="alert" style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.ticketsError')}<button type="button" onClick={loadTickets} style={{ display: 'block', marginTop: 12, border: '1px solid var(--border)', borderRadius: 10, padding: '8px 14px', background: 'transparent', color: 'var(--text)' }}>{t('common.retry')}</button></div>
             ) : tickets.length === 0 ? (
               <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.noTickets')}</div>
             ) : tickets.map((tk) => (

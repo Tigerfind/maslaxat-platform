@@ -26,6 +26,7 @@ import clientService from '../../services/clientService';
 import EmptyState from '../../components/UI/EmptyState';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
+import ErrorState from '../../components/UI/ErrorState';
 
 const fadeInUp = keyframes`
   from {
@@ -43,6 +44,7 @@ const FavoritesPage = () => {
   const { t } = useTranslation();
   const [favorites, setFavorites] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     loadFavorites();
@@ -53,10 +55,12 @@ const FavoritesPage = () => {
   const loadFavorites = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const data = await clientService.favorites.getFavorites();
       setFavorites(data);
     } catch (error) {
       console.error('Error loading favorites:', error);
+      setLoadError(error);
       toast.error(t('favorites.loadError'));
     } finally {
       setLoading(false);
@@ -99,7 +103,9 @@ const FavoritesPage = () => {
   return (
     <GlassShell active="/favorites" title={t('favorites.title')} subtitle={subtitle} role="client">
       <Container maxWidth="xl" disableGutters>
-        {favorites.length === 0 ? (
+        {loadError ? (
+          <ErrorState error={loadError} onRetry={loadFavorites} title={t('favorites.loadError')} />
+        ) : favorites.length === 0 ? (
           <EmptyState
             icon={<FavoriteBorder sx={{ fontSize: 64, color: axelionColors.borderLight }} />}
             title={t('favorites.emptyTitle')}
@@ -140,6 +146,7 @@ const FavoritesPage = () => {
                   {/* Favorite Icon */}
                   <IconButton
                     onClick={() => handleRemoveFavorite(lawyer.id)}
+                    aria-label={t('favorites.remove')}
                     sx={{
                       position: 'absolute',
                       top: 12,

@@ -587,20 +587,21 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         sx: {
           width: 480,
           maxWidth: '100%',
-          m: 2,
-          maxHeight: 'calc(100vh - 32px)',
+          m: { xs: 0, sm: 2 },
+          maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 32px)' },
+          height: { xs: '100dvh', sm: 'auto' },
+          borderRadius: { xs: 0, sm: 'var(--radius)' },
           display: 'flex',
           flexDirection: 'column',
           overflow: 'hidden',
           background: 'var(--surface)',
-          borderRadius: 'var(--radius)',
           boxShadow: '0 24px 56px rgba(26,26,26,0.24)',
           animation: 'modalPop 0.32s cubic-bezier(.34,1.56,.64,1)',
         },
       }}
     >
       {/* ---------- Header + step indicator ---------- */}
-      <div style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
+      <div className="booking-header" style={{ padding: '22px 28px 18px', borderBottom: '1px solid var(--border)', flexShrink: 0 }}>
         <div
           style={{
             display: 'flex',
@@ -621,26 +622,28 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             {t('booking.title')}
           </div>
           <button
+            type="button"
             onClick={handleClose}
+            aria-label={t('booking.close')}
             style={{
               background: 'transparent',
               border: 'none',
               color: 'var(--text3)',
               fontSize: 22,
-              cursor: 'pointer',
+              cursor: 'pointer', width: 44, height: 44,
               lineHeight: 1,
             }}
           >
             ×
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center' }}>
+        <div aria-label={t('booking.progress')} style={{ display: 'flex', alignItems: 'center' }}>
           {STEPS.map((n, idx) => {
             const activeStep = Math.min(step, 4);
             const doneOrActive = n <= activeStep;
             return (
               <React.Fragment key={n}>
-                <div
+                <div aria-current={n === step ? 'step' : undefined}
                   style={{
                     width: 26,
                     height: 26,
@@ -675,7 +678,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       </div>
 
       {/* ---------- Body ---------- */}
-      <div style={{ padding: '24px 28px', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div className="booking-body" style={{ padding: '24px 28px', flex: 1, minHeight: 0, overflowY: 'auto', overscrollBehavior: 'contain' }}>
         {/* Lawyer summary */}
         <div
           style={{
@@ -759,38 +762,31 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                       >×</button>
                     )}
                   </div>
-                  <div className="cat-dd" style={{ position: 'relative', marginBottom: 10 }}>
-                    <div
-                      onClick={() => setOpenCat(openCat === i ? -1 : i)}
-                      style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', minHeight: 44, padding: '8px 12px', borderRadius: 11, border: `1px solid ${openCat === i ? 'var(--accent)' : 'var(--border-strong)'}`, background: 'var(--surface)', cursor: 'pointer' }}
-                    >
-                      {p.categories.length === 0 && <span style={{ color: 'var(--text3)', fontSize: 13.5 }}>{t('booking.categoriesSelect')}</span>}
-                      {p.categories.map((cid) => {
-                        const nm = activeSpecs.find((s) => s.id === cid)?.name || cid;
-                        return (
-                          <span key={cid} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', fontSize: 12, fontWeight: 600, padding: '4px 10px', borderRadius: 999 }}>
-                            {nm}
-                            <span onClick={(e) => { e.stopPropagation(); toggleProblemCategory(i, cid); }} style={{ cursor: 'pointer', opacity: 0.85, fontSize: 13, lineHeight: 1 }}>×</span>
-                          </span>
-                        );
-                      })}
-                      <span style={{ marginLeft: 'auto', color: 'var(--accent)', alignSelf: 'center', transform: openCat === i ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
-                    </div>
-                    {openCat === i && (
-                      <ul style={{ listStyle: 'none', margin: '6px 0 0', padding: 6, position: 'absolute', left: 0, right: 0, zIndex: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 42px rgba(80,60,40,0.16)', maxHeight: 260, overflow: 'auto' }}>
+                   <div className="cat-dd" style={{ position: 'relative', marginBottom: 10 }}>
+                     <button
+                       type="button"
+                       onClick={() => setOpenCat(openCat === i ? -1 : i)}
+                       aria-expanded={openCat === i}
+                       aria-controls={`booking-categories-${i}`}
+                       style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '8px 12px', borderRadius: 11, border: `1px solid ${openCat === i ? 'var(--accent)' : 'var(--border-strong)'}`, background: 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
+                     >
+                       <span style={{ color: p.categories.length ? 'var(--text)' : 'var(--text3)', fontSize: 13.5 }}>{p.categories.length ? t('booking.categoriesSelected', { count: p.categories.length }) : t('booking.categoriesSelect')}</span>
+                       <span style={{ marginLeft: 'auto', color: 'var(--accent)', alignSelf: 'center', transform: openCat === i ? 'rotate(180deg)' : 'none', transition: 'transform .2s' }}>▾</span>
+                     </button>
+                     {p.categories.length > 0 && <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginTop: 8 }}>{p.categories.map((cid) => { const nm = activeSpecs.find((s) => s.id === cid)?.name || cid; return <button type="button" key={cid} aria-label={`${t('booking.removeCategory')}: ${nm}`} onClick={() => toggleProblemCategory(i, cid)} style={{ minHeight: 44, border: 0, background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', borderRadius: 999, padding: '7px 12px', fontFamily: 'inherit' }}>{nm} ×</button>; })}</div>}
+                     {openCat === i && (
+                       <ul id={`booking-categories-${i}`} style={{ listStyle: 'none', margin: '6px 0 0', padding: 6, position: 'absolute', left: 0, right: 0, zIndex: 5, background: 'var(--surface)', border: '1px solid var(--border)', borderRadius: 12, boxShadow: '0 16px 42px rgba(80,60,40,0.16)', maxHeight: 260, overflow: 'auto' }}>
                         {[...activeSpecs].sort((a, b) => (covers(b.id) ? 1 : 0) - (covers(a.id) ? 1 : 0)).map((sp) => {
                           const on = p.categories.includes(sp.id);
                           const mine = covers(sp.id); // юрист ведёт эту область
                           return (
-                            <li
-                              key={sp.id}
-                              onClick={() => toggleProblemCategory(i, sp.id)}
-                              style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: on ? 600 : 400, background: mine && !on ? 'rgba(184,149,110,0.07)' : 'transparent' }}
-                            >
+                             <li key={sp.id}>
+                              <button type="button" aria-pressed={on} onClick={() => toggleProblemCategory(i, sp.id)} style={{ width: '100%', minHeight: 44, border: 0, display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer', fontSize: 13.5, color: on ? 'var(--text)' : 'var(--text2)', fontWeight: on ? 600 : 400, background: mine && !on ? 'rgba(184,149,110,0.07)' : 'transparent', fontFamily: 'inherit', textAlign: 'left' }}>
                               <span style={{ width: 18, height: 18, borderRadius: 5, flexShrink: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#FFFFFF', border: on ? '1px solid transparent' : '1px solid var(--border-strong)', background: on ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'transparent' }}>{on ? '✓' : ''}</span>
                               <span style={{ flex: 1 }}>{sp.name}</span>
                               {mine && <span title={t('booking.lawyerHandles')} style={{ fontSize: 11, color: 'var(--accent-dark)', fontWeight: 600 }}>★</span>}
-                            </li>
+                              </button>
+                             </li>
                           );
                         })}
                       </ul>
@@ -1050,8 +1046,8 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               </div>
             )}
 
-            <div
-              onClick={() => setNotify((v) => !v)}
+            <button type="button" role="switch" aria-checked={notify}
+               onClick={() => setNotify((v) => !v)}
               style={{
                 display: 'flex',
                 alignItems: 'center',
@@ -1060,7 +1056,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 marginBottom: 22,
                 border: '1px solid var(--border)',
                 borderRadius: 'var(--radius)',
-                cursor: 'pointer',
+                 cursor: 'pointer', width: '100%', background: 'transparent', fontFamily: 'inherit', textAlign: 'left',
               }}
             >
               <div style={{ flex: 1 }}>
@@ -1094,17 +1090,17 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                   }}
                 />
               </div>
-            </div>
+            </button>
 
             {!freeBooking && (
             <>
             <div style={label}>{t('booking.payMethod')}</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+            <div role="radiogroup" aria-label={t('booking.payMethod')} style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
               {payMethods.map((m) => {
                 const active = payMethod === m.id;
                 return (
-                  <div
-                    key={m.id}
+                   <button type="button" role="radio" aria-checked={active}
+                     key={m.id}
                     onClick={() => { if (!m.soon) setPayMethod(m.id); }}
                     style={{
                       display: 'flex',
@@ -1115,7 +1111,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                       background: active ? 'rgba(184,149,110,0.08)' : 'var(--surface)',
                       borderRadius: 'var(--radius)',
                       cursor: m.soon ? 'default' : 'pointer',
-                      opacity: m.soon ? 0.5 : 1,
+                       opacity: m.soon ? 0.5 : 1, width: '100%', fontFamily: 'inherit', textAlign: 'left',
                     }}
                   >
                     <span
@@ -1129,16 +1125,16 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                         background: active ? '#FFFFFF' : 'transparent',
                       }}
                     />
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{m.n}</div>
-                      <div style={{ fontSize: 12, color: 'var(--text3)' }}>{m.d}</div>
-                    </div>
+                    <span style={{ flex: 1 }}>
+                      <span style={{ display: 'block', fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{m.n}</span>
+                      <span style={{ display: 'block', fontSize: 12, color: 'var(--text3)' }}>{m.d}</span>
+                    </span>
                     {m.soon && (
                       <span style={{ fontSize: 10.5, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', border: '1px solid var(--border)', borderRadius: 20, padding: '3px 9px', flexShrink: 0 }}>
                         {t('booking.soon')}
                       </span>
                     )}
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -1265,9 +1261,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           </div>
         )}
 
+      </div>
         {/* ---------- Footer nav (steps 1-3) ---------- */}
         {notDone && (
-          <div style={{ display: 'flex', gap: 10 }}>
+          <div className="booking-footer" style={{ display: 'flex', gap: 10, flexShrink: 0, padding: '14px 28px calc(14px + env(safe-area-inset-bottom))', borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
             <button onClick={goBack} style={secondaryBtn}>
               {t('booking.back')}
             </button>
@@ -1282,7 +1279,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             )}
           </div>
         )}
-      </div>
+      <style>{`@media(max-width:600px){.booking-header{padding:12px 16px 10px !important}.booking-header>div:first-child{margin-bottom:8px !important}.booking-body{padding:16px !important}.booking-footer{padding:10px max(12px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)) !important}.booking-footer>button{min-width:0;padding:12px 10px !important}.booking-footer>button:last-child{flex:2}.booking-body textarea{font-size:16px !important}}`}</style>
     </Dialog>
   );
 };

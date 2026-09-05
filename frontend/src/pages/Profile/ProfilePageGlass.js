@@ -113,8 +113,11 @@ const ProfilePageGlass = () => {
   const [activeTab, setActiveTab] = useState(0);
   const [isEditMode, setIsEditMode] = useState(false);
   const [stats, setStats] = useState(null);
+  const [statsError, setStatsError] = useState(false);
   const [activity, setActivity] = useState([]);
   const [activityLoaded, setActivityLoaded] = useState(false);
+  const [activityLoading, setActivityLoading] = useState(false);
+  const [activityError, setActivityError] = useState(false);
   const [emailInput, setEmailInput] = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
 
@@ -170,16 +173,25 @@ const ProfilePageGlass = () => {
     confirmPassword: '',
   });
 
-  useEffect(() => {
-    clientService.dashboard.getStats().then(setStats).catch(() => setStats(null));
-  }, []);
+  const loadStats = () => {
+    setStatsError(false);
+    clientService.dashboard.getStats().then(setStats).catch(() => { setStats(null); setStatsError(true); });
+  };
+  useEffect(() => { loadStats(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadActivity = () => {
+    setActivityLoading(true);
+    setActivityError(false);
+    clientService.dashboard.getActivity()
+      .then((a) => setActivity(Array.isArray(a) ? a : []))
+      .catch(() => setActivityError(true))
+      .finally(() => { setActivityLoaded(true); setActivityLoading(false); });
+  };
 
   // Лента активности грузим при первом открытии вкладки «История»
   useEffect(() => {
     if (activeTab === 2 && !activityLoaded) {
-      clientService.dashboard.getActivity()
-        .then((a) => setActivity(Array.isArray(a) ? a : []))
-        .finally(() => setActivityLoaded(true));
+      loadActivity();
     }
   }, [activeTab, activityLoaded]);
 
@@ -333,10 +345,9 @@ const ProfilePageGlass = () => {
     <GlassShell active="/profile" title={t('profile.myProfile')} subtitle={t('profile.subtitle')}>
       <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 22 }}>
         {/* Header card */}
-        <div style={{ ...glassCard, padding: 28, display: 'flex', alignItems: 'center', gap: 22 }}>
+        <div className="profile-identity" style={{ ...glassCard, padding: 28, display: 'flex', alignItems: 'center', gap: 22 }}>
           <div style={{ position: 'relative', flexShrink: 0 }}>
             <div
-              onClick={handleAvatarClick}
               style={{
                 width: 84,
                 height: 84,
@@ -349,7 +360,7 @@ const ProfilePageGlass = () => {
                 fontSize: 30,
                 fontWeight: 300,
                 overflow: 'hidden',
-                cursor: isEditMode ? 'pointer' : 'default',
+                cursor: 'default',
               }}
             >
               {formData.avatar ? (
@@ -384,10 +395,10 @@ const ProfilePageGlass = () => {
           </div>
 
           <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '0.02em', color: 'var(--text)' }}>
+            <div style={{ fontSize: 22, fontWeight: 300, letterSpacing: '0.02em', color: 'var(--text)', overflowWrap: 'anywhere' }}>
               {formData.name || t('profile.userFallback')}
             </div>
-            <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 4 }}>{formData.email}</div>
+            <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 4, overflowWrap: 'anywhere' }}>{formData.email}</div>
             <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
               <span style={{ fontSize: 11, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '5px 12px', borderRadius: 20, background: 'rgba(122,154,107,0.16)', color: '#5E7A50' }}>
                 ● {t('profile.statusActive')}
@@ -526,6 +537,7 @@ const ProfilePageGlass = () => {
                   </div>
                 ))}
               </div>
+              {statsError && <div role="alert" style={{ textAlign: 'center', marginTop: 18, color: 'var(--error)', fontSize: 13 }}>{t('profile.statsError')} <button type="button" onClick={loadStats} style={{ marginLeft: 8, border: 0, background: 'transparent', color: 'var(--accent-dark)', textDecoration: 'underline' }}>{t('common.retry')}</button></div>}
             </div>
           </>
         )}
@@ -584,7 +596,7 @@ const ProfilePageGlass = () => {
 
         {/* Tab 2 — Реальная лента активности (консультации/документы/отзывы) */}
         {activeTab === 2 && (
-          activity.length > 0 ? (
+          activityLoading ? <div style={{ ...glassCard, padding: 40, textAlign: 'center' }}>{t('common.loading')}</div> : activityError ? <div style={{ ...glassCard, padding: 32, textAlign: 'center', color: 'var(--error)' }}>{t('profile.activityError')}<button type="button" onClick={loadActivity} style={{ display: 'block', margin: '14px auto 0', border: '1px solid var(--border)', background: 'transparent', borderRadius: 10, padding: '8px 16px' }}>{t('common.retry')}</button></div> : activity.length > 0 ? (
             <div style={{ ...glassCard, padding: '8px 24px' }}>
               {activity.map((e, i) => {
                 const meta = ACT_META[e.type] || ACT_META.consultation;
@@ -627,6 +639,7 @@ const ProfilePageGlass = () => {
           .prof-grid { grid-template-columns: 1fr !important; }
           .prof-stats { grid-template-columns: repeat(2, 1fr) !important; }
         }
+        @media(max-width:420px){.profile-identity{align-items:flex-start !important;flex-direction:column !important;padding:20px !important}.profile-identity>div:last-child{width:100%}}
       `}</style>
     </GlassShell>
   );

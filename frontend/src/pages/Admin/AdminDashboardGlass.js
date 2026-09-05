@@ -40,6 +40,7 @@ import adminService from '../../services/adminService';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { axelionColors } from '../../theme/axelionTheme';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const fadeInUp = keyframes`
   from {
@@ -380,7 +381,7 @@ const AdminDashboardGlass = () => {
               border: `1px solid ${axelionColors.borderLight}`,
               borderRadius: '8px',
               boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
-              p: 3,
+              p: { xs: 2, sm: 3 },
               mb: 4,
             }}
           >
@@ -391,7 +392,8 @@ const AdminDashboardGlass = () => {
               {/* Revenue by month */}
               <Grid item xs={12} md={7}>
                 <Typography variant="subtitle2" sx={{ color: axelionColors.textMuted, mb: 2 }}>{t('admin.repRevenueByMonth')}</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 150 }}>
+                <Box role="region" aria-label={t('admin.repRevenueByMonth')} tabIndex={0} sx={{ overflowX: 'auto', pb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 150, minWidth: { xs: 420, sm: 0 } }}>
                   {(() => {
                     const max = Math.max(1, ...reports.monthlyRevenue.map((m) => m.revenue));
                     // Короткие названия месяцев берём у Intl по текущему языку:
@@ -409,6 +411,7 @@ const AdminDashboardGlass = () => {
                       );
                     });
                   })()}
+                </Box>
                 </Box>
               </Grid>
               {/* Top lawyers */}
@@ -436,7 +439,8 @@ const AdminDashboardGlass = () => {
                   и никто это не выводил — работа впустую. Теперь показываем. */}
               <Grid item xs={12} md={7}>
                 <Typography variant="subtitle2" sx={{ color: axelionColors.textMuted, mb: 2 }}>{t('admin.repUsersGrowth')}</Typography>
-                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 130 }}>
+                <Box role="region" aria-label={t('admin.repUsersGrowth')} tabIndex={0} sx={{ overflowX: 'auto', pb: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'flex-end', gap: 1.5, height: 130, minWidth: { xs: 420, sm: 0 } }}>
                   {(() => {
                     const rows = reports.usersGrowth || [];
                     const max = Math.max(1, ...rows.map((m) => m.clients + m.lawyers));
@@ -457,6 +461,7 @@ const AdminDashboardGlass = () => {
                       );
                     });
                   })()}
+                </Box>
                 </Box>
                 <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
                   <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>
@@ -488,7 +493,7 @@ const AdminDashboardGlass = () => {
             border: `1px solid ${axelionColors.borderLight}`,
             borderRadius: '8px',
             boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
-            p: 3,
+                  p: { xs: 2, sm: 3 },
             mb: 4,
           }}
         >
@@ -592,8 +597,22 @@ const AdminDashboardGlass = () => {
               </Box>
 
               {recentActivity.length > 0 ? (
-                <TableContainer>
-                  <Table>
+                <ResponsiveDataView
+                  items={recentActivity.map((activity, index) => ({ ...activity, id: activity.id || `${activity.type}-${activity.createdAt}-${index}` }))}
+                  mobileLabel={t('admin.recentActivity')}
+                  renderMobileItem={(activity) => (
+                    <Box sx={{ display: 'flex', gap: 1.5, minWidth: 0 }}>
+                      <Box sx={{ width: 44, height: 44, borderRadius: '8px', bgcolor: getActivityColor(activity.type), color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{getActivityIcon(activity.type)}</Box>
+                      <Box component="dl" sx={{ m: 0, display: 'grid', gap: 1, minWidth: 0, flex: 1 }}>
+                        <MobileDataField label={t('admin.colDesc')}>{activityText(activity)}</MobileDataField>
+                        <MobileDataField label={t('admin.colUser')}>{activity.userName || t('admin.userUnknown')}</MobileDataField>
+                        <MobileDataField label={t('admin.colDate')}>{fmtActivityDate(activity.createdAt)}</MobileDataField>
+                      </Box>
+                    </Box>
+                  )}
+                  desktop={(
+                    <TableContainer>
+                      <Table>
                     <TableHead>
                       <TableRow>
                         <TableCell sx={{ color: axelionColors.textMuted, fontWeight: 'bold', borderBottom: `1px solid ${axelionColors.borderLight}` }}>
@@ -660,8 +679,10 @@ const AdminDashboardGlass = () => {
                         </TableRow>
                       ))}
                     </TableBody>
-                  </Table>
-                </TableContainer>
+                      </Table>
+                    </TableContainer>
+                  )}
+                />
               ) : (
                 <Box sx={{ textAlign: 'center', py: 4 }}>
                   <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>
@@ -680,7 +701,7 @@ const AdminDashboardGlass = () => {
                 border: `1px solid ${axelionColors.borderLight}`,
                 borderRadius: '8px',
                 boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
-                p: 3,
+                  p: { xs: 2, sm: 3 },
                 mb: 3,
               }}
             >
@@ -765,7 +786,7 @@ const AdminDashboardGlass = () => {
                 border: `1px solid ${axelionColors.borderLight}`,
                 borderRadius: '8px',
                 boxShadow: '0 2px 6px rgba(26, 26, 26, 0.06)',
-                p: 3,
+                  p: { xs: 2, sm: 3 },
               }}
             >
               <Typography variant="h6" fontWeight="bold" sx={{ color: axelionColors.textDark }} gutterBottom>

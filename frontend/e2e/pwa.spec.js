@@ -20,8 +20,12 @@ test('production build регистрирует активный service worker 
     expect(workerUrl).toMatch(/\/sw\.js$/);
     const manifest = await context.request.get('/manifest.json');
     expect(manifest.status()).toBe(200);
-    expect((await manifest.json()).name).toBeTruthy();
+    const manifestBody = await manifest.json();
+    expect(manifestBody).toMatchObject({ id: '/', start_url: '/', scope: '/', display: 'standalone' });
+    expect(manifestBody.orientation).toBeUndefined();
+    expect(manifestBody.icons.some((icon) => icon.purpose === 'maskable')).toBe(false);
     await expect.poll(() => page.evaluate(() => Boolean(navigator.serviceWorker.controller))).toBe(true);
+    expect(await page.evaluate(() => performance.getEntriesByType('navigation').length)).toBe(1);
     await page.evaluate(async () => {
       await Promise.allSettled([fetch('/api/private-cache-probe'), fetch('/uploads/private-cache-probe')]);
     });

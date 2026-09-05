@@ -60,6 +60,7 @@ const tabBtnStyle = (active) => ({
   border: 'none',
   borderRadius: '6px',
   padding: '11px 18px',
+  minHeight: 44,
   fontFamily: 'inherit',
   fontSize: 13,
   letterSpacing: '0.04em',
@@ -130,7 +131,7 @@ const LawyerReviewsPage = () => {
 
   return (
     <GlassShell active="/lawyer/reviews" title={t('lawyerPanel.reviewsTitle')} role="lawyer">
-      <div style={{ maxWidth: 1060, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(260px, 300px) 1fr', gap: 24, alignItems: 'start' }}>
+      <div className="lawyer-reviews-grid" style={{ maxWidth: 1060, minWidth: 0, margin: '0 auto', display: 'grid', gridTemplateColumns: 'minmax(260px, 300px) minmax(0, 1fr)', gap: 24, alignItems: 'start' }}>
 
         {/* ── Left: summary + distribution ── */}
         <div style={{ ...glassCard, padding: 28, textAlign: 'center', position: 'sticky', top: 0 }}>
@@ -149,12 +150,15 @@ const LawyerReviewsPage = () => {
               const pct = stats.total ? Math.round((count / stats.total) * 100) : 0;
               const active = filterRating === star;
               return (
-                <div
+                <button
+                  type="button"
                   key={star}
                   onClick={() => setFilterRating(active ? null : star)}
+                  aria-pressed={active}
                   style={{
-                    display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
+                    width: '100%', minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer',
                     borderRadius: 'var(--radius)', padding: '2px 4px',
+                    border: 'none', fontFamily: 'inherit',
                     background: active ? 'rgba(184,149,110,0.12)' : 'transparent',
                   }}
                 >
@@ -163,7 +167,7 @@ const LawyerReviewsPage = () => {
                     <div style={{ width: `${pct}%`, height: '100%', background: 'var(--accent)', transition: 'width 0.3s' }} />
                   </div>
                   <span style={{ fontSize: 12, color: 'var(--text3)', width: 28, textAlign: 'right' }}>{count}</span>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -184,9 +188,9 @@ const LawyerReviewsPage = () => {
 
         {/* ── Right: tabs + review list ── */}
         <div>
-          <div style={{ display: 'flex', gap: 4, ...glassCard, padding: 5, marginBottom: 20, width: 'fit-content' }}>
+          <div role="tablist" aria-label={t('lawyerPanel.reviewsTitle')} style={{ display: 'flex', gap: 4, ...glassCard, padding: 5, marginBottom: 20, maxWidth: '100%', width: 'fit-content', overflowX: 'auto' }}>
             {TABS.map((tb) => (
-              <button key={tb.key} onClick={() => setTab(tb.key)} style={tabBtnStyle(tab === tb.key)}>
+              <button type="button" role="tab" aria-selected={tab === tb.key} key={tb.key} onClick={() => setTab(tb.key)} style={tabBtnStyle(tab === tb.key)}>
                 {t('lawyerPanel.' + tb.lk)}
               </button>
             ))}
@@ -209,8 +213,8 @@ const LawyerReviewsPage = () => {
                 const reply = rv.reply || rv.replyText;
                 return (
                   <div key={rv.id} style={{ ...glassCard, padding: 22 }}>
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                    <div className="lawyer-review-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, marginBottom: 10 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                         <div style={{
                           width: 40, height: 40, borderRadius: '50%', background: AV_BG[i % AV_BG.length],
                           display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 14, fontWeight: 500,
@@ -259,7 +263,7 @@ const LawyerReviewsPage = () => {
                             onClick={() => submitReply(rv.id)}
                             disabled={savingReply || !replyText.trim()}
                             style={{
-                              padding: '9px 18px', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+                              minHeight: 44, padding: '9px 18px', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
                               border: 'none', color: '#FFFFFF', fontSize: 12, fontWeight: 600,
                               letterSpacing: '0.05em', textTransform: 'uppercase', borderRadius: 'var(--radius)',
                               cursor: savingReply ? 'default' : 'pointer', fontFamily: 'inherit', opacity: savingReply ? 0.7 : 1,
@@ -270,7 +274,7 @@ const LawyerReviewsPage = () => {
                           <button
                             onClick={() => { setReplyingId(null); setReplyText(''); }}
                             style={{
-                              padding: '9px 18px', background: 'transparent', border: '1px solid var(--border)',
+                              minHeight: 44, padding: '9px 18px', background: 'transparent', border: '1px solid var(--border)',
                               color: 'var(--text2)', fontSize: 12, fontWeight: 500, letterSpacing: '0.05em',
                               textTransform: 'uppercase', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                             }}
@@ -287,7 +291,7 @@ const LawyerReviewsPage = () => {
                             style={{
                               background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
                               fontSize: 12, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
-                              padding: '9px 18px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
+                               minHeight: 44, padding: '9px 18px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                             }}
                           >
                             {t('lawyerPanel.reply')}
@@ -313,6 +317,13 @@ const LawyerReviewsPage = () => {
           )}
         </div>
       </div>
+      <style>{`
+        @media(max-width:600px){
+          .lawyer-reviews-grid{grid-template-columns:minmax(0,1fr) !important}
+          .lawyer-reviews-grid>div:first-child{position:static !important}
+          .lawyer-review-header{align-items:flex-start !important;flex-wrap:wrap}
+        }
+      `}</style>
     </GlassShell>
   );
 };

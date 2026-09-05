@@ -91,7 +91,7 @@ test('каталог и профиль не выходят за экран на 
       expect((await openFilters.boundingBox()).height).toBeGreaterThanOrEqual(43.9);
       await openFilters.click();
       await expect(page.getByRole('button', { name: 'Показать результаты' })).toBeVisible();
-      const drawer = page.locator('.MuiDrawer-paper');
+      const drawer = page.locator('.MuiDrawer-paperAnchorBottom');
       expect(await drawer.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
       await page.getByRole('button', { name: 'Показать результаты' }).click();
       await expect(page.getByRole('button', { name: 'Показать результаты' })).toBeHidden();

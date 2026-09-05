@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
+import { Dialog } from '@mui/material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
 import lawyerService from '../../services/lawyerService';
@@ -6,12 +7,13 @@ import { useTranslation } from '../../i18n';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 import { specLabel } from '../../utils/specLabel';
 import { MIN_WEEKLY_SLOTS, countWeeklySlots } from '../../utils/schedulePolicy';
+import EmailVerificationBanner from '../Auth/EmailVerificationBanner';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const emptyExperience = { organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' };
 const emptyEducation = { university: '', faculty: '', specialty: '', degree: '', startYear: '', endYear: '', country: '', city: '' };
 const emptyCertificate = { title: '', organization: '', issuedAt: '', credentialUrl: '' };
-const field = { width: '100%', minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 14 };
+const field = { width: '100%', minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)', boxSizing: 'border-box', fontFamily: 'inherit', fontSize: 16 };
 const btnPrimary = { minHeight: 44, padding: '0 22px', borderRadius: 10, border: 'none', cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, fontWeight: 600, color: '#fff', background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))' };
 const btnGhost = { minHeight: 44, padding: '0 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text2)' };
 const card = { background: 'var(--card-glass)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: 18 };
@@ -39,6 +41,11 @@ const FilePicker = ({ label, accept, multiple, onFiles, buttonText }) => (
       padding: '0 18px', borderRadius: 10, cursor: 'pointer', width: 'fit-content',
       border: '1px solid var(--accent)', color: 'var(--accent-dark)', background: 'transparent',
       fontSize: 13.5, fontWeight: 600,
+    }} role="button" tabIndex={0} onKeyDown={(event) => {
+      if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        event.currentTarget.querySelector('input')?.click();
+      }
     }}>
       {buttonText}
       <input
@@ -168,11 +175,19 @@ const OnboardingWizard = ({ onComplete }) => {
   const weeklySlots = countWeeklySlots(data.schedule);
 
   return (
-    <div style={{ position: 'fixed', inset: 0, zIndex: 1400, overflowY: 'auto', background: 'var(--canvas)', color: 'var(--text)', padding: '24px 16px 80px' }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <h1 style={{ fontWeight: 400 }}>{t('onboarding.title')}</h1>
-        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 24 }}>
-          {steps.map((title, index) => <button key={title} type="button" onClick={() => setStep(index)} style={{ minHeight: 44, padding: '8px 14px', whiteSpace: 'nowrap', borderRadius: 999, border: '1px solid var(--border)', background: index === step ? 'var(--accent)' : 'var(--surface)', color: index === step ? '#fff' : 'var(--text2)' }}>{index + 1}. {title}</button>)}
+    <Dialog
+      open
+      fullScreen
+      disableEscapeKeyDown
+      aria-labelledby="lawyer-onboarding-title"
+      PaperProps={{ sx: { background: 'var(--canvas)', backgroundImage: 'none', color: 'var(--text)' } }}
+    >
+      <EmailVerificationBanner />
+      <div className="onboarding-scroll" style={{ minHeight: '100dvh', overflowY: 'auto', padding: 'max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(80px, calc(24px + env(safe-area-inset-bottom))) max(16px, env(safe-area-inset-left))' }}>
+      <div style={{ maxWidth: 900, minWidth: 0, margin: '0 auto' }}>
+        <h1 id="lawyer-onboarding-title" style={{ fontWeight: 400 }}>{t('onboarding.title')}</h1>
+        <div role="tablist" aria-label={t('onboarding.title')} style={{ display: 'flex', gap: 8, overflowX: 'auto', marginBottom: 24, paddingBottom: 4 }}>
+          {steps.map((title, index) => <button key={title} type="button" role="tab" aria-selected={index === step} onClick={() => setStep(index)} style={{ minHeight: 44, padding: '8px 14px', whiteSpace: 'nowrap', borderRadius: 999, border: '1px solid var(--border)', background: index === step ? 'var(--accent)' : 'var(--surface)', color: index === step ? '#fff' : 'var(--text2)' }}>{index + 1}. {title}</button>)}
         </div>
 
         {step === 0 && <div style={{ ...card, display: 'grid', gap: 14 }}>
@@ -253,7 +268,8 @@ const OnboardingWizard = ({ onComplete }) => {
                     type="button"
                     key={v}
                     onClick={() => update('consultationFormats', on ? data.consultationFormats.filter((item) => item !== v) : [...data.consultationFormats, v])}
-                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
+                    aria-pressed={on}
+                    style={{ minHeight: 44, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
                   >{label}</button>
                 );
               })}
@@ -269,7 +285,8 @@ const OnboardingWizard = ({ onComplete }) => {
                     type="button"
                     key={duration}
                     onClick={() => update('consultationDurations', on ? data.consultationDurations.filter((item) => item !== duration) : [...data.consultationDurations, duration])}
-                    style={{ minHeight: 40, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
+                    aria-pressed={on}
+                    style={{ minHeight: 44, padding: '0 16px', borderRadius: 999, cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, border: `1px solid ${on ? 'var(--accent)' : 'var(--border)'}`, background: on ? 'var(--accent)' : 'var(--surface)', color: on ? '#fff' : 'var(--text2)' }}
                   >{duration} {t('lawyers.perMin').replace('{n}', '').replace('за', '').trim() || 'мин'}</button>
                 );
               })}
@@ -278,7 +295,7 @@ const OnboardingWizard = ({ onComplete }) => {
           <div style={{ padding: '12px 14px', borderRadius: 10, background: weeklySlots >= MIN_WEEKLY_SLOTS ? 'rgba(122,154,107,0.12)' : 'rgba(196,163,90,0.14)', color: 'var(--text2)' }}>
             {t('onboarding.scheduleProgress', { count: weeklySlots, required: MIN_WEEKLY_SLOTS })}
           </div>
-          <div style={{ display: 'grid', gap: 8 }}>{DAYS.map((day) => <div key={day} style={{ display: 'grid', gridTemplateColumns: '100px 1fr 1fr', gap: 8, alignItems: 'center' }}><label><input type="checkbox" checked={Boolean(data.schedule?.[day]?.enabled)} onChange={(e) => update('schedule', { ...data.schedule, [day]: { enabled: e.target.checked, from: data.schedule?.[day]?.from || '09:00', to: data.schedule?.[day]?.to || '18:00' } })} /> {day}</label><input style={field} type="time" value={data.schedule?.[day]?.from || '09:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: e.target.value, to: data.schedule?.[day]?.to || '18:00' } })} /><input style={field} type="time" value={data.schedule?.[day]?.to || '18:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: data.schedule?.[day]?.from || '09:00', to: e.target.value } })} /></div>)}</div>
+          <div style={{ display: 'grid', gap: 8 }}>{DAYS.map((day) => <div key={day} className="onboarding-schedule-row" style={{ display: 'grid', gridTemplateColumns: '100px minmax(0, 1fr) minmax(0, 1fr)', gap: 8, alignItems: 'center' }}><label style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 6 }}><input type="checkbox" checked={Boolean(data.schedule?.[day]?.enabled)} onChange={(e) => update('schedule', { ...data.schedule, [day]: { enabled: e.target.checked, from: data.schedule?.[day]?.from || '09:00', to: data.schedule?.[day]?.to || '18:00' } })} /> {day}</label><input aria-label={`${day} ${t('onboarding.lblFrom')}`} style={field} type="time" value={data.schedule?.[day]?.from || '09:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: e.target.value, to: data.schedule?.[day]?.to || '18:00' } })} /><input aria-label={`${day} ${t('onboarding.lblTo')}`} style={field} type="time" value={data.schedule?.[day]?.to || '18:00'} onChange={(e) => update('schedule', { ...data.schedule, [day]: { ...(data.schedule?.[day] || {}), enabled: true, from: data.schedule?.[day]?.from || '09:00', to: e.target.value } })} /></div>)}</div>
         </div>}
 
         {step === 2 && <Repeatable title={t('onboarding.experience')} rows={data.experiences} empty={emptyExperience} add={() => update('experiences', [...data.experiences, emptyExperience])} remove={(index) => removeRow('experiences', index)} render={(row, index) => <div style={{ display: 'grid', gap: 12 }}>
@@ -367,14 +384,16 @@ const OnboardingWizard = ({ onComplete }) => {
           {savedAt && <span style={{ color: 'var(--text3)', fontSize: 12.5 }}>{t('onboarding.savedToast')} · {new Date(savedAt).toLocaleTimeString()}</span>}
         </div>
       </div>
-    </div>
+      </div>
+      <style>{`@media(max-width:520px){.onboarding-scroll{padding-left:12px !important;padding-right:12px !important}.onboarding-schedule-row{grid-template-columns:1fr !important}.onboarding-schedule-row>label{grid-column:1}.onboarding-schedule-row>input{width:100%}}`}</style>
+    </Dialog>
   );
 };
 
 const Repeatable = ({ title, rows, add, remove, render }) => (
   <div style={{ display: 'grid', gap: 14 }}>
-    <div style={{ display: 'flex', justifyContent: 'space-between' }}><h2>{title}</h2><button type="button" onClick={add}>+ Добавить</button></div>
-    {rows.map((row, index) => <div key={index} style={{ ...card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(190px,1fr))', gap: 10 }}>{render(row, index)}<button type="button" onClick={() => remove(index)}>Удалить</button></div>)}
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><h2 style={{ margin: 0 }}>{title}</h2><button type="button" onClick={add} style={btnGhost}>+ Добавить</button></div>
+    {rows.map((row, index) => <div key={index} style={{ ...card, display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(min(100%,190px),1fr))', gap: 10 }}>{render(row, index)}<button type="button" onClick={() => remove(index)} style={{ ...btnGhost, justifySelf: 'start' }}>Удалить</button></div>)}
     {!rows.length && <div style={card}>Раздел пока не заполнен</div>}
   </div>
 );

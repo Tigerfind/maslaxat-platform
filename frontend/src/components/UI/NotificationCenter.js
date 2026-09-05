@@ -126,6 +126,24 @@ const NotificationCenter = ({ sx = {} }) => {
 
   const handleClose = () => setOpen(false);
 
+  const openNotification = (notif) => {
+    if (!notif.isRead) handleMarkRead(notif.id);
+    handleClose();
+    const metadata = notif.metadata || {};
+    if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
+    if (notif.type === 'withdrawal') { navigate('/lawyer/analytics'); return; }
+    if (notif.type === 'support_reply') { navigate('/help'); return; }
+    if (notif.type === 'support_ticket') { navigate('/admin/support'); return; }
+    if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
+    if (notif.type === 'case_document' && metadata.consultationId) {
+      navigate(`/consultations/chat/${metadata.consultationId}`);
+      return;
+    }
+    if (metadata.consultationId) {
+      navigate(metadata.missedCall ? `/consultations/video/${metadata.consultationId}` : '/consultations');
+    }
+  };
+
   const handleMarkRead = async (id) => {
     try {
       await api.patch(`/notifications/${id}/read`);
@@ -163,6 +181,8 @@ const NotificationCenter = ({ sx = {} }) => {
         ref={anchorRef}
         onClick={handleToggle}
         aria-label={t('notif.title')}
+        aria-expanded={open}
+        aria-controls={open ? 'notification-panel' : undefined}
         sx={{
           backgroundColor: axelionColors.bgLight,
           border: `1px solid ${axelionColors.borderLight}`,
@@ -196,14 +216,22 @@ const NotificationCenter = ({ sx = {} }) => {
         placement="bottom-end"
         transition
         style={{ zIndex: 1300 }}
+        modifiers={[
+          { name: 'flip', enabled: true },
+          { name: 'preventOverflow', options: { padding: 8, altAxis: true } },
+        ]}
       >
         {({ TransitionProps }) => (
           <Fade {...TransitionProps} timeout={200}>
             <Paper
+              id="notification-panel"
+              role="region"
+              aria-label={t('notif.title')}
               sx={{
                 mt: 1,
-                width: 380,
-                maxHeight: 480,
+                width: 'min(380px, calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px))',
+                maxWidth: 'calc(100vw - env(safe-area-inset-left) - env(safe-area-inset-right) - 16px)',
+                maxHeight: 'min(480px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 80px))',
                 borderRadius: '12px',
                 border: `1px solid ${axelionColors.borderLight}`,
                 boxShadow: '0 12px 40px rgba(26,26,26,0.12)',
@@ -238,7 +266,7 @@ const NotificationCenter = ({ sx = {} }) => {
                   </Box>
 
                   {/* Notifications list */}
-                  <Box sx={{ maxHeight: 380, overflowY: 'auto' }}>
+                  <Box aria-label={t('notif.title')} sx={{ maxHeight: 'min(380px, calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 154px))', overflowY: 'auto', overscrollBehavior: 'contain' }}>
                     {notifications.length === 0 ? (
                       <Box sx={{ textAlign: 'center', py: 6, px: 3 }}>
                         <NotificationsNone sx={{ fontSize: 48, color: axelionColors.borderLight, mb: 1 }} />
@@ -248,33 +276,17 @@ const NotificationCenter = ({ sx = {} }) => {
                       </Box>
                     ) : (
                       notifications.map((notif) => (
-                        <Box
-                          key={notif.id}
-                          onClick={() => {
-                            if (!notif.isRead) handleMarkRead(notif.id);
-                            handleClose();
-                            const m = notif.metadata || {};
-                            // Тип-специфичная навигация для модерации/документов.
-                            if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
-            // Баланс и вывод средств живут на странице аналитики юриста
-            if (notif.type === 'withdrawal') { navigate('/lawyer/analytics'); return; }
-            // Ответ поддержки: ведём на «Мои обращения», где виден ПОЛНЫЙ текст,
-            // а не обрезанные 140 символов из самого уведомления.
-            if (notif.type === 'support_reply') { navigate('/help'); return; }
-            if (notif.type === 'support_ticket') { navigate('/admin/support'); return; }
-                            if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
-                            if (notif.type === 'case_document' && m.consultationId) { navigate(`/consultations/chat/${m.consultationId}`); return; }
-                            // Пропущенный звонок → открыть звонок (перезвонить);
-                            // прочие с консультацией → в «Мои консультации».
-                            if (m.consultationId) {
-                              if (m.missedCall) navigate(`/consultations/video/${m.consultationId}`);
-                              else navigate('/consultations');
-                            }
-                          }}
-                          sx={{
-                            display: 'flex', gap: 1.5, p: 2,
-                            bgcolor: notif.isRead ? 'transparent' : axelionColors.accentLight + '30',
-                            borderBottom: `1px solid ${axelionColors.borderLight}`,
+                         <Box
+                           component="button"
+                           type="button"
+                           key={notif.id}
+                           onClick={() => openNotification(notif)}
+                           sx={{
+                             display: 'flex', width: '100%', gap: 1.5, p: 2,
+                             bgcolor: notif.isRead ? 'transparent' : axelionColors.accentLight + '30',
+                             borderBottom: `1px solid ${axelionColors.borderLight}`,
+                             borderTop: 0, borderLeft: 0, borderRight: 0,
+                             color: 'inherit', font: 'inherit', textAlign: 'left',
                             cursor: 'pointer',
                             transition: 'all 0.2s',
                             '&:hover': { bgcolor: axelionColors.bgWarm },

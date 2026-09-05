@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   Dialog, DialogTitle, DialogContent, DialogActions, DialogContentText,
-  Button, TextField,
+  Button, TextField, useMediaQuery,
 } from '@mui/material';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -39,6 +39,7 @@ const ConfirmDialog = ({
   onClose,
 }) => {
   const { t } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
   const [reason, setReason] = useState('');
 
   // Сбрасываем причину при каждом открытии, иначе текст протекает
@@ -48,7 +49,7 @@ const ConfirmDialog = ({
   const blocked = withReason && reasonRequired && !reason.trim();
 
   return (
-    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth>
+    <Dialog open={open} onClose={onClose} maxWidth="xs" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
       <DialogTitle>{title}</DialogTitle>
       <DialogContent>
         {message && (
@@ -69,7 +70,7 @@ const ConfirmDialog = ({
           />
         )}
       </DialogContent>
-      <DialogActions>
+      <DialogActions sx={{ flexWrap: 'wrap', gap: 1, pb: 'max(8px, env(safe-area-inset-bottom))', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
         <Button onClick={onClose} disabled={busy}>{t('common.cancel')}</Button>
         <Button
           onClick={() => onConfirm(reason.trim())}

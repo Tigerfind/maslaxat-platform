@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle, TextField } from '@mui/material';
 import {
   PaymentsOutlined,
   StarOutlineRounded,
@@ -80,7 +81,7 @@ const LawyerAnalyticsPage = () => {
   };
 
   const kpi = (icon, label, value, sub, color) => (
-    <div style={{ ...glassCard, padding: 20, flex: 1, minWidth: 180 }}>
+    <div style={{ ...glassCard, padding: 20, flex: '1 1 180px', minWidth: 0 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         <div style={{ width: 38, height: 38, borderRadius: 11, background: color.bg, color: color.fg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           {icon}
@@ -136,12 +137,13 @@ const LawyerAnalyticsPage = () => {
             </div>
 
             {/* Monthly income chart */}
-            <div style={{ ...glassCard, padding: 24 }}>
+             <div style={{ ...glassCard, padding: 24, minWidth: 0 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 20 }}>
                 <TrendingUpOutlined sx={{ fontSize: 19, color: 'var(--accent)' }} />
                 <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{t('analytics.monthlyIncome')}</span>
               </div>
-              <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, height: 190 }}>
+               <div role="region" aria-label={t('analytics.monthlyIncome')} tabIndex={0} style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
+               <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', gap: 12, height: 190, minWidth: 420 }}>
                 {income.map((m) => {
                   const h = Math.round((m.income / maxIncome) * 150);
                   return (
@@ -158,10 +160,11 @@ const LawyerAnalyticsPage = () => {
                     </div>
                   );
                 })}
-              </div>
-            </div>
+               </div>
+               </div>
+             </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: 18 }}>
+             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 320px), 1fr))', gap: 18 }}>
               {/* Conversion funnel */}
               <div style={{ ...glassCard, padding: 24 }}>
                 <div style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)', marginBottom: 18 }}>{t('analytics.funnel')}</div>
@@ -210,36 +213,21 @@ const LawyerAnalyticsPage = () => {
         )}
       </div>
 
-      {/* Модалка вывода средств */}
-      {withdrawOpen && (
-        <div
-          onClick={() => !withdrawing && setWithdrawOpen(false)}
-          style={{ position: 'fixed', inset: 0, zIndex: 1300, background: 'rgba(0,0,0,0.45)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}
-        >
-          <div onClick={(e) => e.stopPropagation()} style={{ ...glassCard, background: 'var(--canvas)', padding: 26, width: 'min(420px, 92vw)' }}>
-            <div style={{ fontSize: 17, fontWeight: 600, color: 'var(--text)', marginBottom: 6 }}>{t('analytics.withdrawTitle')}</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 18 }}>
-              {t('analytics.withdrawAvailable')}: {fmtMoney(data?.balance)} {t('analytics.sumShort')}
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={Math.floor(Number(data?.balance) || 0)}
-              value={withdrawAmount}
-              onChange={(e) => setWithdrawAmount(e.target.value)}
-              style={{ width: '100%', boxSizing: 'border-box', padding: '12px 14px', borderRadius: 'var(--radius)', border: '1px solid var(--border)', background: 'var(--surface)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 15 }}
-            />
-            <div style={{ display: 'flex', gap: 10, marginTop: 20, justifyContent: 'flex-end' }}>
-              <button onClick={() => setWithdrawOpen(false)} disabled={withdrawing} style={{ background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>
-                {t('analytics.cancel')}
-              </button>
-              <button onClick={submitWithdraw} disabled={withdrawing} style={{ background: 'var(--accent)', border: '1px solid var(--accent)', color: '#fff', fontSize: 13, fontWeight: 600, padding: '10px 20px', borderRadius: 'var(--radius)', cursor: withdrawing ? 'default' : 'pointer', fontFamily: 'inherit', opacity: withdrawing ? 0.7 : 1 }}>
-                {withdrawing ? t('analytics.withdrawing') : t('analytics.withdrawSubmit')}
-              </button>
-            </div>
+      <Dialog open={withdrawOpen} onClose={() => !withdrawing && setWithdrawOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' } } }}>
+        <DialogTitle>{t('analytics.withdrawTitle')}</DialogTitle>
+        <DialogContent dividers>
+          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 18 }}>
+            {t('analytics.withdrawAvailable')}: {fmtMoney(data?.balance)} {t('analytics.sumShort')}
           </div>
-        </div>
-      )}
+          <TextField autoFocus fullWidth type="number" inputProps={{ min: 1, max: Math.floor(Number(data?.balance) || 0) }} value={withdrawAmount} onChange={(e) => setWithdrawAmount(e.target.value)} />
+        </DialogContent>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
+          <Button onClick={() => setWithdrawOpen(false)} disabled={withdrawing}>{t('analytics.cancel')}</Button>
+          <Button onClick={submitWithdraw} disabled={withdrawing} variant="contained" sx={{ background: 'var(--accent)' }}>
+            {withdrawing ? <CircularProgress size={16} sx={{ color: '#fff' }} /> : t('analytics.withdrawSubmit')}
+          </Button>
+        </DialogActions>
+      </Dialog>
     </GlassShell>
   );
 };

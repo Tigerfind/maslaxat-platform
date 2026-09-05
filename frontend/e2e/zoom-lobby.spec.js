@@ -22,6 +22,6 @@ test('Zoom lobby объясняет запрет камеры и предлаг�
   await login(page, 'client');
   await page.goto('/consultations/zoom/44444444-4444-4444-8444-444444444444');
   await page.getByRole('button', { name: 'Повторить проверку' }).click();
-  await expect(page.getByRole('alert')).toContainText('Доступ к камере или микрофону запрещён');
+  await expect(page.getByRole('alert')).toContainText('Доступ к камере запрещён');
   await expect(page.getByRole('button', { name: 'Разрешить доступ' })).toBeVisible();
 });

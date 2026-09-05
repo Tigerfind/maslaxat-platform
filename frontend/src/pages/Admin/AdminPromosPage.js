@@ -2,8 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import {
   Box, Container, IconButton, Button, Switch, CircularProgress,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Chip,
+  Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Chip, Stack, FormControlLabel, useMediaQuery,
 } from '@mui/material';
 import { Add, DeleteOutline, EditOutlined } from '@mui/icons-material';
 import adminService from '../../services/adminService';
@@ -12,9 +12,11 @@ import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
 import ConfirmDialog from '../../components/UI/ConfirmDialog';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const AdminPromosPage = () => {
   const { t, language } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
   // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
   // и в узбекской/английской версии даты оставались русскими.
   const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
@@ -135,8 +137,32 @@ const AdminPromosPage = () => {
         ) : error ? (
           <ErrorState error={error} onRetry={load} />
         ) : (
-          <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
-            <Table>
+          promos.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4, color: axelionColors.textMuted }}>{t('adminPromo.empty')}</Box>
+          ) : (
+          <ResponsiveDataView
+            items={promos}
+            mobileLabel={t('adminPromo.title')}
+            renderMobileItem={(p) => (
+              <Stack spacing={1.5}>
+                <Chip label={p.code} sx={{ alignSelf: 'flex-start', fontWeight: 600, bgcolor: axelionColors.bgCream }} />
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                  <MobileDataField label={t('adminPromo.discount')}>−{p.discountPercent}%</MobileDataField>
+                  <MobileDataField label={t('adminPromo.minAmount')}>{(p.minAmount || 0).toLocaleString(dateLocale)}</MobileDataField>
+                  <MobileDataField label={t('adminPromo.used')}>{p.usedCount || 0}{p.usageLimit ? ` / ${p.usageLimit}` : ''}</MobileDataField>
+                  <MobileDataField label={t('adminPromo.expiresAt')}>{!p.expiresAt ? t('adminPromo.noExpiry') : new Date(p.expiresAt).toLocaleDateString(dateLocale)}</MobileDataField>
+                </Box>
+                <FormControlLabel control={<Switch checked={p.isActive} onChange={() => toggleActive(p)} inputProps={{ 'aria-label': `${t('adminPromo.active')}: ${p.code}` }} sx={{ minHeight: 44 }} />} label={t('adminPromo.active')} sx={{ minHeight: 44, m: 0 }} />
+                <Stack direction="row" spacing={1}>
+                  <IconButton aria-label={`${t('adminPromo.edit')}: ${p.code}`} onClick={() => openEdit(p)} sx={{ color: axelionColors.textMuted }}><EditOutlined /></IconButton>
+                  <IconButton aria-label={`${t('common.delete')}: ${p.code}`} onClick={() => setConfirmDelete(p)} sx={{ color: axelionColors.error }}><DeleteOutline /></IconButton>
+                </Stack>
+              </Stack>
+            )}
+            desktop={(
+              <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
+                <TableContainer>
+                  <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: axelionColors.bgCream }}>
                   <TableCell>{t('adminPromo.code')}</TableCell>
@@ -170,20 +196,23 @@ const AdminPromosPage = () => {
                         <span style={{ color: axelionColors.textSecondary }}>{new Date(p.expiresAt).toLocaleDateString(dateLocale)}</span>
                       )}
                     </TableCell>
-                    <TableCell><Switch checked={p.isActive} onChange={() => toggleActive(p)} sx={{ '& .Mui-checked': { color: axelionColors.gold } }} /></TableCell>
+                    <TableCell><Switch checked={p.isActive} onChange={() => toggleActive(p)} inputProps={{ 'aria-label': `${t('adminPromo.active')}: ${p.code}` }} sx={{ '& .Mui-checked': { color: axelionColors.gold } }} /></TableCell>
                     <TableCell align="right">
-                      <IconButton onClick={() => openEdit(p)} size="small" sx={{ color: axelionColors.textMuted }}><EditOutlined /></IconButton>
-                      <IconButton onClick={() => setConfirmDelete(p)} size="small" sx={{ color: axelionColors.error }}><DeleteOutline /></IconButton>
+                      <IconButton aria-label={`${t('adminPromo.edit')}: ${p.code}`} onClick={() => openEdit(p)} size="small" sx={{ color: axelionColors.textMuted }}><EditOutlined /></IconButton>
+                      <IconButton aria-label={`${t('common.delete')}: ${p.code}`} onClick={() => setConfirmDelete(p)} size="small" sx={{ color: axelionColors.error }}><DeleteOutline /></IconButton>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </Paper>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            )}
+          />)
         )}
       </Container>
 
-      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={dialogOpen} onClose={() => setDialogOpen(false)} maxWidth="xs" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
         <DialogTitle>{editId ? t('adminPromo.edit') : t('adminPromo.add')}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           <TextField label={t('adminPromo.code')} value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })} fullWidth disabled={!!editId} helperText={editId ? t('adminPromo.codeLocked') : undefined} />
@@ -192,7 +221,7 @@ const AdminPromosPage = () => {
           <TextField label={t('adminPromo.usageLimit')} type="number" value={form.usageLimit} onChange={(e) => setForm({ ...form, usageLimit: e.target.value })} fullWidth helperText={t('adminPromo.usageLimitHint')} />
           <TextField label={t('adminPromo.expiresAt')} type="date" value={form.expiresAt} onChange={(e) => setForm({ ...form, expiresAt: e.target.value })} fullWidth InputLabelProps={{ shrink: true }} helperText={t('adminPromo.expiresAtHint')} />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        <DialogActions sx={{ px: 3, pb: 'max(16px, env(safe-area-inset-bottom))', flexWrap: 'wrap', gap: 1, '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button onClick={() => setDialogOpen(false)} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>{t('common.cancel')}</Button>
           <Button onClick={handleSave} disabled={saving} variant="contained" sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark } }}>
             {saving ? t('adminPromo.saving') : (editId ? t('adminPromo.saveEdit') : t('adminPromo.save'))}

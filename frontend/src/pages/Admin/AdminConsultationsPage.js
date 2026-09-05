@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import {
   Box, Container, Typography, Chip, CircularProgress,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Pagination, Button, Dialog, DialogTitle, DialogContent, DialogActions,
+  Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, Pagination, Button, Dialog, DialogTitle, DialogContent, DialogActions, Stack, useMediaQuery,
 } from '@mui/material';
 import { adminConsultationService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const PAGE_SIZE = 25;
 
@@ -32,6 +33,7 @@ const STATUS_COLOR = {
  */
 const AdminConsultationsPage = () => {
   const { t, language } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
 
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -103,8 +105,28 @@ const AdminConsultationsPage = () => {
         ) : error ? (
           <ErrorState error={error} onRetry={() => load(page, status)} />
         ) : (
-          <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'auto', boxShadow: 'none' }}>
-            <Table>
+          <ResponsiveDataView
+            items={items}
+            mobileLabel={t('adminConsult.title')}
+            emptyLabel={t('adminConsult.empty')}
+            renderMobileItem={(c) => (
+              <Stack spacing={1.5}>
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                  <MobileDataField label={t('adminConsult.client')}><b>{c.client?.name || '—'}</b><Typography sx={{ fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere' }}>{c.client?.email}</Typography></MobileDataField>
+                  <MobileDataField label={t('adminConsult.lawyer')}><b>{c.lawyer?.name || '—'}</b><Typography sx={{ fontSize: 12, color: axelionColors.textMuted }}>{c.lawyer?.profile?.specialization}</Typography></MobileDataField>
+                  <MobileDataField label={t('adminConsult.scheduled')}>{fmtDate(c.scheduledDate)}{c.scheduledTime ? `, ${c.scheduledTime}` : ''}</MobileDataField>
+                  <MobileDataField label={t('adminConsult.status')}><Chip size="small" label={t(`admin.st_${c.status}`)} /></MobileDataField>
+                  <MobileDataField label={t('adminConsult.price')}>{fmtMoney(c.price)}</MobileDataField>
+                  <MobileDataField label={t('adminConsult.provider')}>{c.meetingProvider || '—'}</MobileDataField>
+                  <MobileDataField label={t('adminConsult.created')}>{fmtDate(c.createdAt)}</MobileDataField>
+                </Box>
+                <Button fullWidth variant="outlined" onClick={() => openDiagnostics(c.id)} sx={{ minHeight: 44 }}>{t('adminConsult.openDiagnostics')}</Button>
+              </Stack>
+            )}
+            desktop={(
+              <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
+                <TableContainer>
+                  <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: axelionColors.bgCream }}>
                   <TableCell>{t('adminConsult.client')}</TableCell>
@@ -113,12 +135,13 @@ const AdminConsultationsPage = () => {
                   <TableCell>{t('adminConsult.price')}</TableCell>
                   <TableCell>{t('adminConsult.status')}</TableCell>
                   <TableCell>{t('adminConsult.created')}</TableCell>
-                  <TableCell>Диагностика</TableCell>
+                  <TableCell>{t('adminConsult.provider')}</TableCell>
+                  <TableCell>{t('adminConsult.diagnostics')}</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {items.length === 0 ? (
-                  <TableRow><TableCell colSpan={7} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminConsult.empty')}</TableCell></TableRow>
+                  <TableRow><TableCell colSpan={8} align="center" sx={{ color: axelionColors.textMuted, py: 4 }}>{t('adminConsult.empty')}</TableCell></TableRow>
                 ) : items.map((c) => (
                   <TableRow key={c.id}>
                     <TableCell>
@@ -138,33 +161,37 @@ const AdminConsultationsPage = () => {
                         sx={{ color: STATUS_COLOR[c.status] || axelionColors.textMuted, bgcolor: axelionColors.bgCream, fontWeight: 600 }} />
                     </TableCell>
                     <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13, color: axelionColors.textMuted }}>{fmtDate(c.createdAt)}</TableCell>
-                    <TableCell><Button size="small" onClick={() => openDiagnostics(c.id)}>Открыть</Button></TableCell>
+                    <TableCell sx={{ overflowWrap: 'anywhere' }}>{c.meetingProvider || '—'}</TableCell>
+                    <TableCell><Button size="small" onClick={() => openDiagnostics(c.id)}>{t('adminConsult.open')}</Button></TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </Paper>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            )}
+          />
         )}
-        <Dialog open={Boolean(diagnostics) || diagnosticsLoading} onClose={() => setDiagnostics(null)} maxWidth="md" fullWidth>
-          <DialogTitle>Диагностика видеоконсультации</DialogTitle>
+        <Dialog open={Boolean(diagnostics) || diagnosticsLoading} onClose={() => setDiagnostics(null)} maxWidth="md" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
+          <DialogTitle>{t('adminConsult.diagnosticsTitle')}</DialogTitle>
           <DialogContent>
-            {diagnosticsLoading ? <CircularProgress /> : diagnostics && <Box sx={{ display: 'grid', gap: 1, fontSize: 14 }}>
+            {diagnosticsLoading ? <CircularProgress /> : diagnostics && <Box sx={{ display: 'grid', gap: 1, fontSize: 14, overflowWrap: 'anywhere' }}>
               <div>ID: {diagnostics.consultation.id}</div>
-              <div>Статус: {diagnostics.consultation.lifecycleStatus} / {diagnostics.consultation.status}</div>
-              <div>Провайдер: {diagnostics.consultation.meetingProvider}</div>
-              <div>Длительность: {diagnostics.consultation.duration} минут</div>
-              <div>Часовой пояс: {diagnostics.consultation.scheduleTimezone || '—'}</div>
-              <div>Zoom: {diagnostics.consultation.meeting?.status || 'не создан'}; операция: {diagnostics.consultation.meeting?.pendingOperation || '—'}</div>
-              <div>Попытки: {diagnostics.consultation.meeting?.attemptCount || 0}; ошибка: {diagnostics.consultation.meeting?.lastSafeError || '—'}</div>
-              <div>Юрист вошёл: {diagnostics.consultation.lawyerFirstJoinedAt ? fmtDate(diagnostics.consultation.lawyerFirstJoinedAt) : '—'}</div>
-              <div>Клиент вошёл: {diagnostics.consultation.clientFirstJoinedAt ? fmtDate(diagnostics.consultation.clientFirstJoinedAt) : '—'}</div>
-              <Typography variant="subtitle2" sx={{ mt: 1 }}>Технические события</Typography>
+              <div>{t('adminConsult.status')}: {diagnostics.consultation.lifecycleStatus} / {diagnostics.consultation.status}</div>
+              <div>{t('adminConsult.provider')}: {diagnostics.consultation.meetingProvider}</div>
+              <div>{t('adminConsult.duration')}: {diagnostics.consultation.duration} {t('adminConsult.minutes')}</div>
+              <div>{t('adminConsult.timezone')}: {diagnostics.consultation.scheduleTimezone || '—'}</div>
+              <div>Zoom: {diagnostics.consultation.meeting?.status || t('adminConsult.notCreated')}; {t('adminConsult.operation')}: {diagnostics.consultation.meeting?.pendingOperation || '—'}</div>
+              <div>{t('adminConsult.attempts')}: {diagnostics.consultation.meeting?.attemptCount || 0}; {t('adminConsult.error')}: {diagnostics.consultation.meeting?.lastSafeError || '—'}</div>
+              <div>{t('adminConsult.lawyerJoined')}: {diagnostics.consultation.lawyerFirstJoinedAt ? fmtDate(diagnostics.consultation.lawyerFirstJoinedAt) : '—'}</div>
+              <div>{t('adminConsult.clientJoined')}: {diagnostics.consultation.clientFirstJoinedAt ? fmtDate(diagnostics.consultation.clientFirstJoinedAt) : '—'}</div>
+              <Typography variant="subtitle2" sx={{ mt: 1 }}>{t('adminConsult.technicalEvents')}</Typography>
               {(diagnostics.events || []).map((event) => <div key={event.id}>{fmtDate(event.occurredAt)} · {event.eventType} · {event.participantRole || 'system'}</div>)}
             </Box>}
           </DialogContent>
-          <DialogActions>
-            {diagnostics?.consultation?.meetingProvider === 'zoom' && <Button onClick={async () => { await adminConsultationService.retryMeeting(diagnostics.consultation.id); setDiagnostics(null); }}>Повторить создание</Button>}
-            <Button onClick={() => setDiagnostics(null)}>Закрыть</Button>
+          <DialogActions sx={{ flexWrap: 'wrap', gap: 1, pb: 'max(8px, env(safe-area-inset-bottom))', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
+            {diagnostics?.consultation?.meetingProvider === 'zoom' && <Button onClick={async () => { await adminConsultationService.retryMeeting(diagnostics.consultation.id); setDiagnostics(null); }}>{t('adminConsult.retryCreate')}</Button>}
+            <Button onClick={() => setDiagnostics(null)}>{t('common.close')}</Button>
           </DialogActions>
         </Dialog>
 

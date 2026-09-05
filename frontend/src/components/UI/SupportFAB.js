@@ -67,8 +67,11 @@ const SupportFAB = () => {
         onClick={() => setOpen(true)}
         sx={{
           position: 'fixed',
-          bottom: { xs: 80, md: 24 },
-          right: 24,
+          bottom: {
+            xs: 'calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom) + 16px)',
+            lg: 'calc(24px + env(safe-area-inset-bottom))',
+          },
+          right: 'max(16px, env(safe-area-inset-right))',
           background: axelionColors.gold,
           color: 'white',
           zIndex: 1100,

@@ -7,38 +7,58 @@ import {
   VideoCall,
   Description,
   Person,
+  CalendarMonth,
+  Insights,
+  People,
+  AccountBalanceWallet,
+  Settings,
 } from '@mui/icons-material';
-import { axelionColors } from '../../theme/axelionTheme';
+import { useSelector } from 'react-redux';
 import { useTranslation } from '../../i18n';
+import { getMobileNavItems } from './mobileNavConfig';
 
-const NAV_ITEMS = [
-  { path: '/dashboard', tKey: 'nav.dashboard', icon: Dashboard },
-  { path: '/lawyers', tKey: 'nav.lawyers', icon: Gavel },
-  { path: '/consultations', tKey: 'nav.consultations', icon: VideoCall },
-  { path: '/documents', tKey: 'nav.documents', icon: Description },
-  { path: '/profile', tKey: 'nav.profile', icon: Person },
-];
+const ICONS = {
+  dashboard: Dashboard,
+  lawyers: Gavel,
+  consultations: VideoCall,
+  documents: Description,
+  profile: Person,
+  schedule: CalendarMonth,
+  analytics: Insights,
+  users: People,
+  finance: AccountBalanceWallet,
+  settings: Settings,
+};
 
 const MobileBottomNav = () => {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
+  const role = useSelector((state) => state.auth.role);
+  const navItems = getMobileNavItems(role);
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
   return (
     <Box
+      component="nav"
+      aria-label={t('nav.mobileNavigation')}
+      data-testid="mobile-bottom-nav"
       sx={{
-        display: { xs: 'flex', md: 'none' },
+        display: 'flex',
+        '@media (min-width:1024px)': { display: 'none' },
         position: 'fixed',
         bottom: 0,
-        left: 0,
-        right: 0,
-        minHeight: 64,
-        height: 'calc(64px + env(safe-area-inset-bottom))',
+        left: 'env(safe-area-inset-left)',
+        right: 'env(safe-area-inset-right)',
+        minHeight: 'var(--mobile-bottom-nav-height)',
+        height: 'calc(var(--mobile-bottom-nav-height) + env(safe-area-inset-bottom))',
         pb: 'env(safe-area-inset-bottom)',
-        bgcolor: axelionColors.bgLight,
-        borderTop: `1px solid ${axelionColors.borderLight}`,
+        bgcolor: 'var(--card-glass)',
+        color: 'var(--text2)',
+        borderTop: '1px solid var(--border)',
+        backdropFilter: 'blur(24px) saturate(180%)',
+        WebkitBackdropFilter: 'blur(24px) saturate(180%)',
         zIndex: 1200,
         justifyContent: 'space-around',
         alignItems: 'center',
@@ -46,9 +66,9 @@ const MobileBottomNav = () => {
         boxShadow: '0 -2px 8px rgba(26, 26, 26, 0.06)',
       }}
     >
-      {NAV_ITEMS.map((item) => {
+      {navItems.map((item) => {
         const active = isActive(item.path);
-        const Icon = item.icon;
+        const Icon = ICONS[item.icon];
 
         return (
           <Box
@@ -77,7 +97,7 @@ const MobileBottomNav = () => {
             <Icon
               sx={{
                 fontSize: 22,
-                color: active ? axelionColors.gold : axelionColors.textMuted,
+                color: active ? 'var(--accent)' : 'var(--text3)',
                 transition: 'color 0.2s ease',
                 mb: 0.25,
               }}
@@ -86,7 +106,7 @@ const MobileBottomNav = () => {
               sx={{
                 fontSize: '0.6rem',
                 fontWeight: active ? 600 : 400,
-                color: active ? axelionColors.gold : axelionColors.textMuted,
+                color: active ? 'var(--accent)' : 'var(--text3)',
                 letterSpacing: '0.02em',
                 lineHeight: 1,
               }}

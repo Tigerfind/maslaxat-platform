@@ -15,6 +15,7 @@ import EmptyState from '../../components/UI/EmptyState';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import MarkdownMessage from '../../components/MarkdownMessage';
 import { useTranslation } from '../../i18n';
+import ErrorState from '../../components/UI/ErrorState';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -87,6 +88,7 @@ const PortfolioPage = () => {
   const [consultations, setConsultations] = useState([]);
   const [aiConversations, setAiConversations] = useState([]);
   const [favorites, setFavorites] = useState([]);
+  const [errors, setErrors] = useState({});
 
   useEffect(() => {
     loadPortfolioData();
@@ -97,20 +99,25 @@ const PortfolioPage = () => {
   const loadPortfolioData = async () => {
     try {
       setLoading(true);
-      const [docsData, consData, aiData, favsData] = await Promise.all([
+      setErrors({});
+      const results = await Promise.allSettled([
         clientService.documents.getDocuments(),
         clientService.consultations.getConsultations({ bucket: 'all', limit: 100 }),
         clientService.aiChat.getConversations(),
         clientService.favorites.getFavorites(),
       ]);
-
-      setDocuments(Array.isArray(docsData) ? docsData : []);
-      setConsultations(Array.isArray(consData?.consultations) ? consData.consultations : []);
-      setAiConversations(Array.isArray(aiData) ? aiData : []);
-      setFavorites(Array.isArray(favsData) ? favsData : []);
-    } catch (error) {
-      console.error('Error loading portfolio:', error);
-      toast.error(t('portfolio.loadError'));
+      const [docs, cons, ai, favs] = results;
+      setDocuments(docs.status === 'fulfilled' && Array.isArray(docs.value) ? docs.value : []);
+      setConsultations(cons.status === 'fulfilled' && Array.isArray(cons.value?.consultations) ? cons.value.consultations : []);
+      setAiConversations(ai.status === 'fulfilled' && Array.isArray(ai.value) ? ai.value : []);
+      setFavorites(favs.status === 'fulfilled' && Array.isArray(favs.value) ? favs.value : []);
+      const nextErrors = {};
+      if (docs.status === 'rejected') nextErrors.documents = docs.reason;
+      if (cons.status === 'rejected') nextErrors.consultations = cons.reason;
+      if (ai.status === 'rejected') nextErrors.ai = ai.reason;
+      if (favs.status === 'rejected') nextErrors.favorites = favs.reason;
+      setErrors(nextErrors);
+      if (Object.keys(nextErrors).length) toast.error(t('portfolio.loadError'));
     } finally {
       setLoading(false);
     }
@@ -193,7 +200,7 @@ const PortfolioPage = () => {
 
         {/* ── ДОКУМЕНТЫ ── */}
         {!loading && activeTab === 0 && (
-          documents.length === 0 ? (
+          errors.documents ? <div style={glassCard}><ErrorState error={errors.documents} onRetry={loadPortfolioData} /></div> : documents.length === 0 ? (
             <EmptyState
               icon={<DescriptionOutlined sx={{ fontSize: 36 }} />}
               title={t('portfolio.emptyDocsTitle')}
@@ -202,12 +209,12 @@ const PortfolioPage = () => {
               onAction={() => navigate('/documents')}
             />
           ) : (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: 14 }}>
               {documents.map((doc) => (
-                <div
+                <button type="button"
                   key={doc.id}
                   onClick={() => navigate('/documents')}
-                  style={{ ...glassCard, padding: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14 }}
+                  style={{ ...glassCard, width: '100%', padding: 18, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 14, fontFamily: 'inherit', textAlign: 'left' }}
                 >
                   <div style={{ width: 46, height: 46, flexShrink: 0, borderRadius: 'var(--radius)', background: 'rgba(184,149,110,0.14)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <DescriptionOutlined sx={{ fontSize: 22 }} />
@@ -223,7 +230,7 @@ const PortfolioPage = () => {
                       <CheckCircleOutline sx={{ fontSize: 14 }} /> AI
                     </span>
                   )}
-                </div>
+                </button>
               ))}
             </div>
           )
@@ -231,7 +238,7 @@ const PortfolioPage = () => {
 
         {/* ── ДЕЛА (MATTERS) ── */}
         {!loading && activeTab === 1 && (
-          consultations.length === 0 ? (
+          errors.consultations ? <div style={glassCard}><ErrorState error={errors.consultations} onRetry={loadPortfolioData} /></div> : consultations.length === 0 ? (
             <EmptyState
               icon={<GavelOutlined sx={{ fontSize: 36 }} />}
               title={t('portfolio.emptyMattersTitle')}
@@ -244,12 +251,12 @@ const PortfolioPage = () => {
               {consultations.map((m) => {
                 const meta = matterMeta(m.status);
                 return (
-                  <div
+                  <button type="button"
                     key={m.id}
                     onClick={() => navigate('/consultations')}
-                    style={{ ...glassCard, padding: 22, cursor: 'pointer' }}
+                    style={{ ...glassCard, width: '100%', padding: 22, cursor: 'pointer', fontFamily: 'inherit', textAlign: 'left' }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 12 }}>
+                    <div className="portfolio-title-row" style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 14, marginBottom: 12 }}>
                       <div style={{ minWidth: 0 }}>
                         <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{m.topic || t('portfolio.consultationDefault')}</div>
                         <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 4 }}>
@@ -267,7 +274,7 @@ const PortfolioPage = () => {
                     <div style={{ height: 6, borderRadius: 3, background: 'var(--border)', overflow: 'hidden' }}>
                       <div style={{ width: `${meta.prog}%`, height: '100%', background: 'linear-gradient(90deg, var(--accent), var(--accent-dark))' }} />
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
@@ -276,7 +283,7 @@ const PortfolioPage = () => {
 
         {/* ── AI-ОТВЕТЫ (AI ANSWERS) ── */}
         {!loading && activeTab === 2 && (
-          aiConversations.length === 0 ? (
+          errors.ai ? <div style={glassCard}><ErrorState error={errors.ai} onRetry={loadPortfolioData} /></div> : aiConversations.length === 0 ? (
             <EmptyState
               icon={<AutoAwesomeOutlined sx={{ fontSize: 36 }} />}
               title={t('portfolio.emptyAiTitle')}
@@ -321,7 +328,7 @@ const PortfolioPage = () => {
 
         {/* ── ХРОНИКА (TIMELINE) ── */}
         {!loading && activeTab === 3 && (
-          timeline.length === 0 ? (
+          Object.keys(errors).length === 4 ? <div style={glassCard}><ErrorState onRetry={loadPortfolioData} /></div> : timeline.length === 0 ? (
             <EmptyState
               icon={<StarBorderOutlined sx={{ fontSize: 36 }} />}
               title={t('portfolio.emptyTlTitle')}
@@ -353,7 +360,7 @@ const PortfolioPage = () => {
         )}
       </div>
 
-      <style>{`@media (max-width: 720px){ .dossier-stats { grid-template-columns: repeat(2, 1fr) !important; } }`}</style>
+      <style>{`@media (max-width: 720px){ .dossier-stats { grid-template-columns: repeat(2, minmax(0,1fr)) !important; } } @media(max-width:420px){.portfolio-title-row{flex-wrap:wrap}.portfolio-title-row>span{max-width:100%;white-space:normal}}`}</style>
     </GlassShell>
   );
 };

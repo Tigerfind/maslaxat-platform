@@ -69,12 +69,12 @@ const inputSx = {
     '&:hover fieldset': { borderColor: 'var(--accent)' },
     '&.Mui-focused fieldset': { borderColor: 'var(--accent)', borderWidth: 1 },
   },
-  '& .MuiInputBase-input, & textarea': { color: 'var(--text)' },
+  '& .MuiInputBase-input, & textarea': { color: 'var(--text)', fontSize: 16 },
   '& .MuiFormHelperText-root': { color: 'var(--text3)' },
 };
 
 const timeSx = {
-  width: 128,
+  width: 'min(128px, 100%)',
   ...inputSx,
 };
 
@@ -244,7 +244,12 @@ const LawyerProfileEditPage = () => {
               position: 'absolute', right: 16, top: 16, display: 'inline-flex', alignItems: 'center', gap: 6,
               background: 'rgba(255,255,255,0.18)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)',
               border: '1px solid rgba(255,255,255,0.3)', color: '#fff', borderRadius: 12, padding: '9px 14px',
-              fontSize: 12, fontWeight: 600, letterSpacing: '0.03em', cursor: 'pointer', fontFamily: 'inherit',
+               fontSize: 12, fontWeight: 600, letterSpacing: '0.03em', cursor: 'pointer', fontFamily: 'inherit',
+            }} role="button" tabIndex={0} onKeyDown={(event) => {
+              if (event.key === 'Enter' || event.key === ' ') {
+                event.preventDefault();
+                event.currentTarget.querySelector('input')?.click();
+              }
             }}>
               <PhotoCameraOutlined sx={{ fontSize: 16 }} /> {t('lawyerPanel.changePhoto')}
               <input hidden type="file" accept="image/*" onChange={handleAvatarChange} />
@@ -320,7 +325,7 @@ const LawyerProfileEditPage = () => {
             sx={{ mb: 2.5, ...inputSx }}
           />
 
-          <div style={{ display: 'flex', gap: 18, marginBottom: 20 }}>
+          <div className="lawyer-profile-city-price" style={{ display: 'flex', gap: 18, marginBottom: 20 }}>
             <div style={{ flex: 1 }}>
               <div style={fieldLabel}>{t('lawyerPanel.city')}</div>
               <TextField
@@ -397,10 +402,11 @@ const LawyerProfileEditPage = () => {
             {DAY_KEYS.map((key, idx) => {
               const active = !!form.schedule[key]?.enabled;
               return (
-                <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
+                <div key={key} className="lawyer-profile-schedule-row" style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
                   <Chip
-                    label={DAYS[idx]}
-                    onClick={() => toggleDay(key)}
+                     label={DAYS[idx]}
+                     onClick={() => toggleDay(key)}
+                     aria-pressed={active}
                     size="small"
                     sx={{
                       width: 52,
@@ -414,11 +420,12 @@ const LawyerProfileEditPage = () => {
                     }}
                   />
                   {active && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div className="lawyer-profile-times" style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0 }}>
                       <TextField
                         type="time"
                         size="small"
-                        value={form.schedule[key]?.from || '09:00'}
+                         value={form.schedule[key]?.from || '09:00'}
+                         inputProps={{ 'aria-label': `${DAYS[idx]} ${t('onboarding.lblFrom')}` }}
                         onChange={(e) => updateTime(key, 'from', e.target.value)}
                         sx={timeSx}
                       />
@@ -426,7 +433,8 @@ const LawyerProfileEditPage = () => {
                       <TextField
                         type="time"
                         size="small"
-                        value={form.schedule[key]?.to || '18:00'}
+                         value={form.schedule[key]?.to || '18:00'}
+                         inputProps={{ 'aria-label': `${DAYS[idx]} ${t('onboarding.lblTo')}` }}
                         onChange={(e) => updateTime(key, 'to', e.target.value)}
                         sx={timeSx}
                       />
@@ -468,6 +476,16 @@ const LawyerProfileEditPage = () => {
           {saving ? t('lawyerPanel.savingProfile') : t('lawyerPanel.saveChanges')}
         </button>
       </div>
+      <style>{`
+        @media(max-width:600px){
+          .lawyer-profile-city-price{flex-direction:column}
+          .lawyer-profile-schedule-row{align-items:stretch !important;gap:8px !important}
+          .lawyer-profile-schedule-row>.MuiChip-root{width:100% !important;min-height:44px}
+          .lawyer-profile-times{display:grid !important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);width:100%}
+          .lawyer-profile-times>.MuiFormControl-root{width:100% !important}
+        }
+        @media(max-width:360px){.lawyer-profile-times{grid-template-columns:1fr !important}.lawyer-profile-times>span{display:none}}
+      `}</style>
     </GlassShell>
   );
 };

@@ -151,7 +151,7 @@ const ConsultationCard = ({ consultation, now = Date.now(), serverOffset = 0, lo
         <div className="consultation-card-person" style={{ display: 'flex', alignItems: 'flex-start', gap: 15 }}>
           <div style={{ width: 52, height: 52, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'linear-gradient(135deg,#6A8A9A,#4A6A7A)', color: '#fff', display: 'grid', placeItems: 'center', fontWeight: 650 }}>
             <span>{initialsOf(name)}</span>
-            {avatar && !avatarFailed && <img src={avatar} alt="" onError={() => setAvatarFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', gridArea: '1/1', position: 'relative' }} />}
+            {avatar && !avatarFailed && <img src={avatar} alt="" loading="lazy" decoding="async" onError={() => setAvatarFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover', gridArea: '1/1', position: 'relative' }} />}
           </div>
           <div style={{ flex: 1, minWidth: 0 }}>
             <Link to={`/consultations/${consultation.id}`} state={from ? { from } : undefined} style={{ color: 'var(--text)', fontSize: 17, fontWeight: 600, textDecoration: 'none', outlineOffset: 4 }}>{name}</Link>

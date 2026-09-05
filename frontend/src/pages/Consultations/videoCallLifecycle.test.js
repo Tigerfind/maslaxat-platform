@@ -16,6 +16,13 @@ describe('video call lifecycle helpers', () => {
     });
   });
 
+  it('uses microphone-only constraints after explicit video fallback', () => {
+    expect(mediaConstraintsForCall('video', { audioOnly: true, camId: 'camera', micId: 'microphone' })).toEqual({
+      video: false,
+      audio: { deviceId: { exact: 'microphone' } },
+    });
+  });
+
   it('maps end failures to a safe translated error', () => {
     expect(safeEndError({ response: { data: { code: 'SESSION_EVIDENCE_REQUIRED', error: 'internal details' } } })).toEqual({
       code: 'SESSION_EVIDENCE_REQUIRED', translationKey: 'videoCall.endError',

@@ -12,6 +12,7 @@ import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import DocumentPreviewDialog from '../UI/DocumentPreviewDialog';
 import { consultationDialogPaperSx, localeForLanguage } from '../../utils/consultationLocale';
+import { CASE_DOCUMENT_ACCEPT, CASE_DOCUMENT_FORMAT_LABEL, DOCUMENT_MAX_BYTES, isAllowedDocumentFile, normalizeDocumentFile } from '../../utils/documentFiles';
 
 const fmtSize = (b, locale) => {
   if (!b) return '';
@@ -67,10 +68,12 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId, readOnly 
     const file = e.target.files && e.target.files[0];
     e.target.value = '';
     if (!file) return;
+    if (file.size > DOCUMENT_MAX_BYTES) { toast.error(t('caseDocs.fileTooBig')); return; }
+    if (!isAllowedDocumentFile(file, { allowWebp: true })) { toast.error(t('caseDocs.unsupportedFormat', { formats: CASE_DOCUMENT_FORMAT_LABEL })); return; }
     setUploading(true);
     try {
       const form = new FormData();
-      form.append('file', file);
+      form.append('file', normalizeDocumentFile(file));
       await api.post(`/consultations/${consultationId}/documents`, form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
@@ -133,7 +136,7 @@ const CaseDocuments = ({ consultationId, open, onClose, currentUserId, readOnly 
           {t('caseDocs.upload')}
         </Button>}
         {writable && <input ref={fileRef} type="file"
-          accept=".pdf,.doc,.docx,.txt,.jpg,.jpeg,.png,.webp"
+          accept={CASE_DOCUMENT_ACCEPT}
           onChange={onFile} style={{ display: 'none' }} />}
 
         {loading ? (

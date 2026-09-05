@@ -206,7 +206,7 @@ const LawyerDashboardGlass = () => {
 
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
-      <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+      <div className="lawyer-dashboard" style={{ maxWidth: 1180, minWidth: 0, margin: '0 auto' }}>
         {stats?.scheduleComplete === false && (
           <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18, padding: '16px 18px', borderRadius: 'var(--radius)', background: 'rgba(192,73,47,0.10)', border: '1px solid rgba(192,73,47,0.30)' }}>
             <div>
@@ -281,7 +281,7 @@ const LawyerDashboardGlass = () => {
               onClick={() => navigate('/lawyer/analytics')}
               role="button"
               tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter') navigate('/lawyer/analytics'); }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/lawyer/analytics'); } }}
               title={t('lawyerPanel.viewAnalytics')}
               style={{ ...glassCard, padding: 24, cursor: 'pointer', transition: 'transform .18s ease, box-shadow .18s ease' }}
               onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-3px)'; e.currentTarget.style.boxShadow = '0 14px 30px rgba(26,26,26,0.12)'; }}
@@ -342,9 +342,9 @@ const LawyerDashboardGlass = () => {
                           <div style={{ fontSize: 13, color: 'var(--text3)' }}>{formatWhen(r.createdAt)} · <span style={{ color: 'var(--text)' }}>{formatCurrency(r.price)} {t('lawyerPanel.sum')}</span></div>
                         </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 10, marginTop: 14, paddingLeft: 58 }}>
-                        <button onClick={() => handleAcceptRequest(r.id)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.accept')}</button>
-                        <button onClick={() => handleRejectRequest(r.id)} style={{ background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.reject')}</button>
+                      <div className="ld-request-actions" style={{ display: 'flex', gap: 10, marginTop: 14, paddingLeft: 58, flexWrap: 'wrap' }}>
+                        <button onClick={() => handleAcceptRequest(r.id)} style={{ minHeight: 44, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.accept')}</button>
+                        <button onClick={() => handleRejectRequest(r.id)} style={{ minHeight: 44, background: 'transparent', color: 'var(--text2)', border: '1px solid var(--border)', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('lawyerPanel.reject')}</button>
                       </div>
                     </div>
                   );
@@ -418,17 +418,17 @@ const LawyerDashboardGlass = () => {
               const isVideo = c.type === 'video';
               const chip = typeChip(isVideo);
               return (
-                <div key={c.id || i} style={{ padding: '16px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'center', gap: 16 }}>
+                <div key={c.id || i} className="ld-upcoming-row" style={{ padding: '16px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'center', gap: 16 }}>
                   <div style={{ width: 42, height: 42, borderRadius: '50%', background: AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 14, flexShrink: 0 }}>{initialsOf(c.clientName)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{c.clientName}</div>
                     <div style={{ fontSize: 13, color: 'var(--text3)' }}>{c.topic}</div>
                   </div>
-                  <div style={{ fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{[c.date, c.time].filter(Boolean).join(' · ')}</div>
+                  <div className="ld-upcoming-date" style={{ fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{[c.date, c.time].filter(Boolean).join(' · ')}</div>
                   <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: chip.color, background: chip.bg, padding: '6px 12px', borderRadius: 'var(--radius)' }}>
                     {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}{chip.label}
                   </span>
-                  <button onClick={() => handleStartConsultation(c)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <button className="ld-upcoming-action" onClick={() => handleStartConsultation(c)} style={{ minHeight: 44, background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '10px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                     {isVideo && <CallOutlined sx={{ fontSize: 15 }} />}{isVideo ? t('call.callBtn') : t('lawyerPanel.start')}
                   </button>
                 </div>
@@ -471,7 +471,18 @@ const LawyerDashboardGlass = () => {
         </div>
       </div>
 
-      <style>{`@media (max-width: 900px){ .ld-row { grid-template-columns: 1fr !important; } }`}</style>
+      <style>{`
+        @media (max-width: 900px){ .ld-row { grid-template-columns: minmax(0, 1fr) !important; } }
+        @media (max-width: 600px){
+          .lawyer-dashboard button { min-height: 44px; }
+          .ld-request-actions { padding-left: 0 !important; }
+          .ld-request-actions > button { flex: 1 1 120px; }
+          .ld-upcoming-row { align-items: stretch !important; flex-wrap: wrap; padding: 16px !important; }
+          .ld-upcoming-row > div:nth-child(2) { flex-basis: calc(100% - 58px) !important; }
+          .ld-upcoming-date { width: 100%; white-space: normal !important; padding-left: 58px; }
+          .ld-upcoming-action { width: 100%; }
+        }
+      `}</style>
     </GlassShell>
   );
 };

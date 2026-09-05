@@ -24,6 +24,8 @@ import {
   CircularProgress,
   Card,
   Button,
+  FormControlLabel,
+  useMediaQuery,
 } from '@mui/material';
 import {
   Add,
@@ -39,9 +41,11 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const SpecializationsPageGlass = () => {
   const { t } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
 
   const [specializations, setSpecializations] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -311,8 +315,27 @@ const SpecializationsPageGlass = () => {
           </Box>
 
           {specializations.length > 0 ? (
-            <TableContainer>
-              <Table>
+            <ResponsiveDataView
+              items={specializations}
+              mobileLabel={t('specPage.specializations')}
+              renderMobileItem={(spec) => (
+                <Stack spacing={1.5} sx={{ opacity: spec.isActive ? 1 : 0.65 }}>
+                  <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{spec.name}</Typography>
+                  <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                    <MobileDataField fullWidth label={t('specPage.colTranslations')}>{[spec.nameUz, spec.nameEn].filter(Boolean).join(' · ') || '—'}</MobileDataField>
+                    <MobileDataField label={t('specPage.colLawyers')}>{spec.lawyerCount || 0}</MobileDataField>
+                    <MobileDataField label={t('specPage.colStatus')}>{spec.isActive ? t('specPage.statusActive') : t('specPage.statusInactive')}</MobileDataField>
+                  </Box>
+                  <FormControlLabel control={<Switch checked={spec.isActive} onChange={() => handleToggleActive(spec.id, spec.isActive)} inputProps={{ 'aria-label': `${spec.isActive ? t('specPage.deactivate') : t('specPage.activate')}: ${spec.name}` }} sx={{ minHeight: 44 }} />} label={spec.isActive ? t('specPage.deactivate') : t('specPage.activate')} sx={{ m: 0, minHeight: 44 }} />
+                  <Stack direction="row" spacing={1}>
+                    <IconButton aria-label={`${t('specPage.edit')}: ${spec.name}`} onClick={() => handleOpenDialog(spec)} sx={{ color: axelionColors.gold, border: `1px solid ${axelionColors.borderLight}` }}><Edit fontSize="small" /></IconButton>
+                    <IconButton aria-label={`${t('specPage.del')}: ${spec.name}`} onClick={() => handleDeleteClick(spec.id)} sx={{ color: axelionColors.error, border: `1px solid ${axelionColors.borderLight}` }}><Delete fontSize="small" /></IconButton>
+                  </Stack>
+                </Stack>
+              )}
+              desktop={(
+                <TableContainer>
+                  <Table>
                 <TableHead>
                   <TableRow sx={{ background: axelionColors.bgCream, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600, fontSize: '14px' }}>
@@ -417,6 +440,7 @@ const SpecializationsPageGlass = () => {
                           <Tooltip title={spec.isActive ? t('specPage.deactivate') : t('specPage.activate')}>
                             <Switch
                               checked={spec.isActive}
+                              inputProps={{ 'aria-label': `${spec.isActive ? t('specPage.deactivate') : t('specPage.activate')}: ${spec.name}` }}
                               onChange={() =>
                                 handleToggleActive(spec.id, spec.isActive)
                               }
@@ -433,6 +457,7 @@ const SpecializationsPageGlass = () => {
                           </Tooltip>
                           <Tooltip title={t('specPage.edit')}>
                             <IconButton
+                              aria-label={`${t('specPage.edit')}: ${spec.name}`}
                               onClick={() => handleOpenDialog(spec)}
                               sx={{
                                 color: axelionColors.gold,
@@ -449,6 +474,7 @@ const SpecializationsPageGlass = () => {
                           </Tooltip>
                           <Tooltip title={t('specPage.del')}>
                             <IconButton
+                              aria-label={`${t('specPage.del')}: ${spec.name}`}
                               onClick={() => handleDeleteClick(spec.id)}
                               sx={{
                                 color: axelionColors.error,
@@ -468,8 +494,10 @@ const SpecializationsPageGlass = () => {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </TableContainer>
+                  </Table>
+                </TableContainer>
+              )}
+            />
           ) : loadError ? (
             <ErrorState error={loadError} onRetry={loadSpecializations} />
           ) : (
@@ -488,10 +516,12 @@ const SpecializationsPageGlass = () => {
         onClose={handleCloseDialog}
         maxWidth="sm"
         fullWidth
+        fullScreen={phone}
         PaperProps={{
           sx: {
             background: axelionColors.bgLight,
-            borderRadius: '8px',
+            borderRadius: { xs: 0, sm: '8px' },
+            maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' },
             boxShadow: '0 8px 24px rgba(26, 26, 26, 0.15)',
           },
         }}
@@ -570,6 +600,7 @@ const SpecializationsPageGlass = () => {
               <Typography sx={{ color: axelionColors.textDark, fontWeight: 500 }}>{t('specPage.activeLabel')}</Typography>
               <Switch
                 checked={currentSpec.isActive}
+                inputProps={{ 'aria-label': t('specPage.activeLabel') }}
                 onChange={(e) =>
                   setCurrentSpec({ ...currentSpec, isActive: e.target.checked })
                 }
@@ -585,7 +616,7 @@ const SpecializationsPageGlass = () => {
             </Box>
           </Stack>
         </DialogContent>
-        <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+        <DialogActions sx={{ p: 3, pb: 'max(24px, env(safe-area-inset-bottom))', borderTop: `1px solid ${axelionColors.borderLight}`, flexWrap: 'wrap', gap: 1, '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button
             variant="outlined"
             onClick={handleCloseDialog}
@@ -637,10 +668,12 @@ const SpecializationsPageGlass = () => {
         onClose={() => setDeleteConfirm(false)}
         maxWidth="xs"
         fullWidth
+        fullScreen={phone}
         PaperProps={{
           sx: {
             background: axelionColors.bgLight,
-            borderRadius: '8px',
+            borderRadius: { xs: 0, sm: '8px' },
+            maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' },
             boxShadow: '0 8px 24px rgba(26, 26, 26, 0.15)',
           },
         }}
@@ -661,7 +694,7 @@ const SpecializationsPageGlass = () => {
             </Typography>
           )}
         </DialogContent>
-        <DialogActions sx={{ p: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+        <DialogActions sx={{ p: 3, pb: 'max(24px, env(safe-area-inset-bottom))', borderTop: `1px solid ${axelionColors.borderLight}`, flexWrap: 'wrap', gap: 1, '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button
             variant="outlined"
             onClick={() => setDeleteConfirm(false)}

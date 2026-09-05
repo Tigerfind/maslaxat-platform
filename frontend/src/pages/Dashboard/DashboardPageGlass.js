@@ -21,6 +21,7 @@ import GlassShell from '../../components/GlassKit/GlassShell';
 import AILimitUpsell from '../../components/AILimitUpsell';
 import BookingModal from '../../components/BookingModal';
 import { launchConsultation } from '../../services/meetingLauncher';
+import ErrorState from '../../components/UI/ErrorState';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -112,6 +113,7 @@ const DashboardPageGlass = () => {
     navigate('/ai-chat', q ? { state: { autoSend: q } } : undefined);
   };
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
 
   useEffect(() => {
     load();
@@ -126,6 +128,7 @@ const DashboardPageGlass = () => {
   const load = async () => {
     try {
       setLoading(true);
+      setLoadError(null);
       const [s, u, sb, notif, favs] = await Promise.all([
         clientService.dashboard.getStats(),
         clientService.dashboard.getUpcomingConsultations(),
@@ -139,6 +142,7 @@ const DashboardPageGlass = () => {
       setNotifications(Array.isArray(notif) ? notif : []);
       setFavorites(Array.isArray(favs) ? favs : []);
     } catch (e) {
+      setLoadError(e);
       toast.error(t('common.error') || 'Ошибка загрузки');
     } finally {
       setLoading(false);
@@ -206,7 +210,7 @@ const DashboardPageGlass = () => {
     <GlassShell active="/dashboard" title={t('dashboard.title')} subtitle={greeting}>
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
         {/* Stat cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 18, marginBottom: 24 }}>
+        <div className="client-dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 18, marginBottom: 24 }}>
           {statCards.map((s, i) => (
             <div
               key={i}
@@ -241,7 +245,7 @@ const DashboardPageGlass = () => {
             <div style={{ position: 'absolute', top: -60, right: -40, width: 210, height: 210, borderRadius: '50%', background: '#C9A36E', opacity: 0.5, filter: 'blur(45px)', pointerEvents: 'none', zIndex: 0 }} />
             <div style={{ position: 'absolute', bottom: -50, left: -30, width: 180, height: 180, borderRadius: '50%', background: '#7A9A6B', opacity: 0.38, filter: 'blur(45px)', pointerEvents: 'none', zIndex: 0 }} />
 
-            <div style={{ position: 'relative', zIndex: 1, padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <div className="dashboard-ai-header" style={{ position: 'relative', zIndex: 1, padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.10)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(140deg,#C9A980,#8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(0,0,0,0.3)' }}><AutoAwesome sx={{ fontSize: 19 }} /></div>
                 <div>
@@ -317,7 +321,7 @@ const DashboardPageGlass = () => {
             <div style={{ display: 'flex', gap: 12, overflowX: 'auto', paddingBottom: 4 }}>
               {favorites.slice(0, 8).map((f, i) => (
                 <div key={f.id} style={{ minWidth: 156, flexShrink: 0, border: '1px solid var(--border)', borderRadius: 14, padding: 14, textAlign: 'center', background: 'var(--surface)' }}>
-                  <div onClick={() => navigate(`/lawyers/${f.id}`)} style={{ cursor: 'pointer', width: 48, height: 48, borderRadius: '50%', margin: '0 auto 8px', background: f.avatar ? `center/cover url(${f.avatar})` : AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 16 }}>{!f.avatar && initialsOf(f.name)}</div>
+                  <button type="button" aria-label={f.name} onClick={() => navigate(`/lawyers/${f.id}`)} style={{ cursor: 'pointer', width: 48, height: 48, border: 0, borderRadius: '50%', margin: '0 auto 8px', background: f.avatar ? `center/cover url(${f.avatar})` : AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 16 }}>{!f.avatar && initialsOf(f.name)}</button>
                   <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{f.name}</div>
                   <div style={{ fontSize: 12, color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3, margin: '2px 0 10px' }}><StarRounded sx={{ fontSize: 14, color: '#C9A36E' }} />{f.rating || 0}</div>
                   <button onClick={() => rebook(f)} style={{ width: '100%', background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#FFFFFF', border: 'none', fontSize: 11.5, fontWeight: 600, padding: '8px 10px', borderRadius: 9, cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.rebook')}</button>
@@ -336,6 +340,8 @@ const DashboardPageGlass = () => {
 
           {loading ? (
             <div style={{ padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 13 }}>{t('common.loading')}</div>
+          ) : loadError ? (
+            <ErrorState error={loadError} onRetry={load} title={t('dashboard.loadError')} />
           ) : upcoming.length === 0 ? (
             <div style={{ position: 'relative', overflow: 'hidden', padding: '46px 24px', textAlign: 'center', background: 'radial-gradient(120% 100% at 50% 0%, rgba(184,149,110,0.10), transparent 60%)' }}>
               {/* парящие точки */}
@@ -360,13 +366,13 @@ const DashboardPageGlass = () => {
               const name = u.lawyerName || u.name || 'Юрист';
               const isVideo = u.type === 'video';
               return (
-                <div key={u.id || i} style={{ padding: '18px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'center', gap: 18 }}>
+                <div key={u.id || i} className="dashboard-upcoming-row" style={{ padding: '18px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'center', gap: 18 }}>
                   <div style={{ width: 46, height: 46, borderRadius: '50%', background: AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 15, flexShrink: 0 }}>{initialsOf(name)}</div>
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)' }}>{name}</div>
                     <div style={{ fontSize: 13, color: 'var(--text3)' }}>{[u.spec || u.topic, u.date && `${u.date}${u.time ? ' · ' + u.time : ''}`].filter(Boolean).join(' · ')}</div>
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'rgba(184,149,110,0.12)', padding: '7px 12px', borderRadius: 'var(--radius)' }}>
+                  <div className="dashboard-upcoming-type" style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--accent)', background: 'rgba(184,149,110,0.12)', padding: '7px 12px', borderRadius: 'var(--radius)' }}>
                     {isVideo ? <VideocamOutlined sx={{ fontSize: 15 }} /> : <ChatBubbleOutline sx={{ fontSize: 15 }} />}{isVideo ? t('dashboard.typeVideo') : t('dashboard.typeChat')}
                   </div>
                   <button onClick={() => join(u)} style={{ background: '#1A1A1A', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', padding: '11px 20px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.join')}</button>
@@ -384,10 +390,10 @@ const DashboardPageGlass = () => {
               <div style={{ fontSize: 15, fontWeight: 500, letterSpacing: '0.02em', color: 'var(--text)' }}>{t('dashboard.activityTitle')}</div>
             </div>
             {notifications.map((n) => (
-              <div
+              <button type="button"
                 key={n.id}
                 onClick={() => openNotification(n)}
-                style={{ padding: '14px 24px', borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', background: n.isRead ? 'transparent' : 'rgba(184,149,110,0.06)' }}
+                style={{ width: '100%', padding: '14px 24px', border: 0, borderBottom: '1px solid var(--canvas)', display: 'flex', alignItems: 'flex-start', gap: 12, cursor: 'pointer', background: n.isRead ? 'transparent' : 'rgba(184,149,110,0.06)', fontFamily: 'inherit', textAlign: 'left' }}
               >
                 <span style={{ marginTop: 6, width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: n.isRead ? 'var(--border-strong)' : 'var(--accent)' }} />
                 <div style={{ flex: 1, minWidth: 0 }}>
@@ -395,7 +401,7 @@ const DashboardPageGlass = () => {
                   {n.message && <div style={{ fontSize: 13, color: 'var(--text3)', marginTop: 2, lineHeight: 1.5 }}>{n.message}</div>}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text3)', flexShrink: 0, whiteSpace: 'nowrap' }}>{relTime(n.createdAt)}</div>
-              </div>
+              </button>
             ))}
           </div>
         )}
@@ -411,6 +417,17 @@ const DashboardPageGlass = () => {
         .qa-hero:hover{ transform: translateY(-2px); box-shadow: 0 10px 30px rgba(139,115,85,0.28); }
         .qa-mini{ transition: transform .18s ease, border-color .18s ease; }
         .qa-mini:hover{ transform: translateY(-2px); border-color: var(--accent); }
+        @media(max-width:480px){
+          .client-dashboard-stats{grid-template-columns:repeat(2,minmax(0,1fr)) !important;gap:10px !important}
+          .client-dashboard-stats .stat-card{padding:13px !important;gap:9px !important;min-width:0}
+          .client-dashboard-stats .stat-card>div:first-child{width:40px !important;height:40px !important}
+          .dashboard-ai-header{align-items:flex-start !important;flex-wrap:wrap;padding:16px !important}
+          .dashboard-ai-header>button{margin-left:48px}
+          .dashboard-upcoming-row{align-items:flex-start !important;flex-wrap:wrap;padding:16px !important;gap:10px !important}
+          .dashboard-upcoming-row>div:nth-child(2){flex-basis:calc(100% - 58px)}
+          .dashboard-upcoming-type{margin-left:58px}
+          .dashboard-upcoming-row>button{width:100%;margin-left:58px}
+        }
       `}</style>
 
       {/* Апселл подписки: тот же модал, что на лимите AI (раньше кнопка вела в /settings,

@@ -9,6 +9,7 @@ const AmbientBackground = () => {
   const glossRef = useRef(null);
 
   useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return undefined;
     const onMove = (e) => {
       if (!glossRef.current) return;
       // gloss follows the pointer horizontally (matches design --gx var)

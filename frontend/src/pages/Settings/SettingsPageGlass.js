@@ -13,6 +13,7 @@ import {
   RestartAltOutlined,
   CloseOutlined,
   PhoneOutlined,
+  DownloadOutlined,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { logout, updateProfile } from '../../store/slices/authSlice';
@@ -23,6 +24,7 @@ import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
 import api from '../../services/api';
+import { getInstallEnvironment, requestInstallPrompt } from '../../utils/pwaInstall';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -74,11 +76,12 @@ const iconBox = {
 };
 
 // ── Custom glass toggle (matches mockup <button><knob/></button>) ──
-const Toggle = ({ on, onClick }) => (
+const Toggle = ({ on, onClick, label }) => (
   <button
     type="button"
     onClick={onClick}
     aria-pressed={on}
+    aria-label={label}
     style={{
       width: 46,
       height: 26,
@@ -182,6 +185,8 @@ const SettingsPageGlass = () => {
   const [phoneCode, setPhoneCode] = useState('');
   const [phoneSent, setPhoneSent] = useState(false);
   const [phoneBusy, setPhoneBusy] = useState(false);
+  const [settingsLoading, setSettingsLoading] = useState(true);
+  const [settingsError, setSettingsError] = useState(false);
 
   const requestPhoneCode = async () => {
     if (!phoneInput.trim() || phoneBusy) return;
@@ -216,11 +221,12 @@ const SettingsPageGlass = () => {
   };
 
   // ── Web-push на это устройство (реальная подписка через Push API) ──
-  const [devicePush, setDevicePush] = useState({ supported: false, subscribed: false, enabledOnServer: false, busy: false });
+  const [devicePush, setDevicePush] = useState({ checked: false, supported: false, subscribed: false, enabledOnServer: false, busy: false });
+  const installEnvironment = getInstallEnvironment();
   useEffect(() => {
     let alive = true;
     pushService.getStatus().then((s) => {
-      if (alive) setDevicePush((prev) => ({ ...prev, supported: s.supported, subscribed: s.subscribed, enabledOnServer: s.enabledOnServer }));
+      if (alive) setDevicePush((prev) => ({ ...prev, checked: true, supported: s.supported, subscribed: s.subscribed, enabledOnServer: s.enabledOnServer }));
     });
     return () => { alive = false; };
   }, []);
@@ -265,8 +271,10 @@ const SettingsPageGlass = () => {
   }, [settings]);
 
   // Загружаем настройки с сервера при открытии страницы (сервер — источник истины)
-  useEffect(() => {
+  const fetchSettings = () => {
     let ignore = false;
+    setSettingsLoading(true);
+    setSettingsError(false);
     api.get('/users/settings')
       .then((res) => {
         const serverSettings = res.data?.settings;
@@ -276,8 +284,13 @@ const SettingsPageGlass = () => {
           localStorage.setItem('appSettings', JSON.stringify(merged));
         }
       })
-      .catch(() => { /* офлайн/ошибка — остаёмся на локальных настройках */ });
+      .catch(() => { if (!ignore) setSettingsError(true); })
+      .finally(() => { if (!ignore) setSettingsLoading(false); });
     return () => { ignore = true; };
+  };
+  useEffect(() => {
+    const cleanup = fetchSettings();
+    return cleanup;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -325,6 +338,8 @@ const SettingsPageGlass = () => {
   return (
     <GlassShell active="/settings" title={t('settings.title')} subtitle={t('settings.subtitle')} role={role || 'client'}>
       <div style={{ maxWidth: 720, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 18 }}>
+        {settingsLoading && <div role="status" style={{ ...glassCard, padding: 16, textAlign: 'center', color: 'var(--text3)' }}>{t('common.loading')}</div>}
+        {settingsError && <div role="alert" style={{ ...glassCard, padding: 16, color: 'var(--error)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}><span style={{ flex: 1 }}>{t('settings.loadErrorCached')}</span><button type="button" onClick={fetchSettings} style={{ minHeight: 44, border: '1px solid var(--border)', borderRadius: 10, background: 'transparent', color: 'var(--text)', padding: '8px 14px' }}>{t('common.retry')}</button></div>}
         {/* ── Уведомления ── */}
         <Section
           icon={<NotificationsNoneOutlined sx={{ fontSize: 20 }} />}
@@ -334,21 +349,45 @@ const SettingsPageGlass = () => {
           <Row
             label={t('settings.emailNotif')}
             description={t('settings.emailNotifDesc')}
-            control={<Toggle on={settings.emailNotifications} onClick={() => handleToggle('emailNotifications')} />}
+            control={<Toggle label={t('settings.emailNotif')} on={settings.emailNotifications} onClick={() => handleToggle('emailNotifications')} />}
           />
           <Row
             label={t('settings.pushNotif')}
             description={t('settings.pushNotifDesc')}
-            control={<Toggle on={settings.pushNotifications} onClick={() => handleToggle('pushNotifications')} />}
+            control={<Toggle label={t('settings.pushNotif')} on={settings.pushNotifications} onClick={() => handleToggle('pushNotifications')} />}
           />
           {devicePush.supported && devicePush.enabledOnServer && (
             <Row
               label={t('settings.pushDevice')}
               description={t('settings.pushDeviceDesc')}
-              control={<Toggle on={devicePush.subscribed} onClick={handleTogglePush} />}
+               control={<Toggle label={t('settings.pushDevice')} on={devicePush.subscribed} onClick={handleTogglePush} />}
               last
             />
           )}
+          {devicePush.checked && !devicePush.supported && (
+            <Row
+              label={t('settings.pushDevice')}
+              description={installEnvironment.ios && !installEnvironment.installed ? t('settings.pushInstallRequired') : t('settings.pushUnsupported')}
+              control={null}
+            />
+          )}
+        </Section>
+
+        <Section
+          icon={<DownloadOutlined sx={{ fontSize: 20 }} />}
+          title={t('pwa.installStatus')}
+          subtitle={installEnvironment.installed ? t('pwa.installedStatus') : t('pwa.installMessage')}
+        >
+          <Row
+            label={t('pwa.installTitle')}
+            description={installEnvironment.installed ? t('pwa.installedStatus') : installEnvironment.iosSafari ? t('pwa.iosInstructions') : t('pwa.installMessage')}
+            control={!installEnvironment.installed ? (
+              <button type="button" onClick={requestInstallPrompt} style={{ minHeight: 44, padding: '8px 14px', border: '1px solid var(--accent)', borderRadius: 10, background: 'transparent', color: 'var(--text)', fontFamily: 'inherit', cursor: 'pointer' }}>
+                {t('pwa.installAction')}
+              </button>
+            ) : null}
+            last
+          />
         </Section>
 
         {/* ── Двухфакторная аутентификация (юристы/админ) ── */}
@@ -368,10 +407,10 @@ const SettingsPageGlass = () => {
               inputMode="tel"
               autoComplete="tel"
               disabled={phoneBusy}
-              style={{ flex: 1, minWidth: 200, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit' }}
+              style={{ flex: 1, minWidth: 200, minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 16 }}
             />
             {!phoneSent ? (
-              <button type="button" onClick={requestPhoneCode} disabled={phoneBusy || !phoneInput.trim()} style={{ padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
+              <button type="button" onClick={requestPhoneCode} disabled={phoneBusy || !phoneInput.trim()} style={{ minHeight: 44, padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
                 {phoneBusy ? t('profile.saving') : t('profile.otpRequest')}
               </button>
             ) : (
@@ -384,9 +423,9 @@ const SettingsPageGlass = () => {
                   autoComplete="one-time-code"
                   maxLength={6}
                   disabled={phoneBusy}
-                  style={{ width: 150, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit' }}
+                  style={{ width: 150, minHeight: 44, padding: '11px 13px', border: '1px solid var(--border)', borderRadius: 'var(--radius)', background: 'var(--canvas)', color: 'var(--text)', fontFamily: 'inherit', fontSize: 16 }}
                 />
-                <button type="button" onClick={confirmPhone} disabled={phoneBusy || phoneCode.trim().length !== 6} style={{ padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
+                <button type="button" onClick={confirmPhone} disabled={phoneBusy || phoneCode.trim().length !== 6} style={{ minHeight: 44, padding: '10px 18px', border: 0, borderRadius: 'var(--radius)', background: 'var(--accent)', color: '#fff', fontFamily: 'inherit', cursor: 'pointer' }}>
                   {phoneBusy ? t('profile.saving') : t('profile.otpConfirm')}
                 </button>
               </>
@@ -456,17 +495,17 @@ const SettingsPageGlass = () => {
           <Row
             label={t('settings.showEmail')}
             description={t('settings.showEmailDesc')}
-            control={<Toggle on={settings.showEmail} onClick={() => handleToggle('showEmail')} />}
+             control={<Toggle label={t('settings.showEmail')} on={settings.showEmail} onClick={() => handleToggle('showEmail')} />}
           />
           <Row
             label={t('settings.showPhone')}
             description={t('settings.showPhoneDesc')}
-            control={<Toggle on={settings.showPhone} onClick={() => handleToggle('showPhone')} />}
+             control={<Toggle label={t('settings.showPhone')} on={settings.showPhone} onClick={() => handleToggle('showPhone')} />}
           />
           <Row
             label={t('settings.dataSharing')}
             description={t('settings.dataSharingDesc')}
-            control={<Toggle on={settings.dataSharing} onClick={() => handleToggle('dataSharing')} />}
+             control={<Toggle label={t('settings.dataSharing')} on={settings.dataSharing} onClick={() => handleToggle('dataSharing')} />}
             last
           />
         </Section>
@@ -489,7 +528,7 @@ const SettingsPageGlass = () => {
           <Row
             label={t('settings.darkTheme')}
             description={t('settings.darkThemeDesc')}
-            control={<Toggle on={dark} onClick={toggleDark} />}
+             control={<Toggle label={t('settings.darkTheme')} on={dark} onClick={toggleDark} />}
             last
           />
           <div
@@ -578,13 +617,13 @@ const SettingsPageGlass = () => {
           <Row
             label={t('settings.compactMode')}
             description={t('settings.compactModeDesc')}
-            control={<Toggle on={settings.compactMode} onClick={() => handleToggle('compactMode')} />}
+             control={<Toggle label={t('settings.compactMode')} on={settings.compactMode} onClick={() => handleToggle('compactMode')} />}
             last
           />
         </Section>
 
         {/* ── Действия: Сохранить / Сбросить ── */}
-        <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+        <div className="settings-save-bar" style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
           <button
             type="button"
             onClick={handleSaveSettings}
@@ -681,6 +720,7 @@ const SettingsPageGlass = () => {
           {t('settings.syncNote')}
         </div>
       </div>
+      <style>{`@media(max-width:600px){.settings-save-bar{position:sticky;bottom:calc(var(--mobile-bottom-nav-height,64px) + env(safe-area-inset-bottom));z-index:4;background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:10px;box-shadow:0 -8px 24px rgba(26,26,26,.1)}.settings-save-bar>button{flex:1 1 120px !important;min-width:0}.settings-save-bar+div{margin-bottom:8px}}`}</style>
 
       {/* ── Logout confirmation dialog ── */}
       <Dialog

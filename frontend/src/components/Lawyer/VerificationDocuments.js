@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { CircularProgress } from '@mui/material';
+import { Button, CircularProgress, Dialog, DialogActions, DialogContent, DialogTitle } from '@mui/material';
 import {
   UploadFileOutlined,
   DeleteOutline,
@@ -44,6 +44,7 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
   const [type, setType] = useState('diploma');
   const [previewDoc, setPreviewDoc] = useState(null);
   const [checklist, setChecklist] = useState(null); // { complete, missing: [slug] }
+  const [deleteFor, setDeleteFor] = useState(null);
   const fileRef = useRef(null);
 
   // Пункты полноты профиля — порядок и подписи. Слаги совпадают с бэкендом.
@@ -107,11 +108,12 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
     }
   };
 
-  const remove = async (id) => {
-    if (!window.confirm(t('verification.confirmDelete'))) return;
+  const remove = async () => {
+    if (!deleteFor) return;
     try {
-      await lawyerService.verification.deleteDocument(id);
-      setDocs((prev) => prev.filter((d) => d.id !== id));
+      await lawyerService.verification.deleteDocument(deleteFor.id);
+      setDocs((prev) => prev.filter((d) => d.id !== deleteFor.id));
+      setDeleteFor(null);
       await loadChecklist();
     } catch {
       toast.error(t('verification.error'));
@@ -183,24 +185,24 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
           {docs.map((d) => (
-            <div key={d.id} style={{
-              display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px',
+             <div key={d.id} className="verification-document-row" style={{
+               display: 'flex', alignItems: 'center', gap: 12, padding: '11px 14px', flexWrap: 'wrap',
               borderRadius: 12, border: '1px solid var(--card-brd)', background: 'var(--surface)',
             }}>
               <DescriptionOutlined sx={{ fontSize: 20, color: 'var(--accent)' }} />
               <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.name}</div>
+                 <div style={{ fontSize: 13.5, fontWeight: 500, color: 'var(--text)', overflowWrap: 'anywhere' }}>{d.name}</div>
                 <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>{typeLabel(d.type)}{d.size ? ` · ${fmtSize(d.size)}` : ''}</div>
               </div>
-              <button onClick={() => setPreviewDoc(d)} title={t('preview.view')} style={{
-                width: 34, height: 34, borderRadius: 9, border: '1px solid var(--card-brd)',
+               <button onClick={() => setPreviewDoc(d)} title={t('preview.view')} aria-label={`${t('preview.view')}: ${d.name}`} style={{
+                 width: 44, height: 44, borderRadius: 9, border: '1px solid var(--card-brd)',
                 background: 'transparent', color: 'var(--text2)', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
                 <VisibilityOutlined sx={{ fontSize: 18 }} />
               </button>
-              <button onClick={() => remove(d.id)} title={t('verification.delete')} style={{
-                width: 34, height: 34, borderRadius: 9, border: '1px solid var(--card-brd)',
+               <button onClick={() => setDeleteFor(d)} title={t('verification.delete')} aria-label={`${t('verification.delete')}: ${d.name}`} style={{
+                 width: 44, height: 44, borderRadius: 9, border: '1px solid var(--card-brd)',
                 background: 'transparent', color: 'var(--error, #C0492F)', cursor: 'pointer',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}>
@@ -268,6 +270,15 @@ const VerificationDocuments = ({ initialStatus = 'pending' }) => {
         name={previewDoc?.name}
         fetchBlob={previewDoc ? previewFetch : null}
       />
+      <Dialog open={Boolean(deleteFor)} onClose={() => setDeleteFor(null)} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 } } }}>
+        <DialogTitle>{t('verification.delete')}</DialogTitle>
+        <DialogContent dividers>{t('verification.confirmDelete')}</DialogContent>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
+          <Button onClick={() => setDeleteFor(null)}>{t('common.cancel')}</Button>
+          <Button color="error" variant="contained" onClick={remove}>{t('verification.delete')}</Button>
+        </DialogActions>
+      </Dialog>
+      <style>{`@media(max-width:480px){.verification-document-row>div{flex:1 1 calc(100% - 36px)}.verification-document-row>button:first-of-type{margin-left:auto}}`}</style>
     </div>
   );
 };

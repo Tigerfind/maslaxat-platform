@@ -436,7 +436,7 @@ const LawyersPageGlass = () => {
 
   // ---- Filters panel (shared between desktop sidebar + mobile drawer) ----
   const filtersPanel = (
-    <>
+    <div className="lawyer-filter-panel">
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
         <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text)' }}>
           {t('lawyers.filters')}
@@ -674,20 +674,7 @@ const LawyersPageGlass = () => {
       >
         {t('lawyers.resetFilters')}
       </button>
-      {isMobile && (
-        <button
-          type="button"
-          onClick={() => setFilterDrawerOpen(false)}
-          style={{
-            width: '100%', minHeight: 44, marginTop: 10, padding: '11px 16px', border: 'none',
-            borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
-            fontWeight: 600, background: 'var(--accent)', color: '#fff',
-          }}
-        >
-          {t('lawyers.showResults')}
-        </button>
-      )}
-    </>
+    </div>
   );
 
   // ---- Lawyer card ----
@@ -781,6 +768,8 @@ const LawyersPageGlass = () => {
             <img
               src={lawyer.avatar}
               alt=""
+              loading="lazy"
+              decoding="async"
               data-testid={`lawyer-avatar-${lawyer.id}`}
               onError={() => setFailedAvatars((prev) => new Set(prev).add(lawyer.id))}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 16, objectFit: 'cover' }}
@@ -1028,16 +1017,20 @@ const LawyersPageGlass = () => {
         PaperProps={{
           sx: {
             borderRadius: '16px 16px 0 0',
-            maxHeight: '85vh',
+            maxHeight: 'min(88dvh, 760px)',
             width: '100%',
             boxSizing: 'border-box',
-            overflowX: 'hidden',
+            overflow: 'hidden',
             background: 'var(--surface)',
-            padding: 3,
+            padding: 0,
           },
         }}
       >
-        {filtersPanel}
+        <div style={{ overflowY: 'auto', padding: 20, minHeight: 0 }}>{filtersPanel}</div>
+        <div style={{ position: 'sticky', bottom: 0, display: 'flex', gap: 10, padding: '12px max(16px,env(safe-area-inset-right)) calc(12px + env(safe-area-inset-bottom)) max(16px,env(safe-area-inset-left))', borderTop: '1px solid var(--border)', background: 'var(--surface)' }}>
+          <button type="button" onClick={() => setFilterDrawerOpen(false)} style={{ flex: 1, minHeight: 44, border: '1px solid var(--border)', borderRadius: 10, background: 'transparent', color: 'var(--text)' }}>{t('lawyers.closeFilters')}</button>
+          <button type="button" onClick={() => setFilterDrawerOpen(false)} style={{ flex: 2, minHeight: 44, border: 0, borderRadius: 10, background: 'var(--accent)', color: '#fff', fontWeight: 600 }}>{t('lawyers.showResults')}</button>
+        </div>
       </Drawer>
 
       {/* ─── Объявление: первая консультация бесплатно ─── */}

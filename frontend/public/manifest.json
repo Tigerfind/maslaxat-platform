@@ -1,6 +1,7 @@
 {
   "short_name": "MaslaXat",
   "name": "MaslaXat — Юридическая платформа",
+  "id": "/",
   "description": "Юридическая помощь онлайн: AI-консультант и проверенные юристы Узбекистана",
   "icons": [
     {
@@ -19,18 +20,11 @@
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
-    },
-    {
-      "src": "app-icon.svg",
-      "type": "image/svg+xml",
-      "sizes": "any",
-      "purpose": "maskable"
     }
   ],
-  "start_url": ".",
-  "scope": ".",
+  "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "orientation": "portrait",
   "theme_color": "#B8956E",
   "background_color": "#F5F1EB",
   "lang": "ru"

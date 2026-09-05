@@ -43,6 +43,7 @@ const ChatPage = () => {
   const [hasMore, setHasMore] = useState(false);
   const [earlierLoading, setEarlierLoading] = useState(false);
   const [earlierError, setEarlierError] = useState(false);
+  const [viewport, setViewport] = useState(() => ({ height: window.visualViewport?.height || window.innerHeight, top: window.visualViewport?.offsetTop || 0 }));
   const messagesEndRef = useRef(null);
   const messagesScrollRef = useRef(null);
   const prependScrollHeightRef = useRef(null);
@@ -90,6 +91,19 @@ const ChatPage = () => {
     window.addEventListener('online', online);
     window.addEventListener('offline', offlineHandler);
     return () => { window.removeEventListener('online', online); window.removeEventListener('offline', offlineHandler); };
+  }, []);
+
+  useEffect(() => {
+    const visualViewport = window.visualViewport;
+    if (!visualViewport) return undefined;
+    const update = () => setViewport({ height: visualViewport.height, top: visualViewport.offsetTop });
+    visualViewport.addEventListener('resize', update);
+    visualViewport.addEventListener('scroll', update);
+    update();
+    return () => {
+      visualViewport.removeEventListener('resize', update);
+      visualViewport.removeEventListener('scroll', update);
+    };
   }, []);
 
   // Socket connection
@@ -272,24 +286,28 @@ const ChatPage = () => {
     <Box
       sx={{
         position: 'fixed',
-        inset: 0,
+        top: `${viewport.top}px`,
+        left: 0,
+        right: 0,
+        height: `${viewport.height}px`,
         zIndex: 500,
         display: 'flex',
         flexDirection: 'column',
         bgcolor: 'var(--canvas)',
-        minHeight: '100dvh',
+        minHeight: 0,
       }}
     >
       {/* Header */}
       <Box
         sx={{
-          height: 72,
+          minHeight: 72,
           flexShrink: 0,
           display: 'flex',
           alignItems: 'center',
           gap: 2,
           px: { xs: 2, sm: 3.5 },
           borderBottom: '1px solid var(--border)',
+          pt: 'env(safe-area-inset-top)',
           ...glassBar,
         }}
       >
@@ -380,7 +398,7 @@ const ChatPage = () => {
                   key={msg.id}
                   sx={{
                     alignSelf: isOwn ? 'flex-end' : 'flex-start',
-                    maxWidth: '66%',
+                    maxWidth: { xs: '86%', sm: '66%' },
                     px: 2,
                     py: 1.5,
                     fontSize: 14,
@@ -446,12 +464,13 @@ const ChatPage = () => {
             multiline
             maxRows={4}
             value={newMessage}
-            disabled={sending}
+            disabled={sending || offline}
             onChange={(e) => {
               setNewMessage(e.target.value);
               handleTyping();
             }}
             onKeyDown={handleKeyDown}
+            onFocus={() => requestAnimationFrame(scrollToBottom)}
             placeholder={t('chat.messagePlaceholder')}
             inputProps={{ 'aria-label': t('chat.messagePlaceholder') }}
             variant="standard"
@@ -464,7 +483,7 @@ const ChatPage = () => {
           <IconButton
             aria-label={t('chat.send')}
             onClick={handleSend}
-            disabled={!newMessage.trim() || sending}
+            disabled={!newMessage.trim() || sending || offline}
             sx={{
               flexShrink: 0,
               width: 44,

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import {
   Box, Container, CircularProgress, Rating,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Switch, Chip, Pagination,
+  Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, Switch, Chip, Pagination, Stack, FormControlLabel,
 } from '@mui/material';
 import { Star } from '@mui/icons-material';
 import adminService from '../../services/adminService';
@@ -11,6 +11,7 @@ import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
 import ConfirmDialog from '../../components/UI/ConfirmDialog';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const PAGE_SIZE = 25;
 
@@ -72,8 +73,32 @@ const AdminReviewsPage = () => {
         ) : error ? (
           <ErrorState error={error} onRetry={() => load(page)} />
         ) : (
-          <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
-            <Table>
+          reviews.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4, color: axelionColors.textMuted }}>{t('adminReviews.empty')}</Box>
+          ) : (
+          <ResponsiveDataView
+            items={reviews}
+            mobileLabel={t('adminReviews.title')}
+            renderMobileItem={(review) => (
+              <Stack spacing={1.5} sx={review.isHidden ? { opacity: 0.6 } : {}}>
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                  <MobileDataField label={t('adminReviews.lawyer')}><b>{review.lawyer?.name || '—'}</b></MobileDataField>
+                  <MobileDataField label={t('adminReviews.client')}>{review.client?.name || '—'}</MobileDataField>
+                  <MobileDataField label={t('adminReviews.rating')}><Rating value={review.rating} readOnly size="small" aria-label={`${t('adminReviews.rating')}: ${review.rating}`} /></MobileDataField>
+                  <MobileDataField label={t('adminReviews.date')}>{fmtDate(review.createdAt)}</MobileDataField>
+                  <MobileDataField fullWidth label={t('adminReviews.text')}>{review.text || <em>{t('adminReviews.noText')}</em>}</MobileDataField>
+                </Box>
+                <FormControlLabel
+                  control={<Switch checked={!review.isHidden} onChange={() => setConfirmToggle(review)} disabled={acting === review.id} inputProps={{ 'aria-label': `${t('adminReviews.visible')}: ${review.lawyer?.name || ''}` }} sx={{ minHeight: 44 }} />}
+                  label={review.isHidden ? t('adminReviews.hiddenTag') : t('adminReviews.visible')}
+                  sx={{ m: 0, minHeight: 44 }}
+                />
+              </Stack>
+            )}
+            desktop={(
+              <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
+                <TableContainer>
+                  <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: axelionColors.bgCream }}>
                   <TableCell>{t('adminReviews.lawyer')}</TableCell>
@@ -98,15 +123,20 @@ const AdminReviewsPage = () => {
                     <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13, color: axelionColors.textMuted }}>{fmtDate(review.createdAt)}</TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                        <Switch checked={!review.isHidden} onChange={() => setConfirmToggle(review)} size="small" sx={{ '& .Mui-checked': { color: axelionColors.gold }, '& .Mui-checked + .MuiSwitch-track': { bgcolor: axelionColors.gold } }} />
+                        <Box component="label" sx={{ minWidth: 44, minHeight: 44, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}>
+                          <Switch checked={!review.isHidden} onChange={() => setConfirmToggle(review)} size="small" inputProps={{ 'aria-label': `${t('adminReviews.visible')}: ${review.lawyer?.name || ''}` }} sx={{ '& .Mui-checked': { color: axelionColors.gold }, '& .Mui-checked + .MuiSwitch-track': { bgcolor: axelionColors.gold } }} />
+                        </Box>
                         {review.isHidden && <Chip label={t('adminReviews.hiddenTag')} size="small" sx={{ height: 20, fontSize: 11, bgcolor: 'rgba(196,163,90,0.16)', color: axelionColors.warning }} />}
                       </Box>
                     </TableCell>
                   </TableRow>
                 ))}
               </TableBody>
-            </Table>
-          </Paper>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            )}
+          />)
         )}
 
         {!loading && !error && totalPages > 1 && (

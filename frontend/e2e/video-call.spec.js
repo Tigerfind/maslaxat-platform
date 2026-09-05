@@ -26,6 +26,7 @@ test('client и lawyer устанавливают WebRTC видеосоедин�
   try {
     await login(clientPage, 'client');
     await login(lawyerPage, 'lawyer');
+    await clientPage.setViewportSize({ width: 320, height: 700 });
     await Promise.all([
       clientPage.goto(`/consultations/video/${VIDEO_CONSULTATION_ID}`),
       lawyerPage.goto(`/consultations/video/${VIDEO_CONSULTATION_ID}`),
@@ -41,6 +42,11 @@ test('client и lawyer устанавливают WebRTC видеосоедин�
 
     await expect.poll(() => hasVideoTrack(clientPage.getByTestId('remote-video'))).toBe(true);
     await expect.poll(() => hasVideoTrack(lawyerPage.getByTestId('remote-video'))).toBe(true);
+    await expect(clientPage.getByRole('button', { name: 'Включить или выключить микрофон' })).toBeVisible();
+    await expect(clientPage.getByRole('button', { name: 'Открыть или закрыть чат' })).toBeVisible();
+    await expect(clientPage.getByRole('button', { name: 'Другие функции звонка' })).toBeVisible();
+    await expect(clientPage.getByRole('button', { name: 'Завершить звонок' })).toBeVisible();
+    expect(await clientPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1)).toBe(true);
 
     await clientPage.getByRole('button', { name: 'Включить или выключить камеру' }).click();
     await expect(lawyerPage.getByText('Камера выключена').first()).toBeVisible();

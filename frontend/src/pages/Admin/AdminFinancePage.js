@@ -2,8 +2,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { toast } from 'react-toastify';
 import {
   Box, Container, Typography, Grid, Card, Chip, Button, CircularProgress,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Pagination, Tabs, Tab,
-  Dialog, DialogTitle, DialogContent, DialogActions, TextField,
+  Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, Pagination, Tabs, Tab,
+  Dialog, DialogTitle, DialogContent, DialogActions, TextField, Stack, useMediaQuery,
 } from '@mui/material';
 import { AccountBalanceWallet, CheckCircle, HourglassEmpty, ReceiptLong } from '@mui/icons-material';
 import { adminFinanceService } from '../../services/adminService';
@@ -11,6 +11,7 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
+import { MobileDataField, mobileCardSx } from '../../components/UI/ResponsiveDataView';
 
 const PAGE_SIZE = 25;
 
@@ -37,6 +38,7 @@ const PAYMENT_STATUS = {
  */
 const AdminFinancePage = () => {
   const { t, language } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
 
   const [tab, setTab] = useState(0);
   const [withdrawals, setWithdrawals] = useState([]);
@@ -152,7 +154,7 @@ const AdminFinancePage = () => {
   return (
     <GlassShell active="/admin/finance" title={t('adminFinance.title')} role="admin">
       <Container maxWidth="xl" disableGutters>
-        <Tabs value={tab} onChange={(e, v) => setTab(v)} sx={{ mb: 3 }}>
+        <Tabs value={tab} onChange={(e, v) => setTab(v)} variant="scrollable" scrollButtons="auto" allowScrollButtonsMobile sx={{ mb: 3, minHeight: 44 }}>
           <Tab label={t('adminFinance.withdrawalsTab')} />
           <Tab label={t('adminFinance.paymentsTab')} />
         </Tabs>
@@ -182,7 +184,44 @@ const AdminFinancePage = () => {
         ) : error ? (
           <ErrorState error={error} onRetry={() => load(page, tab)} />
         ) : (
-          <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'auto', boxShadow: 'none' }}>
+          <>
+          <Stack component="section" aria-label={tab === 0 ? t('adminFinance.withdrawalsTab') : t('adminFinance.paymentsTab')} data-testid="responsive-data-cards" spacing={1.5} sx={{ display: { xs: 'flex', sm: 'none' } }}>
+            {tab === 0 ? withdrawals.map((w) => {
+              const st = WITHDRAWAL_STATUS[w.status] || WITHDRAWAL_STATUS.pending;
+              return (
+                <Box component="article" key={w.id} data-testid={`withdrawal-${w.id}`} sx={mobileCardSx}>
+                  <Stack spacing={1.5}>
+                    <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{w.lawyer?.name || '—'}</Typography>
+                    <Typography sx={{ mt: -1.5, fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere' }}>{w.lawyer?.email}</Typography>
+                    <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                      <MobileDataField label={t('adminFinance.amount')}><b>{fmtMoney(w.amount)}</b></MobileDataField>
+                      <MobileDataField label={t('adminFinance.status')}><Chip size="small" label={t(`adminFinance.${st.key}`)} /></MobileDataField>
+                      <MobileDataField label={t('adminFinance.date')}>{fmtDate(w.createdAt)}</MobileDataField>
+                      <MobileDataField fullWidth label={t('adminFinance.note')}>{w.note || '—'}</MobileDataField>
+                    </Box>
+                    {['pending', 'processing'].includes(w.status) && <Stack spacing={1}>
+                      {w.status === 'pending' ? <Button fullWidth variant="outlined" disabled={acting === w.id} onClick={() => startProcessing(w)}>{t('adminFinance.startProcessing')}</Button> : <Button fullWidth variant="outlined" disabled={acting === w.id} onClick={() => { setConfirmPaid(w); setProviderTransactionId(''); setProviderReference(''); }}>{t('adminFinance.markPaid')}</Button>}
+                      <Button fullWidth variant="outlined" disabled={acting === w.id} onClick={() => { setRejectFor(w); setRejectNote(''); }} sx={{ color: axelionColors.error }}>{t('adminFinance.reject')}</Button>
+                    </Stack>}
+                  </Stack>
+                </Box>
+              );
+            }) : payments.map((p) => (
+              <Box component="article" key={p.id} sx={mobileCardSx}>
+                <Typography sx={{ fontWeight: 600, overflowWrap: 'anywhere' }}>{p.user?.name || '—'}</Typography>
+                <Typography sx={{ fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere', mb: 1.5 }}>{p.user?.email}</Typography>
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                  <MobileDataField label={t('adminFinance.amount')}><b>{fmtMoney(p.amount)}</b></MobileDataField>
+                  <MobileDataField label={t('adminFinance.provider')}>{p.provider || '—'}</MobileDataField>
+                  <MobileDataField label={t('adminFinance.date')}>{fmtDate(p.createdAt)}</MobileDataField>
+                  <MobileDataField label={t('adminFinance.status')}><Chip size="small" label={t(`adminFinance.${PAYMENT_STATUS[p.status] || 'payStPending'}`)} /></MobileDataField>
+                </Box>
+              </Box>
+            ))}
+            {((tab === 0 && withdrawals.length === 0) || (tab === 1 && payments.length === 0)) && <Typography sx={{ textAlign: 'center', py: 4, color: axelionColors.textMuted }}>{t(tab === 0 ? 'adminFinance.emptyWithdrawals' : 'adminFinance.emptyPayments')}</Typography>}
+          </Stack>
+          <Paper data-testid="responsive-data-table" sx={{ display: { xs: 'none', sm: 'block' }, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
+            <TableContainer>
             {tab === 0 ? (
               <Table>
                 <TableHead>
@@ -269,7 +308,9 @@ const AdminFinancePage = () => {
                 </TableBody>
               </Table>
             )}
+            </TableContainer>
           </Paper>
+          </>
         )}
 
         {!loading && !error && totalPages > 1 && (
@@ -279,7 +320,7 @@ const AdminFinancePage = () => {
         )}
       </Container>
 
-      <Dialog open={Boolean(confirmPaid)} onClose={() => setConfirmPaid(null)} maxWidth="xs" fullWidth>
+      <Dialog open={Boolean(confirmPaid)} onClose={() => setConfirmPaid(null)} maxWidth="xs" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
         <DialogTitle>{t('adminFinance.markPaid')}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ color: axelionColors.textMuted, mb: 2 }}>
@@ -288,14 +329,14 @@ const AdminFinancePage = () => {
           <TextField fullWidth label={t('adminFinance.transactionId')} value={providerTransactionId} onChange={(e) => setProviderTransactionId(e.target.value)} sx={{ mb: 2 }} />
           <TextField fullWidth label={t('adminFinance.bankReference')} value={providerReference} onChange={(e) => setProviderReference(e.target.value)} />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, pb: 'max(8px, env(safe-area-inset-bottom))', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button onClick={() => setConfirmPaid(null)}>{t('common.cancel')}</Button>
           <Button onClick={markPaid} disabled={acting === confirmPaid?.id}>{t('adminFinance.markPaid')}</Button>
         </DialogActions>
       </Dialog>
 
       {/* Отказ: причина обязательна — она уходит юристу в уведомлении */}
-      <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="xs" fullWidth>
+      <Dialog open={Boolean(rejectFor)} onClose={() => setRejectFor(null)} maxWidth="xs" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
         <DialogTitle>{t('adminFinance.reject')}</DialogTitle>
         <DialogContent>
           <Typography variant="body2" sx={{ color: axelionColors.textMuted, mb: 2 }}>
@@ -308,7 +349,7 @@ const AdminFinancePage = () => {
             onChange={(e) => setRejectNote(e.target.value)}
           />
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ flexWrap: 'wrap', gap: 1, pb: 'max(8px, env(safe-area-inset-bottom))', '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button onClick={() => setRejectFor(null)}>{t('common.cancel')}</Button>
           <Button onClick={confirmReject} disabled={acting === rejectFor?.id} sx={{ color: axelionColors.error }}>
             {t('adminFinance.reject')}

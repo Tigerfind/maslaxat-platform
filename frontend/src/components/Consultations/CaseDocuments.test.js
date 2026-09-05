@@ -41,4 +41,19 @@ describe('CaseDocuments states', () => {
     renderDocuments();
     expect(await screen.findByRole('button', { name: 'Загрузить документ' })).toBeInTheDocument();
   });
+
+  test('rejects invalid and oversized files before the API request', async () => {
+    api.get.mockResolvedValue({ data: { documents: [], writable: true } });
+    renderDocuments();
+    const upload = await screen.findByRole('button', { name: 'Загрузить документ' });
+    fireEvent.click(upload);
+    const input = document.querySelector('input[type="file"]');
+    fireEvent.change(input, { target: { files: [new File(['bad'], 'payload.exe', { type: 'application/octet-stream' })] } });
+    expect(api.post).not.toHaveBeenCalled();
+
+    const oversized = new File(['pdf'], 'case.pdf', { type: 'application/pdf' });
+    Object.defineProperty(oversized, 'size', { value: 10 * 1024 * 1024 + 1 });
+    fireEvent.change(input, { target: { files: [oversized] } });
+    expect(api.post).not.toHaveBeenCalled();
+  });
 });

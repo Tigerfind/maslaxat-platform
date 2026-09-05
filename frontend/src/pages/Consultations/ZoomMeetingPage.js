@@ -6,18 +6,15 @@ import { useTranslation } from '../../i18n';
 import { safeRequestError } from '../../utils/consultationPresentation';
 import { createReconnectTracker } from './zoomReconnect';
 import { localeForLanguage, zoomLocaleForLanguage } from '../../utils/consultationLocale';
+import { classifyMediaError, mediaConstraints, reconcileMediaSelection } from '../../utils/mediaSession';
+import { zoomAudioOnlyCapability, zoomClientInitOptions } from './zoomAudioOnly';
 
 const button = { minHeight: 44, border: 0, borderRadius: 10, padding: '10px 18px', cursor: 'pointer', font: 'inherit' };
 const formatTime = (value, timezone, locale) => new Intl.DateTimeFormat(locale, {
   timeZone: timezone, dateStyle: 'medium', timeStyle: 'short',
 }).format(new Date(value));
 
-const explainMediaError = (error, t) => {
-  if (error?.name === 'NotAllowedError') return t('zoomMeeting.mediaDenied');
-  if (error?.name === 'NotFoundError') return t('zoomMeeting.mediaMissing');
-  if (error?.name === 'NotReadableError') return t('zoomMeeting.mediaBusy');
-  return t('zoomMeeting.mediaError');
-};
+const explainMediaError = (failure, t) => t(`zoomMeeting.media_${failure.device}_${failure.reason}`);
 const lifecycleKey = (value) => ['scheduled', 'ready', 'rescheduled', 'in_progress', 'started', 'completed', 'no_show_client', 'no_show_lawyer', 'no_show_both', 'cancelled', 'provider_cancelled'].includes(value) ? value : 'unknown';
 
 const ZoomMeetingPage = () => {
@@ -38,6 +35,9 @@ const ZoomMeetingPage = () => {
   const [devices, setDevices] = useState({ cameras: [], microphones: [], speakers: [] });
   const [selected, setSelected] = useState({ camera: '', microphone: '', speaker: '' });
   const [mediaError, setMediaError] = useState('');
+  const [mediaFailure, setMediaFailure] = useState(null);
+  const [meterState, setMeterState] = useState('idle');
+  const [permissionState, setPermissionState] = useState('prompt');
   const [micLevel, setMicLevel] = useState(0);
   const [status, setStatus] = useState('checking');
   const [serverOffset, setServerOffset] = useState(0);
@@ -119,35 +119,68 @@ const ZoomMeetingPage = () => {
     streamRef.current?.getTracks().forEach((track) => track.stop());
     audioRef.current?.close?.();
     setMediaError('');
+    setMediaFailure(null);
+    setMeterState('checking');
+    setPermissionState('checking');
     try {
       if (!navigator.mediaDevices?.getUserMedia) throw Object.assign(new Error(), { name: 'NotSupportedError' });
-      let stream;
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: forceAudioOnly ? false : selected.camera ? { deviceId: { exact: selected.camera } } : true,
-          audio: selected.microphone ? { deviceId: { exact: selected.microphone } } : true,
-        });
-      } catch (error) {
-        if (!forceAudioOnly && ['NotFoundError', 'NotReadableError'].includes(error.name)) {
-          stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-          setAudioOnly(true);
-        } else throw error;
-      }
+      const stream = await navigator.mediaDevices.getUserMedia(mediaConstraints({
+        audioOnly: forceAudioOnly,
+        cameraId: forceAudioOnly ? '' : selected.camera,
+        microphoneId: selected.microphone,
+      }));
       streamRef.current = stream;
+      setPermissionState('granted');
+      stream.getTracks().forEach((track) => {
+        track.onended = () => {
+          if (!mountedRef.current) return;
+          const device = track.kind === 'audio' ? 'microphone' : 'camera';
+          const failure = { reason: 'revoked', device, canUseAudioOnly: device === 'camera' && !forceAudioOnly };
+          setMediaFailure(failure); setMediaError(explainMediaError(failure, t)); setPermissionState('revoked');
+        };
+      });
       if (preview.current) preview.current.srcObject = stream;
       const list = await navigator.mediaDevices.enumerateDevices();
-      setDevices({
+      const nextDevices = {
         cameras: list.filter((item) => item.kind === 'videoinput'), microphones: list.filter((item) => item.kind === 'audioinput'), speakers: list.filter((item) => item.kind === 'audiooutput'),
-      });
-      const context = new AudioContext(); audioRef.current = context;
+      };
+      setDevices(nextDevices);
+      setSelected((current) => reconcileMediaSelection(current, nextDevices));
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) { setMeterState('unsupported'); setStatus('ready'); return; }
+      const context = new AC(); audioRef.current = context;
+      if (context.state === 'suspended') await context.resume().catch(() => {});
+      if (context.state === 'suspended') { setMeterState('suspended'); setStatus('ready'); return; }
+      setMeterState('active');
       const analyser = context.createAnalyser(); analyser.fftSize = 256;
       context.createMediaStreamSource(stream).connect(analyser);
       const values = new Uint8Array(analyser.frequencyBinCount);
       const sample = () => { if (audioRef.current !== context) return; analyser.getByteFrequencyData(values); setMicLevel(Math.round(values.reduce((a, b) => a + b, 0) / values.length)); requestAnimationFrame(sample); };
       sample();
       setStatus('ready');
-    } catch (error) { setMediaError(explainMediaError(error, t)); setStatus('lobby'); }
+    } catch (error) {
+      const failure = classifyMediaError(error, { audioOnly: forceAudioOnly });
+      setMediaFailure(failure);
+      setMediaError(explainMediaError(failure, t));
+      setMeterState('idle');
+      setPermissionState(failure.reason);
+      setStatus('lobby');
+    }
   };
+
+  useEffect(() => {
+    if (!navigator.mediaDevices?.addEventListener) return undefined;
+    const refresh = async () => {
+      const list = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+      const nextDevices = {
+        cameras: list.filter((item) => item.kind === 'videoinput'), microphones: list.filter((item) => item.kind === 'audioinput'), speakers: list.filter((item) => item.kind === 'audiooutput'),
+      };
+      setDevices(nextDevices);
+      setSelected((current) => reconcileMediaSelection(current, nextDevices));
+    };
+    navigator.mediaDevices.addEventListener('devicechange', refresh);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', refresh);
+  }, []);
 
   const openExternal = async () => {
     const popup = window.open('about:blank', '_blank');
@@ -169,7 +202,10 @@ const ZoomMeetingPage = () => {
   };
 
   const testSound = async () => {
-    const context = new AudioContext();
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) { setMeterState('unsupported'); return; }
+    const context = new AC();
+    if (context.state === 'suspended') await context.resume().catch(() => {});
     if (selected.speaker && typeof context.setSinkId === 'function') await context.setSinkId(selected.speaker).catch(() => {});
     const oscillator = context.createOscillator();
     const gain = context.createGain(); gain.gain.value = 0.08;
@@ -210,7 +246,7 @@ const ZoomMeetingPage = () => {
           mobileListenerRegisteredRef.current = true;
         }
         sdkClientRef.current = { type: 'client', ZoomMtg };
-        await new Promise((resolve, reject) => ZoomMtg.init({
+        await new Promise((resolve, reject) => ZoomMtg.init(zoomClientInitOptions({
           leaveUrl: `${window.location.origin}/consultations`, patchJsMedia: true,
           success: () => {
             if (!mountedRef.current || generation !== joinGenerationRef.current) {
@@ -218,7 +254,7 @@ const ZoomMeetingPage = () => {
             }
             ZoomMtg.join({ signature: data.signature, meetingNumber: data.meetingNumber, passWord: data.password, userName: data.userName, customerKey: data.customerKey, ...(data.zak ? { zak: data.zak } : {}), success: resolve, error: reject });
           }, error: reject,
-        }));
+        }, audioOnly)));
         if (!mountedRef.current || generation !== joinGenerationRef.current) { await cleanupSdkSession(); return; }
         setStatus('connected'); setAttempts(0);
         if (!reconnectTrackerRef.current.connected()) reportTelemetry(retry ? 'reconnect_succeeded' : 'join_succeeded');
@@ -277,9 +313,10 @@ const ZoomMeetingPage = () => {
   const network = navigator.connection;
   const weakNetwork = network && (network.effectiveType === '2g' || Number(network.rtt) > 500 || Number(network.downlink) < 1);
   const networkLabel = !network ? t('zoomMeeting.networkZoom') : weakNetwork ? t('zoomMeeting.networkWeak') : Number(network.rtt) > 250 ? t('zoomMeeting.networkMedium') : t('zoomMeeting.networkGood');
+  const audioOnlyCapability = zoomAudioOnlyCapability(mobile ? 'client' : 'component', audioOnly);
   let equipmentActionLabel = t('zoomMeeting.retryCheck');
   if (status === 'error') equipmentActionLabel = t('zoomMeeting.retryPreflight');
-  else if (mediaError === t('zoomMeeting.mediaDenied')) equipmentActionLabel = t('zoomMeeting.allowAccess');
+  else if (mediaFailure?.reason === 'denied' || mediaFailure?.reason === 'revoked') equipmentActionLabel = t('zoomMeeting.allowAccess');
   const leavePage = async () => {
     if (['connected', 'reconnecting'].includes(status) && !window.confirm(t('zoomMeeting.leaveConfirm'))) return;
     await cleanupSdkSession();
@@ -317,17 +354,24 @@ const ZoomMeetingPage = () => {
       {timeWarning && <div role="status" aria-live="assertive" style={{ marginBottom: 12, padding: 12, borderRadius: 10, background: '#5a4328' }}>{t(`zoomMeeting.${timeWarning === 'warningGrace' ? 'warningGraceConfigured' : timeWarning}`, { minutes: preflight?.graceMinutes })}</div>}
       {status === 'ended' && <section role="status" style={{ padding: 24, borderRadius: 14, background: '#211e19', textAlign: 'center' }}><h1>{t('zoomMeeting.ended')}</h1><button type="button" style={{ ...button, background: '#b8956e', color: '#fff' }} onClick={() => navigate('/consultations')}>{t('zoomMeeting.done')}</button></section>}
       {!['connecting', 'connected', 'reconnecting', 'ended'].includes(status) && <section style={{ display: 'grid', gridTemplateColumns: mobile ? 'minmax(0, 1fr)' : 'minmax(0, 1fr) minmax(280px, 380px)', gap: 20 }}>
-        <video ref={preview} autoPlay muted playsInline style={{ width: '100%', minHeight: 260, maxHeight: 520, background: '#000', borderRadius: 14, objectFit: 'cover' }} />
+        <div style={{ position: 'relative', minHeight: 260, borderRadius: 14, overflow: 'hidden', background: '#000' }}>
+          <video ref={preview} autoPlay muted playsInline style={{ width: '100%', minHeight: 260, maxHeight: 520, objectFit: 'cover', visibility: audioOnly ? 'hidden' : 'visible' }} />
+          {audioOnly && <div data-testid="zoom-audio-only-preview" style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', color: '#c9a980', textAlign: 'center', padding: 20 }}>{t('zoomMeeting.audioOnlyActive')}</div>}
+        </div>
         <div style={{ background: '#211e19', borderRadius: 14, padding: 20 }}>
           <h1 style={{ fontSize: 22, marginTop: 0 }}>{t('zoomMeeting.equipment')}</h1>
           <p>{t('zoomMeeting.browser')}: {navigator.mediaDevices ? t('zoomMeeting.supported') : t('zoomMeeting.unsupported')}</p>
           {weakNetwork && <p role="alert" style={{ color: '#efb16f' }}>{t('zoomMeeting.unstableNetwork')}</p>}
-          <label>{t('zoomMeeting.camera')}<select aria-label={t('zoomMeeting.selectCamera')} value={selected.camera} onChange={(e) => setSelected({ ...selected, camera: e.target.value })} style={{ width: '100%', minHeight: 44 }}>{devices.cameras.map((item) => <option key={item.deviceId} value={item.deviceId}>{item.label || t('zoomMeeting.camera')}</option>)}</select></label>
+          {!audioOnly && <label>{t('zoomMeeting.camera')}<select aria-label={t('zoomMeeting.selectCamera')} value={selected.camera} onChange={(e) => setSelected({ ...selected, camera: e.target.value })} style={{ width: '100%', minHeight: 44 }}>{devices.cameras.map((item) => <option key={item.deviceId} value={item.deviceId}>{item.label || t('zoomMeeting.camera')}</option>)}</select></label>}
           <label>{t('zoomMeeting.microphone')}<select aria-label={t('zoomMeeting.selectMicrophone')} value={selected.microphone} onChange={(e) => setSelected({ ...selected, microphone: e.target.value })} style={{ width: '100%', minHeight: 44 }}>{devices.microphones.map((item) => <option key={item.deviceId} value={item.deviceId}>{item.label || t('zoomMeeting.microphone')}</option>)}</select></label>
           {devices.speakers.length > 0 && <label>{t('zoomMeeting.speaker')}<select aria-label={t('zoomMeeting.selectSpeaker')} value={selected.speaker} onChange={(e) => setSelected({ ...selected, speaker: e.target.value })} style={{ width: '100%', minHeight: 44 }}>{devices.speakers.map((item) => <option key={item.deviceId} value={item.deviceId}>{item.label || t('zoomMeeting.speaker')}</option>)}</select></label>}
           <p style={{ fontSize: 12, color: '#b9ad9c' }}>{t('zoomMeeting.localCheck')}</p>
+          <p role="status" data-testid="zoom-permission-state" style={{ fontSize: 12, color: permissionState === 'granted' ? '#9fc58c' : '#c9a980' }}>{audioOnly && permissionState === 'granted' ? t('zoomMeeting.audioOnlyActive') : t(`zoomMeeting.permission_${permissionState}`)}</p>
           <div role="progressbar" aria-label={t('zoomMeeting.micLevel')} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, micLevel)} style={{ height: 8, margin: '14px 0', background: '#3a342b', borderRadius: 8 }}><div style={{ width: `${Math.min(100, micLevel)}%`, height: '100%', background: '#7fa76d', borderRadius: 8 }} /></div>
+          {meterState === 'unsupported' && <p role="status" style={{ color: '#b9ad9c' }}>{t('zoomMeeting.meterUnsupported')}</p>}
+          {meterState === 'suspended' && <p role="status" style={{ color: '#b9ad9c' }}>{t('zoomMeeting.meterSuspended')}</p>}
           {mediaError && <p role="alert" style={{ color: '#ef8e79' }}>{mediaError}</p>}
+          {audioOnlyCapability.requiresZoomControl && <p role="status" style={{ color: '#efb16f' }}>{t('zoomMeeting.audioOnlyZoomControl')}</p>}
           {preflight?.preparing && <p role="status" style={{ color: '#c9a980' }}>{t('zoomMeeting.preparingAuto')}</p>}
           {preflight?.failed && <p role="alert" style={{ color: '#ef8e79' }}>{preflight.safeError || t('zoomMeeting.prepareFailed')} {t('zoomMeeting.prepareFailedAction')}</p>}
           {preflight && !preflight.paid && <p role="alert" style={{ color: '#efb16f' }}>{t('zoomMeeting.paymentRequired')}</p>}
@@ -335,7 +379,7 @@ const ZoomMeetingPage = () => {
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             <button type="button" style={{ ...button, background: '#51483d', color: '#fff' }} onClick={status === 'error' ? retryFromError : () => checkEquipment()}>{equipmentActionLabel}</button>
             <button type="button" style={{ ...button, background: '#51483d', color: '#fff' }} onClick={testSound}>{t('zoomMeeting.testSound')}</button>
-            <button type="button" style={{ ...button, background: audioOnly ? '#7a9a6b' : '#51483d', color: '#fff' }} onClick={() => { setAudioOnly(true); checkEquipment(true); }}>{t('zoomMeeting.audioOnly')}</button>
+             {!audioOnly && <button type="button" style={{ ...button, background: '#51483d', color: '#fff' }} onClick={() => { setAudioOnly(true); checkEquipment(true); }}>{mediaFailure?.canUseAudioOnly ? t('zoomMeeting.continueAudioOnly') : t('zoomMeeting.audioOnly')}</button>}
             <button type="button" style={{ ...button, background: '#b8956e', color: '#fff', opacity: canJoin && preflight?.paid && !preflight?.preparing ? 1 : .5 }} disabled={!canJoin || !preflight?.paid || preflight?.preparing} onClick={() => joinSdk(0)}>{preflight?.role === 'lawyer' ? t('zoomMeeting.start') : t('zoomMeeting.join')}</button>
             <button type="button" style={{ ...button, background: '#2b2721', color: '#fff', opacity: canJoin && preflight?.externalFallback ? 1 : .5 }} disabled={!canJoin || !preflight?.externalFallback} onClick={openExternal}>{t('zoomMeeting.openZoom')}</button>
             {fallbackUrl && preflight?.role === 'client' && <button type="button" style={{ ...button, background: '#2b2721', color: '#fff' }} onClick={() => navigator.clipboard.writeText(fallbackUrl)}>{t('zoomMeeting.copyLink')}</button>}

@@ -3,7 +3,7 @@ import { toast } from 'react-toastify';
 import {
   Container, Box, Typography, Grid, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, CircularProgress,
-  Card, Button, Avatar, Pagination,
+  Card, Button, Avatar, Pagination, Stack,
 } from '@mui/material';
 import {
   People, Gavel, Person, Block, LockOpen,
@@ -14,6 +14,7 @@ import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
 import ConfirmDialog from '../../components/UI/ConfirmDialog';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const PAGE_SIZE = 25;
 
@@ -148,6 +149,7 @@ const AdminUsersPage = () => {
             полноэкранный спиннер размонтировал input и сбрасывал фокус на каждом тике. */}
         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5 }}>
           <input
+            aria-label={t('adminManage.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('adminManage.searchPlaceholder')}
@@ -157,10 +159,42 @@ const AdminUsersPage = () => {
         </Box>
 
         {/* Table */}
-        <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', overflow: 'hidden' }}>
+        <Card sx={{ background: axelionColors.bgLight, border: { xs: 'none', sm: `1px solid ${axelionColors.borderLight}` }, borderRadius: '8px', boxShadow: 'none', overflow: 'visible' }}>
           {users.length > 0 ? (
-            <TableContainer>
-              <Table>
+            <ResponsiveDataView
+              items={users}
+              mobileLabel={t('adminManage.usersTitle')}
+              renderMobileItem={(u) => (
+                <Stack spacing={1.5} sx={{ opacity: u.isActive ? 1 : 0.65 }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                    <Avatar sx={{ width: 44, height: 44, bgcolor: roleColor(u.role), fontSize: 14, flexShrink: 0 }}>{initials(u.name)}</Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{u.name}</Typography>
+                      <Typography sx={{ fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere' }}>{u.email}</Typography>
+                    </Box>
+                  </Box>
+                  <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                    <MobileDataField label={t('adminManage.colRole')}><Chip size="small" label={roleLabel(u.role)} /></MobileDataField>
+                    <MobileDataField label={t('adminManage.colStatus')}>
+                      <Stack direction="row" useFlexGap flexWrap="wrap" gap={0.5}>
+                        <Chip size="small" label={u.isActive ? t('adminManage.stActive') : t('adminManage.stBlocked')} />
+                        {!u.isVerified && <Chip size="small" label={t('adminManage.stUnverified')} />}
+                      </Stack>
+                    </MobileDataField>
+                    <MobileDataField label={t('adminManage.colRegistered')}>{fmtDate(u.createdAt)}</MobileDataField>
+                  </Box>
+                  {u.role !== 'admin' && (
+                    <Button fullWidth variant="outlined" disabled={acting === u.id} onClick={() => setConfirmToggle(u)}
+                      startIcon={u.isActive ? <Block /> : <LockOpen />}
+                      sx={{ color: u.isActive ? axelionColors.error : axelionColors.success, minHeight: 44 }}>
+                      {u.isActive ? t('adminManage.block') : t('adminManage.unblock')}
+                    </Button>
+                  )}
+                </Stack>
+              )}
+              desktop={(
+                <TableContainer>
+                  <Table>
                 <TableHead>
                   <TableRow sx={{ background: axelionColors.bgCream, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600 }}>{t('adminManage.colUser')}</TableCell>
@@ -216,8 +250,10 @@ const AdminUsersPage = () => {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </TableContainer>
+                  </Table>
+                </TableContainer>
+              )}
+            />
           ) : error ? (
             <ErrorState error={error} onRetry={() => load(search, page)} />
           ) : (

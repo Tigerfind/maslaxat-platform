@@ -84,7 +84,7 @@ const DashboardExtras = () => {
   };
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: 20, marginBottom: 24 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 300px), 1fr))', gap: 20, marginBottom: 24, minWidth: 0 }}>
       {/* Финансы */}
       <div style={card}>
         <div style={head}><PaymentsOutlined sx={{ fontSize: 20, color: 'var(--accent)' }} /> {t('dashExtra.financeTitle')}</div>
@@ -98,10 +98,10 @@ const DashboardExtras = () => {
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
           <button onClick={() => { wdKeyRef.current = window.crypto.randomUUID(); setWdOpen(true); }} disabled={!balance || Number(balance.balance) <= 0}
-            style={{ background: (!balance || Number(balance.balance) <= 0) ? 'var(--border-strong)' : 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: (!balance || Number(balance.balance) <= 0) ? 'default' : 'pointer', fontFamily: 'inherit' }}>
+            style={{ minHeight: 44, background: (!balance || Number(balance.balance) <= 0) ? 'var(--border-strong)' : 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: (!balance || Number(balance.balance) <= 0) ? 'default' : 'pointer', fontFamily: 'inherit' }}>
             {t('dashExtra.withdraw')}
           </button>
-          <button onClick={() => navigate('/lawyer/analytics')} style={{ background: 'transparent', border: '1px solid var(--card-brd)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={() => navigate('/lawyer/analytics')} style={{ minHeight: 44, background: 'transparent', border: '1px solid var(--card-brd)', color: 'var(--text2)', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
             {t('dashExtra.history')}
           </button>
         </div>
@@ -123,7 +123,7 @@ const DashboardExtras = () => {
                 {t(it.tk)}
               </div>
             ))}
-            <button onClick={() => navigate('/lawyer/profile/edit')} style={{ alignSelf: 'flex-start', marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: 'var(--accent-dark)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}>
+            <button onClick={() => navigate('/lawyer/profile/edit')} style={{ alignSelf: 'flex-start', minHeight: 44, marginTop: 6, display: 'inline-flex', alignItems: 'center', gap: 5, background: 'transparent', border: 'none', color: 'var(--accent-dark)', fontSize: 12.5, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: '8px 0' }}>
               {t('dashExtra.improve')} <ArrowForwardRounded sx={{ fontSize: 15 }} />
             </button>
           </div>
@@ -138,7 +138,7 @@ const DashboardExtras = () => {
           {profileUrl}
         </div>
         <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
-          <button onClick={copyLink} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
+          <button onClick={copyLink} style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, background: 'linear-gradient(135deg,var(--accent),var(--accent-dark))', color: '#fff', border: 'none', fontSize: 12.5, fontWeight: 600, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit' }}>
             <ContentCopyOutlined sx={{ fontSize: 16 }} /> {copied ? t('dashExtra.copied') : t('dashExtra.copy')}
           </button>
         </div>
@@ -148,7 +148,7 @@ const DashboardExtras = () => {
       </div>
 
       {/* Диалог вывода */}
-      <Dialog open={wdOpen} onClose={() => setWdOpen(false)} maxWidth="xs" fullWidth>
+      <Dialog open={wdOpen} onClose={() => setWdOpen(false)} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' } } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <PaymentsOutlined sx={{ color: 'var(--accent)' }} /> {t('dashExtra.withdraw')}
         </DialogTitle>
@@ -164,7 +164,7 @@ const DashboardExtras = () => {
             label={t('dashExtra.wdLastFour')} sx={{ mt: 2 }} inputProps={{ inputMode: 'numeric', maxLength: 4 }} />
           <div style={{ fontSize: 11.5, color: 'var(--text3)', marginTop: 10 }}>{t('dashExtra.wdNote')}</div>
         </DialogContent>
-        <DialogActions sx={{ p: 2 }}>
+        <DialogActions sx={{ p: 2, flexWrap: 'wrap', pb: 'max(16px, env(safe-area-inset-bottom))' }}>
           <Button onClick={() => setWdOpen(false)} sx={{ textTransform: 'none', color: 'var(--text2)' }}>{t('dashExtra.cancel')}</Button>
           <Button onClick={withdraw} disabled={wding} variant="contained"
             sx={{ textTransform: 'none', background: 'var(--accent)', '&:hover': { background: 'var(--accent-dark)' } }}>

@@ -10,7 +10,7 @@ const disabledSecrets = {
   GOOGLE_CLIENT_ID: '', TELEGRAM_BOT_TOKEN: '', TELEGRAM_BOT_USERNAME: '',
   SMS_PROVIDER: '', ESKIZ_EMAIL: '', ESKIZ_PASSWORD: '', PLAYMOBILE_URL: '',
   VAPID_PUBLIC_KEY: '', VAPID_PRIVATE_KEY: '', SOCKET_REDIS: '0', RUN_SEED: '0',
-  SENTRY_DSN: '',
+  SENTRY_DSN: '', RATE_LIMIT_MAX: '100000', AUTH_RATE_LIMIT_MAX: '100000',
 };
 
 module.exports = defineConfig({
@@ -46,7 +46,7 @@ module.exports = defineConfig({
       command: 'node src/scripts/prepareE2E.js && node src/server.js',
       cwd: backendDir,
       url: 'http://127.0.0.1:3101/api/health',
-      timeout: 300000,
+      timeout: 600000,
       reuseExistingServer: false,
       env: {
         ...process.env, ...disabledSecrets,
@@ -63,7 +63,7 @@ module.exports = defineConfig({
       command: 'npm run build:prod && npm run preview -- --host 127.0.0.1 --port 3100',
       cwd: __dirname,
       url: 'http://127.0.0.1:3100',
-      timeout: 300000,
+      timeout: 600000,
       reuseExistingServer: false,
       env: {
         ...process.env, CI: 'true',

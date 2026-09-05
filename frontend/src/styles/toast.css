@@ -45,3 +45,11 @@
 .Toastify__progress-bar--warning {
   background: linear-gradient(90deg, #E0B15C, #C99A3A) !important;
 }
+
+@media (max-width: 1023px) {
+  .Toastify__toast-container--bottom-center,
+  .Toastify__toast-container--bottom-left,
+  .Toastify__toast-container--bottom-right {
+    bottom: calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom) + 8px);
+  }
+}

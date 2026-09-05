@@ -79,7 +79,9 @@ const AIChatPageGlass = () => {
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
   const recognitionRef = useRef(null);
+  const historyRequestRef = useRef(0);
   const isDesktop = useMediaQuery('(min-width:1024px)');
+  const isPhone = useMediaQuery('(max-width:600px)');
 
   const [inputMessage, setInputMessage] = useState('');
   const [messages, setMessages] = useState([]);
@@ -98,6 +100,21 @@ const AIChatPageGlass = () => {
   const [voiceOn, setVoiceOn] = useState(false);
   const [voiceText, setVoiceText] = useState('');
   const [capabilities, setCapabilities] = useState(null);
+  const [loadError, setLoadError] = useState(null);
+  const [historyError, setHistoryError] = useState(null);
+  const [showMobileHistory, setShowMobileHistory] = useState(false);
+  const [showMobileLawyers, setShowMobileLawyers] = useState(false);
+  const [online, setOnline] = useState(() => navigator.onLine !== false);
+
+  useEffect(() => {
+    const updateOnline = () => setOnline(navigator.onLine !== false);
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    return () => {
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+    };
+  }, []);
 
   useEffect(() => {
     api.get('/system/capabilities').then(({ data }) => setCapabilities(data)).catch(() => setCapabilities(null));
@@ -122,6 +139,7 @@ const AIChatPageGlass = () => {
     let alive = true;
     (async () => {
       try {
+        setLoadError(null);
         const data = await clientService.aiChat.getConversations();
         if (!alive) return;
         const list = Array.isArray(data) ? data : [];
@@ -138,7 +156,7 @@ const AIChatPageGlass = () => {
           setIsLoadingHistory(false);
         }
       } catch (error) {
-        if (alive) console.error('Error loading conversations:', error);
+        if (alive) { console.error('Error loading conversations:', error); setLoadError(error); }
       } finally {
         if (alive) setIsLoadingHistory(false);
       }
@@ -166,6 +184,7 @@ const AIChatPageGlass = () => {
 
   const loadConversations = async ({ openFirst = true } = {}) => {
     try {
+      setLoadError(null);
       const data = await clientService.aiChat.getConversations();
       setConversations(Array.isArray(data) ? data : []);
       if (openFirst && data.length > 0 && !currentConversationId) {
@@ -173,23 +192,29 @@ const AIChatPageGlass = () => {
       }
     } catch (error) {
       console.error('Error loading conversations:', error);
+      setLoadError(error);
     }
   };
 
   const loadConversationHistory = async (conversationId) => {
+    const requestId = ++historyRequestRef.current;
     setIsLoadingHistory(true);
+    setHistoryError(null);
     setCurrentConversationId(conversationId);
     try {
       const history = await clientService.aiChat.getChatHistory(conversationId);
+      if (requestId !== historyRequestRef.current) return;
       setMessages(Array.isArray(history) ? history : []);
       const lastAi = [...(Array.isArray(history) ? history : [])].reverse().find((m) => !m.isUser && m.category);
       if (lastAi?.category) {
         setCurrentCategory(lastAi.category);
       }
     } catch (error) {
+      if (requestId !== historyRequestRef.current) return;
       console.error('Error loading history:', error);
+      setHistoryError(error);
     } finally {
-      setIsLoadingHistory(false);
+      if (requestId === historyRequestRef.current) setIsLoadingHistory(false);
     }
   };
 
@@ -405,18 +430,19 @@ const AIChatPageGlass = () => {
 
   const convStyle = isDesktop
     ? { ...glassPanel, gridColumn: 2, gridRow: 1, maxHeight: 244 }
-    : { ...glassPanel, order: 1, maxHeight: 200 };
+    : { ...glassPanel, order: 2, maxHeight: showMobileHistory ? 280 : 52 };
   const chatStyle = isDesktop
     ? { ...glassPanel, gridColumn: 1, gridRow: '1 / span 2', minHeight: 0 }
-    : { ...glassPanel, order: 2, flex: 1, minHeight: 420 };
+    : { ...glassPanel, order: 1, flex: '0 0 auto', minHeight: isPhone ? 'calc(100dvh - 174px)' : 520, height: isPhone ? 'calc(100dvh - 174px)' : 'auto' };
   const lawyersStyle = isDesktop
     ? { ...glassPanel, gridColumn: 2, gridRow: 2, minHeight: 0 }
-    : { ...glassPanel, order: 3 };
+    : { ...glassPanel, order: 3, maxHeight: showMobileLawyers ? 420 : 52 };
 
   // ── Conversations panel ──
   const conversationsPanel = (
     <div style={convStyle}>
-      <div style={{ padding: 18 }}>
+      {!isDesktop && <button type="button" aria-expanded={showMobileHistory} onClick={() => setShowMobileHistory((v) => !v)} style={{ minHeight: 52, padding: '0 16px', border: 0, background: 'transparent', color: 'var(--text)', textAlign: 'left', fontWeight: 600 }}>{t('ai.history')} ({conversations.length})</button>}
+      {(isDesktop || showMobileHistory) && <div style={{ padding: 18 }}>
         <button
           onClick={startNewConversation}
           style={{
@@ -439,9 +465,11 @@ const AIChatPageGlass = () => {
             }}
           />
         )}
-      </div>
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
-        {conversations.length === 0 ? (
+      </div>}
+      {(isDesktop || showMobileHistory) && <div style={{ flex: 1, overflowY: 'auto', padding: '0 12px 12px' }}>
+        {loadError ? (
+          <div role="alert" style={{ textAlign: 'center', padding: 12, color: 'var(--error)', fontSize: 12.5 }}>{t('ai.loadError')}<button type="button" onClick={() => loadConversations({ openFirst: false })} style={{ display: 'block', margin: '10px auto 0', border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', borderRadius: 8, padding: '7px 12px' }}>{t('common.retry')}</button></div>
+        ) : conversations.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '20px 8px', color: 'var(--text3)', fontSize: 12.5 }}>
             {t('ai.noConversations')}
           </div>
@@ -457,13 +485,13 @@ const AIChatPageGlass = () => {
             return filtered.map((c) => {
             const active = currentConversationId === c.id;
             return (
-              <div
+              <button type="button"
                 key={c.id}
                 onClick={() => loadConversationHistory(c.id)}
                 style={{
-                  padding: '10px 12px', marginBottom: 4, borderRadius: 'var(--radius)', cursor: 'pointer',
+                  width: '100%', minHeight: 44, padding: '10px 12px', marginBottom: 4, borderRadius: 'var(--radius)', cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit',
                   background: active ? 'var(--canvas)' : 'transparent',
-                  borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
+                  border: 0, borderLeft: active ? '3px solid var(--accent)' : '3px solid transparent',
                   transition: 'background 0.2s',
                 }}
               >
@@ -473,18 +501,20 @@ const AIChatPageGlass = () => {
                 <div style={{ fontSize: 11, color: 'var(--text3)', marginTop: 3 }}>
                   {new Date(c.updatedAt || c.createdAt).toLocaleDateString('ru-RU')}
                 </div>
-              </div>
+              </button>
             );
             });
           })()
         )}
-      </div>
+      </div>}
     </div>
   );
 
   // ── Matched lawyers panel ──
   const lawyersPanel = (
     <div style={lawyersStyle}>
+      {!isDesktop && <button type="button" aria-expanded={showMobileLawyers} onClick={() => setShowMobileLawyers((v) => !v)} style={{ minHeight: 52, padding: '0 16px', border: 0, background: 'transparent', color: 'var(--text)', textAlign: 'left', fontWeight: 600 }}>{t('ai.matchedLawyers')} ({matchedLawyers.length})</button>}
+      {(isDesktop || showMobileLawyers) && <>
       <div style={{ padding: '18px 20px', borderBottom: '1px solid var(--border)' }}>
         <div style={{ fontSize: 13, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text)' }}>
           {t('ai.matchedLawyers')}
@@ -502,10 +532,9 @@ const AIChatPageGlass = () => {
           matchedLawyers.map((m, i) => (
             <div
               key={m.id}
-              onClick={() => navigate(`/lawyers/${m.id}`)}
               style={{
                 border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: 14,
-                marginBottom: 12, cursor: 'pointer', transition: 'all .2s',
+                marginBottom: 12, transition: 'all .2s',
               }}
             >
               {m.isExactMatch && (
@@ -530,7 +559,7 @@ const AIChatPageGlass = () => {
                 </div>
               </div>
               <button
-                onClick={(e) => { e.stopPropagation(); navigate(`/lawyers/${m.id}`); }}
+                onClick={() => navigate(`/lawyers/${m.id}`)}
                 style={{
                   width: '100%', marginTop: 12, background: 'var(--canvas)', border: '1px solid var(--accent)',
                   color: 'var(--text)', fontSize: 12, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
@@ -543,6 +572,7 @@ const AIChatPageGlass = () => {
           ))
         )}
       </div>
+      </>}
     </div>
   );
 
@@ -550,12 +580,13 @@ const AIChatPageGlass = () => {
   const chatPanel = (
     <div style={chatStyle}>
       {/* Messages */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18 }}>
+      <div className="ai-message-region" style={{ flex: 1, overflowY: 'auto', padding: 28, display: 'flex', flexDirection: 'column', gap: 18 }}>
         {capabilities?.ai === false && (
           <div role="status" style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(196,163,90,0.14)', color: 'var(--text2)', fontSize: 13 }}>
             {t('ai.serviceUnavailable')}
           </div>
         )}
+        {!online && <div role="status" style={{ padding: '12px 14px', borderRadius: 10, background: 'rgba(176,112,112,0.10)', color: 'var(--error)', fontSize: 13 }}>{t('ai.offline')}</div>}
         {isEmpty && (
           <div style={{ textAlign: 'center', marginBottom: 6, marginTop: 'auto' }}>
             <div style={{
@@ -589,6 +620,9 @@ const AIChatPageGlass = () => {
 
         {isLoadingHistory && (
           <div style={{ margin: 'auto', color: 'var(--text3)', fontSize: 13 }}>{t('common.loading')}</div>
+        )}
+        {historyError && !isLoadingHistory && (
+          <div role="alert" style={{ margin: 'auto', textAlign: 'center', color: 'var(--error)', fontSize: 13 }}>{t('ai.historyError')}<button type="button" onClick={() => loadConversationHistory(currentConversationId)} style={{ display: 'block', margin: '12px auto 0', border: '1px solid var(--border)', borderRadius: 8, background: 'var(--surface)', padding: '8px 14px' }}>{t('common.retry')}</button></div>
         )}
 
         {messages.map((m, index) => {
@@ -719,7 +753,7 @@ const AIChatPageGlass = () => {
       </div>
 
       {/* Composer */}
-      <div style={{ borderTop: '1px solid var(--border)', padding: '16px 20px' }}>
+      <div className="ai-composer" style={{ borderTop: '1px solid var(--border)', padding: '16px 20px', background: 'var(--surface)', zIndex: 2 }}>
         <input
           ref={fileInputRef}
           type="file"
@@ -786,6 +820,7 @@ const AIChatPageGlass = () => {
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: 12, background: 'var(--canvas)', border: '1px solid var(--border)', borderRadius: 'var(--radius)', padding: '10px 14px' }}>
           <button
             onClick={() => fileInputRef.current?.click()}
+            aria-label={t('ai.attachFile')}
             disabled={capabilities?.ai === false}
             style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex', padding: 4 }}
           >
@@ -797,11 +832,12 @@ const AIChatPageGlass = () => {
             onKeyDown={handleKeyDown}
             placeholder={t('ai.placeholder')}
             rows={1}
-            disabled={isLoading || capabilities?.ai === false}
+            disabled={isLoading || capabilities?.ai === false || !online}
             style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', resize: 'none', fontFamily: 'inherit', fontSize: 14, color: 'var(--text)', padding: '8px 0', lineHeight: 1.4, maxHeight: 120 }}
           />
           <button
             onClick={toggleVoice}
+            aria-label={t('ai.voiceInput')}
             disabled={capabilities?.ai === false}
             title={t('ai.voiceInput')}
             style={{
@@ -813,7 +849,8 @@ const AIChatPageGlass = () => {
           </button>
           <button
             onClick={handleSendMessage}
-            disabled={!armed || isLoading || capabilities?.ai === false}
+            aria-label={t('ai.send')}
+            disabled={!armed || isLoading || capabilities?.ai === false || !online}
             className={`send-btn${armed ? ' armed' : ''}`}
             style={{
               background: 'var(--accent)', border: 'none', width: 38, height: 38, borderRadius: 'var(--radius)',
@@ -845,6 +882,7 @@ const AIChatPageGlass = () => {
         onClose={() => setBookingLawyer(null)}
         lawyer={bookingLawyer || {}}
       />
+      <style>{`@media(max-width:600px){.ai-message-region{padding:14px 10px !important;gap:12px !important}.ai-msg{max-width:96% !important}.ai-av{display:none !important}.ai-composer{position:sticky;bottom:0;padding:10px max(10px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left)) !important}.ai-composer button{min-width:44px !important;min-height:44px !important}}`}</style>
     </GlassShell>
   );
 };

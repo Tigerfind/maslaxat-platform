@@ -16,12 +16,12 @@ const card = {
 };
 const goldBtn = {
   background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))', color: '#FFFFFF', border: 'none',
-  fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', padding: '10px 20px', borderRadius: 10,
+  minHeight: 44, fontSize: 13, fontWeight: 600, letterSpacing: '0.04em', padding: '10px 20px', borderRadius: 10,
   cursor: 'pointer', fontFamily: 'inherit',
 };
 const outlineBtn = {
   background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)',
-  fontSize: 13, fontWeight: 500, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
+  minHeight: 44, fontSize: 13, fontWeight: 500, padding: '10px 18px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit',
 };
 
 const TwoFactorSection = () => {
@@ -135,11 +135,11 @@ const TwoFactorSection = () => {
       </div>
 
       {/* ── Диалог: настройка (QR + код) ── */}
-      <Dialog open={dialog === 'setup'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
+      <Dialog open={dialog === 'setup'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' }, borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
         <DialogContent sx={{ p: 3 }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
             <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{t('twofa.setupTitle')}</div>
-            <button onClick={closeDialog} style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex' }}><CloseOutlined sx={{ fontSize: 20 }} /></button>
+            <button type="button" onClick={closeDialog} aria-label={t('twofa.cancel')} style={{ width: 44, height: 44, background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text3)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><CloseOutlined sx={{ fontSize: 20 }} /></button>
           </div>
           <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>{t('twofa.setupStep1')}</div>
           {setupData?.qrDataUrl && (
@@ -161,7 +161,7 @@ const TwoFactorSection = () => {
       </Dialog>
 
       {/* ── Диалог: резервные коды ── */}
-      <Dialog open={dialog === 'backup'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
+      <Dialog open={dialog === 'backup'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' }, borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
         <DialogContent sx={{ p: 3 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, color: 'var(--success, #5AA06A)' }}>
             <CheckCircle sx={{ fontSize: 22 }} />
@@ -181,12 +181,12 @@ const TwoFactorSection = () => {
       </Dialog>
 
       {/* ── Диалог: отключение ── */}
-      <Dialog open={dialog === 'disable'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
+      <Dialog open={dialog === 'disable'} onClose={closeDialog} maxWidth="xs" fullWidth PaperProps={{ sx: { m: { xs: 1, sm: 4 }, maxHeight: { xs: 'calc(100dvh - 16px)', sm: 'calc(100% - 64px)' }, borderRadius: '16px', background: 'var(--surface)', backgroundImage: 'none' } }}>
         <DialogContent sx={{ p: 3 }}>
           <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', marginBottom: 8 }}>{t('twofa.disableTitle')}</div>
           <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 16 }}>{t('twofa.disableIntro')}</div>
           <input style={inputStyle} value={code} onChange={(e) => setCode(e.target.value)} placeholder="123456" maxLength={9} autoFocus />
-          <div style={{ display: 'flex', gap: 10, marginTop: 16 }}>
+           <div style={{ display: 'flex', gap: 10, marginTop: 16, flexWrap: 'wrap' }}>
             <button style={{ ...outlineBtn, flex: 1 }} onClick={closeDialog}>{t('twofa.cancel')}</button>
             <button style={{ ...goldBtn, flex: 1, background: 'var(--error, #B07070)' }} onClick={confirmDisable} disabled={busy || !code.trim()}>
               {busy ? t('twofa.checking') : t('twofa.disable')}

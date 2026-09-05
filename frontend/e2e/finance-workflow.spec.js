@@ -63,7 +63,7 @@ test('refund request и withdrawal проходят финансовые workflo
     await page.evaluate(() => localStorage.clear());
     await login(page, 'admin');
     await page.goto('/admin/finance');
-    const row = page.getByTestId(`withdrawal-${withdrawalId}`);
+    const row = page.getByTestId('responsive-data-table').getByTestId(`withdrawal-${withdrawalId}`);
     await expect(row).toContainText('E2E Lawyer');
     if (withdrawal.status === 'pending') {
       await row.getByRole('button', { name: 'Взять в обработку' }).click();

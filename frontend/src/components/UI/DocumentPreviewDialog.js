@@ -3,6 +3,7 @@ import { Dialog, DialogTitle, DialogContent, IconButton, Box, Typography, Circul
 import { CloseOutlined, DownloadOutlined, InsertDriveFileOutlined } from '@mui/icons-material';
 import { useTranslation } from '../../i18n';
 import { consultationDialogPaperSx } from '../../utils/consultationLocale';
+import { getPreviewKind } from '../../utils/documentFiles';
 
 // Универсальный предпросмотр документа без скачивания.
 // fetchBlob: async () => Blob — загружает файл (у разных мест разные эндпоинты).
@@ -23,11 +24,7 @@ const DocumentPreviewDialog = ({ open, onClose, name = '', fetchBlob, onDownload
         try {
           const blob = await fetchBlob();
           if (!alive) return;
-          const mime = blob.type || '';
-          const lower = (name || '').toLowerCase();
-          let k = 'other';
-          if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/.test(lower)) k = 'image';
-          else if (mime === 'application/pdf' || lower.endsWith('.pdf')) k = 'pdf';
+           const k = getPreviewKind(name, blob.type);
           setKind(k);
           if (k === 'image' || k === 'pdf') {
             objUrl = window.URL.createObjectURL(blob);
@@ -57,13 +54,13 @@ const DocumentPreviewDialog = ({ open, onClose, name = '', fetchBlob, onDownload
         {loading ? (
           <Box sx={{ textAlign: 'center', py: 6 }}><CircularProgress size={28} /></Box>
         ) : error ? (
-          <Typography sx={{ py: 4, textAlign: 'center', color: 'var(--text3)' }}>{t('preview.error')}</Typography>
+          <Box sx={{ textAlign: 'center', py: 4 }}><Typography sx={{ color: 'var(--text3)', mb: 2 }}>{t('preview.error')}</Typography>{onDownload && <Button onClick={onDownload} variant="outlined" startIcon={<DownloadOutlined />}>{t('preview.download')}</Button>}</Box>
         ) : kind === 'image' ? (
           <Box sx={{ textAlign: 'center' }}>
             <img src={url} alt={name} style={{ maxWidth: '100%', maxHeight: '72vh', borderRadius: 8 }} />
           </Box>
         ) : kind === 'pdf' ? (
-          <iframe src={url} title={name} style={{ width: '100%', height: '72vh', border: 'none' }} />
+          <Box><iframe src={url} title={name} style={{ width: '100%', height: '62dvh', border: 'none' }} /><Box sx={{ textAlign: 'center', pt: 1 }}>{onDownload && <Button onClick={onDownload} startIcon={<DownloadOutlined />}>{t('preview.download')}</Button>}<Button component="a" href={url} target="_blank" rel="noopener noreferrer">{t('documents.openPdf')}</Button></Box></Box>
         ) : (
           <Box sx={{ textAlign: 'center', py: 5 }}>
             <InsertDriveFileOutlined sx={{ fontSize: 48, color: 'var(--text3)', mb: 1 }} />

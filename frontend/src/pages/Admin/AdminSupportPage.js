@@ -2,9 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { toast } from 'react-toastify';
 import {
   Box, Container, Typography, IconButton, CircularProgress, Chip,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Select, MenuItem,
+  Table, TableBody, TableCell, TableHead, TableRow, TableContainer, Paper, Select, MenuItem,
   Dialog, DialogTitle, DialogContent, DialogActions, TextField, Button, Tooltip,
-  Pagination, Alert,
+  Pagination, Alert, Stack, useMediaQuery,
 } from '@mui/material';
 import { ReplyOutlined } from '@mui/icons-material';
 import adminService from '../../services/adminService';
@@ -12,6 +12,7 @@ import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import ErrorState from '../../components/UI/ErrorState';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
 
 const PAGE_SIZE = 25;
 
@@ -23,6 +24,7 @@ const STATUS_COLOR = {
 
 const AdminSupportPage = () => {
   const { t, language } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
   const [tickets, setTickets] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -122,8 +124,36 @@ const AdminSupportPage = () => {
         ) : error ? (
           <ErrorState error={error} onRetry={() => load(page, statusFilter)} />
         ) : (
-          <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
-            <Table>
+          tickets.length === 0 ? (
+            <Box sx={{ textAlign: 'center', py: 4, color: axelionColors.textMuted }}>{t('adminSupport.empty')}</Box>
+          ) : (
+          <ResponsiveDataView
+            items={tickets}
+            mobileLabel={t('adminSupport.title')}
+            renderMobileItem={(ticket) => (
+              <Stack spacing={1.5}>
+                <Box>
+                  <Typography sx={{ fontSize: 14, fontWeight: 600 }}>{ticket.user?.name || '—'}</Typography>
+                  <Typography sx={{ fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere' }}>{ticket.user?.email}</Typography>
+                </Box>
+                <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                  <MobileDataField label={t('adminSupport.subject')}>{ticket.subject}</MobileDataField>
+                  <MobileDataField label={t('adminSupport.date')}>{fmtDate(ticket.createdAt)}</MobileDataField>
+                  <MobileDataField fullWidth label={t('adminSupport.message')}><Typography sx={{ fontSize: 14, whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{ticket.message}</Typography></MobileDataField>
+                  <MobileDataField fullWidth label={t('adminSupport.response')}>{ticket.response || t('adminSupport.noReply')}</MobileDataField>
+                </Box>
+                <Select fullWidth size="small" value={ticket.status} onChange={(e) => changeStatus(ticket, e.target.value)} inputProps={{ 'aria-label': `${t('adminSupport.status')}: ${ticket.subject}` }} sx={{ minHeight: 44 }}>
+                  <MenuItem value="open">{t('adminSupport.stOpen')}</MenuItem><MenuItem value="in_progress">{t('adminSupport.stProgress')}</MenuItem><MenuItem value="closed">{t('adminSupport.stClosed')}</MenuItem>
+                </Select>
+                <Button fullWidth variant="outlined" onClick={() => openReply(ticket)} startIcon={<ReplyOutlined />} aria-label={`${ticket.response ? t('adminSupport.editReply') : t('adminSupport.reply')}: ${ticket.subject}`}>
+                  {ticket.response ? t('adminSupport.editReply') : t('adminSupport.reply')}
+                </Button>
+              </Stack>
+            )}
+            desktop={(
+              <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
+                <TableContainer>
+                  <Table>
               <TableHead>
                 <TableRow sx={{ bgcolor: axelionColors.bgCream }}>
                   <TableCell>{t('adminSupport.user')}</TableCell>
@@ -153,6 +183,7 @@ const AdminSupportPage = () => {
                           size="small"
                           value={ticket.status}
                           onChange={(e) => changeStatus(ticket, e.target.value)}
+                          inputProps={{ 'aria-label': `${t('adminSupport.status')}: ${ticket.subject}` }}
                           sx={{ fontSize: 13, color: sc.c, bgcolor: sc.bg, borderRadius: 2, '& .MuiOutlinedInput-notchedOutline': { border: 'none' } }}
                         >
                           <MenuItem value="open">{t('adminSupport.stOpen')}</MenuItem>
@@ -168,7 +199,7 @@ const AdminSupportPage = () => {
                             <Typography sx={{ fontSize: 12.5, color: axelionColors.textMuted, flex: 1 }}>{t('adminSupport.noReply')}</Typography>
                           )}
                           <Tooltip title={ticket.response ? t('adminSupport.editReply') : t('adminSupport.reply')}>
-                            <IconButton size="small" onClick={() => openReply(ticket)} sx={{ color: axelionColors.gold }}>
+                            <IconButton aria-label={`${ticket.response ? t('adminSupport.editReply') : t('adminSupport.reply')}: ${ticket.subject}`} size="small" onClick={() => openReply(ticket)} sx={{ color: axelionColors.gold }}>
                               <ReplyOutlined fontSize="small" />
                             </IconButton>
                           </Tooltip>
@@ -178,8 +209,11 @@ const AdminSupportPage = () => {
                   );
                 })}
               </TableBody>
-            </Table>
-          </Paper>
+                  </Table>
+                </TableContainer>
+              </Paper>
+            )}
+          />)
         )}
 
         {!loading && !error && totalPages > 1 && (
@@ -190,7 +224,7 @@ const AdminSupportPage = () => {
       </Container>
 
       {/* Диалог ответа автору обращения */}
-      <Dialog open={!!replyTicket} onClose={() => !sending && setReplyTicket(null)} maxWidth="sm" fullWidth>
+      <Dialog open={!!replyTicket} onClose={() => !sending && setReplyTicket(null)} maxWidth="sm" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
         <DialogTitle>{t('adminSupport.replyTitle')}</DialogTitle>
         <DialogContent sx={{ display: 'flex', flexDirection: 'column', gap: 2, pt: 1 }}>
           {replyTicket && (
@@ -216,7 +250,7 @@ const AdminSupportPage = () => {
             placeholder={t('adminSupport.replyPlaceholder')}
           />
         </DialogContent>
-        <DialogActions sx={{ px: 3, pb: 2 }}>
+        <DialogActions sx={{ px: 3, pb: 'max(16px, env(safe-area-inset-bottom))', flexWrap: 'wrap', gap: 1, '& > :not(style) ~ :not(style)': { ml: 0 } }}>
           <Button onClick={() => setReplyTicket(null)} disabled={sending} sx={{ color: axelionColors.textMuted, textTransform: 'none' }}>{t('common.cancel')}</Button>
           <Button onClick={sendReply} disabled={sending} variant="contained" sx={{ bgcolor: axelionColors.gold, boxShadow: 'none', textTransform: 'none', '&:hover': { bgcolor: axelionColors.goldDark } }}>
             {sending ? t('adminSupport.sending') : t('adminSupport.sendReply')}

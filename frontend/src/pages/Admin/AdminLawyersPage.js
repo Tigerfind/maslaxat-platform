@@ -4,7 +4,7 @@ import {
   Container, Box, Typography, Grid, IconButton, Table, TableBody, TableCell,
   TableContainer, TableHead, TableRow, Chip, Stack, CircularProgress,
   Card, Button, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, List,
-  ListItem, ListItemText, Pagination,
+  ListItem, ListItemText, Pagination, useMediaQuery,
 } from '@mui/material';
 import {
   CheckCircle, Block, Gavel, Verified, HourglassEmpty,
@@ -17,11 +17,14 @@ import GlassShell from '../../components/GlassKit/GlassShell';
 import DocumentPreviewDialog from '../../components/UI/DocumentPreviewDialog';
 import ErrorState from '../../components/UI/ErrorState';
 import ConfirmDialog from '../../components/UI/ConfirmDialog';
+import ResponsiveDataView, { MobileDataField } from '../../components/UI/ResponsiveDataView';
+import { lawyerModerationStatusKey } from '../../utils/lawyerModeration';
 
 const PAGE_SIZE = 25;
 
 const AdminLawyersPage = () => {
   const { t, language } = useTranslation();
+  const phone = useMediaQuery('(max-width:599px)');
 
   const [lawyers, setLawyers] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -107,7 +110,7 @@ const AdminLawyersPage = () => {
   const DOC_TYPE_LABEL = {
     diploma: t('adminManage.docDiploma'),
     license: t('adminManage.docLicense'),
-    certificate: 'Сертификат',
+    certificate: t('adminManage.docCertificate'),
     id: t('adminManage.docId'),
     other: t('adminManage.docOther'),
   };
@@ -177,6 +180,7 @@ const AdminLawyersPage = () => {
 
   // Статус модерации — источник истины на профиле (не User.isVerified, тот про email).
   const stOf = (l) => l.profile?.verificationStatus || 'draft';
+  const statusLabel = (lawyer) => t(`adminManage.${lawyerModerationStatusKey(stOf(lawyer))}`);
 
   // Очередь проверки: pending → rejected → approved, внутри — новые сверху.
   // Сортировка клиентская и действует только в пределах страницы — поэтому
@@ -254,6 +258,7 @@ const AdminLawyersPage = () => {
             без него юрист «на проверке» с 60-й позиции был недостижим. */}
         <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
           <input
+            aria-label={t('adminManage.searchPlaceholder')}
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder={t('adminManage.searchPlaceholder')}
@@ -283,10 +288,40 @@ const AdminLawyersPage = () => {
         </Box>
 
         {/* Table */}
-        <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', overflow: 'hidden' }}>
+        <Card sx={{ background: axelionColors.bgLight, border: { xs: 'none', sm: `1px solid ${axelionColors.borderLight}` }, borderRadius: '8px', boxShadow: 'none', overflow: 'visible' }}>
           {sortedLawyers.length > 0 ? (
-            <TableContainer>
-              <Table>
+            <ResponsiveDataView
+              items={sortedLawyers}
+              mobileLabel={t('adminManage.lawyersTitle')}
+              renderMobileItem={(l) => (
+                <Stack spacing={1.5}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, minWidth: 0 }}>
+                    <Avatar src={l.avatar || undefined} alt={l.name} sx={{ width: 44, height: 44, bgcolor: axelionColors.gold, flexShrink: 0 }}>{initials(l.name)}</Avatar>
+                    <Box sx={{ minWidth: 0 }}>
+                      <Typography sx={{ fontSize: 14, fontWeight: 600, overflowWrap: 'anywhere' }}>{l.name}</Typography>
+                      <Typography sx={{ fontSize: 12, color: axelionColors.textMuted, overflowWrap: 'anywhere' }}>{l.email}</Typography>
+                    </Box>
+                  </Box>
+                  <Box component="dl" sx={{ m: 0, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1.25 }}>
+                    <MobileDataField label={t('adminManage.colSpec')}>{specOf(l)}</MobileDataField>
+                    <MobileDataField label={t('adminManage.colStatus')}>
+                      <Chip size="small" label={statusLabel(l)} />
+                    </MobileDataField>
+                    <MobileDataField label={t('adminManage.colRegistered')}>{fmtDate(l.createdAt)}</MobileDataField>
+                    {stOf(l) === 'rejected' && l.profile?.rejectionReason && <MobileDataField fullWidth label={t('adminManage.rejectReason')}>{l.profile.rejectionReason}</MobileDataField>}
+                  </Box>
+                  {!l.profileCompleteness?.complete && <Typography variant="caption" sx={{ color: axelionColors.warning }}>{l.profileCompleteness?.missing?.map((key) => completenessLabel[key] || key).join(', ')}</Typography>}
+                  <Stack direction="column" spacing={1}>
+                    <Button fullWidth variant="outlined" onClick={() => openDocs(l)} startIcon={<FolderOpenOutlined />} sx={{ minHeight: 44 }}>{t('adminManage.docs')}</Button>
+                    <Button fullWidth variant="outlined" onClick={() => openModeration(l)} startIcon={<VisibilityOutlined />} sx={{ minHeight: 44 }}>{t('adminManage.resume')}</Button>
+                    {stOf(l) === 'pending_review' && <Button fullWidth variant="contained" disabled={acting === l.id || !l.profileCompleteness?.complete} onClick={() => setConfirmApprove(l)} sx={{ minHeight: 44, bgcolor: axelionColors.success }}>{t('adminManage.approve')}</Button>}
+                    {stOf(l) === 'pending_review' && <Button fullWidth variant="outlined" disabled={acting === l.id} onClick={() => setConfirmReject(l)} sx={{ minHeight: 44, color: axelionColors.error }}>{t('adminManage.reject')}</Button>}
+                  </Stack>
+                </Stack>
+              )}
+              desktop={(
+                <TableContainer>
+                  <Table>
                 <TableHead>
                   <TableRow sx={{ background: axelionColors.bgCream, borderBottom: `1px solid ${axelionColors.borderLight}` }}>
                     <TableCell sx={{ color: axelionColors.textDark, fontWeight: 600 }}>{t('adminManage.colLawyer')}</TableCell>
@@ -321,6 +356,12 @@ const AdminLawyersPage = () => {
                         {stOf(l) === 'rejected' && (
                           <Chip size="small" icon={<Block sx={{ fontSize: 15 }} />} label={t('adminManage.stRejected')} sx={{ background: axelionColors.errorLight, color: axelionColors.error, fontWeight: 600, border: `1px solid ${axelionColors.error}`, '& .MuiChip-icon': { color: axelionColors.error } }} />
                         )}
+                        {stOf(l) === 'draft' && (
+                          <Chip size="small" icon={<HourglassEmpty sx={{ fontSize: 15 }} />} label={t('adminManage.stDraft')} />
+                        )}
+                        {stOf(l) === 'suspended' && (
+                          <Chip size="small" icon={<Block sx={{ fontSize: 15 }} />} label={t('adminManage.stSuspended')} sx={{ background: axelionColors.errorLight, color: axelionColors.error }} />
+                        )}
                         {/* Причина отказа сохранялась в БД, но нигде не показывалась —
                             админ не видел, за что сам же отклонил юриста. */}
                         {stOf(l) === 'rejected' && l.profile?.rejectionReason && (
@@ -344,7 +385,7 @@ const AdminLawyersPage = () => {
                             sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.bronze, background: axelionColors.bgBeige } }}>
                             {t('adminManage.docs')}
                           </Button>
-                          <Button size="small" variant="outlined" onClick={() => openModeration(l)} startIcon={<VisibilityOutlined sx={{ fontSize: 16 }} />}>Резюме</Button>
+                           <Button size="small" variant="outlined" onClick={() => openModeration(l)} startIcon={<VisibilityOutlined sx={{ fontSize: 16 }} />}>{t('adminManage.resume')}</Button>
                           {stOf(l) === 'pending_review' && (
                             <Button size="small" variant="contained" disabled={acting === l.id || !l.profileCompleteness?.complete} onClick={() => setConfirmApprove(l)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
@@ -364,8 +405,10 @@ const AdminLawyersPage = () => {
                     </TableRow>
                   ))}
                 </TableBody>
-              </Table>
-            </TableContainer>
+                  </Table>
+                </TableContainer>
+              )}
+            />
           ) : error ? (
             <ErrorState error={error} onRetry={() => load(page)} />
           ) : (
@@ -382,34 +425,34 @@ const AdminLawyersPage = () => {
         )}
       </Container>
 
-      <Dialog open={!!moderation} onClose={() => setModeration(null)} maxWidth="md" fullWidth>
-        <DialogTitle>Проверка резюме{moderation?.lawyer?.name ? ` — ${moderation.lawyer.name}` : ''}</DialogTitle>
+      <Dialog open={!!moderation} onClose={() => setModeration(null)} maxWidth="md" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
+        <DialogTitle>{t('adminManage.resumeReview')}{moderation?.lawyer?.name ? ` — ${moderation.lawyer.name}` : ''}</DialogTitle>
         <DialogContent dividers>
           {moderationLoading ? <CircularProgress /> : moderation?.lawyer && (
             <Box sx={{ display: 'grid', gap: 2 }}>
               <Typography variant="h6">{moderation.lawyer.profile?.professionalTitle}</Typography>
               <Typography>{moderation.lawyer.profile?.description}</Typography>
-              <Typography><b>Лицензия:</b> {moderation.lawyer.profile?.licenseNumber} · {moderation.lawyer.profile?.licenseIssuer}</Typography>
-              <Typography><b>Специализации:</b> {(moderation.lawyer.profile?.specializations || []).join(', ')}</Typography>
+              <Typography sx={{ overflowWrap: 'anywhere' }}><b>{t('adminManage.license')}:</b> {moderation.lawyer.profile?.licenseNumber} · {moderation.lawyer.profile?.licenseIssuer}</Typography>
+              <Typography><b>{t('adminManage.specializations')}:</b> {(moderation.lawyer.profile?.specializations || []).join(', ')}</Typography>
               <Typography sx={{ color: moderation.completeness?.missing?.includes('schedule') ? axelionColors.error : axelionColors.success }}>
                 <b>{t('adminManage.scheduleStatus')}:</b> {t('adminManage.scheduleSlots', { count: moderation.completeness?.scheduleSlots || 0, required: moderation.completeness?.requiredScheduleSlots || 3 })}
               </Typography>
-              <Typography variant="subtitle1">Опыт работы</Typography>
+              <Typography variant="subtitle1">{t('adminManage.experience')}</Typography>
               {(moderation.lawyer.lawyerExperiences || []).map((item) => <Typography key={item.id}>{item.position} — {item.organization} ({item.startDate} — {item.isCurrent ? 'сейчас' : item.endDate})</Typography>)}
-              <Typography variant="subtitle1">Образование</Typography>
+              <Typography variant="subtitle1">{t('adminManage.education')}</Typography>
               {(moderation.lawyer.lawyerEducations || []).map((item) => <Typography key={item.id}>{item.university} — {item.specialty}</Typography>)}
-              <Typography variant="subtitle1">Сертификаты</Typography>
+              <Typography variant="subtitle1">{t('adminManage.certificates')}</Typography>
               {(moderation.lawyer.lawyerCertificates || []).map((item) => <Typography key={item.id}>{item.title} · {item.organization}</Typography>)}
-              <Typography variant="subtitle1">История статусов</Typography>
+              <Typography variant="subtitle1">{t('adminManage.statusHistory')}</Typography>
               {(moderation.history || []).map((item) => <Typography key={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.fromStatus || '—'} → {item.toStatus}{item.reason ? ` · ${item.reason}` : ''}</Typography>)}
             </Box>
           )}
         </DialogContent>
-        <DialogActions><Button onClick={() => setModeration(null)}>Закрыть</Button></DialogActions>
+        <DialogActions sx={{ pb: 'max(8px, env(safe-area-inset-bottom))' }}><Button onClick={() => setModeration(null)}>{t('common.close')}</Button></DialogActions>
       </Dialog>
 
       {/* Диалог верификационных документов юриста */}
-      <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} maxWidth="sm" fullWidth>
+      <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} maxWidth="sm" fullWidth fullScreen={phone} PaperProps={{ sx: { maxHeight: { xs: '100dvh', sm: 'calc(100dvh - 64px)' } } }}>
         <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1.2 }}>
           <DescriptionOutlined sx={{ color: axelionColors.bronze }} />
           {t('adminManage.docsTitle')}{docsFor ? ` — ${docsFor.name}` : ''}
@@ -424,40 +467,35 @@ const AdminLawyersPage = () => {
           ) : (
             <List disablePadding>
               {docs.map((d) => (
-                <ListItem key={d.id} divider
-                  secondaryAction={
-                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                      <IconButton size="small" onClick={() => setPreviewDoc(d)} title={t('preview.view')} sx={{ color: axelionColors.bronze }}>
+                <ListItem key={d.id} divider sx={{ display: 'flex', alignItems: { xs: 'stretch', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 1, px: { xs: 0, sm: 2 } }}>
+                  <ListItemText
+                    primary={d.name}
+                    secondary={[DOC_TYPE_LABEL[d.type] || d.type, fmtSize(d.size), d.verifiedAt ? t('adminManage.docVerified') : null].filter(Boolean).join(' · ')}
+                    primaryTypographyProps={{ fontSize: 14, fontWeight: 500, sx: { overflowWrap: 'anywhere' } }}
+                    secondaryTypographyProps={{ fontSize: 12 }}
+                  />
+                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <IconButton aria-label={`${t('preview.view')}: ${d.name}`} onClick={() => setPreviewDoc(d)} title={t('preview.view')} sx={{ color: axelionColors.bronze }}>
                         <VisibilityOutlined sx={{ fontSize: 19 }} />
                       </IconButton>
-                      <Button size="small" variant="text" disabled={downloading === d.id}
+                      <Button aria-label={`${t('adminManage.docDownload')}: ${d.name}`} variant="text" disabled={downloading === d.id}
                         onClick={() => download(d.id, d.name)}
                         startIcon={downloading === d.id ? <CircularProgress size={14} /> : <DownloadOutlined sx={{ fontSize: 18 }} />}
                         sx={{ textTransform: 'none', color: axelionColors.bronze }}>
                         {t('adminManage.docDownload')}
                       </Button>
                       {!d.verifiedAt && (
-                        <Button size="small" variant="text" disabled={verifyingDoc === d.id} onClick={() => verifyDocument(d.id)} sx={{ textTransform: 'none', color: axelionColors.success }}>
+                        <Button aria-label={`${t('adminManage.docVerify')}: ${d.name}`} variant="text" disabled={verifyingDoc === d.id} onClick={() => verifyDocument(d.id)} sx={{ textTransform: 'none', color: axelionColors.success }}>
                           {t('adminManage.docVerify')}
                         </Button>
                       )}
                     </Box>
-                  }
-                >
-                  <ListItemText
-                    primary={d.name}
-                    // Размер бэкенд отдавал всегда, но он не выводился: нельзя было
-                    // отличить настоящий скан от мусорного файла до скачивания.
-                    secondary={[DOC_TYPE_LABEL[d.type] || d.type, fmtSize(d.size), d.verifiedAt ? t('adminManage.docVerified') : null].filter(Boolean).join(' · ')}
-                    primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }}
-                    secondaryTypographyProps={{ fontSize: 12 }}
-                  />
                 </ListItem>
               ))}
             </List>
           )}
         </DialogContent>
-        <DialogActions>
+        <DialogActions sx={{ pb: 'max(8px, env(safe-area-inset-bottom))' }}>
           <Button onClick={() => setDocsFor(null)} sx={{ textTransform: 'none', color: axelionColors.textMuted }}>
             {t('adminManage.docsClose')}
           </Button>

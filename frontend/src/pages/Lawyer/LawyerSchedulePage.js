@@ -38,8 +38,8 @@ const glassCard = {
 };
 
 const navArrowBtn = {
-  width: 34,
-  height: 34,
+  width: 44,
+  height: 44,
   border: '1px solid var(--border)',
   background: 'transparent',
   borderRadius: 'var(--radius)',
@@ -201,7 +201,7 @@ const LawyerSchedulePage = () => {
         }}
       >
         {/* CALENDAR */}
-        <div style={{ ...glassCard, padding: 24 }}>
+        <div className="schedule-calendar-card" style={{ ...glassCard, padding: 24, minWidth: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
             <div style={{ fontSize: 18, fontWeight: 400, letterSpacing: '0.04em', color: 'var(--text)' }}>
               {MONTHS[currentDate.getMonth()]} {currentDate.getFullYear()}
@@ -212,7 +212,9 @@ const LawyerSchedulePage = () => {
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6, marginBottom: 6 }}>
+          <div className="schedule-calendar-scroll" role="region" aria-label={`${t('lawyerPanel.scheduleTitle')}: ${MONTHS[currentDate.getMonth()]} ${currentDate.getFullYear()}`} tabIndex={0} style={{ overflowX: 'auto', maxWidth: '100%', WebkitOverflowScrolling: 'touch' }}>
+          <div style={{ minWidth: 344 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(44px, 1fr))', gap: 6, marginBottom: 6 }}>
             {DAYS.map((w) => (
               <div key={w} style={{ textAlign: 'center', fontSize: 11, letterSpacing: '0.06em', textTransform: 'uppercase', color: 'var(--text3)', padding: '6px 0' }}>
                 {w}
@@ -220,7 +222,7 @@ const LawyerSchedulePage = () => {
             ))}
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, minmax(44px, 1fr))', gap: 6 }}>
             {[...Array(startingDayOfWeek)].map((_, index) => (
               <div key={`empty-${index}`} style={{ aspectRatio: '1' }} />
             ))}
@@ -234,7 +236,11 @@ const LawyerSchedulePage = () => {
                 <button
                   key={day}
                   onClick={() => handleDateClick(day)}
+                  aria-pressed={isSelected}
+                  aria-label={`${day} ${MONTHS_GEN[currentDate.getMonth()]} ${currentDate.getFullYear()}, ${count} ${count === 1 ? t('lawyerPanel.consultationOne') : t('lawyerPanel.consultationMany')}`}
                   style={{
+                    minWidth: 44,
+                    minHeight: 44,
                     aspectRatio: '1',
                     display: 'flex',
                     flexDirection: 'column',
@@ -265,6 +271,8 @@ const LawyerSchedulePage = () => {
                 </button>
               );
             })}
+          </div>
+          </div>
           </div>
         </div>
 
@@ -310,7 +318,7 @@ const LawyerSchedulePage = () => {
                         <button
                           onClick={() => handleConfirm(e.id)}
                           style={{
-                            flex: 1,
+                            flex: 1, minHeight: 44,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -333,7 +341,7 @@ const LawyerSchedulePage = () => {
                         <button
                           onClick={() => handleReject(e.id)}
                           style={{
-                            flex: 1,
+                            flex: 1, minHeight: 44,
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -366,7 +374,7 @@ const LawyerSchedulePage = () => {
                       <button
                         onClick={() => setDocsFor(e)}
                         style={{
-                          display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, marginLeft: 8,
+                          minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 12, marginLeft: 8,
                           background: 'transparent', color: 'var(--accent-dark)', border: '1px solid var(--card-brd)',
                           fontSize: 11, fontWeight: 500, letterSpacing: '0.05em', textTransform: 'uppercase',
                           padding: '7px 12px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
@@ -385,7 +393,7 @@ const LawyerSchedulePage = () => {
 
       {/* WEEKLY AVAILABILITY EDITOR */}
       <div style={{ maxWidth: 1120, margin: '24px auto 0' }}>
-        <div style={{ ...glassCard, padding: 24 }}>
+        <div className="availability-card" style={{ ...glassCard, padding: 24 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12, marginBottom: 18 }}>
             <div>
               <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)' }}>{t('lawyerPanel.availabilityTitle')}</div>
@@ -396,7 +404,7 @@ const LawyerSchedulePage = () => {
               disabled={availSaving || availabilityLoadError}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: '#FFFFFF',
-                border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.03em', padding: '10px 20px',
+                 minHeight: 44, border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.03em', padding: '10px 20px',
                 borderRadius: 'var(--radius)', cursor: availSaving || availabilityLoadError ? 'default' : 'pointer', fontFamily: 'inherit', opacity: availSaving || availabilityLoadError ? 0.6 : 1,
               }}
             >
@@ -420,8 +428,11 @@ const LawyerSchedulePage = () => {
                   background: day.enabled ? 'rgba(184,149,110,0.05)' : 'transparent',
                 }}>
                   <button
+                    type="button"
                     onClick={() => setDay(d, { enabled: !day.enabled })}
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+                    role="switch"
+                    aria-checked={day.enabled}
+                    style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 10, background: 'none', border: 'none', cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
                   >
                     <span style={{
                       width: 40, height: 22, borderRadius: 12, flexShrink: 0, position: 'relative', transition: 'background .2s',
@@ -438,10 +449,10 @@ const LawyerSchedulePage = () => {
                   </button>
 
                   {day.enabled ? (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <input type="time" value={day.from} onChange={(e) => setDay(d, { from: e.target.value })} className="avail-time" />
+                    <div className="availability-times" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                      <input aria-label={`${(t('lawyerPanel.daysFull') || [])[i]} ${t('onboarding.lblFrom')}`} type="time" value={day.from} onChange={(e) => setDay(d, { from: e.target.value })} className="avail-time" />
                       <span style={{ color: 'var(--text3)', fontSize: 13 }}>—</span>
-                      <input type="time" value={day.to} onChange={(e) => setDay(d, { to: e.target.value })} className="avail-time" />
+                      <input aria-label={`${(t('lawyerPanel.daysFull') || [])[i]} ${t('onboarding.lblTo')}`} type="time" value={day.to} onChange={(e) => setDay(d, { to: e.target.value })} className="avail-time" />
                     </div>
                   ) : (
                     <span style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerPanel.dayOff')}</span>
@@ -454,10 +465,16 @@ const LawyerSchedulePage = () => {
       </div>
 
       <style>{`
-        @media (max-width: 900px){ .sched-grid { grid-template-columns: 1fr !important; } }
-        @media (max-width: 560px){ .avail-row { grid-template-columns: 1fr !important; gap: 10px !important; } }
+        @media (max-width: 900px){ .sched-grid { grid-template-columns: minmax(0, 1fr) !important; } }
+        @media (max-width: 560px){
+          .schedule-calendar-card,.availability-card{padding:16px !important}
+          .avail-row { grid-template-columns: minmax(0, 1fr) !important; gap: 8px !important; }
+          .availability-times{display:grid !important;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);width:100%}
+          .avail-time{width:100%;min-width:0;box-sizing:border-box}
+        }
+        @media (max-width: 360px){.availability-times{grid-template-columns:1fr !important}.availability-times>span{display:none}}
         .avail-time {
-          font-family: inherit; font-size: 13px; color: var(--text); background: var(--surface);
+          min-height:44px; font-family: inherit; font-size: 16px; color: var(--text); background: var(--surface);
           border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; cursor: pointer;
         }
       `}</style>

@@ -1,5 +1,5 @@
 export const mediaConstraintsForCall = (callMode, preferences = {}) => ({
-  video: callMode === 'audio'
+  video: callMode === 'audio' || preferences.audioOnly
     ? false
     : preferences.camId ? { deviceId: { exact: preferences.camId } } : true,
   audio: preferences.micId ? { deviceId: { exact: preferences.micId } } : true,

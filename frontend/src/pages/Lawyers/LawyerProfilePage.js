@@ -292,6 +292,8 @@ const LawyerProfilePage = () => {
                 <img
                   src={lawyer.avatar}
                   alt={t('lawyerProfile.photoAlt').replace('{name}', lawyer.name)}
+                  loading="lazy"
+                  decoding="async"
                   onError={() => setAvatarFailed(true)}
                   style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
                 />
