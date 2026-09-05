@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { decodeUploadFilename } = require('../utils/uploadFilename');
 const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
@@ -84,7 +85,7 @@ router.post('/:consultationId/documents', authenticate, requireParticipant, requ
       Model: CaseDocument, where: { consultationId: req.params.consultationId }, maxFiles: 50, maxBytes: 100 * 1024 * 1024,
       values: {
         consultationId: req.params.consultationId, uploaderId: req.userId,
-        name: req.file.originalname, path: req.file.path, mimeType: req.file.mimetype, size: req.file.size,
+        name: decodeUploadFilename(req.file.originalname), path: req.file.path, mimeType: req.file.mimetype, size: req.file.size,
       },
     });
     if (!doc) {

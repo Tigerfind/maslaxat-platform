@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { decodeUploadFilename } = require('../utils/uploadFilename');
 const logger = require('../config/logger');
 const multer = require('multer');
 const path = require('path');
@@ -92,7 +93,7 @@ router.post('/upload', authenticate, upload.single('file'), validateUploadSignat
     const document = await createWithinUploadQuota({
       Model: Document, where: { userId: req.userId }, maxFiles: 100, maxBytes: 250 * 1024 * 1024,
       values: {
-        userId: req.userId, name: req.file.originalname,
+        userId: req.userId, name: decodeUploadFilename(req.file.originalname),
         type: path.extname(req.file.originalname).replace('.', '').toUpperCase(),
         size: req.file.size, path: req.file.path, status: 'pending', category,
       },

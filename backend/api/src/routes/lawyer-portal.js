@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const { decodeUploadFilename } = require('../utils/uploadFilename');
 const { Op, fn, col } = require('sequelize');
 const multer = require('multer');
 const path = require('path');
@@ -1125,7 +1126,7 @@ router.post('/verification-documents', docUpload.single('file'), validateUploadS
     const type = VERIF_DOC_TYPES.includes(req.body.type) ? req.body.type : 'other';
     const doc = await createWithinUploadQuota({
       Model: LawyerDocument, where: { userId: req.userId }, maxFiles: 20, maxBytes: 100 * 1024 * 1024,
-      values: { userId: req.userId, type, name: req.file.originalname, path: req.file.path, mimeType: req.file.mimetype, size: req.file.size },
+      values: { userId: req.userId, type, name: decodeUploadFilename(req.file.originalname), path: req.file.path, mimeType: req.file.mimetype, size: req.file.size },
     });
     if (!doc) {
       cleanupUploadedFiles(req);

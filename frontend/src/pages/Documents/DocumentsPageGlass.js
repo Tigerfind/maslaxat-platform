@@ -25,6 +25,8 @@ import {
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { useTranslation } from '../../i18n';
+import ErrorState from '../../components/UI/ErrorState';
+import { DOCUMENT_ACCEPT, DOCUMENT_FORMAT_LABEL, DOCUMENT_MAX_BYTES, getPreviewKind, isAllowedDocumentFile, normalizeDocumentFile } from '../../utils/documentFiles';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -100,6 +102,7 @@ const DocumentsPageGlass = () => {
   // State management
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [selectedFile, setSelectedFile] = useState(null);
@@ -125,13 +128,19 @@ const DocumentsPageGlass = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => () => {
+    if (previewUrl) window.URL.revokeObjectURL(previewUrl);
+  }, [previewUrl]);
+
   const fetchDocuments = async () => {
     try {
       setIsLoading(true);
+      setLoadError(null);
       const data = await clientService.documents.getDocuments();
       setDocuments(Array.isArray(data) ? data : []);
     } catch (error) {
       console.error('Error fetching documents:', error);
+      setLoadError(error);
       showSnackbar(t('documents.loadError'), 'error');
       setDocuments([]);
     } finally {
@@ -145,20 +154,15 @@ const DocumentsPageGlass = () => {
 
   const validateAndSetFile = (file) => {
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > DOCUMENT_MAX_BYTES) {
       showSnackbar(t('documents.fileTooBig', { size: '10MB' }), 'error');
       return;
     }
-    const allowedTypes = [
-      'application/pdf',
-      'application/msword',
-      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    ];
-    if (!allowedTypes.includes(file.type)) {
-      showSnackbar(t('documents.unsupportedFormat', { formats: 'PDF, DOC, DOCX' }), 'error');
+    if (!isAllowedDocumentFile(file)) {
+      showSnackbar(t('documents.unsupportedFormat', { formats: DOCUMENT_FORMAT_LABEL }), 'error');
       return;
     }
-    setSelectedFile(file);
+    setSelectedFile(normalizeDocumentFile(file));
   };
 
   const handleFileSelect = (event) => validateAndSetFile(event.target.files[0]);
@@ -282,11 +286,7 @@ const DocumentsPageGlass = () => {
     try {
       const blob = await clientService.documents.downloadDocument(doc.id);
       // Тип берём из blob (сервер ставит Content-Type), иначе — по расширению имени
-      const mime = blob.type || '';
-      const name = (doc.name || '').toLowerCase();
-      let kind = 'other';
-      if (mime.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp)$/.test(name)) kind = 'image';
-      else if (mime === 'application/pdf' || name.endsWith('.pdf')) kind = 'pdf';
+      const kind = getPreviewKind(doc.name, blob.type);
       setPreviewKind(kind);
       if (kind === 'image' || kind === 'pdf') {
         setPreviewUrl(window.URL.createObjectURL(blob));
@@ -301,10 +301,7 @@ const DocumentsPageGlass = () => {
 
   const closePreview = () => {
     setPreviewOpen(false);
-    if (previewUrl) {
-      window.URL.revokeObjectURL(previewUrl);
-      setPreviewUrl(null);
-    }
+    setPreviewUrl(null);
     setPreviewDoc(null);
     setPreviewKind(null);
   };
@@ -416,6 +413,8 @@ const DocumentsPageGlass = () => {
           <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
             <CircularProgress sx={{ color: 'var(--accent)' }} size={56} />
           </Box>
+        ) : loadError ? (
+          <div style={glassCard}><ErrorState error={loadError} onRetry={fetchDocuments} title={t('documents.loadError')} /></div>
         ) : documents.length === 0 ? (
           <div style={{ ...glassCard, textAlign: 'center', padding: '64px 32px' }}>
             <DescriptionOutlined sx={{ fontSize: 72, color: 'var(--border-strong)', mb: 2 }} />
@@ -500,41 +499,55 @@ const DocumentsPageGlass = () => {
                     )}
 
                     {/* Actions */}
-                    <div style={{ display: 'flex', gap: 8, marginTop: score !== null ? 18 : 'auto', paddingTop: score !== null ? 0 : 18 }}>
+                    <div className="document-card-actions" style={{ display: 'flex', gap: 8, alignItems: 'center', marginTop: score !== null ? 18 : 'auto', paddingTop: score !== null ? 0 : 18 }}>
                       <button
                         onClick={() => handleAICheck(doc)}
+                        title={t('documents.aiAnalysis')}
                         style={{
-                          flex: 1, background: 'var(--canvas)', border: '1px solid var(--accent)', color: 'var(--text)',
-                          fontSize: 12, fontWeight: 500, letterSpacing: '0.04em', textTransform: 'uppercase',
-                          padding: 10, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
-                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                          // Раньше подпись «AI АНАЛИЗ ДОКУМЕНТА» переносилась на две
+                          // строки, кнопка становилась выше квадратных иконок рядом —
+                          // и весь ряд выглядел кривым. Короткая подпись в одну строку
+                          // и общая высота 44 держат ряд ровным.
+                          flex: 1, minWidth: 0, height: 44, background: 'var(--canvas)',
+                          border: '1px solid var(--accent)', color: 'var(--text)',
+                          fontSize: 12.5, fontWeight: 600, letterSpacing: '0.03em',
+                          padding: '0 12px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
+                          display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+                          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
                         }}
                       >
-                        <AutoAwesomeOutlined sx={{ fontSize: 16 }} /> {t('documents.aiAnalysis')}
+                        <AutoAwesomeOutlined sx={{ fontSize: 16, flexShrink: 0 }} />
+                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{t('documents.aiAnalysisShort')}</span>
                       </button>
                       <Tooltip title={t('documents.preview')}>
                         <button
+                          type="button"
+                          aria-label={`${t('documents.preview')}: ${doc.name}`}
                           onClick={() => handlePreview(doc)}
-                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ width: 44, height: 44, flexShrink: 0, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <VisibilityOutlined sx={{ fontSize: 18 }} />
                         </button>
                       </Tooltip>
                       <Tooltip title={t('documents.download')}>
                         <button
+                          type="button"
+                          aria-label={`${t('documents.download')}: ${doc.name}`}
                           onClick={() => handleDownload(doc)}
-                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ width: 44, height: 44, flexShrink: 0, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <DownloadOutlined sx={{ fontSize: 18 }} />
                         </button>
                       </Tooltip>
                       <Tooltip title={t('documents.delete')}>
                         <button
+                          type="button"
+                          aria-label={`${t('documents.delete')}: ${doc.name}`}
                           onClick={() => {
                             setSelectedDocument(doc);
                             setDeleteDialogOpen(true);
                           }}
-                          style={{ width: 40, background: 'transparent', border: '1px solid var(--border)', color: 'var(--error)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                          style={{ width: 44, height: 44, flexShrink: 0, background: 'transparent', border: '1px solid var(--border)', color: 'var(--error)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
                         >
                           <DeleteOutlined sx={{ fontSize: 18 }} />
                         </button>
@@ -561,7 +574,7 @@ const DocumentsPageGlass = () => {
             <div style={{ fontSize: 18, fontWeight: 500, color: 'var(--text)', letterSpacing: '0.02em' }}>
               {t('documents.uploadModalTitle')}
             </div>
-            <button onClick={closeUploadDialog} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+            <button type="button" aria-label={t('common.close')} onClick={closeUploadDialog} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
               <CloseOutlined sx={{ fontSize: 22 }} />
             </button>
           </div>
@@ -608,7 +621,7 @@ const DocumentsPageGlass = () => {
                 {t('documents.dropHere')}
               </div>
               <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>
-                PDF, DOC, DOCX · {t('documents.maxTo')} 10 MB
+                {DOCUMENT_FORMAT_LABEL} · {t('documents.maxTo')} 10 MB
               </div>
               <span style={{ ...goldGradientBtn, padding: '11px 22px', display: 'inline-block' }}>
                 {t('documents.chooseFile')}
@@ -617,7 +630,7 @@ const DocumentsPageGlass = () => {
           </label>
           <input
             id="doc-file-input"
-            accept=".pdf,.doc,.docx"
+            accept={DOCUMENT_ACCEPT}
             type="file"
             onChange={handleFileSelect}
             style={{ display: 'none' }}
@@ -644,7 +657,7 @@ const DocumentsPageGlass = () => {
                     <div style={{ width: '100%', height: '100%', background: 'var(--success)' }} />
                   </div>
                 </div>
-                <button onClick={() => setSelectedFile(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex' }}>
+                <button type="button" aria-label={t('documents.removeFile')} onClick={() => setSelectedFile(null)} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', flexShrink: 0, display: 'flex' }}>
                   <CloseOutlined sx={{ fontSize: 20 }} />
                 </button>
               </div>
@@ -721,7 +734,7 @@ const DocumentsPageGlass = () => {
               </div>
             </div>
             {!aiCheckLoading && (
-              <button onClick={() => { setAiDialogOpen(false); setAiCheckResult(null); }} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+              <button type="button" aria-label={t('common.close')} onClick={() => { setAiDialogOpen(false); setAiCheckResult(null); }} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
                 <CloseOutlined sx={{ fontSize: 22 }} />
               </button>
             )}
@@ -836,7 +849,7 @@ const DocumentsPageGlass = () => {
               {previewDoc?.name}
             </span>
           </div>
-          <button onClick={closePreview} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
+          <button type="button" aria-label={t('common.close')} onClick={closePreview} style={{ background: 'transparent', border: 'none', color: 'var(--text3)', cursor: 'pointer', display: 'flex' }}>
             <CloseOutlined sx={{ fontSize: 20 }} />
           </button>
         </div>
@@ -846,7 +859,13 @@ const DocumentsPageGlass = () => {
           ) : previewKind === 'image' && previewUrl ? (
             <img src={previewUrl} alt={previewDoc?.name} style={{ maxWidth: '100%', maxHeight: '72vh', display: 'block', margin: '0 auto' }} />
           ) : previewKind === 'pdf' && previewUrl ? (
-            <iframe src={previewUrl} title={previewDoc?.name} style={{ width: '100%', height: '72vh', border: 'none' }} />
+            <div style={{ width: '100%' }}>
+              <iframe src={previewUrl} title={previewDoc?.name} style={{ width: '100%', height: '62dvh', border: 'none' }} />
+              <div style={{ padding: 12, textAlign: 'center', borderTop: '1px solid var(--border)' }}>
+                <a href={previewUrl} target="_blank" rel="noopener noreferrer" style={{ minHeight: 44, display: 'inline-flex', alignItems: 'center', padding: '8px 16px' }}>{t('documents.openPdf')}</a>
+                <button type="button" onClick={() => previewDoc && handleDownload(previewDoc)} style={{ ...ghostBtn, minHeight: 44, marginLeft: 8, padding: '8px 16px' }}>{t('documents.download')}</button>
+              </div>
+            </div>
           ) : (
             <div style={{ padding: '56px 32px', textAlign: 'center' }}>
               <DescriptionOutlined sx={{ fontSize: 48, color: 'var(--text3)', mb: 1.5 }} />
@@ -872,7 +891,8 @@ const DocumentsPageGlass = () => {
         open={snackbar.open}
         autoHideDuration={4000}
         onClose={() => setSnackbar({ ...snackbar, open: false })}
-        anchorOrigin={{ vertical: 'bottom', horizontal: 'right' }}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+        sx={{ bottom: { xs: 'calc(var(--mobile-bottom-nav-height, 64px) + env(safe-area-inset-bottom) + 12px)', md: 24 } }}
       >
         <Alert
           onClose={() => setSnackbar({ ...snackbar, open: false })}
@@ -882,6 +902,7 @@ const DocumentsPageGlass = () => {
           {snackbar.message}
         </Alert>
       </Snackbar>
+      <style>{`@media(max-width:360px){.document-card-actions{flex-wrap:wrap}.document-card-actions>button:first-child{flex-basis:100%}.document-card-actions>button:not(:first-child){flex:1;min-width:44px}}`}</style>
     </GlassShell>
   );
 };

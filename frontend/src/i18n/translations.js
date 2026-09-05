@@ -275,7 +275,7 @@ const translations = {
       profile: 'Профиль',
       settings: 'Настройки',
       support: 'Поддержка',
-      menu: 'Меню', theme: 'Тема',
+      menu: 'Меню', theme: 'Тема', mainNavigation: 'Основная навигация', mobileNavigation: 'Мобильная навигация',
       logout: 'Выход',
       admin: 'Админ панель',
     },
@@ -294,7 +294,7 @@ const translations = {
       profile: 'Профил',
       settings: 'Созламалар',
       support: 'Қўллаб-қувватлаш',
-      menu: 'Меню', theme: 'Мавзу',
+      menu: 'Меню', theme: 'Мавзу', mainNavigation: 'Асосий навигация', mobileNavigation: 'Мобил навигация',
       logout: 'Чиқиш',
       admin: 'Админ панели',
     },
@@ -313,10 +313,16 @@ const translations = {
       profile: 'Profile',
       settings: 'Settings',
       support: 'Support',
-      menu: 'Menu', theme: 'Theme',
+      menu: 'Menu', theme: 'Theme', mainNavigation: 'Main navigation', mobileNavigation: 'Mobile navigation',
       logout: 'Logout',
       admin: 'Admin Panel',
     },
+  },
+
+  pwa: {
+    ru: { updateAvailable: 'Доступна новая версия eMaslaXat', updateAction: 'Обновить' },
+    uz: { updateAvailable: 'eMaslaXat янги версияси тайёр', updateAction: 'Янгилаш' },
+    en: { updateAvailable: 'A new eMaslaXat version is available', updateAction: 'Update' },
   },
 
   // ==================== ДАШБОРД ====================
@@ -366,6 +372,7 @@ const translations = {
       typeVideo: 'Видео',
       typeChat: 'Чат',
       join: 'Присоединиться',
+      loadError: 'Не удалось загрузить данные дашборда',
     },
     uz: {
       welcome: 'Хуш келибсиз',
@@ -412,6 +419,7 @@ const translations = {
       typeVideo: 'Видео',
       typeChat: 'Чат',
       join: 'Қўшилиш',
+      loadError: 'Бошқарув панели маълумотларини юклаб бўлмади',
     },
     en: {
       welcome: 'Welcome',
@@ -458,6 +466,7 @@ const translations = {
       typeVideo: 'Video',
       typeChat: 'Chat',
       join: 'Join',
+      loadError: 'Dashboard data could not be loaded',
     },
   },
 
@@ -650,6 +659,7 @@ const translations = {
 
   caseDocs: {
     ru: {
+      fileTooBig: 'Файл слишком большой. Максимум 10 МБ.', unsupportedFormat: 'Этот тип файла не поддерживается. Используйте PDF, DOC, DOCX, TXT, JPG, PNG или WEBP.',
       title: 'Документы по делу',
       hint: 'Общая папка с юристом: договоры, черновики, справки. Видны обоим участникам. Удалить может только тот, кто загрузил.',
       upload: 'Загрузить документ', empty: 'Пока нет документов по делу',
@@ -657,6 +667,7 @@ const translations = {
       confirmDelete: 'Удалить этот документ?', uploaded: 'Документ добавлен', error: 'Ошибка. Попробуйте ещё раз', loadError: 'Не удалось загрузить документы', retry: 'Повторить',
     },
     uz: {
+      fileTooBig: 'Файл жуда катта. Максимум 10 МБ.', unsupportedFormat: 'Бу файл тури қўллаб-қувватланмайди. PDF, DOC, DOCX, TXT, JPG, PNG ёки WEBP ишлатинг.',
       title: 'Иш бўйича ҳужжатлар',
       hint: 'Юрист билан умумий папка: шартномалар, лойиҳалар, маълумотномалар. Иккала иштирокчи кўради. Фақат юклаган одам ўчира олади.',
       upload: 'Ҳужжат юклаш', empty: 'Ҳали иш бўйича ҳужжат йўқ',
@@ -664,6 +675,7 @@ const translations = {
       confirmDelete: 'Ушбу ҳужжатни ўчирасизми?', uploaded: 'Ҳужжат қўшилди', error: 'Хатолик. Қайта уриниб кўринг', loadError: 'Ҳужжатларни юклаб бўлмади', retry: 'Қайта уриниш',
     },
     en: {
+      fileTooBig: 'The file is too large. The maximum is 10 MB.', unsupportedFormat: 'This file type is not supported. Use PDF, DOC, DOCX, TXT, JPG, PNG, or WEBP.',
       title: 'Case documents',
       hint: 'Shared folder with the lawyer: contracts, drafts, certificates. Visible to both parties. Only the uploader can delete.',
       upload: 'Upload document', empty: 'No case documents yet',
@@ -780,7 +792,7 @@ const translations = {
   booking: {
     ru: {
       title: 'Запись на консультацию', sum: 'сум', typeLabel: 'Тип консультации', video: 'Видео', chat: 'Чат',
-      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…', category: 'Категория права', categoryPlaceholder: 'Выберите категорию', categoriesHint: 'Категории (можно несколько)', categoriesSelect: 'Выберите категории', problems: 'Ваши проблемы', problemN: 'Проблема', addProblem: 'Добавить проблему', lawyerHandles: 'Юрист ведёт:', categoryMismatch: 'Вы выбрали область, которую этот юрист не указал в профиле. Он может помочь, но по этой теме лучше выбрать профильного специалиста.',
+      duration: 'Длительность', min: 'мин', question: 'Ваш вопрос', questionPlaceholder: 'Коротко опишите ситуацию…', category: 'Категория права', categoryPlaceholder: 'Выберите категорию', categoriesHint: 'Категории (можно несколько)', categoriesSelect: 'Выберите категории', categoriesSelected: 'Выбрано: {{count}}', removeCategory: 'Убрать категорию', problems: 'Ваши проблемы', problemN: 'Проблема', addProblem: 'Добавить проблему', lawyerHandles: 'Юрист ведёт:', categoryMismatch: 'Вы выбрали область, которую этот юрист не указал в профиле. Он может помочь, но по этой теме лучше выбрать профильного специалиста.', close: 'Закрыть запись', progress: 'Шаги записи',
       date: 'Дата', noSlotsAtAll: 'Свободных окон нет. Юрист ещё не указал часы приёма или всё занято на ближайшие две недели — выберите другого юриста или напишите в поддержку.', time: 'Время', dateTime: 'Дата и время', cost: 'Стоимость', free: 'Бесплатно', noSlots: 'На этот день нет свободных часов', pickDateFirst: 'Сначала выберите дату', timezoneHint: 'Время юриста: {{lawyer}}. Ваш часовой пояс: {{client}}. Технический перерыв: {{buffer}} мин.',
       promo: 'Промокод', total: 'Итого', freeTotal: '0 сум · Бесплатно',
       firstFree: 'Первая консультация — бесплатно', firstFreeSub: 'Приветственный бонус применён — оплата не требуется.', subFree: 'Бесплатно по вашей подписке', subFreeSub: 'Консультация включена в тариф. Осталось в этом месяце: {n}.',
@@ -796,7 +808,7 @@ const translations = {
     },
     uz: {
       title: 'Консультацияга ёзилиш', sum: 'сўм', typeLabel: 'Консультация тури', video: 'Видео', chat: 'Чат',
-      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…', category: 'Ҳуқуқ соҳаси', categoryPlaceholder: 'Соҳани танланг', categoriesHint: 'Соҳалар (бир нечта мумкин)', categoriesSelect: 'Соҳаларни танланг', problems: 'Муаммоларингиз', problemN: 'Муаммо', addProblem: 'Муаммо қўшиш', lawyerHandles: 'Юрист соҳалари:', categoryMismatch: 'Сиз юрист профилда кўрсатмаган соҳани танладингиз. У ёрдам бериши мумкин, лекин бу мавзу бўйича профил мутахассисни танлаган маъқул.',
+      duration: 'Давомийлиги', min: 'дақ', question: 'Саволингиз', questionPlaceholder: 'Вазиятни қисқача ёзинг…', category: 'Ҳуқуқ соҳаси', categoryPlaceholder: 'Соҳани танланг', categoriesHint: 'Соҳалар (бир нечта мумкин)', categoriesSelect: 'Соҳаларни танланг', categoriesSelected: 'Танланди: {{count}}', removeCategory: 'Соҳани олиб ташлаш', problems: 'Муаммоларингиз', problemN: 'Муаммо', addProblem: 'Муаммо қўшиш', lawyerHandles: 'Юрист соҳалари:', categoryMismatch: 'Сиз юрист профилда кўрсатмаган соҳани танладингиз. У ёрдам бериши мумкин, лекин бу мавзу бўйича профил мутахассисни танлаган маъқул.', close: 'Ёзилишни ёпиш', progress: 'Ёзилиш босқичлари',
       date: 'Сана', noSlotsAtAll: 'Бўш вақт йўқ. Юрист қабул соатларини кўрсатмаган ёки яқин икки ҳафта банд — бошқа юристни танланг ёки ёрдамга ёзинг.', time: 'Вақт', dateTime: 'Сана ва вақт', cost: 'Нархи', free: 'Бепул', noSlots: 'Бу кунда бўш вақт йўқ', pickDateFirst: 'Аввал санани танланг', timezoneHint: 'Юрист вақти: {{lawyer}}. Сизнинг вақт минтақангиз: {{client}}. Техник танаффус: {{buffer}} дақ.',
       promo: 'Промокод', total: 'Жами', freeTotal: '0 сўм · Бепул',
       firstFree: 'Биринчи консультация — бепул', firstFreeSub: 'Хуш келибсиз бонуси қўлланилди — тўлов талаб қилинмайди.', subFree: 'Обунангиз бўйича бепул', subFreeSub: 'Консультация тарифга киритилган. Шу ойда қолди: {n}.',
@@ -812,7 +824,7 @@ const translations = {
     },
     en: {
       title: 'Book a consultation', sum: 'UZS', typeLabel: 'Consultation type', video: 'Video', chat: 'Chat',
-      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…', category: 'Area of law', categoryPlaceholder: 'Select a category', categoriesHint: 'Categories (choose several)', categoriesSelect: 'Select categories', problems: 'Your problems', problemN: 'Problem', addProblem: 'Add a problem', lawyerHandles: 'This lawyer handles:', categoryMismatch: 'You selected an area this lawyer did not list in their profile. They may still help, but for this topic a specialist in it may be a better fit.',
+      duration: 'Duration', min: 'min', question: 'Your question', questionPlaceholder: 'Briefly describe your situation…', category: 'Area of law', categoryPlaceholder: 'Select a category', categoriesHint: 'Categories (choose several)', categoriesSelect: 'Select categories', categoriesSelected: 'Selected: {{count}}', removeCategory: 'Remove category', problems: 'Your problems', problemN: 'Problem', addProblem: 'Add a problem', lawyerHandles: 'This lawyer handles:', categoryMismatch: 'You selected an area this lawyer did not list in their profile. They may still help, but for this topic a specialist in it may be a better fit.', close: 'Close booking', progress: 'Booking steps',
       date: 'Date', noSlotsAtAll: 'No free slots. The lawyer has not set working hours yet, or the next two weeks are fully booked — pick another lawyer or contact support.', time: 'Time', dateTime: 'Date and time', cost: 'Cost', free: 'Free', noSlots: 'No open hours on this day', pickDateFirst: 'Select a date first', timezoneHint: 'Lawyer time: {{lawyer}}. Your timezone: {{client}}. Technical buffer: {{buffer}} min.',
       promo: 'Promo code', total: 'Total', freeTotal: '0 UZS · Free',
       firstFree: 'First consultation — free', firstFreeSub: 'Welcome bonus applied — no payment required.', subFree: 'Free with your subscription', subFreeSub: 'Included in your plan. Left this month: {n}.',
@@ -1004,6 +1016,8 @@ const translations = {
 
   videoCall: {
     ru: {
+      permission_prompt: 'Ожидается разрешение браузера', permission_checking: 'Проверяем камеру и микрофон…', permission_granted: 'Камера и микрофон доступны', permission_denied: 'Доступ запрещён', 'permission_not-found': 'Устройство не найдено', permission_busy: 'Устройство занято', permission_revoked: 'Разрешение отозвано', permission_unsupported: 'Медиа не поддерживается', permission_error: 'Ошибка проверки устройств',
+      media_camera_denied: 'Доступ к камере запрещён.', 'media_camera_not-found': 'Камера не найдена или выбранная камера отключена.', media_camera_busy: 'Камера занята другим приложением.', media_camera_revoked: 'Доступ к камере был отозван в настройках браузера.', media_camera_unsupported: 'Камера не поддерживается этим браузером.', media_camera_error: 'Не удалось включить камеру.', media_microphone_denied: 'Доступ к микрофону запрещён.', 'media_microphone_not-found': 'Микрофон не найден или отключён.', media_microphone_busy: 'Микрофон занят другим приложением.', media_microphone_revoked: 'Доступ к микрофону был отозван.', media_microphone_unsupported: 'Микрофон не поддерживается этим браузером.', media_microphone_error: 'Не удалось включить микрофон.', continueAudioOnly: 'Продолжить только с аудио', retryMedia: 'Проверить устройства снова', testMic: 'Проверить микрофон', meterSuspended: 'Нажмите, чтобы включить индикатор микрофона', meterUnsupported: 'Индикатор микрофона не поддерживается, но звонок доступен', playRemoteMedia: 'Включить звук собеседника', moreControls: 'Другие функции звонка', stopScreen: 'Остановить показ экрана',
       connected: 'Соединено', waiting: 'Ожидание собеседника…', connecting: 'Соединение…', chatTitle: 'Чат', chatEmpty: 'Сообщений пока нет', chatPlaceholder: 'Написать…', qGood: 'Хорошая связь', qOk: 'Средняя связь', qPoor: 'Слабая связь', timeLeft: 'Осталось', overtime: 'Превышено', billIn: 'Оплата через', billCharged: 'Оплата списана', billPending: 'Оплата спишется после 5 минут разговора', warn5: 'До конца консультации 5 минут', warn1: 'Осталась 1 минута', timeUp: 'Время консультации истекло', extend: 'Продлить', extendTitle: 'Продлить консультацию', extendBody: 'Добавить {min} минут к текущей консультации?', extendSurcharge: 'Доплата', sum: 'сум', cancel: 'Отмена', extendConfirm: 'Продлить', extendWait: 'Продление…', extendedOk: 'Консультация продлена на {min} минут (+{sum} сум)', extendErr: 'Не удалось продлить консультацию', min: 'мин', extendPropose: 'Предложить', extendNeedsConsent: 'Продление применится после согласия собеседника', extendWaiting: 'Ожидание ответа собеседника…', extendIncoming: '{name} предлагает продлить на {min} минут', extendDeclined: 'Собеседник отклонил продление', accept: 'Принять', decline: 'Отклонить', screenShareError: 'Не удалось начать демонстрацию экрана', screenShareUnsupported: 'Демонстрация экрана не поддерживается в этом браузере', remoteCameraOff: 'Камера выключена', lobbyTitle: 'Подготовка к звонку', lobbyWith: 'Звонок с', permDenied: 'Нет доступа к камере/микрофону', permHint: 'Разрешите доступ в настройках браузера и обновите страницу', camOff: 'Камера выключена', camera: 'Камера', mic: 'Микрофон', joinCall: 'Войти в звонок', callEnded: 'Звонок завершён', callDurationOf: 'из запланированных {planned} мин', done: 'Готово', reconnecting: 'Переподключение…', remoteLeft: 'Собеседник вышел из звонка', finish: 'Завершить', pip: 'Мини-режим', pipUnsupported: 'Мини-режим не поддерживается в этом браузере', shortcuts: 'Горячие клавиши', shortcutMic: 'Микрофон', shortcutCam: 'Камера', shortcutScreen: 'Показ экрана', shortcutFull: 'Во весь экран', shortcutPip: 'Мини-режим', shortcutHelp: 'Показать подсказку', speaker: 'Динамик', speakerDefault: 'Динамик по умолчанию',
       participant: 'Участник', roleClient: 'Клиент', roleLawyer: 'Юрист', cameraOff: 'Камера выкл.', you: 'Вы', toggleMic: 'Включить или выключить микрофон', toggleCamera: 'Включить или выключить камеру', toggleScreen: 'Включить или выключить показ экрана', toggleFullscreen: 'Включить или выключить полноэкранный режим', toggleChat: 'Открыть или закрыть чат', endCall: 'Завершить звонок', ending: 'Завершаем…', retryEnd: 'Повторить завершение', endError: 'Не удалось подтвердить завершение на сервере. Повторите попытку.', audioCall: 'Аудиоконсультация',
       connectionError: 'Ошибка соединения', goBack: 'Назад',
@@ -1012,6 +1026,8 @@ const translations = {
       micLevel: 'Уровень микрофона', selectCamera: 'Выбрать камеру', selectMic: 'Выбрать микрофон', selectSpeaker: 'Выбрать динамик', closeShortcuts: 'Закрыть подсказки клавиш', closeChat: 'Закрыть чат',
     },
     uz: {
+      permission_prompt: 'Браузер рухсати кутилмоқда', permission_checking: 'Камера ва микрофон текширилмоқда…', permission_granted: 'Камера ва микрофон мавжуд', permission_denied: 'Кириш рад этилди', 'permission_not-found': 'Қурилма топилмади', permission_busy: 'Қурилма банд', permission_revoked: 'Рухсат бекор қилинди', permission_unsupported: 'Медиа қўлланмайди', permission_error: 'Қурилмаларни текшириш хатоси',
+      media_camera_denied: 'Камерага кириш рад этилди.', 'media_camera_not-found': 'Камера топилмади ёки танланган камера узилди.', media_camera_busy: 'Камера бошқа дастурда банд.', media_camera_revoked: 'Браузер созламаларида камера рухсати бекор қилинди.', media_camera_unsupported: 'Бу браузер камерани қўллаб-қувватламайди.', media_camera_error: 'Камерани ёқиб бўлмади.', media_microphone_denied: 'Микрофонга кириш рад этилди.', 'media_microphone_not-found': 'Микрофон топилмади ёки узилди.', media_microphone_busy: 'Микрофон бошқа дастурда банд.', media_microphone_revoked: 'Микрофон рухсати бекор қилинди.', media_microphone_unsupported: 'Бу браузер микрофонни қўллаб-қувватламайди.', media_microphone_error: 'Микрофонни ёқиб бўлмади.', continueAudioOnly: 'Фақат аудио билан давом этиш', retryMedia: 'Қурилмаларни қайта текшириш', testMic: 'Микрофонни текшириш', meterSuspended: 'Микрофон индикаторини ёқиш учун босинг', meterUnsupported: 'Микрофон индикатори қўлланмайди, аммо қўнғироқ мавжуд', playRemoteMedia: 'Суҳбатдош овозини ёқиш', moreControls: 'Бошқа қўнғироқ функциялари', stopScreen: 'Экран намойишини тўхтатиш',
       connected: 'Уланди', waiting: 'Суҳбатдош кутилмоқда…', connecting: 'Уланмоқда…', chatTitle: 'Чат', chatEmpty: 'Ҳали хабарлар йўқ', chatPlaceholder: 'Ёзиш…', qGood: 'Яхши алоқа', qOk: 'Ўртача алоқа', qPoor: 'Заиф алоқа', timeLeft: 'Қолди', overtime: 'Ошиб кетди', billIn: 'Тўлов', billCharged: 'Тўлов ечиб олинди', billPending: 'Тўлов 5 дақиқа суҳбатдан сўнг ечилади', warn5: 'Консультация тугашига 5 дақиқа', warn1: '1 дақиқа қолди', timeUp: 'Консультация вақти тугади', extend: 'Узайтириш', extendTitle: 'Консультацияни узайтириш', extendBody: 'Жорий консультацияга {min} дақиқа қўшилсинми?', extendSurcharge: 'Қўшимча тўлов', sum: 'сўм', cancel: 'Бекор қилиш', extendConfirm: 'Узайтириш', extendWait: 'Узайтирилмоқда…', extendedOk: 'Консультация {min} дақиқага узайтирилди (+{sum} сўм)', extendErr: 'Консультацияни узайтириб бўлмади', min: 'дақ', extendPropose: 'Таклиф қилиш', extendNeedsConsent: 'Узайтириш суҳбатдош розилигидан сўнг қўлланади', extendWaiting: 'Суҳбатдош жавоби кутилмоқда…', extendIncoming: '{name} {min} дақиқага узайтиришни таклиф қиляпти', extendDeclined: 'Суҳбатдош узайтиришни рад этди', accept: 'Қабул қилиш', decline: 'Рад этиш', screenShareError: 'Экранни намойиш қилиб бўлмади', screenShareUnsupported: 'Бу браузерда экран намойиши қўлланмайди', remoteCameraOff: 'Камера ўчирилган', lobbyTitle: 'Қўнғироққа тайёргарлик', lobbyWith: 'Қўнғироқ', permDenied: 'Камера/микрофонга рухсат йўқ', permHint: 'Браузер созламаларида рухсат беринг ва саҳифани янгиланг', camOff: 'Камера ўчирилган', camera: 'Камера', mic: 'Микрофон', joinCall: 'Қўнғироққа кириш', callEnded: 'Қўнғироқ тугади', callDurationOf: 'режалаштирилган {planned} дақиқадан', done: 'Тайёр', reconnecting: 'Қайта уланиш…', remoteLeft: 'Суҳбатдош қўнғироқдан чиқди', finish: 'Якунлаш', pip: 'Мини-режим', pipUnsupported: 'Мини-режим бу браузерда қўлланмайди', shortcuts: 'Тезкор тугмалар', shortcutMic: 'Микрофон', shortcutCam: 'Камера', shortcutScreen: 'Экранни намойиш', shortcutFull: 'Тўлиқ экран', shortcutPip: 'Мини-режим', shortcutHelp: 'Ёрдамни кўрсатиш', speaker: 'Динамик', speakerDefault: 'Стандарт динамик',
       participant: 'Иштирокчи', roleClient: 'Мижоз', roleLawyer: 'Юрист', cameraOff: 'Камера ўчиқ', you: 'Сиз', toggleMic: 'Микрофонни ёқиш ёки ўчириш', toggleCamera: 'Камерани ёқиш ёки ўчириш', toggleScreen: 'Экран намойишини ёқиш ёки ўчириш', toggleFullscreen: 'Тўлиқ экранни ёқиш ёки ўчириш', toggleChat: 'Чатни очиш ёки ёпиш', endCall: 'Қўнғироқни якунлаш', ending: 'Якунланмоқда…', retryEnd: 'Якунлашни қайта уриниш', endError: 'Серверда якунлашни тасдиқлаб бўлмади. Қайта урининг.', audioCall: 'Аудио консультация',
       connectionError: 'Уланиш хатоси', goBack: 'Орқага',
@@ -1020,6 +1036,8 @@ const translations = {
       micLevel: 'Микрофон даражаси', selectCamera: 'Камерани танлаш', selectMic: 'Микрофонни танлаш', selectSpeaker: 'Динамикни танлаш', closeShortcuts: 'Тезкор тугмалар ёрдамини ёпиш', closeChat: 'Чатни ёпиш',
     },
     en: {
+      permission_prompt: 'Waiting for browser permission', permission_checking: 'Checking camera and microphone…', permission_granted: 'Camera and microphone are available', permission_denied: 'Access denied', 'permission_not-found': 'Device not found', permission_busy: 'Device busy', permission_revoked: 'Permission revoked', permission_unsupported: 'Media is unsupported', permission_error: 'Device check failed',
+      media_camera_denied: 'Camera access was denied.', 'media_camera_not-found': 'No camera was found or the selected camera was disconnected.', media_camera_busy: 'The camera is busy in another app.', media_camera_revoked: 'Camera permission was revoked in browser settings.', media_camera_unsupported: 'Camera access is not supported by this browser.', media_camera_error: 'Could not start the camera.', media_microphone_denied: 'Microphone access was denied.', 'media_microphone_not-found': 'No microphone was found or it was disconnected.', media_microphone_busy: 'The microphone is busy in another app.', media_microphone_revoked: 'Microphone permission was revoked.', media_microphone_unsupported: 'Microphone access is not supported by this browser.', media_microphone_error: 'Could not start the microphone.', continueAudioOnly: 'Continue with audio only', retryMedia: 'Check devices again', testMic: 'Test microphone', meterSuspended: 'Tap to enable the microphone meter', meterUnsupported: 'The microphone meter is unsupported, but you can still call', playRemoteMedia: 'Play and unmute caller audio', moreControls: 'More call controls', stopScreen: 'Stop screen sharing',
       connected: 'Connected', waiting: 'Waiting for the other party…', connecting: 'Connecting…', chatTitle: 'Chat', chatEmpty: 'No messages yet', chatPlaceholder: 'Type a message…', qGood: 'Good connection', qOk: 'Average connection', qPoor: 'Weak connection', timeLeft: 'Left', overtime: 'Overtime', billIn: 'Charge in', billCharged: 'Payment charged', billPending: 'Payment is taken after 5 minutes of the call', warn5: '5 minutes left in the consultation', warn1: '1 minute left', timeUp: 'Consultation time is up', extend: 'Extend', extendTitle: 'Extend consultation', extendBody: 'Add {min} minutes to the current consultation?', extendSurcharge: 'Surcharge', sum: 'UZS', cancel: 'Cancel', extendConfirm: 'Extend', extendWait: 'Extending…', extendedOk: 'Consultation extended by {min} minutes (+{sum} UZS)', extendErr: 'Could not extend the consultation', min: 'min', extendPropose: 'Propose', extendNeedsConsent: 'The extension applies after the other party agrees', extendWaiting: 'Waiting for the other party…', extendIncoming: '{name} proposes to extend by {min} minutes', extendDeclined: 'The other party declined the extension', accept: 'Accept', decline: 'Decline', screenShareError: 'Could not start screen sharing', screenShareUnsupported: 'Screen sharing is not supported in this browser', remoteCameraOff: 'Camera is off', lobbyTitle: 'Get ready to join', lobbyWith: 'Call with', permDenied: 'No camera/microphone access', permHint: 'Allow access in browser settings and reload the page', camOff: 'Camera is off', camera: 'Camera', mic: 'Microphone', joinCall: 'Join call', callEnded: 'Call ended', callDurationOf: 'of {planned} min planned', done: 'Done', reconnecting: 'Reconnecting…', remoteLeft: 'The other party left the call', finish: 'Finish', pip: 'Mini mode', pipUnsupported: 'Mini mode is not supported in this browser', shortcuts: 'Keyboard shortcuts', shortcutMic: 'Microphone', shortcutCam: 'Camera', shortcutScreen: 'Screen share', shortcutFull: 'Fullscreen', shortcutPip: 'Mini mode', shortcutHelp: 'Show help', speaker: 'Speaker', speakerDefault: 'Default speaker',
       participant: 'Participant', roleClient: 'Client', roleLawyer: 'Lawyer', cameraOff: 'Camera off', you: 'You', toggleMic: 'Toggle microphone', toggleCamera: 'Toggle camera', toggleScreen: 'Toggle screen sharing', toggleFullscreen: 'Toggle fullscreen', toggleChat: 'Open or close chat', endCall: 'End call', ending: 'Ending…', retryEnd: 'Retry ending call', endError: 'The server could not confirm that the call ended. Try again.', audioCall: 'Audio consultation',
       connectionError: 'Connection Error', goBack: 'Go Back',
@@ -1041,8 +1059,8 @@ const translations = {
       confirmApproveTitle: 'Одобрить юриста?', confirmApproveMsg: 'Профиль станет виден в каталоге, юрист сможет принимать консультации.',
       confirmRejectTitle: 'Отклонить юриста?', confirmBlockTitle: 'Заблокировать пользователя?', confirmBlockMsg: 'Пользователь потеряет доступ к платформе. Действие обратимо.',
       confirmUnblockTitle: 'Разблокировать пользователя?', confirmUnblockMsg: 'Доступ к платформе будет восстановлен.',
-      docs: 'Документы', docsTitle: 'Документы юриста', docsEmpty: 'Юрист ещё не загрузил документы', docsClose: 'Закрыть', docsError: 'Не удалось загрузить документы', docDownload: 'Скачать', docVerify: 'Подтвердить', docVerified: 'Проверен', scheduleStatus: 'Расписание', scheduleSlots: '{{count}} из минимум {{required}} получасовых слотов в неделю',
-      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docId: 'Удостоверение личности', docOther: 'Другое',
+      docs: 'Документы', docsTitle: 'Документы юриста', docsEmpty: 'Юрист ещё не загрузил документы', docsClose: 'Закрыть', docsError: 'Не удалось загрузить документы', docDownload: 'Скачать', docVerify: 'Подтвердить', docVerified: 'Проверен', scheduleStatus: 'Расписание', scheduleSlots: '{{count}} из минимум {{required}} получасовых слотов в неделю', resume: 'Резюме', resumeReview: 'Проверка резюме', rejectReason: 'Причина отклонения', license: 'Лицензия', specializations: 'Специализации', experience: 'Опыт работы', education: 'Образование', certificates: 'Сертификаты', statusHistory: 'История статусов',
+      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docCertificate: 'Сертификат', docId: 'Удостоверение личности', docOther: 'Другое',
       roleClient: 'Клиент', roleLawyer: 'Юрист', roleAdmin: 'Админ',
       approve: 'Одобрить', reject: 'Отклонить', block: 'Заблокировать', unblock: 'Разблокировать',
       noLawyers: 'Юристов пока нет', noUsers: 'Пользователей пока нет', noSpec: 'Не указана',
@@ -1059,8 +1077,8 @@ const translations = {
       confirmApproveTitle: 'Юрист тасдиқлансинми?', confirmApproveMsg: 'Профил каталогда кўринади, юрист консультация қабул қила олади.',
       confirmRejectTitle: 'Юрист рад этилсинми?', confirmBlockTitle: 'Фойдаланувчи блоклансинми?', confirmBlockMsg: 'Фойдаланувчи платформага киролмайди. Амал қайтарилади.',
       confirmUnblockTitle: 'Блокдан чиқарилсинми?', confirmUnblockMsg: 'Платформага кириш тикланади.',
-      docs: 'Ҳужжатлар', docsTitle: 'Юрист ҳужжатлари', docsEmpty: 'Юрист ҳали ҳужжат юкламаган', docsClose: 'Ёпиш', docsError: 'Ҳужжатларни юклаб бўлмади', docDownload: 'Юклаб олиш', docVerify: 'Тасдиқлаш', docVerified: 'Текширилган', scheduleStatus: 'Жадвал', scheduleSlots: 'Ҳафтасига камида {{required}} тадан {{count}} та ярим соатлик слот',
-      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docId: 'Шахсни тасдиқловчи ҳужжат', docOther: 'Бошқа',
+      docs: 'Ҳужжатлар', docsTitle: 'Юрист ҳужжатлари', docsEmpty: 'Юрист ҳали ҳужжат юкламаган', docsClose: 'Ёпиш', docsError: 'Ҳужжатларни юклаб бўлмади', docDownload: 'Юклаб олиш', docVerify: 'Тасдиқлаш', docVerified: 'Текширилган', scheduleStatus: 'Жадвал', scheduleSlots: 'Ҳафтасига камида {{required}} тадан {{count}} та ярим соатлик слот', resume: 'Резюме', resumeReview: 'Резюмени текшириш', rejectReason: 'Рад этиш сабаби', license: 'Лицензия', specializations: 'Ихтисосликлар', experience: 'Иш тажрибаси', education: 'Таълим', certificates: 'Сертификатлар', statusHistory: 'Ҳолатлар тарихи',
+      docDiploma: 'Диплом', docLicense: 'Лицензия / ордер', docCertificate: 'Сертификат', docId: 'Шахсни тасдиқловчи ҳужжат', docOther: 'Бошқа',
       roleClient: 'Мижоз', roleLawyer: 'Юрист', roleAdmin: 'Админ',
       approve: 'Тасдиқлаш', reject: 'Рад этиш', block: 'Блоклаш', unblock: 'Блокдан чиқариш',
       noLawyers: 'Ҳали юристлар йўқ', noUsers: 'Ҳали фойдаланувчилар йўқ', noSpec: 'Кўрсатилмаган',
@@ -1077,8 +1095,8 @@ const translations = {
       confirmApproveTitle: 'Approve the lawyer?', confirmApproveMsg: 'The profile becomes visible in the catalog and the lawyer can accept consultations.',
       confirmRejectTitle: 'Reject the lawyer?', confirmBlockTitle: 'Block this user?', confirmBlockMsg: 'The user loses access to the platform. This is reversible.',
       confirmUnblockTitle: 'Unblock this user?', confirmUnblockMsg: 'Access to the platform will be restored.',
-      docs: 'Documents', docsTitle: 'Lawyer documents', docsEmpty: 'The lawyer has not uploaded documents yet', docsClose: 'Close', docsError: 'Failed to load documents', docDownload: 'Download', docVerify: 'Verify', docVerified: 'Verified', scheduleStatus: 'Schedule', scheduleSlots: '{{count}} of at least {{required}} weekly 30-minute slots',
-      docDiploma: 'Diploma', docLicense: 'License / order', docId: 'ID document', docOther: 'Other',
+      docs: 'Documents', docsTitle: 'Lawyer documents', docsEmpty: 'The lawyer has not uploaded documents yet', docsClose: 'Close', docsError: 'Failed to load documents', docDownload: 'Download', docVerify: 'Verify', docVerified: 'Verified', scheduleStatus: 'Schedule', scheduleSlots: '{{count}} of at least {{required}} weekly 30-minute slots', resume: 'Resume', resumeReview: 'Resume review', rejectReason: 'Rejection reason', license: 'License', specializations: 'Specializations', experience: 'Work experience', education: 'Education', certificates: 'Certificates', statusHistory: 'Status history',
+      docDiploma: 'Diploma', docLicense: 'License / order', docCertificate: 'Certificate', docId: 'ID document', docOther: 'Other',
       roleClient: 'Client', roleLawyer: 'Lawyer', roleAdmin: 'Admin',
       approve: 'Approve', reject: 'Reject', block: 'Block', unblock: 'Unblock',
       noLawyers: 'No lawyers yet', noUsers: 'No users yet', noSpec: 'Not specified',
@@ -1223,15 +1241,15 @@ const translations = {
   adminConsult: {
     ru: {
       title: 'Консультации', client: 'Клиент', lawyer: 'Юрист', date: 'Дата', status: 'Статус',
-      price: 'Стоимость', empty: 'Консультаций нет', sum: 'сум', created: 'Создана', scheduled: 'Назначена',
+      price: 'Стоимость', empty: 'Консультаций нет', sum: 'сум', created: 'Создана', scheduled: 'Назначена', provider: 'Провайдер', diagnostics: 'Диагностика', open: 'Открыть', openDiagnostics: 'Открыть диагностику', diagnosticsTitle: 'Диагностика видеоконсультации', duration: 'Длительность', minutes: 'минут', timezone: 'Часовой пояс', notCreated: 'не создан', operation: 'операция', attempts: 'Попытки', error: 'ошибка', lawyerJoined: 'Юрист вошёл', clientJoined: 'Клиент вошёл', technicalEvents: 'Технические события', retryCreate: 'Повторить создание',
     },
     uz: {
       title: 'Консультациялар', client: 'Мижоз', lawyer: 'Юрист', date: 'Сана', status: 'Ҳолат',
-      price: 'Нархи', empty: 'Консультациялар йўқ', sum: 'сўм', created: 'Яратилган', scheduled: 'Белгиланган',
+      price: 'Нархи', empty: 'Консультациялар йўқ', sum: 'сўм', created: 'Яратилган', scheduled: 'Белгиланган', provider: 'Провайдер', diagnostics: 'Диагностика', open: 'Очиқ', openDiagnostics: 'Диагностикани очиш', diagnosticsTitle: 'Видеоконсультация диагностикаси', duration: 'Давомийлиги', minutes: 'дақиқа', timezone: 'Вақт минтақаси', notCreated: 'яратилмаган', operation: 'операция', attempts: 'Уринишлар', error: 'хатолик', lawyerJoined: 'Юрист кирди', clientJoined: 'Мижоз кирди', technicalEvents: 'Техник ҳодисалар', retryCreate: 'Яратишни такрорлаш',
     },
     en: {
       title: 'Consultations', client: 'Client', lawyer: 'Lawyer', date: 'Date', status: 'Status',
-      price: 'Price', empty: 'No consultations', sum: 'UZS', created: 'Created', scheduled: 'Scheduled',
+      price: 'Price', empty: 'No consultations', sum: 'UZS', created: 'Created', scheduled: 'Scheduled', provider: 'Provider', diagnostics: 'Diagnostics', open: 'Open', openDiagnostics: 'Open diagnostics', diagnosticsTitle: 'Video consultation diagnostics', duration: 'Duration', minutes: 'minutes', timezone: 'Time zone', notCreated: 'not created', operation: 'operation', attempts: 'Attempts', error: 'error', lawyerJoined: 'Lawyer joined', clientJoined: 'Client joined', technicalEvents: 'Technical events', retryCreate: 'Retry creation',
     },
   },
 
@@ -1365,7 +1383,7 @@ const translations = {
       viewProfile: 'Смотреть профиль',
       loadError: 'Ошибка загрузки избранного',
       removed: 'Удалено из избранного',
-      removeError: 'Ошибка при удалении',
+      removeError: 'Ошибка при удалении', remove: 'Удалить из избранного',
     },
     uz: {
       title: 'Танланган юристлар',
@@ -1382,7 +1400,7 @@ const translations = {
       viewProfile: 'Профилни кўриш',
       loadError: 'Танланганларни юклашда хатолик',
       removed: 'Танланганлардан олиб ташланди',
-      removeError: 'Ўчиришда хатолик',
+      removeError: 'Ўчиришда хатолик', remove: 'Танланганлардан ўчириш',
     },
     en: {
       title: 'Favorite lawyers',
@@ -1399,7 +1417,7 @@ const translations = {
       viewProfile: 'View profile',
       loadError: 'Error loading favorites',
       removed: 'Removed from favorites',
-      removeError: 'Error removing',
+      removeError: 'Error removing', remove: 'Remove from favorites',
     },
   },
 
@@ -1434,9 +1452,9 @@ const translations = {
   },
 
   call: {
-    ru: { incoming: 'Входящий видеозвонок', callBtn: 'Позвонить', callBack: 'Перезвонить', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов' },
-    uz: { incoming: 'Кирувчи видеоқўнғироқ', callBtn: 'Қўнғироқ қилиш', callBack: 'Қайта қўнғироқ', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди' },
-    en: { incoming: 'Incoming video call', callBtn: 'Call', callBack: 'Call back', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call' },
+    ru: { incoming: 'Входящий видеозвонок', callBtn: 'Позвонить', callBack: 'Перезвонить', ringing: 'звонит вам…', someone: 'Собеседник', accept: 'Принять', decline: 'Отклонить', calling: 'Вызываем собеседника…', calleeOffline: 'Собеседник не в сети — уйдёт уведомление', calleeDeclined: 'Собеседник отклонил вызов', soundBlocked: 'Браузер заблокировал звук звонка. Нажмите, чтобы включить.', enableSound: 'Включить звук' },
+    uz: { incoming: 'Кирувчи видеоқўнғироқ', callBtn: 'Қўнғироқ қилиш', callBack: 'Қайта қўнғироқ', ringing: 'сизга қўнғироқ қилмоқда…', someone: 'Суҳбатдош', accept: 'Қабул қилиш', decline: 'Рад этиш', calling: 'Суҳбатдош чақирилмоқда…', calleeOffline: 'Суҳбатдош тармоқда эмас — билдиришнома юборилади', calleeDeclined: 'Суҳбатдош қўнғироқни рад этди', soundBlocked: 'Браузер қўнғироқ овозини блоклади. Ёқиш учун босинг.', enableSound: 'Овозни ёқиш' },
+    en: { incoming: 'Incoming video call', callBtn: 'Call', callBack: 'Call back', ringing: 'is calling you…', someone: 'Caller', accept: 'Accept', decline: 'Decline', calling: 'Calling…', calleeOffline: 'The other party is offline — a notification will be sent', calleeDeclined: 'The other party declined the call', soundBlocked: 'Your browser blocked the ringtone. Tap to enable it.', enableSound: 'Enable sound' },
   },
 
   compare: {
@@ -1910,14 +1928,20 @@ const translations = {
 
   zoomMeeting: {
     ru: {
+      permission_prompt: 'Нажмите проверку, чтобы запросить доступ', permission_checking: 'Проверяем устройства…', permission_granted: 'Микрофон и камера доступны', permission_denied: 'Доступ запрещён', 'permission_not-found': 'Устройство не найдено', permission_busy: 'Устройство занято', permission_revoked: 'Разрешение отозвано', permission_unsupported: 'Медиа не поддерживается', permission_error: 'Ошибка проверки устройств',
+      media_camera_denied: 'Доступ к камере запрещён.', 'media_camera_not-found': 'Камера не найдена или отключена.', media_camera_busy: 'Камера занята другим приложением.', media_camera_revoked: 'Доступ к камере был отозван.', media_camera_unsupported: 'Камера не поддерживается браузером.', media_camera_error: 'Не удалось проверить камеру.', media_microphone_denied: 'Доступ к микрофону запрещён.', 'media_microphone_not-found': 'Микрофон не найден или отключён.', media_microphone_busy: 'Микрофон занят другим приложением.', media_microphone_revoked: 'Доступ к микрофону был отозван.', media_microphone_unsupported: 'Микрофон не поддерживается браузером.', media_microphone_error: 'Не удалось проверить микрофон.', continueAudioOnly: 'Продолжить только с аудио', audioOnlyActive: 'Локальная камера выключена. Аудио включено.', audioOnlyZoomControl: 'Meeting SDK не гарантирует выключение камеры программно. После входа убедитесь, что видео выключено в панели Zoom.', meterUnsupported: 'Индикатор микрофона не поддерживается, но подключение доступно.', meterSuspended: 'Браузер приостановил индикатор микрофона. Повторите проверку касанием.',
       lifecycle_no_show_both: 'Оба участника не подключились', warningGraceConfigured: 'Запланированное время завершено. Технический период: {{minutes}} мин.',
       mediaDenied: 'Доступ к камере или микрофону запрещён. Разрешите доступ в настройках браузера.', mediaMissing: 'Камера или микрофон не найдены. Подключите устройство или выберите другое.', mediaBusy: 'Камера или микрофон используются другим приложением.', mediaError: 'Не удалось проверить оборудование. Повторите проверку.', loadError: 'Не удалось загрузить видеоконсультацию', preparing: 'Подготавливаем видеовстречу', unavailable: 'Zoom временно недоступен', unsupportedBrowser: 'Этот браузер не поддерживает необходимые функции Zoom', reconnectFailed: 'Не удалось восстановить соединение. Подключитесь повторно или откройте Zoom.', joinError: 'Не удалось подключиться к Zoom. Повторите попытку или откройте официальное приложение.', networkZoom: 'Качество сети определяет Zoom', networkWeak: 'Слабое соединение', networkMedium: 'Среднее соединение', networkGood: 'Хорошее соединение', leaveConfirm: 'Выйти из видеоконсультации? Вы сможете подключиться повторно до окончания времени.', reconnecting: 'Соединение потеряно, переподключаемся…', connected: 'Подключено', preflight: 'Проверка перед консультацией', leave: 'Выйти', back: 'Назад', roleHost: 'Вы ведущий', roleParticipant: 'Вы участник', duration: '{{minutes}} минут', status: 'Статус: {{status}}', remaining: 'Осталось: {{time}}', warningGrace: 'Запланированное время завершено. Доступен технический период 5 минут.', warning1: 'До конца консультации 1 минута.', warning5: 'До конца консультации 5 минут.', warning10: 'До конца консультации 10 минут.', ended: 'Консультация завершена', done: 'Готово', equipment: 'Проверка оборудования', browser: 'Браузер', supported: 'поддерживается', unsupported: 'не поддерживается', unstableNetwork: 'Соединение нестабильно. Закройте VPN или используйте аудио без видео.', camera: 'Камера', microphone: 'Микрофон', speaker: 'Динамик', selectCamera: 'Выбрать камеру', selectMicrophone: 'Выбрать микрофон', selectSpeaker: 'Выбрать динамик', localCheck: 'Это локальная проверка. При необходимости выберите устройство ещё раз в настройках Zoom.', micLevel: 'Уровень микрофона', preparingAuto: 'Подготавливаем видеовстречу. Страница обновится автоматически.', prepareFailed: 'Zoom-встречу подготовить не удалось.', prepareFailedAction: 'Перенесите консультацию или обратитесь в поддержку.', paymentRequired: 'Перед подключением необходимо завершить оплату.', lobbyOpens: 'Комната ожидания откроется: {{time}} ({{timezone}})', allowAccess: 'Разрешить доступ', retryCheck: 'Повторить проверку', testSound: 'Проверить звук', audioOnly: 'Только аудио', start: 'Начать консультацию', join: 'Подключиться', openZoom: 'Открыть в Zoom', copyLink: 'Скопировать ссылку', reconnect: 'Переподключиться ({{attempts}}/3)', retryPreflight: 'Повторить проверку доступа', support: 'Обратиться в поддержку', reschedule: 'Перенести консультацию', lifecycle_scheduled: 'Запланирована', lifecycle_ready: 'Готова', lifecycle_rescheduled: 'Перенесена', lifecycle_in_progress: 'Идёт сейчас', lifecycle_started: 'Началась', lifecycle_completed: 'Завершена', lifecycle_no_show_client: 'Клиент не подключился', lifecycle_no_show_lawyer: 'Юрист не подключился', lifecycle_cancelled: 'Отменена', lifecycle_provider_cancelled: 'Отменена провайдером', lifecycle_unknown: 'Статус уточняется',
     },
     uz: {
+      permission_prompt: 'Рухсат сўраш учун текширишни босинг', permission_checking: 'Қурилмалар текширилмоқда…', permission_granted: 'Микрофон ва камера мавжуд', permission_denied: 'Кириш рад этилди', 'permission_not-found': 'Қурилма топилмади', permission_busy: 'Қурилма банд', permission_revoked: 'Рухсат бекор қилинди', permission_unsupported: 'Медиа қўлланмайди', permission_error: 'Қурилмаларни текшириш хатоси',
+      media_camera_denied: 'Камерага кириш рад этилди.', 'media_camera_not-found': 'Камера топилмади ёки узилди.', media_camera_busy: 'Камера бошқа дастурда банд.', media_camera_revoked: 'Камера рухсати бекор қилинди.', media_camera_unsupported: 'Браузер камерани қўлламайди.', media_camera_error: 'Камерани текшириб бўлмади.', media_microphone_denied: 'Микрофонга кириш рад этилди.', 'media_microphone_not-found': 'Микрофон топилмади ёки узилди.', media_microphone_busy: 'Микрофон бошқа дастурда банд.', media_microphone_revoked: 'Микрофон рухсати бекор қилинди.', media_microphone_unsupported: 'Браузер микрофонни қўлламайди.', media_microphone_error: 'Микрофонни текшириб бўлмади.', continueAudioOnly: 'Фақат аудио билан давом этиш', audioOnlyActive: 'Маҳаллий камера ўчирилди. Аудио ёқилган.', audioOnlyZoomControl: 'Meeting SDK камерани дастурий ўчиришни кафолатламайди. Киргандан сўнг Zoom панелида видео ўчиқлигини текширинг.', meterUnsupported: 'Микрофон индикатори қўлланмайди, аммо уланиш мумкин.', meterSuspended: 'Браузер микрофон индикаторини тўхтатди. Тегиб қайта текширинг.',
       lifecycle_no_show_both: 'Иккала иштирокчи ҳам уланмади', warningGraceConfigured: 'Режалаштирилган вақт тугади. Техник вақт: {{minutes}} дақиқа.',
       mediaDenied: 'Камера ёки микрофонга кириш тақиқланган. Браузер созламаларида рухсат беринг.', mediaMissing: 'Камера ёки микрофон топилмади. Қурилмани уланг ёки бошқасини танланг.', mediaBusy: 'Камера ёки микрофон бошқа дастурда ишлатилмоқда.', mediaError: 'Қурилмаларни текшириб бўлмади. Қайта урининг.', loadError: 'Видео консультацияни юклаб бўлмади', preparing: 'Видео учрашув тайёрланмоқда', unavailable: 'Zoom вақтинча ишламайди', unsupportedBrowser: 'Бу браузер Zoom учун керакли функцияларни қўлламайди', reconnectFailed: 'Уланишни тиклаб бўлмади. Қайта уланинг ёки Zoom ни очинг.', joinError: 'Zoom га уланиб бўлмади. Қайта урининг ёки расмий иловани очинг.', networkZoom: 'Тармоқ сифатини Zoom аниқлайди', networkWeak: 'Заиф уланиш', networkMedium: 'Ўртача уланиш', networkGood: 'Яхши уланиш', leaveConfirm: 'Видео консультациядан чиқасизми? Вақт тугагунича қайта уланишингиз мумкин.', reconnecting: 'Уланиш узилди, қайта уланмоқда…', connected: 'Уланди', preflight: 'Консультация олдидан текширув', leave: 'Чиқиш', back: 'Орқага', roleHost: 'Сиз бошловчисиз', roleParticipant: 'Сиз иштирокчисиз', duration: '{{minutes}} дақиқа', status: 'Ҳолат: {{status}}', remaining: 'Қолди: {{time}}', warningGrace: 'Режалаштирилган вақт тугади. 5 дақиқалик техник вақт бор.', warning1: 'Консультация тугашига 1 дақиқа.', warning5: 'Консультация тугашига 5 дақиқа.', warning10: 'Консультация тугашига 10 дақиқа.', ended: 'Консультация якунланди', done: 'Тайёр', equipment: 'Қурилмаларни текшириш', browser: 'Браузер', supported: 'қўллаб-қувватланади', unsupported: 'қўллаб-қувватланмайди', unstableNetwork: 'Уланиш беқарор. VPN ни ёпинг ёки видеосиз аудиодан фойдаланинг.', camera: 'Камера', microphone: 'Микрофон', speaker: 'Динамик', selectCamera: 'Камерани танлаш', selectMicrophone: 'Микрофонни танлаш', selectSpeaker: 'Динамикни танлаш', localCheck: 'Бу маҳаллий текширув. Керак бўлса, қурилмани Zoom созламаларида қайта танланг.', micLevel: 'Микрофон даражаси', preparingAuto: 'Видео учрашув тайёрланмоқда. Саҳифа автоматик янгиланади.', prepareFailed: 'Zoom учрашувини тайёрлаб бўлмади.', prepareFailedAction: 'Консультацияни кўчиринг ёки ёрдам хизматига мурожаат қилинг.', paymentRequired: 'Уланишдан олдин тўловни якунлаш керак.', lobbyOpens: 'Кутиш хонаси очилади: {{time}} ({{timezone}})', allowAccess: 'Рухсат бериш', retryCheck: 'Қайта текшириш', testSound: 'Овозни текшириш', audioOnly: 'Фақат аудио', start: 'Консультацияни бошлаш', join: 'Уланиш', openZoom: 'Zoom да очиш', copyLink: 'Ҳаволани нусхалаш', reconnect: 'Қайта уланиш ({{attempts}}/3)', retryPreflight: 'Киришни қайта текшириш', support: 'Ёрдамга мурожаат қилиш', reschedule: 'Консультацияни кўчириш', lifecycle_scheduled: 'Режалаштирилган', lifecycle_ready: 'Тайёр', lifecycle_rescheduled: 'Кўчирилган', lifecycle_in_progress: 'Давом этмоқда', lifecycle_started: 'Бошланган', lifecycle_completed: 'Якунланган', lifecycle_no_show_client: 'Мижоз уланмади', lifecycle_no_show_lawyer: 'Юрист уланмади', lifecycle_cancelled: 'Бекор қилинган', lifecycle_provider_cancelled: 'Провайдер бекор қилди', lifecycle_unknown: 'Ҳолат аниқланмоқда',
     },
     en: {
+      permission_prompt: 'Run the check to request access', permission_checking: 'Checking devices…', permission_granted: 'Microphone and camera are available', permission_denied: 'Access denied', 'permission_not-found': 'Device not found', permission_busy: 'Device busy', permission_revoked: 'Permission revoked', permission_unsupported: 'Media is unsupported', permission_error: 'Device check failed',
+      media_camera_denied: 'Camera access was denied.', 'media_camera_not-found': 'No camera was found or it was disconnected.', media_camera_busy: 'The camera is busy in another app.', media_camera_revoked: 'Camera permission was revoked.', media_camera_unsupported: 'Camera access is unsupported by this browser.', media_camera_error: 'Could not check the camera.', media_microphone_denied: 'Microphone access was denied.', 'media_microphone_not-found': 'No microphone was found or it was disconnected.', media_microphone_busy: 'The microphone is busy in another app.', media_microphone_revoked: 'Microphone permission was revoked.', media_microphone_unsupported: 'Microphone access is unsupported by this browser.', media_microphone_error: 'Could not check the microphone.', continueAudioOnly: 'Continue with audio only', audioOnlyActive: 'The local camera is off. Audio is enabled.', audioOnlyZoomControl: 'Meeting SDK cannot guarantee camera-off through its public API. After joining, verify video is off in Zoom controls.', meterUnsupported: 'The microphone meter is unsupported, but joining is available.', meterSuspended: 'The browser suspended the microphone meter. Tap to test again.',
       lifecycle_no_show_both: 'Neither participant joined', warningGraceConfigured: 'Scheduled time has ended. Technical grace period: {{minutes}} minutes.',
       mediaDenied: 'Camera or microphone access was denied. Allow access in your browser settings.', mediaMissing: 'No camera or microphone was found. Connect a device or choose another one.', mediaBusy: 'The camera or microphone is being used by another application.', mediaError: 'Could not check your equipment. Try again.', loadError: 'Could not load the video consultation', preparing: 'Preparing the video meeting', unavailable: 'Zoom is temporarily unavailable', unsupportedBrowser: 'This browser does not support required Zoom features', reconnectFailed: 'Could not restore the connection. Reconnect or open Zoom.', joinError: 'Could not connect to Zoom. Try again or open the official app.', networkZoom: 'Zoom will determine network quality', networkWeak: 'Weak connection', networkMedium: 'Average connection', networkGood: 'Good connection', leaveConfirm: 'Leave the video consultation? You can reconnect before the scheduled end.', reconnecting: 'Connection lost, reconnecting…', connected: 'Connected', preflight: 'Pre-consultation check', leave: 'Leave', back: 'Back', roleHost: 'You are the host', roleParticipant: 'You are a participant', duration: '{{minutes}} minutes', status: 'Status: {{status}}', remaining: 'Remaining: {{time}}', warningGrace: 'Scheduled time has ended. A 5-minute technical grace period is available.', warning1: '1 minute remains.', warning5: '5 minutes remain.', warning10: '10 minutes remain.', ended: 'Consultation completed', done: 'Done', equipment: 'Equipment check', browser: 'Browser', supported: 'supported', unsupported: 'not supported', unstableNetwork: 'The connection is unstable. Close your VPN or use audio without video.', camera: 'Camera', microphone: 'Microphone', speaker: 'Speaker', selectCamera: 'Select camera', selectMicrophone: 'Select microphone', selectSpeaker: 'Select speaker', localCheck: 'This is a local check. Select your device again in Zoom settings if needed.', micLevel: 'Microphone level', preparingAuto: 'Preparing the video meeting. This page will refresh automatically.', prepareFailed: 'The Zoom meeting could not be prepared.', prepareFailedAction: 'Reschedule the consultation or contact support.', paymentRequired: 'Complete payment before joining.', lobbyOpens: 'The waiting room opens at {{time}} ({{timezone}})', allowAccess: 'Allow access', retryCheck: 'Check again', testSound: 'Test sound', audioOnly: 'Audio only', start: 'Start consultation', join: 'Join', openZoom: 'Open in Zoom', copyLink: 'Copy link', reconnect: 'Reconnect ({{attempts}}/3)', retryPreflight: 'Retry access check', support: 'Contact support', reschedule: 'Reschedule consultation', lifecycle_scheduled: 'Scheduled', lifecycle_ready: 'Ready', lifecycle_rescheduled: 'Rescheduled', lifecycle_in_progress: 'In progress', lifecycle_started: 'Started', lifecycle_completed: 'Completed', lifecycle_no_show_client: 'Client did not join', lifecycle_no_show_lawyer: 'Lawyer did not join', lifecycle_cancelled: 'Cancelled', lifecycle_provider_cancelled: 'Cancelled by provider', lifecycle_unknown: 'Status pending',
     },
@@ -1934,7 +1958,7 @@ const translations = {
       supportedFormats: 'Поддерживаемые форматы: PDF, DOC, DOCX, JPG, PNG',
       maxSize: 'Максимальный размер: 10 МБ',
       analyze: 'Анализировать',
-      download: 'Скачать', downloadError: 'Не удалось скачать документ', preview: 'Предпросмотр', previewError: 'Не удалось открыть предпросмотр', previewUnavailable: 'Предпросмотр недоступен', previewUnavailableSub: 'Для этого типа файла доступно только скачивание',
+      download: 'Скачать', downloadError: 'Не удалось скачать документ', preview: 'Предпросмотр', previewError: 'Не удалось открыть предпросмотр', previewUnavailable: 'Предпросмотр недоступен', previewUnavailableSub: 'Для этого типа файла доступно только скачивание', openPdf: 'Открыть PDF отдельно',
       delete: 'Удалить',
       fileName: 'Название файла',
       fileSize: 'Размер',
@@ -1942,7 +1966,7 @@ const translations = {
       status: 'Статус',
 
       // AI анализ
-      aiAnalysis: 'AI Анализ документа',
+      aiAnalysis: 'AI Анализ документа', aiAnalysisShort: 'AI-анализ',
       analyzing: 'Анализируем документ...',
       analysisComplete: 'Анализ завершен',
       riskLevel: 'Уровень риска',
@@ -1994,7 +2018,7 @@ const translations = {
       relevantLaws: 'Применимые нормы',
       risk: 'Риск',
       score: 'оценка',
-      fileLabel: 'Файл',
+      fileLabel: 'Файл', removeFile: 'Убрать файл',
     },
     uz: {
       title: 'Ҳужжатлар',
@@ -2005,7 +2029,7 @@ const translations = {
       supportedFormats: 'Қўллаб-қувватланадиган форматлар: PDF, DOC, DOCX, JPG, PNG',
       maxSize: 'Максимал ҳажм: 10 МБ',
       analyze: 'Таҳлил қилиш',
-      download: 'Юклаб олиш', downloadError: 'Ҳужжатни юклаб бўлмади', preview: 'Кўриб чиқиш', previewError: 'Кўришни очиб бўлмади', previewUnavailable: 'Кўриб чиқиш имконсиз', previewUnavailableSub: 'Бу турдаги файл учун фақат юклаб олиш мавжуд',
+      download: 'Юклаб олиш', downloadError: 'Ҳужжатни юклаб бўлмади', preview: 'Кўриб чиқиш', previewError: 'Кўришни очиб бўлмади', previewUnavailable: 'Кўриб чиқиш имконсиз', previewUnavailableSub: 'Бу турдаги файл учун фақат юклаб олиш мавжуд', openPdf: 'PDF ни алоҳида очиш',
       delete: 'Ўчириш',
       fileName: 'Файл номи',
       fileSize: 'Ҳажми',
@@ -2013,7 +2037,7 @@ const translations = {
       status: 'Ҳолат',
 
       // AI анализ
-      aiAnalysis: 'AI Ҳужжат таҳлили',
+      aiAnalysis: 'AI Ҳужжат таҳлили', aiAnalysisShort: 'AI-таҳлил',
       analyzing: 'Ҳужжат таҳлил қилинмоқда...',
       analysisComplete: 'Таҳлил тугалланди',
       riskLevel: 'Хавф даражаси',
@@ -2065,7 +2089,7 @@ const translations = {
       relevantLaws: 'Тегишли меъёрлар',
       risk: 'Хавф',
       score: 'баҳо',
-      fileLabel: 'Файл',
+      fileLabel: 'Файл', removeFile: 'Файлни олиб ташлаш',
     },
     en: {
       title: 'Documents',
@@ -2076,7 +2100,7 @@ const translations = {
       supportedFormats: 'Supported formats: PDF, DOC, DOCX, JPG, PNG',
       maxSize: 'Maximum size: 10 MB',
       analyze: 'Analyze',
-      download: 'Download', downloadError: 'Could not download the document', preview: 'Preview', previewError: 'Could not open preview', previewUnavailable: 'Preview unavailable', previewUnavailableSub: 'Only download is available for this file type',
+      download: 'Download', downloadError: 'Could not download the document', preview: 'Preview', previewError: 'Could not open preview', previewUnavailable: 'Preview unavailable', previewUnavailableSub: 'Only download is available for this file type', openPdf: 'Open PDF separately',
       delete: 'Delete',
       fileName: 'File name',
       fileSize: 'Size',
@@ -2084,7 +2108,7 @@ const translations = {
       status: 'Status',
 
       // AI анализ
-      aiAnalysis: 'AI Document Analysis',
+      aiAnalysis: 'AI Document Analysis', aiAnalysisShort: 'AI analysis',
       analyzing: 'Analyzing document...',
       analysisComplete: 'Analysis complete',
       riskLevel: 'Risk level',
@@ -2136,7 +2160,7 @@ const translations = {
       relevantLaws: 'Relevant laws',
       risk: 'Risk',
       score: 'score',
-      fileLabel: 'File',
+      fileLabel: 'File', removeFile: 'Remove file',
     },
   },
 
@@ -2192,7 +2216,7 @@ const translations = {
       voiceDenied: 'Нет доступа к микрофону. Разрешите его в настройках браузера.',
       errorMsg: 'Извините, произошла ошибка. Пожалуйста, попробуйте ещё раз.',
       exceeds: 'превышает',
-      attached: 'Прикреплено',
+      attached: 'Прикреплено', loadError: 'Не удалось загрузить историю чатов', historyError: 'Не удалось загрузить этот чат', attachFile: 'Прикрепить файл', offline: 'Нет подключения к интернету. История доступна, отправка возобновится после подключения.',
     },
     uz: {
       title: 'AI Ёрдамчи',
@@ -2244,7 +2268,7 @@ const translations = {
       voiceDenied: 'Микрофонга рухсат йўқ. Браузер созламаларида рухсат беринг.',
       errorMsg: 'Кечирасиз, хатолик юз берди. Илтимос, қайта уриниб кўринг.',
       exceeds: 'ҳажмдан ошди:',
-      attached: 'Илова қилинди',
+      attached: 'Илова қилинди', loadError: 'Чатлар тарихини юклаб бўлмади', historyError: 'Бу чатни юклаб бўлмади', attachFile: 'Файл бириктириш', offline: 'Интернет алоқаси йўқ. Тарих очиқ, хабар юбориш улангандан кейин тикланади.',
     },
     en: {
       title: 'AI Assistant',
@@ -2296,7 +2320,7 @@ const translations = {
       voiceDenied: 'No microphone access. Allow it in your browser settings.',
       errorMsg: 'Sorry, an error occurred. Please try again.',
       exceeds: 'exceeds',
-      attached: 'Attached',
+      attached: 'Attached', loadError: 'Could not load chat history', historyError: 'Could not load this chat', attachFile: 'Attach file', offline: 'You are offline. History remains available; sending resumes when connected.',
     },
   },
 
@@ -2331,7 +2355,7 @@ const translations = {
       nameEmpty: 'Имя не может быть пустым', emailInvalid: 'Введите корректный email', profileSaved: 'Профиль успешно обновлён!', profileError: 'Ошибка обновления профиля',
       attachEmailTitle: 'Привяжите настоящий email', attachEmailHint: 'Вы вошли по номеру телефона. Добавьте email — для восстановления доступа и уведомлений.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Привязать', saving: 'Сохранение…', emailUpdated: 'Email обновлён — подтвердите по ссылке в письме', emailError: 'Не удалось обновить email',
       verifyPhoneTitle: 'Подтвердите телефон', verifyPhoneHint: 'Нужно, чтобы бронировать консультации. Пришлём код по SMS.', otpRequest: 'Отправить код', otpPlaceholder: 'Код из SMS', otpConfirm: 'Подтвердить', otpChangeNumber: 'Изменить номер', otpSent: 'Код отправлен', otpDevCode: 'Код (dev-режим)', otpError: 'Не удалось. Проверьте номер и код', phoneVerified: 'Телефон подтверждён!',
-      enterCurrentPassword: 'Введите текущий пароль', enterNewPassword: 'Введите новый пароль', passwordTooShort: 'Пароль должен содержать минимум 6 символов', passwordsMismatch: 'Пароли не совпадают', passwordChanged: 'Пароль успешно изменён!', passwordError: 'Ошибка изменения пароля',
+      enterCurrentPassword: 'Введите текущий пароль', enterNewPassword: 'Введите новый пароль', passwordTooShort: 'Пароль должен содержать минимум 6 символов', passwordsMismatch: 'Пароли не совпадают', passwordChanged: 'Пароль успешно изменён!', passwordError: 'Ошибка изменения пароля', statsError: 'Статистика недоступна.', activityError: 'Не удалось загрузить историю активности.',
     },
     uz: {
       title: 'Профил',
@@ -2362,7 +2386,7 @@ const translations = {
       nameEmpty: 'Исм бўш бўлиши мумкин эмас', emailInvalid: 'Тўғри email киритинг', profileSaved: 'Профил муваффақиятли янгиланди!', profileError: 'Профилни янгилашда хатолик',
       attachEmailTitle: 'Ҳақиқий email’ни боғланг', attachEmailHint: 'Сиз телефон рақами орқали кирдингиз. Кириш ва хабарномалар учун email қўшинг.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Боғлаш', saving: 'Сақланмоқда…', emailUpdated: 'Email янгиланди — хатдаги ҳавола орқали тасдиқланг', emailError: 'Email’ни янгилаб бўлмади',
       verifyPhoneTitle: 'Телефонни тасдиқланг', verifyPhoneHint: 'Консультация бронь қилиш учун керак. SMS орқали код юборамиз.', otpRequest: 'Код юбориш', otpPlaceholder: 'SMS коди', otpConfirm: 'Тасдиқлаш', otpChangeNumber: 'Рақамни ўзгартириш', otpSent: 'Код юборилди', otpDevCode: 'Код (dev-режим)', otpError: 'Бўлмади. Рақам ва кодни текширинг', phoneVerified: 'Телефон тасдиқланди!',
-      enterCurrentPassword: 'Жорий паролни киритинг', enterNewPassword: 'Янги паролни киритинг', passwordTooShort: 'Парол камида 6 белгидан иборат бўлиши керак', passwordsMismatch: 'Пароллар мос келмайди', passwordChanged: 'Парол муваффақиятли ўзгартирилди!', passwordError: 'Паролни ўзгартиришда хатолик',
+      enterCurrentPassword: 'Жорий паролни киритинг', enterNewPassword: 'Янги паролни киритинг', passwordTooShort: 'Парол камида 6 белгидан иборат бўлиши керак', passwordsMismatch: 'Пароллар мос келмайди', passwordChanged: 'Парол муваффақиятли ўзгартирилди!', passwordError: 'Паролни ўзгартиришда хатолик', statsError: 'Статистика мавжуд эмас.', activityError: 'Фаолият тарихини юклаб бўлмади.',
     },
     en: {
       title: 'Profile',
@@ -2393,7 +2417,7 @@ const translations = {
       nameEmpty: 'Name cannot be empty', emailInvalid: 'Enter a valid email', profileSaved: 'Profile updated successfully!', profileError: 'Error updating profile',
       attachEmailTitle: 'Attach a real email', attachEmailHint: 'You signed in with a phone number. Add an email for account recovery and notifications.', attachEmailPlaceholder: 'you@example.com', attachEmailSave: 'Attach', saving: 'Saving…', emailUpdated: 'Email updated — confirm via the link we sent', emailError: 'Could not update email',
       verifyPhoneTitle: 'Verify your phone', verifyPhoneHint: 'Required to book consultations. We will send a code by SMS.', otpRequest: 'Send code', otpPlaceholder: 'SMS code', otpConfirm: 'Confirm', otpChangeNumber: 'Change number', otpSent: 'Code sent', otpDevCode: 'Code (dev mode)', otpError: 'Failed. Check the number and code', phoneVerified: 'Phone verified!',
-      enterCurrentPassword: 'Enter your current password', enterNewPassword: 'Enter a new password', passwordTooShort: 'Password must be at least 6 characters', passwordsMismatch: 'Passwords do not match', passwordChanged: 'Password changed successfully!', passwordError: 'Error changing password',
+      enterCurrentPassword: 'Enter your current password', enterNewPassword: 'Enter a new password', passwordTooShort: 'Password must be at least 6 characters', passwordsMismatch: 'Passwords do not match', passwordChanged: 'Password changed successfully!', passwordError: 'Error changing password', statsError: 'Statistics are unavailable.', activityError: 'Could not load activity history.',
     },
   },
 
@@ -2418,7 +2442,7 @@ const translations = {
       profileVisibility: 'Видимость профиля', visPublic: 'Публичный', visPublicDesc: 'Ваш профиль виден всем пользователям', visContacts: 'Только контакты', visContactsDesc: 'Только ваши контакты могут видеть профиль', visPrivate: 'Приватный', visPrivateDesc: 'Ваш профиль скрыт от всех',
       showEmail: 'Показывать email', showEmailDesc: 'Ваш email будет виден другим пользователям', showPhone: 'Показывать телефон', showPhoneDesc: 'Ваш номер телефона будет виден другим пользователям', dataSharing: 'Общий доступ данных', dataSharingDesc: 'Разрешить анализ данных для улучшения сервиса',
       darkTheme: 'Тёмная тема', darkThemeDesc: 'Включить тёмный режим интерфейса (применяется сразу)', themePreview: 'Предпросмотр темы', themePreviewCard: 'Пример карточки в текущей теме', fontSize: 'Размер шрифта', logout: 'Выйти из аккаунта', compactMode: 'Компактный режим', compactModeDesc: 'Уменьшить отступы для более плотного интерфейса',
-      saved: 'Настройки сохранены', saveErrorLocal: 'Не удалось сохранить на сервере (сохранено локально)', resetDefaults: 'Настройки сброшены к значениям по умолчанию', loggedOut: 'Вы вышли из аккаунта',
+      saved: 'Настройки сохранены', saveErrorLocal: 'Не удалось сохранить на сервере (сохранено локально)', loadErrorCached: 'Серверные настройки недоступны. Показана сохранённая копия.', resetDefaults: 'Настройки сброшены к значениям по умолчанию', loggedOut: 'Вы вышли из аккаунта',
       fontSizePreview: 'Пример текста с выбранным размером шрифта', saveChanges: 'Сохранить изменения', reset: 'Сбросить', unsaved: 'У вас есть несохранённые изменения', logoutDesc: 'Завершить текущий сеанс и вернуться на страницу входа', logoutBtn: 'Выйти', syncNote: 'Настройки сохраняются на сервере и синхронизируются между устройствами.', logoutConfirmTitle: 'Подтверждение выхода', logoutConfirmText: 'Вы уверены, что хотите выйти из аккаунта?', cancel: 'Отмена',
     },
     uz: {
@@ -2440,7 +2464,7 @@ const translations = {
       profileVisibility: 'Профил кўриниши', visPublic: 'Оммавий', visPublicDesc: 'Профилингиз барча фойдаланувчиларга кўринади', visContacts: 'Фақат контактлар', visContactsDesc: 'Фақат контактларингиз профилни кўра олади', visPrivate: 'Махфий', visPrivateDesc: 'Профилингиз ҳаммадан яширилган',
       showEmail: 'Email кўрсатиш', showEmailDesc: 'Email бошқа фойдаланувчиларга кўринади', showPhone: 'Телефонни кўрсатиш', showPhoneDesc: 'Телефон рақамингиз бошқаларга кўринади', dataSharing: 'Маълумотларни улашиш', dataSharingDesc: 'Хизматни яхшилаш учун маълумотлар таҳлилига рухсат бериш',
       darkTheme: 'Қоронғи мавзу', darkThemeDesc: 'Интерфейснинг қоронғи режимини ёқиш (дарҳол қўлланилади)', themePreview: 'Мавзу кўриниши', themePreviewCard: 'Жорий мавзудаги карточка намунаси', fontSize: 'Шрифт ўлчами', logout: 'Ҳисобдан чиқиш', compactMode: 'Ихчам режим', compactModeDesc: 'Зичроқ интерфейс учун оралиқларни камайтириш',
-      saved: 'Созламалар сақланди', saveErrorLocal: 'Серверга сақлаб бўлмади (локал сақланди)', resetDefaults: 'Созламалар дастлабки ҳолатга қайтарилди', loggedOut: 'Ҳисобдан чиқдингиз',
+      saved: 'Созламалар сақланди', saveErrorLocal: 'Серверга сақлаб бўлмади (локал сақланди)', loadErrorCached: 'Сервер созламалари мавжуд эмас. Сақланган нусха кўрсатилди.', resetDefaults: 'Созламалар дастлабки ҳолатга қайтарилди', loggedOut: 'Ҳисобдан чиқдингиз',
       fontSizePreview: 'Танланган шрифт ўлчами намунаси', saveChanges: 'Ўзгаришларни сақлаш', reset: 'Тиклаш', unsaved: 'Сақланмаган ўзгаришлар бор', logoutDesc: 'Жорий сеансни якунлаб, кириш саҳифасига қайтиш', logoutBtn: 'Чиқиш', syncNote: 'Созламалар серверда сақланади ва қурилмалар ўртасида синхронланади.', logoutConfirmTitle: 'Чиқишни тасдиқлаш', logoutConfirmText: 'Ҳисобдан чиқмоқчимисиз?', cancel: 'Бекор қилиш',
     },
     en: {
@@ -2462,7 +2486,7 @@ const translations = {
       profileVisibility: 'Profile visibility', visPublic: 'Public', visPublicDesc: 'Your profile is visible to everyone', visContacts: 'Contacts only', visContactsDesc: 'Only your contacts can see the profile', visPrivate: 'Private', visPrivateDesc: 'Your profile is hidden from everyone',
       showEmail: 'Show email', showEmailDesc: 'Your email will be visible to other users', showPhone: 'Show phone', showPhoneDesc: 'Your phone number will be visible to other users', dataSharing: 'Data sharing', dataSharingDesc: 'Allow data analysis to improve the service',
       darkTheme: 'Dark theme', darkThemeDesc: 'Enable dark interface mode (applied immediately)', themePreview: 'Theme preview', themePreviewCard: 'Sample card in the current theme', fontSize: 'Font size', logout: 'Log out of account', compactMode: 'Compact mode', compactModeDesc: 'Reduce spacing for a denser interface',
-      saved: 'Settings saved', saveErrorLocal: 'Could not save to server (saved locally)', resetDefaults: 'Settings reset to defaults', loggedOut: 'You have logged out',
+      saved: 'Settings saved', saveErrorLocal: 'Could not save to server (saved locally)', loadErrorCached: 'Server settings are unavailable. Showing the saved copy.', resetDefaults: 'Settings reset to defaults', loggedOut: 'You have logged out',
       fontSizePreview: 'Sample text at the selected font size', saveChanges: 'Save changes', reset: 'Reset', unsaved: 'You have unsaved changes', logoutDesc: 'End the current session and return to the login page', logoutBtn: 'Log out', syncNote: 'Settings are saved on the server and synced across devices.', logoutConfirmTitle: 'Confirm logout', logoutConfirmText: 'Are you sure you want to log out?', cancel: 'Cancel',
     },
   },
