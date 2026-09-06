@@ -24,7 +24,7 @@ function deriveRuntimeAuthorizationIdentity({ env = process.env, migrationState 
   const deploymentId = production ? env.RAILWAY_DEPLOYMENT_ID : (env.RAILWAY_DEPLOYMENT_ID || 'local-test-deployment');
   const serviceId = production ? env.RAILWAY_SERVICE_ID : (env.RAILWAY_SERVICE_ID || 'local-test-api');
   const migrationHead = migrationState?.migrationHead
-    || (!production ? '20260824000000-create-authorization-evidence-events.js' : null);
+    || (!production ? '20260829000005-fix-reminder-column-names.js' : null);
   const authorizationMode = String(env.AUTHORIZATION_MODE || 'compatibility').trim().toLowerCase();
   if (!COMMIT.test(commitSha || '') || !SAFE_ID.test(deploymentId || '') || !SAFE_ID.test(serviceId || '')
     || !MIGRATION.test(migrationHead || '') || !['compatibility', 'capability_only'].includes(authorizationMode)) {

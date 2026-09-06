@@ -1,5 +1,5 @@
-/* eslint-disable testing-library/no-unnecessary-act */
-import React, { act } from 'react';
+import React from 'react';
+import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { LanguageProvider } from '../../i18n';
 import ProfileImportReview from './ProfileImportReview';

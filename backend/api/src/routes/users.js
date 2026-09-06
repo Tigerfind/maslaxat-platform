@@ -13,6 +13,15 @@ const { streamFile } = require('../services/fileHttpService');
 const { FILE_LIMITS, uploadLimitFor } = require('../config/fileLimits');
 const { registerUuidParams } = require('../middleware/uuidParams');
 const { reportCaughtException } = require('../instrument');
+const { disconnectUserSockets } = require('../socket/io');
+const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+
+const emailChangeLimiter = distributedRateLimit({
+  prefix: 'email-change-user',
+  windowSeconds: 60 * 60,
+  max: process.env.NODE_ENV === 'production' ? 5 : 1000,
+  keyGenerator: (req) => req.userId,
+});
 
 const upload = createMemoryUpload({
   types: ['jpeg', 'png', 'webp'],
@@ -175,6 +184,7 @@ router.put('/password', authenticate, async (req, res, next) => {
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '7d' }
     );
+    disconnectUserSockets(user.id);
 
     res.json({ success: true, message: 'Пароль успешно изменён', token });
   } catch (err) {
@@ -185,7 +195,7 @@ router.put('/password', authenticate, async (req, res, next) => {
 // PUT /api/users/email — привязать/сменить настоящий email (в т.ч. для телефон-аккаунтов
 // с плейсхолдером @phone.maslaxat.uz). Проверяем формат + уникальность; новый email
 // требует подтверждения (isVerified→false + письмо).
-router.put('/email', authenticate, async (req, res, next) => {
+router.put('/email', authenticate, emailChangeLimiter, async (req, res, next) => {
   try {
     const email = String(req.body.email || '').trim().toLowerCase();
     if (!/^\S+@\S+\.\S+$/.test(email)) {
@@ -199,19 +209,20 @@ router.put('/email', authenticate, async (req, res, next) => {
     const exists = await User.findOne({ where: { email, id: { [Op.ne]: user.id } } });
     if (exists) return res.status(409).json({ error: 'Этот email уже используется' });
 
-    user.email = email;
-    // Новый email нужно подтвердить — не блокируем аккаунт, но шлём письмо.
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    user.verificationToken = verificationToken;
-    user.isVerified = false;
-    await user.save();
-
     try {
-      await sendVerificationEmail(email, verificationToken);
+      const delivery = await sendVerificationEmail(email, verificationToken);
+      if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
     } catch (e) {
       reportCaughtException(e, { operation: 'email_change_verification_send', userId: user.id });
       logger.error('email_change_verification_send_failed', { userId: user.id });
+      return res.status(502).json({ error: 'Не удалось отправить письмо подтверждения' });
     }
+
+    user.email = email;
+    user.verificationToken = verificationToken;
+    user.isVerified = false;
+    await user.save();
 
     res.json({ success: true, user: serializeUser(user), message: 'Email обновлён. Подтвердите по ссылке в письме.' });
   } catch (err) {

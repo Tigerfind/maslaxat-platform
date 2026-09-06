@@ -1,5 +1,8 @@
 const EXPECTED = {
   reminders: [5 * 60_000, 4 * 60_000],
+  zoomReconciliation: [60_000, 55_000],
+  consultationTiming: [60_000, 55_000],
+  reservationExpiry: [60_000, 55_000],
   promotionLifecycle: [60_000, 55_000],
   deferredRevenue: [60 * 60_000, 15 * 60_000],
   importParser: [15_000, 2 * 60_000],

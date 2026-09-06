@@ -3,6 +3,7 @@ const logger = require('../config/logger');
 const { loadEmailConfig } = require('../config/env');
 
 const MAIL_FIELDS = Object.freeze(['to', 'subject', 'html']);
+const isEmailConfigured = () => process.env.NODE_ENV !== 'production' || Boolean(process.env.SMTP_HOST);
 
 function createEmailService({ env = process.env, nodemailer: mailer = nodemailer, logger: log = logger } = {}) {
   const config = loadEmailConfig(env);
@@ -131,4 +132,5 @@ const defaultService = createEmailService();
 module.exports = {
   createEmailService,
   ...defaultService,
+  isEmailConfigured,
 };

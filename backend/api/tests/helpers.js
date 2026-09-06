@@ -25,33 +25,53 @@ async function resetDb() {
     CREATE UNIQUE INDEX IF NOT EXISTS users_phone_unique
     ON users (phone) WHERE phone IS NOT NULL
   `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS payments_provider_transaction_id_unique
+    ON payments (provider, transaction_id) WHERE transaction_id IS NOT NULL
+  `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_lawyer_idempotency_unique
+    ON withdrawals (lawyer_id, idempotency_key) WHERE idempotency_key IS NOT NULL
+  `);
+  await sequelize.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS withdrawals_provider_transaction_unique
+    ON withdrawals (provider, provider_transaction_id) WHERE provider_transaction_id IS NOT NULL
+  `);
 }
 
 // JWT в формате, который ждёт middleware/auth (payload { id })
 function tokenFor(user, authLevel) {
+  const effectiveAuthLevel = authLevel
+    || (user.twoFactorEnabled && ['admin', 'lawyer'].includes(user.role) ? 'mfa' : null);
   return jwt.sign({
     id: user.id,
-    ...(authLevel ? {
-      authLevel,
+    ...(effectiveAuthLevel ? {
+      authLevel: effectiveAuthLevel,
       passwordState: String(user.passwordChangedAt ? new Date(user.passwordChangedAt).getTime() : 0),
-      ...(authLevel === 'mfa' ? { twoFactorVersion: user.twoFactorVersion } : {}),
+      ...(effectiveAuthLevel === 'mfa' ? { twoFactorVersion: user.twoFactorVersion } : {}),
     } : {}),
   }, process.env.JWT_SECRET);
 }
 
 // Быстрые фабрики тестовых записей
+let lawyerSequence = 0;
 async function makeClient(email = 'client@test.uz', overrides = {}) {
   // isVerified:true по умолчанию — тестовый клиент «с подтверждённым контактом»
   // (гейт бронирования требует верификацию). Тест на гейт передаёт isVerified:false.
   return User.create({ name: 'Test Client', email, password: 'passw0rd', role: 'client', accountType: 'member', preferredMode: 'client', isActive: true, isVerified: true, ...overrides });
 }
 async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
-  const user = await User.create({ name: 'Test Lawyer', email, password: 'passw0rd', role: 'lawyer', accountType: 'member', preferredMode: 'lawyer', isActive: true, isVerified: true });
+  lawyerSequence += 1;
+  const phone = `+998${String(900000000 + lawyerSequence).slice(-9)}`;
+  const user = await User.create({ name: 'Test Lawyer', email, phone, password: 'passw0rd', role: 'lawyer', accountType: 'member', preferredMode: 'lawyer', isActive: true, isVerified: true });
   // verificationStatus по умолчанию 'approved' — большинство тестов ждут, что юрист
   // сразу виден в каталоге и бронируется. Тест на модерацию передаёт своё значение.
   const lp = await LawyerProfile.create({
     userId: user.id, balance: 0, pendingBalance: 0, price: 100000,
     specialization: 'Гражданское право', specializations: ['Гражданское право'],
+    professionalTitle: 'Тестовый адвокат', location: 'Ташкент', languages: ['ru', 'uz'],
+    licenseNumber: `TEST-${lawyerSequence}`, licenseIssuer: 'Тестовая палата', licenseIssuedAt: '2020-01-01',
+    timezone: 'Asia/Tashkent', consultationFormats: ['chat', 'audio', 'webrtc', 'zoom'], consultationDurations: [30, 60, 90],
     // description + schedule заполнены по умолчанию, чтобы профиль был «полным» для
     // гейта отправки на проверку (не хватает лишь документа — его тест грузит сам).
     description: 'Опытный юрист с многолетней практикой в различных областях права и судов.',
@@ -60,8 +80,12 @@ async function makeLawyer(email = 'lawyer@test.uz', profile = {}) {
   });
   return { user, lp };
 }
-async function makeAdmin(email = 'admin@test.uz') {
-  return User.create({ name: 'Test Admin', email, password: 'passw0rd', role: 'admin', accountType: 'admin', preferredMode: null, isActive: true, isVerified: true });
+async function makeAdmin(email = 'admin@test.uz', overrides = {}) {
+  return User.create({
+    name: 'Test Admin', email, password: 'passw0rd', role: 'admin', accountType: 'admin',
+    preferredMode: null, isActive: true, isVerified: true,
+    twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET', ...overrides,
+  });
 }
 
 async function makeMember(email = 'member@test.uz', overrides = {}) {

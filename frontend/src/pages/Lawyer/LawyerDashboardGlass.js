@@ -17,6 +17,7 @@ import {
   ErrorOutlineOutlined,
 } from '@mui/icons-material';
 import lawyerService from '../../services/lawyerService';
+import { launchConsultation } from '../../services/meetingLauncher';
 import OnboardingWizard from '../../components/Lawyer/OnboardingWizard';
 import DashboardExtras from '../../components/Lawyer/DashboardExtras';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -80,11 +81,13 @@ const LawyerDashboardGlass = () => {
   const [consultationRequests, setConsultationRequests] = useState([]);
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [statusOnline, setStatusOnline] = useState(true);
+  const [acceptingBookings, setAcceptingBookings] = useState(true);
   const [onboardingDone, setOnboardingDone] = useState(false);
 
   useEffect(() => {
     loadDashboardData();
+    // Initial load only; accept/reject actions refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadDashboardData = async () => {
@@ -98,8 +101,7 @@ const LawyerDashboardGlass = () => {
       ]);
 
       setStats(statsData);
-      // Пилюля статуса отражает реальный isAvailable (раньше всегда «онлайн» после загрузки)
-      if (statsData && typeof statsData.isAvailable === 'boolean') setStatusOnline(statsData.isAvailable);
+      if (statsData && typeof statsData.isAvailable === 'boolean') setAcceptingBookings(statsData.isAvailable);
       setConsultations(Array.isArray(consultationsData) ? consultationsData : []);
       setConsultationRequests(Array.isArray(requestsData) ? requestsData : []);
       setReviews(Array.isArray(reviewsData) ? reviewsData : []);
@@ -133,20 +135,20 @@ const LawyerDashboardGlass = () => {
 
   const handleStatusToggle = async () => {
     try {
-      const newStatus = statusOnline ? 'offline' : 'online';
+      const newStatus = acceptingBookings ? 'offline' : 'online';
       await lawyerService.dashboard.updateStatus(newStatus);
-      setStatusOnline(!statusOnline);
+      setAcceptingBookings(!acceptingBookings);
       toast.success(`${t('lawyerPanel.statusChanged')} ${newStatus === 'online' ? t('lawyerPanel.online') : t('lawyerPanel.offline')}`);
     } catch (error) {
       toast.error(t('lawyerPanel.statusError'));
     }
   };
 
-  const handleStartConsultation = (consultation) => {
-    if (consultation.type === 'video') {
-      navigate(`/consultations/video/${consultation.id}`);
-    } else {
-      navigate(`/consultations/chat/${consultation.id}`);
+  const handleStartConsultation = async (consultation) => {
+    try {
+      await launchConsultation(consultation, navigate);
+    } catch (error) {
+      toast.error(error.code === 'POPUP_BLOCKED' ? 'Разрешите всплывающие окна, чтобы открыть Zoom' : error.response?.data?.error || t('lawyerPanel.genericError'));
     }
   };
 
@@ -200,13 +202,22 @@ const LawyerDashboardGlass = () => {
   // это противоречит баннеру «на проверке» (юрист ещё не в каталоге).
   const subtitle = stats?.verificationStatus !== 'approved'
     ? t('lawyerPanel.subNotApproved')
-    : (statusOnline ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline'));
+    : (acceptingBookings ? t('lawyerPanel.subOnline') : t('lawyerPanel.subOffline'));
 
   return (
     <GlassShell active="/lawyer/dashboard" title={t('lawyerPanel.title')} subtitle={subtitle} role="lawyer">
       <div style={{ maxWidth: 1180, margin: '0 auto' }}>
+        {stats?.scheduleComplete === false && (
+          <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', marginBottom: 18, padding: '16px 18px', borderRadius: 'var(--radius)', background: 'rgba(192,73,47,0.10)', border: '1px solid rgba(192,73,47,0.30)' }}>
+            <div>
+              <div style={{ fontWeight: 700, color: 'var(--text)', marginBottom: 4 }}>{t('lawyerPanel.scheduleRequiredTitle')}</div>
+              <div style={{ fontSize: 13, color: 'var(--text2)' }}>{t('lawyerPanel.scheduleRequiredText', { count: stats.scheduleSlots || 0, required: stats.requiredScheduleSlots || 3 })}</div>
+            </div>
+            <button type="button" onClick={() => navigate('/lawyer/schedule')} style={{ minHeight: 44, padding: '9px 16px', borderRadius: 10, border: '1px solid rgba(192,73,47,0.4)', background: 'rgba(192,73,47,0.14)', color: '#B23D28', fontWeight: 600, cursor: 'pointer' }}>{t('lawyerPanel.scheduleRequiredCta')}</button>
+          </div>
+        )}
         {/* Баннер модерации: на проверке / отклонён. Одобрен — баннера нет. */}
-        {stats?.verificationStatus === 'pending' && (
+        {stats?.verificationStatus === 'pending_review' && (
           <div style={{
             display: 'flex', alignItems: 'flex-start', gap: 12, marginBottom: 18,
             padding: '14px 18px', borderRadius: 'var(--radius)',
@@ -256,8 +267,8 @@ const LawyerDashboardGlass = () => {
               fontSize: 13, fontWeight: 500, color: 'var(--text)',
             }}
           >
-            <span style={{ width: 9, height: 9, borderRadius: '50%', background: statusOnline ? '#7A9A6B' : 'var(--text3)' }} />
-            {statusOnline ? t('lawyerPanel.online') : t('lawyerPanel.offline')}
+            <span style={{ width: 9, height: 9, borderRadius: '50%', background: acceptingBookings ? '#7A9A6B' : 'var(--text3)' }} />
+            {acceptingBookings ? t('lawyerPanel.online') : t('lawyerPanel.offline')}
             <PowerSettingsNewOutlined sx={{ fontSize: 17, color: 'var(--text3)' }} />
           </button>
         </div>

@@ -1,5 +1,18 @@
 import api from './api';
 
+export const LAWYER_MAX_PRICE = 10000000;
+
+export const resolvePublicAssetUrl = (value) => {
+  if (!value || !String(value).startsWith('/uploads/')) return value || null;
+  const apiUrl = import.meta.env.VITE_API_URL;
+  if (!apiUrl) return value;
+  try {
+    return `${new URL(apiUrl, window.location.origin).origin}${value}`;
+  } catch {
+    return value;
+  }
+};
+
 // Client Dashboard Service
 export const clientDashboardService = {
   // Get dashboard stats
@@ -31,6 +44,11 @@ export const clientDashboardService = {
       return list.map((c) => ({
         id: c.id,
         type: c.type,
+        meetingProvider: c.meetingProvider,
+        scheduledStartAt: c.scheduledStartAt,
+        scheduledEndAt: c.scheduledEndAt,
+        scheduleTimezone: c.scheduleTimezone,
+        access: c.access,
         status: c.status,
         lawyerName: c.lawyer?.name || null,
         avatar: c.lawyer?.avatar || null,
@@ -49,28 +67,29 @@ export const clientDashboardService = {
 export const clientLawyerService = {
   // Search lawyers
   searchLawyers: async (filters, options = {}) => {
-    try {
-      // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Границы 0 / +∞
-      // не шлём, чтобы не сужать выборку без нужды (0 и максимум = «любая цена»).
-      const { priceRange, ...rest } = filters || {};
-      const params = { ...rest };
-      if (Array.isArray(priceRange)) {
-        const [min, max] = priceRange;
-        if (Number(min) > 0) params.minPrice = min;
-        if (Number(max) > 0 && Number(max) < 2000000) params.maxPrice = max;
-      }
-      const response = await api.get('/client/lawyers', { params, signal: options.signal });
-      const data = response.data;
-      const rawLawyers = data.lawyers || data || [];
-      const lawyers = rawLawyers.map((l) => ({
+    // priceRange ([min,max]) → плоские minPrice/maxPrice для бэка. Полный UI-диапазон
+    // означает отсутствие ограничения; любое выбранное пользователем сужение отправляем.
+    const { priceRange, ...rest } = filters || {};
+    const params = { ...rest };
+    if (Array.isArray(priceRange)) {
+      const [min, max] = priceRange;
+      if (Number(min) > 0) params.minPrice = Number(min);
+      if (Number(max) >= 0) params.maxPrice = Number(max);
+    }
+    const response = await api.get('/client/lawyers', { params, signal: options.signal });
+    const data = response.data;
+    const rawLawyers = data.lawyers || data || [];
+    const lawyers = rawLawyers.map((l) => ({
         id: l.id,
         name: l.name,
-        avatar: l.avatar,
-        isVerified: l.isVerified,
-        // Статус модерации админом (галочка «Проверенный»). В каталог попадают
-        // только approved, но держим явно — на будущее и для единообразия.
-        verificationStatus: l.profile?.verificationStatus || 'pending',
+        avatar: resolvePublicAssetUrl(l.avatar || l.photo),
+        // Публичный endpoint возвращает только одобренных юристов и намеренно
+        // не раскрывает внутренний статус модерации.
+        verificationStatus: 'approved',
         rating: l.profile?.rating || 0,
+        // Ступень юриста (топ/эксперт/практик) считает сервер — тем же правилом,
+        // что и фильтр подбора, чтобы бейдж и выборка не расходились.
+        status: l.profile?.status || null,
         reviewsCount: l.profile?.reviewsCount || 0,
         completedConsultations: l.profile?.completedCases || 0,
         specializations: Array.isArray(l.profile?.specializations) && l.profile.specializations.length
@@ -80,28 +99,31 @@ export const clientLawyerService = {
         priceFrom: l.profile?.price || 0,
         region: l.profile?.location || '',
         description: l.profile?.description || '',
+        professionalTitle: l.profile?.professionalTitle || '',
+        primaryEducation: Array.isArray(l.profile?.education) ? l.profile.education[0] || null : null,
         languages: l.profile?.languages || [],
+        consultationFormats: l.profile?.consultationFormats || [],
+        zoomAvailable: l.profile?.zoomAvailable === true,
+        consultationDurations: l.profile?.consultationDurations || [],
+        verifiedDocumentTypes: Array.isArray(l.profile?.verifiedDocumentTypes) ? l.profile.verifiedDocumentTypes : [],
+        medianResponseMinutes: l.profile?.medianResponseMinutes != null && Number.isFinite(Number(l.profile.medianResponseMinutes))
+          ? Number(l.profile.medianResponseMinutes) : null,
         schedule: l.profile?.schedule || {},
-        isAvailable: l.profile?.isAvailable ?? true,
-        placement: l.placement || null,
-        promotionId: l.promotionId || null,
-        promotionAttributionToken: l.promotionAttributionToken || null,
-      }));
-      return {
-        lawyers,
-        totalPages: data.totalPages || 1,
-        total: data.total || lawyers.length,
-        cursor: data.cursor || null,
-      };
-    } catch (error) {
-      if (error.response?.status === 410) return { lawyers: [], totalPages: 1, total: 0, cursor: null, sessionExpired: true };
-      if (error.response?.status === 503 && error.response?.data?.code === 'CATALOG_SESSION_UNAVAILABLE') {
-        return { sessionUnavailable: true };
-      }
-      if (error.code === 'ERR_CANCELED') throw error;
-      console.error('Error searching lawyers:', error);
-      return { lawyers: [], totalPages: 1, total: 0, cursor: null };
-    }
+        isAvailable: l.profile?.isAvailable === true,
+        online: l.presence?.online == null ? null : l.presence.online === true,
+        lastSeenAt: l.presence?.lastSeenAt || null,
+        presenceObservedAt: l.presence?.observedAt || null,
+    }));
+    return {
+      lawyers,
+      totalPages: data.totalPages || 1,
+      total: data.total || lawyers.length,
+        // Фасеты обязаны дойти до страницы: на них держатся числа на чипах,
+        // порог «Недорого» и весь блок подбора по карману/статусу. Пока этот
+        // ключ здесь терялся, чипы стояли без счётчиков, «Недорого» было
+        // погашено навсегда, а блок подбора просто не отрисовывался.
+      facets: data.facets || null,
+    };
   },
 
   // Списки городов и языков для фильтров
@@ -155,6 +177,17 @@ export const clientLawyerService = {
     const response = await api.post('/payments/create', { consultationId });
     return response.data;
   },
+  // Единый retryable flow: в dev завершает simulation, в production возвращает Payme URL.
+  payConsultation: async (consultationId) => {
+    try {
+      const result = await clientLawyerService.simulatePayment(consultationId);
+      return { completed: true, ...result };
+    } catch (error) {
+      if (error.response?.status !== 403) throw error;
+      const result = await clientLawyerService.createPayment(consultationId);
+      return { completed: false, redirectUrl: result.checkoutUrl, ...result };
+    }
+  },
 
   // Get lawyer reviews
   getReviews: async (lawyerId) => {
@@ -177,15 +210,17 @@ export const clientLawyerService = {
 // Client Consultations Service
 export const clientConsultationService = {
   // Get all consultations
-  getConsultations: async (status = 'all') => {
-    try {
-      const response = await api.get('/client/consultations', { params: { status } });
-      const data = response.data;
-      return Array.isArray(data) ? data : (data.consultations || []);
-    } catch (error) {
-      console.error('Error fetching consultations:', error);
-      return [];
-    }
+  getConsultations: async (params = {}, options = {}) => {
+    const normalized = typeof params === 'string' ? { bucket: params } : params;
+    const response = await api.get('/client/consultations', { params: normalized, signal: options.signal });
+    const data = response.data;
+    return Array.isArray(data)
+      ? { consultations: data, total: data.length, page: 1, limit: data.length, totalPages: 1, counts: {} }
+      : data;
+  },
+  getConsultationDetails: async (consultationId) => {
+    const response = await api.get(`/client/consultations/${consultationId}`);
+    return response.data;
   },
 
   // Перенос времени консультации
@@ -338,13 +373,8 @@ export const clientAIChatService = {
 export const clientFavoritesService = {
   // Get all favorite lawyers
   getFavorites: async () => {
-    try {
-      const response = await api.get('/client/favorites');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching favorites:', error);
-      return [];
-    }
+    const response = await api.get('/client/favorites');
+    return response.data;
   },
 
   // Add lawyer to favorites

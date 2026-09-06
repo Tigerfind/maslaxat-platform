@@ -3,6 +3,9 @@ const { createManagedJob } = require('./jobScheduler');
 const MINUTE = 60_000;
 const JOB_SPECS = Object.freeze({
   reminders: { intervalMs: 5 * MINUTE, ttlMs: 4 * MINUTE, initialDelayMs: 15_000 },
+  zoomReconciliation: { intervalMs: MINUTE, ttlMs: 55_000, initialDelayMs: 15_000 },
+  consultationTiming: { intervalMs: MINUTE, ttlMs: 55_000, initialDelayMs: 20_000 },
+  reservationExpiry: { intervalMs: MINUTE, ttlMs: 55_000, initialDelayMs: 10_000 },
   promotionLifecycle: { intervalMs: MINUTE, ttlMs: 55_000, initialDelayMs: 10_000 },
   deferredRevenue: { intervalMs: 60 * MINUTE, ttlMs: 15 * MINUTE, initialDelayMs: 30_000 },
   importParser: { intervalMs: 15_000, ttlMs: 2 * MINUTE, initialDelayMs: 5_000 },
@@ -26,8 +29,28 @@ function defaultServices() {
   const objectStorage = require('./objectStorage');
   const reconciliation = require('../scripts/reconcileObjectStorage');
   const authorization = require('./authorizationRuntime');
+  const zoomMeetings = require('./zoomMeetingService');
+  const zoomWebhooks = require('./zoomWebhookService');
+  const consultationTiming = require('./consultationTimingService');
+  const reservationExpiry = require('./reservationExpiryService');
   return {
     reminders: (now, { signal }) => reminders.runReminderOnce(now, { signal }),
+    zoomReconciliation: async (_now, { signal }) => {
+      throwIfAborted(signal);
+      await zoomMeetings.reconcilePendingMeetings();
+      throwIfAborted(signal);
+      await zoomWebhooks.reconcileWebhookEvents();
+      throwIfAborted(signal);
+      return zoomMeetings.verifyUpcomingMeetings();
+    },
+    consultationTiming: (now, { signal }) => {
+      throwIfAborted(signal);
+      return consultationTiming.reconcileConsultationTiming(now);
+    },
+    reservationExpiry: (now, { signal }) => {
+      throwIfAborted(signal);
+      return reservationExpiry.expireDueReservations(now);
+    },
     promotionLifecycle: (now, { signal }) => promotions.runPromotionLifecycleOnce(now, { signal }),
     deferredRevenue: (now, { signal }) => ledger.runDeferredRevenueOnce(now, { signal }),
     importParser: (now, { signal }) => imports.runImportParserOnce(now, { signal, limit: 10, concurrency: 4 }),

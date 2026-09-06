@@ -20,11 +20,13 @@ const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient } = require('./helpers');
 
 const { User, LawyerProfile } = models;
+const legal = { acceptedTerms: true, legalVersion: '2026-08-13' };
 
 beforeAll(async () => { await resetDb(); });
 
 const reg = (email, phone) => request(app).post('/api/auth/register').send({
   name: 'Тест', email, password: 'passw0rd', phone, role: 'client',
+  ...legal,
 });
 
 describe('дедуп по телефону при регистрации', () => {
@@ -52,6 +54,7 @@ describe('усиление регистрации (Фаза 5)', () => {
   test('короткий пароль (<8) → 400', async () => {
     const r = await request(app).post('/api/auth/register').send({
       name: 'Тест', email: 'pd-short@test.uz', password: 'short12', role: 'client',
+      ...legal,
     });
     expect(r.status).toBe(400);
   });
@@ -59,10 +62,12 @@ describe('усиление регистрации (Фаза 5)', () => {
   test('email регистронезависим: User@x и user@x → второй 409', async () => {
     const r1 = await request(app).post('/api/auth/register').send({
       name: 'Тест', email: 'CaseTest@x.uz', password: 'passw0rd', role: 'client',
+      ...legal,
     });
     expect(r1.status).toBe(201);
     const r2 = await request(app).post('/api/auth/register').send({
       name: 'Тест', email: 'casetest@x.uz', password: 'passw0rd', role: 'client',
+      ...legal,
     });
     expect(r2.status).toBe(409);
   });
@@ -70,6 +75,7 @@ describe('усиление регистрации (Фаза 5)', () => {
   test('вход регистронезависим по email', async () => {
     await request(app).post('/api/auth/register').send({
       name: 'Тест', email: 'login-case@x.uz', password: 'passw0rd', role: 'client',
+      ...legal,
     });
     const login = await request(app).post('/api/auth/login').send({
       email: 'LOGIN-CASE@x.uz', password: 'passw0rd',
@@ -84,6 +90,7 @@ describe('регистрация юриста с несколькими спец
     const r = await request(app).post('/api/auth/register').send({
       name: 'Юрист', email: 'pd-lawyer@test.uz', password: 'passw0rd', role: 'lawyer',
       specializations: ['Семейное право', 'Налоговое право', 'Семейное право'],
+      ...legal,
     });
     expect(r.status).toBe(201);
     const user = await User.findOne({ where: { email: 'pd-lawyer@test.uz' } });
@@ -91,6 +98,13 @@ describe('регистрация юриста с несколькими спец
     expect(lp.specializations).toEqual(['Семейное право', 'Налоговое право']); // дедуп
     expect(lp.specialization).toBe('Семейное право'); // primary
   });
+});
+
+test('регистрация без принятия legal terms отклоняется', async () => {
+  const response = await request(app).post('/api/auth/register').send({
+    name: 'Без согласия', email: 'no-legal@test.uz', password: 'passw0rd', role: 'client',
+  });
+  expect(response.status).toBe(400);
 });
 
 describe('подтверждение телефона залогиненным клиентом (/auth/phone/confirm)', () => {

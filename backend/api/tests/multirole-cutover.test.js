@@ -20,7 +20,7 @@ const {
   models,
 } = require('./helpers');
 
-const { Consultation, Message, AuthorizationEvidenceEvent } = models;
+const { Consultation, Message, AuthorizationEvidenceEvent, LawyerDocument } = models;
 
 function socketHarness() {
   let middleware;
@@ -301,13 +301,26 @@ describe('capability-only full application preparation', () => {
     const admin = await makeAdmin('cutover-target-review-admin@test.uz');
     await admin.update({ twoFactorEnabled: true });
     const { user: applicant, lp } = await makeApplicant('cutover-target-review-applicant@test.uz');
-    await applicant.update({ role: 'client', twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' });
+    await applicant.update({
+      role: 'client', twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET',
+      avatar: '/uploads/cutover.png', phone: '+998901234567',
+    });
+    await lp.update({
+      professionalTitle: 'Advokat', description: 'A'.repeat(80), location: 'Tashkent',
+      languages: ['uz'], licenseNumber: 'L-1', licenseIssuer: 'Palata', licenseIssuedAt: '2020-01-01',
+      price: 100000, specialization: 'civil', specializations: ['civil'],
+      schedule: { mon: { enabled: true, from: '09:00', to: '10:30' } },
+      verificationStatus: 'pending_review',
+    });
+    await LawyerDocument.create({ userId: applicant.id, type: 'license', name: 'license.pdf', path: '/tmp/license.pdf' });
     const headers = {
       Authorization: `Bearer ${tokenFor(admin, 'mfa')}`,
       'X-Maslaxat-Mode': 'admin',
     };
 
     const approved = await request(app).post(`/api/admin/lawyers/${applicant.id}/approve`).set(headers);
+    await lp.reload();
+    await lp.update({ verificationStatus: 'pending_review' });
     const rejected = await request(app).post(`/api/admin/lawyers/${applicant.id}/reject`).set(headers)
       .send({ reason: 'Needs correction' });
 

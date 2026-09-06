@@ -1,7 +1,7 @@
 const PROFILE_FIELDS = [
   'specialization', 'specializations', 'description', 'headline', 'workExperience',
   'education', 'certificates', 'languages', 'experience', 'price', 'rating',
-  'reviewsCount', 'completedCases', 'location', 'isAvailable', 'verificationStatus',
+  'reviewsCount', 'completedCases', 'location', 'isAvailable',
   'linkedinUrl',
 ];
 const OBJECT_FIELDS = {
@@ -96,8 +96,7 @@ function toPublicReview(instance) {
     text: plainText(value.text || value.comment, 2000),
     createdAt: value.createdAt,
     client: value.client ? {
-      id: value.client.id,
-      name: plainText(value.client.name, 200),
+    name: plainText(value.client.name, 200),
       avatar: typeof value.client.avatar === 'string' ? value.client.avatar : null,
     } : null,
   };
@@ -110,8 +109,6 @@ function toPublicLawyerDto(instance) {
     name: plainText(value.name, 200),
     avatar: typeof value.avatar === 'string' ? value.avatar : null,
     role: value.role,
-    isVerified: Boolean(value.isVerified),
-    createdAt: value.createdAt,
     profile: toPublicProfile(value.profile),
     ...(Array.isArray(value.receivedReviews) ? {
       receivedReviews: value.receivedReviews

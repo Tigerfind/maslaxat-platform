@@ -74,7 +74,7 @@ function createHealthRouter({
   const live = (_req, res) => res.status(200).json({ status: 'live' });
   router.get('/live', live);
   router.get('/health', live);
-  router.get('/ready', async (_req, res) => {
+  const ready = async (_req, res) => {
     if (!lifecycle.isReady()) {
       return res.status(503).json({ status: 'not_ready', failed: ['shutdown'] });
     }
@@ -141,7 +141,9 @@ function createHealthRouter({
     return res.status(failed.length ? 503 : 200).json(failed.length
       ? { status: 'not_ready', failed }
       : { status: 'ready' });
-  });
+  };
+  router.get('/ready', ready);
+  router.get('/health/ready', ready);
   return router;
 }
 

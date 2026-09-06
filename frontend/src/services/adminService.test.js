@@ -1,7 +1,8 @@
 import api from './api';
+import { vi } from 'vitest';
 import { adminLawyerService } from './adminService';
 
-jest.mock('./api', () => ({ get: jest.fn(), patch: jest.fn() }));
+vi.mock('./api', () => ({ default: { get: vi.fn(), patch: vi.fn() } }));
 
 beforeEach(() => jest.clearAllMocks());
 

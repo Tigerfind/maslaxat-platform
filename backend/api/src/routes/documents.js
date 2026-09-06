@@ -114,6 +114,9 @@ router.post('/upload', authenticate, upload.single('file'), async (req, res, nex
         ...metadata,
       }, { transaction }),
     });
+    if (!document) {
+      return res.status(413).json({ error: 'Превышен лимит хранилища документов' });
+    }
 
     res.status(201).json(serializeDocument(document));
   } catch (err) {
@@ -170,6 +173,9 @@ router.get('/:id/download', authenticate, async (req, res, next) => {
 // POST /api/documents/:id/ai-check — AI analysis of document via Claude
 router.post('/:id/ai-check', authenticate, aiCheckLimiter, async (req, res, next) => {
   try {
+    if (!anthropic) {
+      return res.status(503).json({ error: 'AI-анализ временно недоступен', code: 'AI_UNAVAILABLE' });
+    }
     const document = await Document.findOne({
       where: { id: req.params.id, userId: req.userId },
     });

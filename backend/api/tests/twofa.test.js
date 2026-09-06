@@ -3,7 +3,8 @@ const { authenticator } = require('otplib');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeLawyer, makeClient } = require('./helpers');
 
-const { User } = models;
+const { User, PhoneOtp } = models;
+const socialAuth = require('../src/services/socialAuthService');
 
 beforeAll(async () => {
   await resetDb();
@@ -26,6 +27,11 @@ describe('2FA (TOTP)', () => {
       .set('Authorization', `Bearer ${token}`).send({ token: code });
     expect(enable.status).toBe(200);
     expect(enable.body.backupCodes).toHaveLength(8);
+    expect(enable.body.token).toBeTruthy();
+    const oldSession = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${token}`);
+    const currentSession = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${enable.body.token}`);
+    expect(oldSession.status).toBe(401);
+    expect(currentSession.status).toBe(200);
 
     // логин теперь требует 2FA (пароль из хелпера makeLawyer — 'passw0rd')
     const login = await request(app).post('/api/auth/login')
@@ -99,5 +105,41 @@ describe('2FA (TOTP)', () => {
     const token = tokenFor(client);
     const res = await request(app).post('/api/2fa/setup').set('Authorization', `Bearer ${token}`);
     expect(res.status).toBe(403);
+  });
+
+  test('вход по телефону не обходит включённую 2FA', async () => {
+    const { user } = await makeLawyer('twofa-phone@test.uz');
+    await user.update({ twoFactorEnabled: true, twoFactorSecret: 'secret' });
+    await PhoneOtp.create({ phone: user.phone, code: '123456', expiresAt: new Date(Date.now() + 60000) });
+    const response = await request(app).post('/api/auth/phone/verify').send({ phone: user.phone, code: '123456' });
+    expect(response.status).toBe(200);
+    expect(response.body.twoFactorRequired).toBe(true);
+    expect(response.body.tempToken).toBeTruthy();
+    expect(response.body.token).toBeUndefined();
+  });
+
+  test('Google и Telegram не обходят включённую 2FA', async () => {
+    const { user } = await makeLawyer('twofa-social@test.uz');
+    await user.update({ twoFactorEnabled: true, twoFactorSecret: 'secret', telegramId: 'tg-twofa' });
+    const googleEnabled = jest.spyOn(socialAuth, 'googleEnabled').mockReturnValue(true);
+    const googleVerify = jest.spyOn(socialAuth, 'verifyGoogleToken').mockResolvedValue({ googleId: 'g-twofa', email: user.email, name: user.name });
+    const telegramEnabled = jest.spyOn(socialAuth, 'telegramEnabled').mockReturnValue(true);
+    const telegramVerify = jest.spyOn(socialAuth, 'verifyTelegramAuth').mockReturnValue({ telegramId: 'tg-twofa', name: user.name });
+    try {
+      for (const response of [
+        await request(app).post('/api/auth/google').send({ credential: 'verified' }),
+        await request(app).post('/api/auth/telegram').send({ id: 'tg-twofa' }),
+      ]) {
+        expect(response.status).toBe(200);
+        expect(response.body.twoFactorRequired).toBe(true);
+        expect(response.body.tempToken).toBeTruthy();
+        expect(response.body.token).toBeUndefined();
+      }
+    } finally {
+      googleEnabled.mockRestore();
+      googleVerify.mockRestore();
+      telegramEnabled.mockRestore();
+      telegramVerify.mockRestore();
+    }
   });
 });

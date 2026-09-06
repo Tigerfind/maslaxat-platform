@@ -1,24 +1,26 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
 import { toast } from 'react-toastify';
 import {
   Container, Box, Typography, Grid, IconButton, Table, TableBody, TableCell,
-  TableContainer, TableHead, TableRow, Chip, Tooltip, Stack, CircularProgress,
+  TableContainer, TableHead, TableRow, Chip, Stack, CircularProgress,
   Card, Button, Avatar, Dialog, DialogTitle, DialogContent, DialogActions, List,
-  ListItem, ListItemText, FormControl, InputLabel, Select, MenuItem, Alert,
+  ListItem, ListItemText, Pagination, FormControl, InputLabel, Select, MenuItem, Alert,
 } from '@mui/material';
 import {
-  ArrowBack, CheckCircle, Block, Gavel, Verified, HourglassEmpty,
+  CheckCircle, Block, Gavel, Verified, HourglassEmpty,
   DescriptionOutlined, DownloadOutlined, FolderOpenOutlined, VisibilityOutlined,
   FactCheckOutlined,
 } from '@mui/icons-material';
 import { adminLawyerService } from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
-import LanguageSwitcher from '../../components/LanguageSwitcher';
+import GlassShell from '../../components/GlassKit/GlassShell';
 import DocumentPreviewDialog from '../../components/UI/DocumentPreviewDialog';
+import ErrorState from '../../components/UI/ErrorState';
+import ConfirmDialog from '../../components/UI/ConfirmDialog';
 import { importStatusKey } from '../../utils/profileImportUtils';
 
+const PAGE_SIZE = 25;
 const FIELD_DOCUMENT_TYPES = {
   experience: ['license'],
   workExperience: ['license'],
@@ -27,18 +29,31 @@ const FIELD_DOCUMENT_TYPES = {
 };
 
 const AdminLawyersPage = () => {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
 
   const [lawyers, setLawyers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [error, setError] = useState(null);
   const [acting, setActing] = useState(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [counts, setCounts] = useState(null);
+  const loadedOnce = useRef(false);
+  // Подтверждения необратимых действий модерации
+  const [confirmApprove, setConfirmApprove] = useState(null);
+  const [confirmReject, setConfirmReject] = useState(null);
   // Диалог верификационных документов юриста
   const [docsFor, setDocsFor] = useState(null); // юрист, чьи документы открыты
   const [docs, setDocs] = useState([]);
   const [docsLoading, setDocsLoading] = useState(false);
   const [downloading, setDownloading] = useState(null);
+  const [verifyingDoc, setVerifyingDoc] = useState(null);
   const [previewDoc, setPreviewDoc] = useState(null); // документ для предпросмотра
+  const [moderation, setModeration] = useState(null);
+  const [moderationLoading, setModerationLoading] = useState(false);
   const [sourcesFor, setSourcesFor] = useState(null);
   const [sourceImports, setSourceImports] = useState({});
   const [sourceDocs, setSourceDocs] = useState([]);
@@ -51,7 +66,13 @@ const AdminLawyersPage = () => {
     return adminLawyerService.getVerificationDocumentBlob(docsFor.id, previewDoc.id);
   }, [docsFor, previewDoc]);
 
-  useEffect(() => { load(); }, []);
+  // Дебаунс на поиск; смена фильтра статуса перезагружает сразу. Оба сбрасывают
+  // страницу на первую.
+  useEffect(() => {
+    const id = setTimeout(() => { setPage(1); load(1); }, 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [search, statusFilter]);
 
   const openDocs = async (lawyer) => {
     setDocsFor(lawyer);
@@ -66,6 +87,13 @@ const AdminLawyersPage = () => {
       setDocsLoading(false);
     }
   };
+  const openModeration = async (lawyer) => {
+    setModerationLoading(true);
+    setModeration({ lawyer });
+    try { setModeration(await adminLawyerService.getModeration(lawyer.id)); }
+    catch { toast.error(t('adminManage.loadError')); setModeration(null); }
+    finally { setModerationLoading(false); }
+  };
 
   const download = async (docId, name) => {
     setDownloading(docId);
@@ -75,6 +103,18 @@ const AdminLawyersPage = () => {
       toast.error(t('adminManage.docsError'));
     } finally {
       setDownloading(null);
+    }
+  };
+  const verifyDocument = async (docId) => {
+    setVerifyingDoc(docId);
+    try {
+      const data = await adminLawyerService.verifyDocument(docsFor.id, docId);
+      setDocs((current) => current.map((doc) => (doc.id === docId ? { ...doc, verifiedAt: data.document.verifiedAt } : doc)));
+      toast.success(t('adminManage.docVerified'));
+    } catch (error) {
+      toast.error(error.response?.data?.error || t('adminManage.actionError'));
+    } finally {
+      setVerifyingDoc(null);
     }
   };
 
@@ -122,59 +162,81 @@ const AdminLawyersPage = () => {
   const DOC_TYPE_LABEL = {
     diploma: t('adminManage.docDiploma'),
     license: t('adminManage.docLicense'),
+    certificate: 'Сертификат',
     id: t('adminManage.docId'),
     other: t('adminManage.docOther'),
   };
 
-  const load = async () => {
+  const load = async (pageNum = 1) => {
+    if (!loadedOnce.current) setLoading(true);
+    else setRefreshing(true);
     try {
-      setLoading(true);
-      const data = await adminLawyerService.getLawyers();
+      const data = await adminLawyerService.getLawyers({
+        page: pageNum,
+        limit: PAGE_SIZE,
+        ...(search ? { search } : {}),
+        ...(statusFilter !== 'all' ? { status: statusFilter } : {}),
+      });
       setLawyers(Array.isArray(data?.lawyers) ? data.lawyers : (Array.isArray(data) ? data : []));
+      setTotalPages(data?.totalPages || 1);
+      setCounts(data?.counts || null);
+      setError(null);
     } catch (e) {
-      toast.error(t('adminManage.loadError'));
+      // Ошибка загрузки больше не маскируется под «юристов нет».
+      setError(e);
       setLawyers([]);
+      setCounts(null);
+      toast.error(t('adminManage.loadError'));
     } finally {
+      loadedOnce.current = true;
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  const approve = async (id) => {
+  const goToPage = (p) => { setPage(p); load(p); };
+
+  // Одобрение и отказ — необратимые для юриста действия (профиль появляется или
+  // исчезает из каталога), поэтому оба идут через подтверждение.
+  const approve = async () => {
+    const id = confirmApprove.id;
     setActing(id);
     try {
       await adminLawyerService.approveLawyer(id);
       toast.success(t('adminManage.approved'));
-      await load();
+      setConfirmApprove(null);
+      await load(page);
     } catch (e) {
-      toast.error(t('adminManage.actionError'));
+      toast.error(e.response?.data?.error || t('adminManage.actionError'));
     } finally {
       setActing(null);
     }
   };
 
-  const reject = async (id) => {
-    // Причина отклонения — уходит юристу в уведомление, чтобы он исправил и подал снова.
-    const reason = window.prompt(t('adminManage.rejectReasonPrompt'));
-    if (reason === null) return; // отмена
+  const reject = async (reason) => {
+    // Причина уходит юристу в уведомление, чтобы он исправил профиль и подал снова —
+    // поэтому она обязательна (раньше window.prompt пропускал пустую строку).
+    const id = confirmReject.id;
     setActing(id);
     try {
-      await adminLawyerService.rejectLawyer(id, reason.trim());
+      await adminLawyerService.rejectLawyer(id, reason);
       toast.success(t('adminManage.rejected'));
-      await load();
+      setConfirmReject(null);
+      await load(page);
     } catch (e) {
-      toast.error(t('adminManage.actionError'));
+      toast.error(e.response?.data?.error || t('adminManage.actionError'));
     } finally {
       setActing(null);
     }
   };
 
   // Статус модерации — источник истины на профиле (не User.isVerified, тот про email).
-  const stOf = (l) => l.profile?.verificationStatus || 'pending';
-  const verifiedCount = lawyers.filter((l) => stOf(l) === 'approved').length;
-  const pendingCount = lawyers.filter((l) => stOf(l) === 'pending').length;
+  const stOf = (l) => l.profile?.verificationStatus || 'draft';
 
   // Очередь проверки: pending → rejected → approved, внутри — новые сверху.
-  const ORDER = { pending: 0, rejected: 1, approved: 2 };
+  // Сортировка клиентская и действует только в пределах страницы — поэтому
+  // для работы с очередью есть серверный фильтр по статусу (чипы ниже).
+  const ORDER = { pending_review: 0, rejected: 1, draft: 2, approved: 3, suspended: 4 };
   const sortedLawyers = [...lawyers].sort((a, b) => {
     const d = (ORDER[stOf(a)] ?? 3) - (ORDER[stOf(b)] ?? 3);
     if (d !== 0) return d;
@@ -184,49 +246,47 @@ const AdminLawyersPage = () => {
   const initials = (name = '') =>
     name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '?';
   const specOf = (l) => l.profile?.specialization || t('adminManage.noSpec');
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('ru-RU') : '—');
+  const completenessLabel = {
+    photo: t('verification.chkPhoto'),
+    description: t('verification.chkDescription'),
+    specialization: t('verification.chkSpecialization'),
+    price: t('verification.chkPrice'),
+    schedule: t('verification.chkSchedule'),
+    documents: t('verification.chkDocuments'),
+  };
+  // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
+  // и в узбекской/английской версии даты оставались русскими.
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(dateLocale) : '—');
+  const fmtSize = (bytes) => {
+    if (!bytes) return '';
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
+  // Счётчики — с сервера по всей базе, а не по выданной странице.
+  const kpi = (v) => (counts ? v : '—');
   const stats = [
-    { icon: <Gavel sx={{ fontSize: 32, color: axelionColors.gold }} />, label: t('adminManage.statTotal'), value: lawyers.length, bg: axelionColors.accentLight },
-    { icon: <Verified sx={{ fontSize: 32, color: axelionColors.success }} />, label: t('adminManage.statVerified'), value: verifiedCount, bg: axelionColors.successLight },
-    { icon: <HourglassEmpty sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statPending'), value: pendingCount, bg: axelionColors.bgBeige, highlight: pendingCount > 0 },
+    { icon: <Gavel sx={{ fontSize: 32, color: axelionColors.gold }} />, label: t('adminManage.statTotal'), value: kpi(counts?.all), bg: axelionColors.accentLight },
+    { icon: <Verified sx={{ fontSize: 32, color: axelionColors.success }} />, label: t('adminManage.statVerified'), value: kpi(counts?.approved), bg: axelionColors.successLight },
+    { icon: <HourglassEmpty sx={{ fontSize: 32, color: axelionColors.warning }} />, label: t('adminManage.statPending'), value: kpi(counts?.pending), bg: axelionColors.bgBeige, highlight: (counts?.pending || 0) > 0 },
   ];
 
+  // Шапку (заголовок, язык, уведомления, выход) даёт GlassShell.
   if (loading) {
     return (
-      <Box sx={{ minHeight: '100vh', background: axelionColors.bgCream, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-        <CircularProgress sx={{ color: axelionColors.gold }} size={56} />
-      </Box>
+      <GlassShell active="/admin/lawyers" title={t('adminManage.lawyersTitle')} subtitle={t('adminManage.lawyersSub')} role="admin">
+        <Box sx={{ display: 'flex', justifyContent: 'center', py: 10 }}>
+          <CircularProgress sx={{ color: axelionColors.gold }} size={56} />
+        </Box>
+      </GlassShell>
     );
   }
 
   return (
-    <Box sx={{ minHeight: '100vh', background: axelionColors.bgCream, pb: 4 }}>
-      {/* Header */}
-      <Box sx={{ background: axelionColors.bgLight, borderBottom: `1px solid ${axelionColors.borderLight}`, py: 3, px: 2 }}>
-        <Container maxWidth="xl">
-          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-              <Tooltip title={t('adminManage.back')}>
-                <IconButton onClick={() => navigate('/admin/dashboard')} sx={{ background: axelionColors.bgCream, color: axelionColors.textDark, border: `1px solid ${axelionColors.borderLight}`, '&:hover': { background: axelionColors.bgBeige, borderColor: axelionColors.gold } }}>
-                  <ArrowBack />
-                </IconButton>
-              </Tooltip>
-              <Box>
-                <Typography variant="h5" sx={{ fontWeight: 300, color: axelionColors.textDark, letterSpacing: '0.1em', textTransform: 'uppercase' }}>
-                  {t('adminManage.lawyersTitle')}
-                </Typography>
-                <Typography variant="body2" sx={{ color: axelionColors.textMuted, mt: 0.5 }}>
-                  {t('adminManage.lawyersSub')}
-                </Typography>
-              </Box>
-            </Box>
-            <LanguageSwitcher variant="dropdown" sx={{ color: axelionColors.textDark, bgcolor: axelionColors.bgCream, '&:hover': { bgcolor: axelionColors.bgBeige } }} />
-          </Box>
-        </Container>
-      </Box>
-
-      <Container maxWidth="xl" sx={{ mt: 4 }}>
+    <GlassShell active="/admin/lawyers" title={t('adminManage.lawyersTitle')} subtitle={t('adminManage.lawyersSub')} role="admin">
+      <Container maxWidth="xl" disableGutters>
         {/* Stats */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           {stats.map((s, i) => (
@@ -243,6 +303,39 @@ const AdminLawyersPage = () => {
             </Grid>
           ))}
         </Grid>
+
+        {/* Поиск и фильтр очереди модерации. Фильтр серверный: клиентская
+            сортировка pending-первыми работает только внутри страницы, поэтому
+            без него юрист «на проверке» с 60-й позиции был недостижим. */}
+        <Box sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1.5, flexWrap: 'wrap' }}>
+          <input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder={t('adminManage.searchPlaceholder')}
+            style={{ width: '100%', maxWidth: 360, boxSizing: 'border-box', padding: '11px 14px', borderRadius: 8, border: `1px solid ${axelionColors.borderLight}`, background: axelionColors.bgLight, color: axelionColors.textDark, fontFamily: 'inherit', fontSize: 14, outline: 'none' }}
+          />
+          {[
+            { key: 'all', label: t('common.all') },
+            { key: 'pending_review', label: t('adminManage.stPending'), count: counts?.pending },
+            { key: 'approved', label: t('adminManage.stApproved'), count: counts?.approved },
+            { key: 'rejected', label: t('adminManage.stRejected'), count: counts?.rejected },
+          ].map((f) => (
+            <Chip
+              key={f.key}
+              label={f.count != null ? `${f.label} (${f.count})` : f.label}
+              onClick={() => setStatusFilter(f.key)}
+              variant={statusFilter === f.key ? 'filled' : 'outlined'}
+              sx={{
+                cursor: 'pointer',
+                background: statusFilter === f.key ? axelionColors.accentLight : 'transparent',
+                borderColor: axelionColors.borderLight,
+                color: axelionColors.textDark,
+                fontWeight: statusFilter === f.key ? 600 : 400,
+              }}
+            />
+          ))}
+          {refreshing && <CircularProgress size={18} sx={{ color: axelionColors.gold }} />}
+        </Box>
 
         {/* Table */}
         <Card sx={{ background: axelionColors.bgLight, border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', boxShadow: 'none', overflow: 'hidden' }}>
@@ -263,7 +356,7 @@ const AdminLawyersPage = () => {
                     <TableRow key={l.id} sx={{ borderBottom: `1px solid ${axelionColors.borderLight}`, '&:hover': { background: axelionColors.bgWarm } }}>
                       <TableCell>
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
-                          <Avatar sx={{ width: 40, height: 40, bgcolor: axelionColors.gold, fontSize: 14 }}>{initials(l.name)}</Avatar>
+                          <Avatar src={l.avatar || undefined} alt={l.name} sx={{ width: 40, height: 40, bgcolor: axelionColors.gold, fontSize: 14 }}>{initials(l.name)}</Avatar>
                           <Box>
                             <Typography variant="body2" sx={{ fontWeight: 600, color: axelionColors.textDark }}>{l.name}</Typography>
                             <Typography variant="caption" sx={{ color: axelionColors.textMuted }}>{l.email}</Typography>
@@ -277,11 +370,23 @@ const AdminLawyersPage = () => {
                         {stOf(l) === 'approved' && (
                           <Chip size="small" icon={<CheckCircle sx={{ fontSize: 15 }} />} label={t('adminManage.stApproved')} sx={{ background: axelionColors.successLight, color: axelionColors.success, fontWeight: 600, border: `1px solid ${axelionColors.success}`, '& .MuiChip-icon': { color: axelionColors.success } }} />
                         )}
-                        {stOf(l) === 'pending' && (
+                        {stOf(l) === 'pending_review' && (
                           <Chip size="small" icon={<HourglassEmpty sx={{ fontSize: 15 }} />} label={t('adminManage.stPending')} sx={{ background: axelionColors.bgBeige, color: axelionColors.bronze, fontWeight: 600, border: `1px solid ${axelionColors.goldMuted}`, '& .MuiChip-icon': { color: axelionColors.bronze } }} />
                         )}
                         {stOf(l) === 'rejected' && (
                           <Chip size="small" icon={<Block sx={{ fontSize: 15 }} />} label={t('adminManage.stRejected')} sx={{ background: axelionColors.errorLight, color: axelionColors.error, fontWeight: 600, border: `1px solid ${axelionColors.error}`, '& .MuiChip-icon': { color: axelionColors.error } }} />
+                        )}
+                        {/* Причина отказа сохранялась в БД, но нигде не показывалась —
+                            админ не видел, за что сам же отклонил юриста. */}
+                        {stOf(l) === 'rejected' && l.profile?.rejectionReason && (
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: axelionColors.textMuted, maxWidth: 220, mx: 'auto' }}>
+                            {l.profile.rejectionReason}
+                          </Typography>
+                        )}
+                        {!l.profileCompleteness?.complete && (
+                          <Typography variant="caption" sx={{ display: 'block', mt: 0.5, color: axelionColors.warning, maxWidth: 240, mx: 'auto' }}>
+                            {l.profileCompleteness?.missing?.map((key) => completenessLabel[key] || key).join(', ')}
+                          </Typography>
                         )}
                       </TableCell>
                       <TableCell>
@@ -294,18 +399,17 @@ const AdminLawyersPage = () => {
                             sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.bronze, background: axelionColors.bgBeige } }}>
                             {t('adminManage.docs')}
                           </Button>
-                          <Button size="small" variant="outlined" onClick={() => openSources(l)} startIcon={<FactCheckOutlined sx={{ fontSize: 16 }} />} sx={{ color: axelionColors.bronze, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px' }}>
-                            {t('adminManage.sources')}
-                          </Button>
-                          {stOf(l) !== 'approved' && (
-                            <Button size="small" variant="contained" disabled={acting === l.id} onClick={() => approve(l.id)}
+                          <Button size="small" variant="outlined" onClick={() => openModeration(l)} startIcon={<VisibilityOutlined sx={{ fontSize: 16 }} />}>Резюме</Button>
+                          <Button size="small" variant="outlined" onClick={() => openSources(l)} startIcon={<FactCheckOutlined sx={{ fontSize: 16 }} />}>{t('adminManage.sourcesTitle')}</Button>
+                          {stOf(l) === 'pending_review' && (
+                            <Button size="small" variant="contained" disabled={acting === l.id || !l.profileCompleteness?.complete} onClick={() => setConfirmApprove(l)}
                               startIcon={<CheckCircle sx={{ fontSize: 16 }} />}
                               sx={{ background: axelionColors.success, color: '#fff', textTransform: 'none', boxShadow: 'none', borderRadius: '8px', '&:hover': { background: '#1F7A4A', boxShadow: 'none' } }}>
                               {t('adminManage.approve')}
                             </Button>
                           )}
-                          {stOf(l) !== 'rejected' && (
-                            <Button size="small" variant="outlined" disabled={acting === l.id} onClick={() => reject(l.id)}
+                          {stOf(l) === 'pending_review' && (
+                            <Button size="small" variant="outlined" disabled={acting === l.id} onClick={() => setConfirmReject(l)}
                               startIcon={<Block sx={{ fontSize: 16 }} />}
                               sx={{ color: axelionColors.error, borderColor: axelionColors.borderLight, textTransform: 'none', borderRadius: '8px', '&:hover': { borderColor: axelionColors.error, background: axelionColors.errorLight } }}>
                               {t('adminManage.reject')}
@@ -318,13 +422,47 @@ const AdminLawyersPage = () => {
                 </TableBody>
               </Table>
             </TableContainer>
+          ) : error ? (
+            <ErrorState error={error} onRetry={() => load(page)} />
           ) : (
             <Box sx={{ textAlign: 'center', py: 6 }}>
               <Typography variant="body1" sx={{ color: axelionColors.textMuted }}>{t('adminManage.noLawyers')}</Typography>
             </Box>
           )}
         </Card>
+
+        {!error && totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Pagination count={totalPages} page={page} onChange={(e, p) => goToPage(p)} disabled={refreshing} shape="rounded" />
+          </Box>
+        )}
       </Container>
+
+      <Dialog open={!!moderation} onClose={() => setModeration(null)} maxWidth="md" fullWidth>
+        <DialogTitle>Проверка резюме{moderation?.lawyer?.name ? ` — ${moderation.lawyer.name}` : ''}</DialogTitle>
+        <DialogContent dividers>
+          {moderationLoading ? <CircularProgress /> : moderation?.lawyer && (
+            <Box sx={{ display: 'grid', gap: 2 }}>
+              <Typography variant="h6">{moderation.lawyer.profile?.professionalTitle}</Typography>
+              <Typography>{moderation.lawyer.profile?.description}</Typography>
+              <Typography><b>Лицензия:</b> {moderation.lawyer.profile?.licenseNumber} · {moderation.lawyer.profile?.licenseIssuer}</Typography>
+              <Typography><b>Специализации:</b> {(moderation.lawyer.profile?.specializations || []).join(', ')}</Typography>
+              <Typography sx={{ color: moderation.completeness?.missing?.includes('schedule') ? axelionColors.error : axelionColors.success }}>
+                <b>{t('adminManage.scheduleStatus')}:</b> {t('adminManage.scheduleSlots', { count: moderation.completeness?.scheduleSlots || 0, required: moderation.completeness?.requiredScheduleSlots || 3 })}
+              </Typography>
+              <Typography variant="subtitle1">Опыт работы</Typography>
+              {(moderation.lawyer.lawyerExperiences || []).map((item) => <Typography key={item.id}>{item.position} — {item.organization} ({item.startDate} — {item.isCurrent ? 'сейчас' : item.endDate})</Typography>)}
+              <Typography variant="subtitle1">Образование</Typography>
+              {(moderation.lawyer.lawyerEducations || []).map((item) => <Typography key={item.id}>{item.university} — {item.specialty}</Typography>)}
+              <Typography variant="subtitle1">Сертификаты</Typography>
+              {(moderation.lawyer.lawyerCertificates || []).map((item) => <Typography key={item.id}>{item.title} · {item.organization}</Typography>)}
+              <Typography variant="subtitle1">История статусов</Typography>
+              {(moderation.history || []).map((item) => <Typography key={item.id}>{new Date(item.createdAt).toLocaleString()} · {item.fromStatus || '—'} → {item.toStatus}{item.reason ? ` · ${item.reason}` : ''}</Typography>)}
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions><Button onClick={() => setModeration(null)}>Закрыть</Button></DialogActions>
+      </Dialog>
 
       {/* Диалог верификационных документов юриста */}
       <Dialog open={!!docsFor} onClose={() => setDocsFor(null)} maxWidth="sm" fullWidth>
@@ -354,12 +492,19 @@ const AdminLawyersPage = () => {
                         sx={{ textTransform: 'none', color: axelionColors.bronze }}>
                         {t('adminManage.docDownload')}
                       </Button>
+                      {!d.verifiedAt && (
+                        <Button size="small" variant="text" disabled={verifyingDoc === d.id} onClick={() => verifyDocument(d.id)} sx={{ textTransform: 'none', color: axelionColors.success }}>
+                          {t('adminManage.docVerify')}
+                        </Button>
+                      )}
                     </Box>
                   }
                 >
                   <ListItemText
                     primary={d.name}
-                    secondary={DOC_TYPE_LABEL[d.type] || d.type}
+                    // Размер бэкенд отдавал всегда, но он не выводился: нельзя было
+                    // отличить настоящий скан от мусорного файла до скачивания.
+                    secondary={[DOC_TYPE_LABEL[d.type] || d.type, fmtSize(d.size), d.verifiedAt ? t('adminManage.docVerified') : null].filter(Boolean).join(' · ')}
                     primaryTypographyProps={{ fontSize: 14, fontWeight: 500 }}
                     secondaryTypographyProps={{ fontSize: 12 }}
                   />
@@ -419,7 +564,31 @@ const AdminLawyersPage = () => {
         fetchBlob={previewDoc ? previewFetch : null}
         onDownload={previewDoc ? () => download(previewDoc.id, previewDoc.name) : null}
       />
-    </Box>
+
+      <ConfirmDialog
+        open={Boolean(confirmApprove)}
+        title={t('adminManage.confirmApproveTitle')}
+        message={`${confirmApprove?.name || ''} — ${t('adminManage.confirmApproveMsg')}`}
+        confirmLabel={t('adminManage.approve')}
+        busy={acting === confirmApprove?.id}
+        onConfirm={approve}
+        onClose={() => setConfirmApprove(null)}
+      />
+
+      <ConfirmDialog
+        open={Boolean(confirmReject)}
+        title={t('adminManage.confirmRejectTitle')}
+        message={confirmReject?.name}
+        confirmLabel={t('adminManage.reject')}
+        danger
+        withReason
+        reasonRequired
+        reasonLabel={t('adminManage.rejectReasonPrompt')}
+        busy={acting === confirmReject?.id}
+        onConfirm={reject}
+        onClose={() => setConfirmReject(null)}
+      />
+    </GlassShell>
   );
 };
 

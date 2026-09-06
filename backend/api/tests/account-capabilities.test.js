@@ -265,7 +265,7 @@ describe('POST /api/account/lawyer-profile', () => {
     expect(first.body.profile).toMatchObject({
       specialization: null,
       specializations: [],
-      verificationStatus: 'pending',
+      verificationStatus: 'draft',
       operatingStatus: 'suspended',
       isAvailable: false,
     });
@@ -319,6 +319,8 @@ describe('account compatibility writes', () => {
       email: 'draft-registration@test.uz',
       password: 'passw0rd',
       role: 'lawyer',
+      acceptedTerms: true,
+      legalVersion: '2026-08-13',
     });
 
     expect(response.status).toBe(201);
@@ -331,7 +333,7 @@ describe('account compatibility writes', () => {
     expect(profile).toMatchObject({
       specialization: null,
       specializations: [],
-      verificationStatus: 'pending',
+      verificationStatus: 'draft',
       operatingStatus: 'suspended',
       isAvailable: false,
     });

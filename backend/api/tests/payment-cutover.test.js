@@ -395,6 +395,7 @@ describe('read-only payment reconciliation', () => {
   });
 
   test('refuses duplicate effective provider transaction IDs', async () => {
+    await sequelize.query('DROP INDEX IF EXISTS payments_provider_transaction_id_unique');
     await makePayment({ purpose: null, status: 'failed', transactionId: 'provider-duplicate' });
     await makePayment({ purpose: null, status: 'failed', transactionId: 'provider-duplicate' });
 

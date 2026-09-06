@@ -13,6 +13,7 @@ import {
   Pagination,
   Drawer,
   useMediaQuery,
+  Tooltip,
 } from '@mui/material';
 import {
   SearchOutlined,
@@ -22,6 +23,7 @@ import {
   FavoriteRounded,
   TuneOutlined,
   CheckRounded,
+  CloseRounded,
   CardGiftcardOutlined,
   GridViewOutlined,
   BalanceOutlined,
@@ -38,6 +40,10 @@ import {
   ArrowUpwardRounded,
   ArrowDownwardRounded,
   AccessTimeRounded,
+  VideocamRounded,
+  CallRounded,
+  ForumRounded,
+  WorkspacePremiumOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import api from '../../services/api';
@@ -46,8 +52,9 @@ import BookingModal from '../../components/BookingModal';
 import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import { SkeletonCard } from '../../components/UI/Skeleton';
+import ErrorState from '../../components/UI/ErrorState';
+import { LAWYER_MAX_PRICE } from '../../services/clientService';
 import { createPromotionAttribution, promotionProfileSearch } from '../../utils/promotionAttribution';
-import { canonicalCatalogKey, createCatalogRequestCoordinator } from '../../utils/catalogRequestCoordinator';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -102,13 +109,20 @@ const specIcon = (name = '', id) => {
 
 // Потолок фильтра цены (сум). Разовая консультация у топ-адвоката реально доходит до ~2–4 млн;
 // 10 млн даёт запас под премиум-сегмент. Дефолт диапазона = [0, MAX_PRICE] (показывать всех).
-const MAX_PRICE = 10000000;
+const MAX_PRICE = LAWYER_MAX_PRICE;
+// Пороги быстрых фильтров. Держим синхронно с backend/src/routes/lawyers.js:
+// сервер присылает их в facets, эти значения — фолбэк, если фасеты не пришли.
+const HIGH_RATING_FROM = 4.5;
+const EXPERIENCED_PRESET = '10+';
+// Значение языка должно совпадать с тем, что лежит в профилях юристов.
+const ENGLISH = 'Английский';
 
 // Опции сортировки с иконками
 const SORT_OPTS = [
+  { v: 'recommended', k: 'sortRecommended', icon: <WorkspacePremiumOutlined sx={{ fontSize: 18 }} /> },
   { v: 'rating', k: 'sortRating', icon: <StarRounded sx={{ fontSize: 18 }} /> },
-  { v: 'price-asc', k: 'sortPriceAsc', icon: <ArrowUpwardRounded sx={{ fontSize: 18 }} /> },
-  { v: 'price-desc', k: 'sortPriceDesc', icon: <ArrowDownwardRounded sx={{ fontSize: 18 }} /> },
+  { v: 'price_low', k: 'sortPriceAsc', icon: <ArrowUpwardRounded sx={{ fontSize: 18 }} /> },
+  { v: 'price_high', k: 'sortPriceDesc', icon: <ArrowDownwardRounded sx={{ fontSize: 18 }} /> },
   { v: 'experience', k: 'sortExperience', icon: <AccessTimeRounded sx={{ fontSize: 18 }} /> },
 ];
 
@@ -123,6 +137,7 @@ const labelStyle = {
 // Нативный select для фильтров город/язык (в стиле панели)
 const selectFilterStyle = {
   width: '100%',
+  minHeight: 44,
   padding: '11px 12px',
   marginBottom: 24,
   borderRadius: 'var(--radius)',
@@ -140,6 +155,7 @@ const glassSelectSx = {
   fontSize: 14,
   color: 'var(--text)',
   background: 'var(--card-glass)',
+  minHeight: 44,
   borderRadius: 'var(--radius)',
   '& .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--border)' },
   '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'var(--accent)' },
@@ -169,11 +185,15 @@ const LawyersPageGlass = () => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { specializations } = useSelector((state) => state.specializations);
+  const authUserId = useSelector((state) => state.auth.user?.id);
   const isMobile = useMediaQuery('(max-width:900px)');
 
   const [lawyers, setLawyers] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
   const [filterDrawerOpen, setFilterDrawerOpen] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
   const [pageCursors, setPageCursors] = useState({ 1: null });
@@ -182,8 +202,17 @@ const LawyersPageGlass = () => {
   const [bookingModalOpen, setBookingModalOpen] = useState(false);
   const [selectedLawyer, setSelectedLawyer] = useState(null);
   const [favoriteLawyers, setFavoriteLawyers] = useState(new Set());
+  const [favoritePending, setFavoritePending] = useState(new Set());
+  const [favoritesReady, setFavoritesReady] = useState(false);
+  const [favoritesError, setFavoritesError] = useState(false);
+  const [favoritesRetryKey, setFavoritesRetryKey] = useState(0);
+  const [failedAvatars, setFailedAvatars] = useState(new Set());
   const [firstFree, setFirstFree] = useState(false);
-  const requestCoordinator = useRef(createCatalogRequestCoordinator());
+  const [retryKey, setRetryKey] = useState(0);
+  const requestIdRef = useRef(0);
+  const hasLoadedRef = useRef(false);
+  const favoriteGenerationRef = useRef(0);
+  const presenceUpdatesRef = useRef(new Map());
 
   // Акция «первая консультация бесплатно» — показываем объявление, если доступна
   useEffect(() => {
@@ -197,82 +226,156 @@ const LawyersPageGlass = () => {
     minRating: 0,
     priceRange: [0, MAX_PRICE],
     experience: '',
-    sortBy: 'rating',
+    sortBy: 'recommended',
     onlineOnly: false,
+    zoomAvailable: false,
     location: '',
     language: '',
+    // Подбор «под себя»: ценовой сегмент и ступень юриста. Сортировка отвечает
+    // на «в каком порядке», эти два — на «кто мне вообще подходит».
+    budget: '',
+    status: '',
+    availableNow: false,
   });
+  const [draftPriceRange, setDraftPriceRange] = useState([0, MAX_PRICE]);
   const [filterOptions, setFilterOptions] = useState({ locations: [], languages: [] });
+  // Фасеты каталога: счётчики для чипов и порог «недорого» из реальных цен.
+  const [facets, setFacets] = useState(null);
+  const [totalFound, setTotalFound] = useState(0);
 
   useEffect(() => {
-    const coordinator = requestCoordinator.current;
-    fetchLawyers();
-    loadFavorites();
-    return () => coordinator.cancel();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, currentPage, searchQuery]);
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery.trim());
+      setCurrentPage(1);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   useEffect(() => {
-    clientService.lawyers.getFilterOptions().then(setFilterOptions).catch(() => {});
+    const controller = new AbortController();
+    const requestId = ++requestIdRef.current;
+    const load = async () => {
+      try {
+        if (hasLoadedRef.current) setRefreshing(true);
+        else setLoading(true);
+        setLoadError(null);
+        const { specializations: selectedSpecializations, ...restFilters } = filters;
+        const response = await clientService.lawyers.searchLawyers({
+          ...restFilters,
+          specialization: (selectedSpecializations || []).join(','),
+          search: debouncedSearch,
+          page: currentPage,
+          limit: 9,
+        }, { signal: controller.signal });
+        if (requestId !== requestIdRef.current) return;
+        const mergedLawyers = (response.lawyers || []).map((lawyer) => {
+          const realtime = presenceUpdatesRef.current.get(lawyer.id);
+          const realtimeAt = Date.parse(realtime?.observedAt || 0);
+          const responseAt = Date.parse(lawyer.presenceObservedAt || 0);
+          if (realtime && realtimeAt > responseAt) {
+            return { ...lawyer, online: realtime.online === true, lastSeenAt: realtime.lastSeenAt || null, presenceObservedAt: realtime.observedAt };
+          }
+          if (lawyer.presenceObservedAt) {
+            presenceUpdatesRef.current.set(lawyer.id, {
+              userId: lawyer.id,
+              role: 'lawyer',
+              online: lawyer.online,
+              lastSeenAt: lawyer.lastSeenAt,
+              observedAt: lawyer.presenceObservedAt,
+            });
+          }
+          return lawyer;
+        });
+        setLawyers(mergedLawyers);
+        setTotalPages(response.totalPages || 1);
+        setTotalFound(response.total || 0);
+        setFacets(response.facets || null);
+        hasLoadedRef.current = true;
+      } catch (error) {
+        if (controller.signal.aborted || requestId !== requestIdRef.current) return;
+        console.error('Error fetching lawyers:', error);
+        setLoadError(error);
+      } finally {
+        if (requestId === requestIdRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    };
+    load();
+    return () => controller.abort();
+  }, [filters, currentPage, debouncedSearch, retryKey]);
+
+  useEffect(() => {
+    clientService.lawyers.getFilterOptions().then(setFilterOptions).catch((error) => {
+      console.error('Error loading lawyer filter options:', error);
+    });
   }, []);
 
-  const loadFavorites = async () => {
-    try {
-      const favorites = await clientService.favorites.getFavorites();
-      const favoriteIds = new Set(favorites.map((f) => f.id));
-      setFavoriteLawyers(favoriteIds);
-    } catch (error) {
-      console.error('Error loading favorites:', error);
-    }
-  };
+  useEffect(() => {
+    let active = true;
+    const generation = ++favoriteGenerationRef.current;
+    setFavoriteLawyers(new Set());
+    setFavoritePending(new Set());
+    setFavoritesReady(false);
+    setFavoritesError(false);
+    if (!authUserId) return () => { active = false; };
+    clientService.favorites.getFavorites()
+      .then((favorites) => {
+        if (active && generation === favoriteGenerationRef.current) {
+          setFavoriteLawyers(new Set(favorites.map((f) => f.id)));
+          setFavoritesReady(true);
+        }
+      })
+      .catch((error) => {
+        if (!active || generation !== favoriteGenerationRef.current) return;
+        console.error('Error loading favorites:', error);
+        setFavoritesError(true);
+        toast.error(t('lawyers.favLoadError'));
+      });
+    return () => { active = false; };
+  }, [authUserId, favoritesRetryKey, t]);
 
-  const fetchLawyers = async () => {
-    const cacheKey = canonicalCatalogKey({ filters, searchQuery, page: currentPage });
-    const catalogRequest = requestCoordinator.current.begin(cacheKey);
-    try {
-      setLoading(true);
-      const cached = pageCache[cacheKey];
-      if (cached) {
-        setLawyers(cached.lawyers || []);
-        setTotalPages(cached.totalPages || 1);
-        return;
+  useEffect(() => {
+    const handlePresence = ({ detail }) => {
+      if (!detail?.userId || detail.role !== 'lawyer') return;
+      const update = { ...detail, observedAt: detail.observedAt || new Date().toISOString() };
+      const previous = presenceUpdatesRef.current.get(detail.userId);
+      if (previous && Date.parse(previous.observedAt || 0) >= Date.parse(update.observedAt || 0)) return;
+      presenceUpdatesRef.current.set(detail.userId, update);
+      const wasOnline = previous?.online === true;
+      const isOnline = detail.online === true;
+      if (wasOnline !== isOnline) {
+        setFacets((current) => current && ({
+          ...current,
+          online: Math.max(0, Number(current.online || 0) + (isOnline ? 1 : -1)),
+        }));
       }
-      const { specializations, ...restFilters } = filters;
-      const response = await clientService.lawyers.searchLawyers({
-        ...restFilters,
-        // Мультивыбор областей → бэкенду одной строкой через запятую (OR-совпадение).
-        specialization: (specializations || []).join(','),
-        search: searchQuery,
-        cursor: pageCursors[currentPage] || undefined,
-        limit: 9,
-      }, { signal: catalogRequest.signal });
+      setLawyers((current) => current.map((lawyer) => (
+        lawyer.id === detail.userId
+          ? { ...lawyer, online: detail.online === true, lastSeenAt: detail.lastSeenAt || null, presenceObservedAt: update.observedAt }
+          : lawyer
+      )));
+    };
+    window.addEventListener('maslaxat:presence', handlePresence);
+    return () => {
+      window.removeEventListener('maslaxat:presence', handlePresence);
+    };
+  }, []);
 
-      if (!requestCoordinator.current.isCurrent(catalogRequest)) return;
-      if (response.sessionUnavailable) return;
-
-      if (response.sessionExpired) {
-        setPageCursors({ 1: null });
-        setPageCache({});
-        setCurrentPage(1);
-        return;
-      }
-
-      setLawyers(response.lawyers || []);
-      setTotalPages(response.totalPages || 1);
-      setPageCache((previous) => ({ ...previous, [cacheKey]: response }));
-      if (response.cursor) {
-        setPageCursors((previous) => ({ ...previous, [currentPage + 1]: response.cursor }));
-      }
-    } catch (error) {
-      if (!requestCoordinator.current.isCurrent(catalogRequest) || error.code === 'ERR_CANCELED') return;
-      console.error('Error fetching lawyers:', error);
-      setLawyers([]);
-    } finally {
-      if (requestCoordinator.current.isCurrent(catalogRequest)) setLoading(false);
-    }
-  };
+  useEffect(() => {
+    let timer;
+    let stopped = false;
+    const poll = () => {
+      if (document.visibilityState === 'visible') setRetryKey((value) => value + 1);
+      if (!stopped) timer = setTimeout(poll, 25000 + Math.random() * 10000);
+    };
+    timer = setTimeout(poll, 25000 + Math.random() * 10000);
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
 
   const handleFilterChange = (field, value) => {
+    if (field === 'priceRange') setDraftPriceRange(value);
     setFilters((prev) => ({ ...prev, [field]: value }));
     setPageCursors({ 1: null });
     setPageCache({});
@@ -285,14 +388,18 @@ const LawyersPageGlass = () => {
       minRating: 0,
       priceRange: [0, MAX_PRICE],
       experience: '',
-      sortBy: 'rating',
+      sortBy: 'recommended',
       onlineOnly: false,
+      zoomAvailable: false,
       location: '',
       language: '',
+      budget: '',
+      status: '',
+      availableNow: false,
     });
     setSearchQuery('');
-    setPageCursors({ 1: null });
-    setPageCache({});
+    setDebouncedSearch('');
+    setDraftPriceRange([0, MAX_PRICE]);
     setCurrentPage(1);
   };
 
@@ -320,22 +427,39 @@ const LawyersPageGlass = () => {
 
   const handleToggleFavorite = async (e, lawyerId) => {
     e.stopPropagation();
+    if (favoritePending.has(lawyerId)) return;
+    const generation = favoriteGenerationRef.current;
+    const wasFavorite = favoriteLawyers.has(lawyerId);
+    setFavoriteLawyers((prev) => {
+      const next = new Set(prev);
+      if (wasFavorite) next.delete(lawyerId); else next.add(lawyerId);
+      return next;
+    });
+    setFavoritePending((prev) => new Set(prev).add(lawyerId));
     try {
-      if (favoriteLawyers.has(lawyerId)) {
+      if (wasFavorite) {
         await clientService.favorites.removeFavorite(lawyerId);
-        setFavoriteLawyers((prev) => {
+        if (generation === favoriteGenerationRef.current) toast.success(t('lawyers.favRemoved'));
+      } else {
+        await clientService.favorites.addFavorite(lawyerId);
+        if (generation === favoriteGenerationRef.current) toast.success(t('lawyers.favAdded'));
+      }
+    } catch (error) {
+      if (generation !== favoriteGenerationRef.current) return;
+      setFavoriteLawyers((prev) => {
+        const next = new Set(prev);
+        if (wasFavorite) next.add(lawyerId); else next.delete(lawyerId);
+        return next;
+      });
+      toast.error(t('lawyers.favError'));
+    } finally {
+      if (generation === favoriteGenerationRef.current) {
+        setFavoritePending((prev) => {
           const next = new Set(prev);
           next.delete(lawyerId);
           return next;
         });
-        toast.success(t('lawyers.favRemoved'));
-      } else {
-        await clientService.favorites.addFavorite(lawyerId);
-        setFavoriteLawyers((prev) => new Set(prev).add(lawyerId));
-        toast.success(t('lawyers.favAdded'));
       }
-    } catch (error) {
-      toast.error(t('lawyers.favError'));
     }
   };
 
@@ -349,7 +473,7 @@ const LawyersPageGlass = () => {
           {t('lawyers.filters')}
         </div>
         {isMobile && (
-          <IconButton size="small" onClick={() => setFilterDrawerOpen(false)}>
+          <IconButton aria-label={t('lawyers.closeFilters')} onClick={() => setFilterDrawerOpen(false)}>
             <Close fontSize="small" sx={{ color: 'var(--text2)' }} />
           </IconButton>
         )}
@@ -369,18 +493,21 @@ const LawyersPageGlass = () => {
               : [...selected, sp.name]);
           };
           return (
-            <div
+            <button
               key={sp.id || 'all'}
+              type="button"
               onClick={toggle}
               onMouseEnter={(e) => { if (!checked) e.currentTarget.style.background = 'color-mix(in srgb, var(--accent) 7%, transparent)'; }}
               onMouseLeave={(e) => { if (!checked) e.currentTarget.style.background = 'transparent'; }}
               style={{
-                display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', borderRadius: 12, cursor: 'pointer',
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '9px 12px', borderRadius: 12, cursor: 'pointer',
                 fontSize: 14, color: checked ? 'var(--text)' : 'var(--text2)', fontWeight: checked ? 500 : 400,
                 background: checked ? 'color-mix(in srgb, var(--accent) 13%, transparent)' : 'transparent',
                 border: `1px solid ${checked ? 'color-mix(in srgb, var(--accent) 35%, transparent)' : 'transparent'}`,
                 transition: 'background 0.15s ease, color 0.15s ease',
+                fontFamily: 'inherit', textAlign: 'left', minHeight: 44,
               }}
+              aria-pressed={checked}
             >
               <span style={{
                 width: 34, height: 34, flexShrink: 0, borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -391,19 +518,22 @@ const LawyersPageGlass = () => {
                 {specIcon(sp.name, sp.id)}
               </span>
               {sp.name}
-            </div>
+            </button>
           );
         })}
       </div>
 
       {/* Min rating */}
       <div style={labelStyle}>{t('lawyers.minRating')}</div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 24 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, marginBottom: 24 }}>
         <Rating
           value={filters.minRating}
           onChange={(e, value) => handleFilterChange('minRating', value || 0)}
+          getLabelText={(value) => t('lawyers.ratingFilterAria').replace('{rating}', value)}
           precision={1}
           sx={{
+            minHeight: 44,
+            '& .MuiRating-label': { width: 44, height: 44, display: 'flex', alignItems: 'center', justifyContent: 'center' },
             '& .MuiRating-iconFilled': { color: 'var(--accent)' },
             '& .MuiRating-iconEmpty': { color: 'var(--border-strong)' },
           }}
@@ -417,9 +547,10 @@ const LawyersPageGlass = () => {
       <div style={labelStyle}>{t('lawyers.priceSum')}</div>
       <div style={{ padding: '42px 8px 0' }}>
         <Slider
-          value={filters.priceRange}
-          onChange={(e, value) => handleFilterChange('priceRange', value)}
-          valueLabelDisplay="on"
+          value={draftPriceRange}
+          onChange={(e, value) => setDraftPriceRange(value)}
+          onChangeCommitted={(e, value) => handleFilterChange('priceRange', value)}
+          valueLabelDisplay={isMobile ? 'auto' : 'on'}
           valueLabelFormat={(v) => `${v.toLocaleString()} ${t('lawyers.sum')}`}
           min={0}
           max={MAX_PRICE}
@@ -455,8 +586,8 @@ const LawyersPageGlass = () => {
         />
       </div>
       <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4, marginBottom: 24 }}>
-        <span>0</span>
-        <span>{MAX_PRICE.toLocaleString()}</span>
+          <span>0 {t('lawyers.sum')}</span>
+          <span>{MAX_PRICE.toLocaleString()} {t('lawyers.sum')}</span>
       </div>
 
       {/* Experience — пилюли */}
@@ -477,7 +608,7 @@ const LawyersPageGlass = () => {
               onMouseEnter={(e) => { if (!active) { e.currentTarget.style.borderColor = 'var(--accent)'; e.currentTarget.style.color = 'var(--text)'; } }}
               onMouseLeave={(e) => { if (!active) { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.color = 'var(--text2)'; } }}
               style={{
-                fontSize: 13, padding: '9px 14px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit',
+                minHeight: 44, fontSize: 13, padding: '9px 14px', borderRadius: 22, cursor: 'pointer', fontFamily: 'inherit',
                 border: `1px solid ${active ? 'transparent' : 'var(--border)'}`,
                 background: active ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'transparent',
                 color: active ? '#FFFFFF' : 'var(--text2)',
@@ -495,8 +626,9 @@ const LawyersPageGlass = () => {
       {/* Город */}
       {filterOptions.locations.length > 0 && (
         <>
-          <div style={labelStyle}>{t('lawyers.city')}</div>
+          <label htmlFor="lawyer-location-filter" style={{ ...labelStyle, display: 'block' }}>{t('lawyers.city')}</label>
           <select
+            id="lawyer-location-filter"
             value={filters.location}
             onChange={(e) => handleFilterChange('location', e.target.value)}
             style={selectFilterStyle}
@@ -510,8 +642,9 @@ const LawyersPageGlass = () => {
       {/* Язык */}
       {filterOptions.languages.length > 0 && (
         <>
-          <div style={labelStyle}>{t('lawyers.language')}</div>
+          <label htmlFor="lawyer-language-filter" style={{ ...labelStyle, display: 'block' }}>{t('lawyers.language')}</label>
           <select
+            id="lawyer-language-filter"
             value={filters.language}
             onChange={(e) => handleFilterChange('language', e.target.value)}
             style={selectFilterStyle}
@@ -524,10 +657,13 @@ const LawyersPageGlass = () => {
 
       {/* Только онлайн */}
       <button
+        type="button"
+        role="switch"
+        aria-checked={filters.onlineOnly}
         onClick={() => handleFilterChange('onlineOnly', !filters.onlineOnly)}
         style={{
           width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-          padding: '11px 14px', marginBottom: 24, borderRadius: 'var(--radius)', cursor: 'pointer',
+          minHeight: 44, padding: '11px 14px', marginBottom: 24, borderRadius: 'var(--radius)', cursor: 'pointer',
           fontFamily: 'inherit', fontSize: 13.5, color: 'var(--text)',
           border: `1px solid ${filters.onlineOnly ? 'var(--accent)' : 'var(--border)'}`,
           background: filters.onlineOnly ? 'rgba(90,160,106,0.08)' : 'transparent',
@@ -549,9 +685,19 @@ const LawyersPageGlass = () => {
       </button>
 
       <button
+        type="button"
+        aria-pressed={filters.zoomAvailable}
+        onClick={() => handleFilterChange('zoomAvailable', !filters.zoomAvailable)}
+        style={{ width: '100%', minHeight: 44, padding: '11px 14px', marginBottom: 24, borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13.5, color: 'var(--text)', border: `1px solid ${filters.zoomAvailable ? 'var(--accent)' : 'var(--border)'}`, background: filters.zoomAvailable ? 'rgba(10,102,194,0.08)' : 'transparent' }}
+      >
+        {t('lawyers.zoomAvailable')}
+      </button>
+
+      <button
+        type="button"
         onClick={() => { handleClearFilters(); if (isMobile) setFilterDrawerOpen(false); }}
         style={{
-          width: '100%', marginTop: 6, padding: '11px 16px', background: 'transparent',
+          width: '100%', minHeight: 44, marginTop: 6, padding: '11px 16px', background: 'transparent',
           border: '1px solid var(--border)', borderRadius: 'var(--radius)', cursor: 'pointer',
           fontFamily: 'inherit', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em',
           textTransform: 'uppercase', color: 'var(--text2)',
@@ -559,6 +705,19 @@ const LawyersPageGlass = () => {
       >
         {t('lawyers.resetFilters')}
       </button>
+      {isMobile && (
+        <button
+          type="button"
+          onClick={() => setFilterDrawerOpen(false)}
+          style={{
+            width: '100%', minHeight: 44, marginTop: 10, padding: '11px 16px', border: 'none',
+            borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+            fontWeight: 600, background: 'var(--accent)', color: '#fff',
+          }}
+        >
+          {t('lawyers.showResults')}
+        </button>
+      )}
     </>
   );
 
@@ -567,8 +726,40 @@ const LawyersPageGlass = () => {
     const isFav = favoriteLawyers.has(lawyer.id);
     const reviews = lawyer.reviewsCount ?? 0;
     const tags = lawyer.specializations || [];
+    const languages = lawyer.languages || [];
+    const verifiedDocumentTypes = Array.isArray(lawyer.verifiedDocumentTypes) ? lawyer.verifiedDocumentTypes : [];
+    const verifiedDocumentsText = verifiedDocumentTypes.map((type) => t(`lawyers.doc_${type}`)).join(', ');
+    const responseHours = lawyer.medianResponseMinutes ? Math.max(1, Math.ceil(lawyer.medianResponseMinutes / 60)) : null;
     const grad = AV_BG[index % AV_BG.length];
-    const roundedRating = Math.round(lawyer.rating || 0);
+    const rating = Number(lawyer.rating) || 0;
+
+    // Форматы консультации в понятных клиенту словах: 'webrtc' и 'audio' ему
+    // ничего не говорят, а «Видео» и «Аудио» — говорят.
+    const FORMAT_LABEL = {
+      webrtc: { key: 'webrtc', label: t('lawyers.fmtVideo'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> },
+      video: { key: 'video', label: t('lawyers.fmtVideo'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> },
+      audio: { key: 'audio', label: t('lawyers.fmtAudio'), icon: <CallRounded sx={{ fontSize: 13 }} /> },
+      chat: { key: 'chat', label: t('lawyers.fmtChat'), icon: <ForumRounded sx={{ fontSize: 13 }} /> },
+    };
+    const seenFormats = new Set();
+    const formats = (lawyer.consultationFormats || [])
+      .map((f) => FORMAT_LABEL[f])
+      .filter((f) => f && !seenFormats.has(f.label) && seenFormats.add(f.label));
+    if (lawyer.zoomAvailable) {
+      formats.push({ key: 'zoom', label: t('lawyers.fmtZoom'), icon: <VideocamRounded sx={{ fontSize: 13 }} /> });
+    }
+
+    // Минимальная длительность — то, к чему привязана цена «от».
+    const durations = (lawyer.consultationDurations || []).map(Number).filter((n) => n > 0);
+    const baseDuration = durations.length ? Math.min(...durations) : null;
+
+    // Часы приёма из расписания. Пустое расписание — не повод молчать: клиенту
+    // честнее сказать, что время согласуют при записи, чем не сказать ничего.
+    const days = Object.values(lawyer.schedule || {}).filter((d) => d && d.enabled && d.from && d.to);
+    const hoursText = days.length
+      ? `${t('lawyers.hoursLabel')} ${days[0].from}–${days[0].to}`
+      : t('lawyers.hoursNotSet');
+
     return (
       <div
         key={lawyer.id}
@@ -594,23 +785,38 @@ const LawyersPageGlass = () => {
       >
         {/* favorite */}
         <button
+          type="button"
           onClick={(e) => handleToggleFavorite(e, lawyer.id)}
-          style={{ position: 'absolute', top: 14, right: 14, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', padding: 3, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
+          disabled={!favoritesReady || favoritePending.has(lawyer.id)}
+          aria-pressed={isFav}
+          aria-label={!favoritesReady ? t('lawyers.favoritesUnavailable') : (isFav ? t('lawyers.removeFavoriteAria').replace('{name}', lawyer.name) : t('lawyers.addFavoriteAria').replace('{name}', lawyer.name))}
+          style={{ position: 'absolute', top: 7, right: 7, width: 44, height: 44, background: 'transparent', border: 'none', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0, color: isFav ? 'var(--accent)' : 'var(--text3)' }}
         >
           {isFav ? <FavoriteRounded sx={{ fontSize: 21 }} /> : <FavoriteBorderOutlined sx={{ fontSize: 21 }} />}
         </button>
 
         {/* avatar */}
-        <div
-          onClick={() => handleViewProfile(lawyer)}
+        <button
+          type="button"
+          aria-label={t('lawyers.openProfileAria').replace('{name}', lawyer.name)}
+          onClick={() => handleViewProfile(lawyer.id)}
           style={{
-            width: 60, height: 60, borderRadius: 16, flexShrink: 0, cursor: 'pointer', position: 'relative',
-            background: lawyer.avatar ? `center/cover url(${lawyer.avatar})` : grad,
+            width: 60, height: 60, borderRadius: 16, flexShrink: 0, cursor: 'pointer', position: 'relative', border: 0, padding: 0,
+            background: grad,
             display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 19, fontWeight: 600,
             boxShadow: '0 6px 16px rgba(26,26,26,0.14)',
           }}
         >
-          {!lawyer.avatar && initialsOf(lawyer.name)}
+          {initialsOf(lawyer.name)}
+          {lawyer.avatar && !failedAvatars.has(lawyer.id) && (
+            <img
+              src={lawyer.avatar}
+              alt=""
+              data-testid={`lawyer-avatar-${lawyer.id}`}
+              onError={() => setFailedAvatars((prev) => new Set(prev).add(lawyer.id))}
+              style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: 16, objectFit: 'cover' }}
+            />
+          )}
           {lawyer.verificationStatus === 'approved' && (
             <span style={{
               position: 'absolute', bottom: -2, right: -2, width: 19, height: 19, borderRadius: '50%',
@@ -620,37 +826,84 @@ const LawyersPageGlass = () => {
               <CheckRounded sx={{ fontSize: 10 }} />
             </span>
           )}
-        </div>
+        </button>
 
         {/* body */}
         <div style={{ flex: 1, minWidth: 0 }}>
           {/* name + online */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5, paddingRight: 52 }}>
-            <span
-              onClick={() => handleViewProfile(lawyer)}
-              style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
+            <button
+              type="button"
+              onClick={() => handleViewProfile(lawyer.id)}
+              style={{ minHeight: 44, display: 'flex', alignItems: 'center', fontSize: 16, fontWeight: 600, color: 'var(--text)', cursor: 'pointer', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', border: 0, padding: 0, background: 'transparent', fontFamily: 'inherit', textAlign: 'left' }}
             >
               {lawyer.name}
-            </span>
-            {lawyer.placement === 'sponsored' && <SponsoredLabel />}
-            {lawyer.isAvailable && (
+            </button>
+            {lawyer.online === true && (
               <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, flexShrink: 0, fontSize: 11.5, color: '#5AA06A', fontWeight: 500 }}>
                 <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
                 {t('lawyers.onlineNow')}
               </span>
             )}
+            {/* Ступень юриста — тем же правилом, что и фильтр «По статусу»:
+                выбрал «Топ-юристы» — на карточках должен стоять «Топ». */}
+            {lawyer.status && lawyer.status !== 'practitioner' && (
+              <span style={{
+                flexShrink: 0, fontSize: 10.5, fontWeight: 700, letterSpacing: '0.05em',
+                textTransform: 'uppercase', padding: '3px 8px', borderRadius: 999,
+                border: `1px solid ${lawyer.status === 'top' ? 'var(--accent)' : 'var(--border-strong)'}`,
+                background: lawyer.status === 'top' ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'transparent',
+                color: lawyer.status === 'top' ? '#fff' : 'var(--text3)',
+              }}>
+                {lawyer.status === 'top' ? t('lawyers.badgeTop') : t('lawyers.badgeExpert')}
+              </span>
+            )}
           </div>
+          {lawyer.professionalTitle && <div style={{ fontSize: 13, color: 'var(--text2)', margin: '-4px 0 9px' }}>{lawyer.professionalTitle}</div>}
+          {verifiedDocumentTypes.length > 0 && (
+            <Tooltip title={t('lawyers.verifiedDocumentsHint')} arrow>
+              <div tabIndex={0} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginBottom: 9, color: '#4F815B', fontSize: 12, fontWeight: 600 }}>
+                <CheckRounded sx={{ fontSize: 16 }} /> {t('lawyers.verifiedDocuments').replace('{documents}', verifiedDocumentsText)}
+              </div>
+            </Tooltip>
+          )}
+          {responseHours && <div style={{ marginBottom: 9, color: 'var(--text2)', fontSize: 12 }}>{t('lawyers.responseTime').replace('{hours}', responseHours)}</div>}
 
           {/* rating + meta */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginBottom: 12, fontSize: 12.5, color: 'var(--text3)' }}>
-            <span style={{ display: 'flex', gap: 1 }}>
-              {[1, 2, 3, 4, 5].map((n) => (
-                <StarRounded key={n} sx={{ fontSize: 15, color: n <= roundedRating ? '#C9A36E' : 'var(--border)' }} />
-              ))}
+            {rating > 0 ? (
+              <>
+                <Rating
+                  value={rating}
+                  precision={0.5}
+                  readOnly
+                  size="small"
+                  aria-label={t('lawyers.ratingAria').replace('{rating}', rating.toFixed(1))}
+                  sx={{ '& .MuiRating-iconFilled': { color: '#C9A36E' }, '& .MuiRating-iconEmpty': { color: 'var(--border)' } }}
+                />
+                <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{rating.toFixed(1)}</strong>
+              </>
+            ) : (
+              /* «Нет оценок · Отзывы: 0 · Решено дел: 0» — три нуля подряд у всех
+                 карточек одинаково: выбирать не по чему, и платформа выглядит
+                 мёртвой. У новой платформы истории и не может быть — говорим об
+                 этом прямо, а нули с нулевым значением не печатаем вовсе. */
+              <strong style={{ color: 'var(--text3)', fontWeight: 500 }}>{t('lawyers.newOnPlatform')}</strong>
+            )}
+            <span>
+              {reviews > 0 && <>· {t('lawyers.reviewsLabel')}: {reviews} </>}
+              · {t('lawyers.experienceYearsLabel')}: {lawyer.experience || 0}
+              {lawyer.completedConsultations > 0 && <> · {t('lawyers.solved')}: {lawyer.completedConsultations}</>}
+              {lawyer.region && <> · {lawyer.region}</>}
             </span>
-            <strong style={{ color: 'var(--text)', fontWeight: 600 }}>{lawyer.rating || 0}</strong>
-            <span>· {reviews} {t('lawyers.reviews')} · {lawyer.experience || 0} {t('lawyers.years')} · {lawyer.completedConsultations || 0} {t('lawyers.solved').toLowerCase()}</span>
           </div>
+          {(lawyer.primaryEducation || languages.length > 0) && (
+            <div style={{ fontSize: 11.5, color: 'var(--text3)', marginBottom: 10, lineHeight: 1.5 }}>
+              {lawyer.primaryEducation && <span>{lawyer.primaryEducation.university || lawyer.primaryEducation.title}{lawyer.primaryEducation.degree ? ` · ${lawyer.primaryEducation.degree}` : ''}</span>}
+              {lawyer.primaryEducation && languages.length > 0 && <span> · </span>}
+              {languages.length > 0 && <span>{languages.join(', ')}</span>}
+            </div>
+          )}
 
           {/* specializations */}
           {tags.length > 0 && (
@@ -671,33 +924,130 @@ const LawyersPageGlass = () => {
             </div>
           )}
 
+          {/* КАК ПРОЙДЁТ КОНСУЛЬТАЦИЯ.
+              Форматы и длительности лежат в профиле, но на карточке их не было:
+              клиент видел цену и не понимал, что за неё получит — видеозвонок,
+              переписку или час в офисе. Это первый вопрос перед оплатой. */}
+          {(formats.length > 0 || hoursText) && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 12, fontSize: 11.5, color: 'var(--text3)' }}>
+              {formats.map((f) => (
+                <span
+                  key={f.key}
+                  style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    border: '1px solid var(--border)', borderRadius: 8, padding: '4px 9px', color: 'var(--text2)',
+                  }}
+                >
+                  {f.icon}{f.label}
+                </span>
+              ))}
+              {hoursText && (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
+                  <AccessTimeRounded sx={{ fontSize: 13 }} />{hoursText}
+                </span>
+              )}
+            </div>
+          )}
+
           {/* footer: price + CTA */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+          <div className="lawyer-card-footer" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
             <div style={{ fontSize: 12, color: 'var(--text3)' }}>
               {t('lawyers.from')} <strong style={{ fontSize: 17, color: 'var(--text)', fontWeight: 600 }}>{(lawyer.priceFrom || 0).toLocaleString()}</strong> {t('lawyers.sum')}
+              {/* Цена без единицы измерения не отвечает на «за что?» —
+                  показываем минимальную длительность из профиля. */}
+              {baseDuration && (
+                <span style={{ display: 'block', fontSize: 11, color: 'var(--text3)' }}>
+                  {t('lawyers.perMin').replace('{n}', baseDuration)}
+                </span>
+              )}
             </div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button type="button" onClick={() => handleViewProfile(lawyer.id)} style={{ minHeight: 44, padding: '10px 14px', borderRadius: 11, border: '1px solid var(--border)', background: 'transparent', color: 'var(--text)', cursor: 'pointer' }}>{t('lawyers.viewProfile')}</button>
             <button
+              type="button"
               onClick={(e) => { e.stopPropagation(); handleBookConsultation(lawyer); }}
+              disabled={!lawyer.isAvailable}
               style={{
                 flexShrink: 0,
-                background: 'linear-gradient(135deg, var(--accent), var(--accent-dark))',
+                background: lawyer.isAvailable ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'var(--border-strong)',
                 color: '#FFFFFF', border: 'none', fontSize: 12.5, fontWeight: 600,
-                padding: '10px 20px', borderRadius: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap',
+                minHeight: 44, padding: '10px 20px', borderRadius: 11, cursor: lawyer.isAvailable ? 'pointer' : 'not-allowed', fontFamily: 'inherit', whiteSpace: 'nowrap',
                 boxShadow: '0 4px 12px rgba(184,149,110,0.3)', transition: 'transform 0.15s ease, box-shadow 0.15s ease',
               }}
-              onMouseEnter={(e) => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(184,149,110,0.42)'; }}
-              onMouseLeave={(e) => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(184,149,110,0.3)'; }}
+              onMouseEnter={(e) => { if (lawyer.isAvailable) { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(184,149,110,0.42)'; } }}
+              onMouseLeave={(e) => { if (lawyer.isAvailable) { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(184,149,110,0.3)'; } }}
             >
-              {t('lawyers.bookConsultation')}
+              {lawyer.isAvailable ? t('lawyers.bookConsultation') : t('lawyers.unavailable')}
             </button>
+            </div>
           </div>
         </div>
       </div>
     );
   };
 
-  // Фильтр «только онлайн» применяем на текущей странице (доступность приходит в списке)
-  const visibleLawyers = filters.onlineOnly ? lawyers.filter((l) => l.isAvailable) : lawyers;
+  // Список отдаёт сервер уже отфильтрованным (в т.ч. по «только онлайн») —
+  // повторная фильтрация на клиенте лишь ломала бы счётчик и пагинацию.
+  const visibleLawyers = filters.onlineOnly ? lawyers.filter((lawyer) => lawyer.online) : lawyers;
+
+  // Порог «недорого» — из фасетов сервера; без них чип неактивен.
+  const budgetMax = facets?.budget?.maxPrice ?? null;
+
+  // Активные фильтры одним списком: каждый можно снять по отдельности.
+  const activeChips = (() => {
+    const chips = [];
+    const fmt = (k, v) => t('lawyers.' + k).replace('{n}', v);
+    (filters.specializations || []).forEach((sp) => chips.push({
+      key: `spec:${sp}`,
+      label: fmt('fltSpec', sp),
+      clear: () => handleFilterChange('specializations', filters.specializations.filter((x) => x !== sp)),
+    }));
+    if (debouncedSearch) chips.push({
+      key: 'search', label: fmt('fltSearch', debouncedSearch), clear: () => { setSearchQuery(''); setDebouncedSearch(''); },
+    });
+    if (filters.onlineOnly) chips.push({
+      key: 'online', label: t('lawyers.fltOnline'), clear: () => handleFilterChange('onlineOnly', false),
+    });
+    if (filters.availableNow) chips.push({
+      key: 'availableNow', label: t('lawyers.presetOnline'), clear: () => handleFilterChange('availableNow', false),
+    });
+    if (filters.zoomAvailable) chips.push({
+      key: 'zoom', label: t('lawyers.zoomAvailable'), clear: () => handleFilterChange('zoomAvailable', false),
+    });
+    if (filters.minRating > 0) chips.push({
+      key: 'rating', label: fmt('fltRating', filters.minRating), clear: () => handleFilterChange('minRating', 0),
+    });
+    if (filters.experience) chips.push({
+      key: 'exp', label: fmt('fltExperience', filters.experience), clear: () => handleFilterChange('experience', ''),
+    });
+    if (filters.budget) chips.push({
+      key: 'budget',
+      label: t('lawyers.seg' + filters.budget.charAt(0).toUpperCase() + filters.budget.slice(1)),
+      clear: () => handleFilterChange('budget', ''),
+    });
+    if (filters.status) chips.push({
+      key: 'status',
+      label: t('lawyers.' + { top: 'stTop', expert: 'stExpert', practitioner: 'stPractitioner' }[filters.status]),
+      clear: () => handleFilterChange('status', ''),
+    });
+    if (filters.priceRange[0] > 0) chips.push({
+      key: 'priceFrom',
+      label: fmt('fltPriceFrom', filters.priceRange[0].toLocaleString()),
+      clear: () => handleFilterChange('priceRange', [0, filters.priceRange[1]]),
+    });
+    if (filters.priceRange[1] < MAX_PRICE) chips.push({
+      key: 'priceTo',
+      label: fmt('fltPrice', filters.priceRange[1].toLocaleString()),
+      clear: () => handleFilterChange('priceRange', [filters.priceRange[0], MAX_PRICE]),
+    });
+    if (filters.location) chips.push({
+      key: 'loc', label: fmt('fltLocation', filters.location), clear: () => handleFilterChange('location', ''),
+    });
+    if (filters.language) chips.push({
+      key: 'lang', label: fmt('fltLanguage', filters.language), clear: () => handleFilterChange('language', ''),
+    });
+    return chips;
+  })();
 
   return (
     <GlassShell active="/lawyers" title={t('lawyers.title')} subtitle={t('lawyers.subtitle')}>
@@ -710,6 +1060,9 @@ const LawyersPageGlass = () => {
           sx: {
             borderRadius: '16px 16px 0 0',
             maxHeight: '85vh',
+            width: '100%',
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
             background: 'var(--surface)',
             padding: 3,
           },
@@ -756,7 +1109,7 @@ const LawyersPageGlass = () => {
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: isMobile ? '1fr' : '258px 1fr',
+          gridTemplateColumns: isMobile ? '1fr' : '270px 1fr',
           gap: 24,
           maxWidth: 1280,
           margin: '0 auto',
@@ -782,6 +1135,7 @@ const LawyersPageGlass = () => {
                 flex: 1,
                 minWidth: 220,
                 '& .MuiOutlinedInput-root': {
+                  minHeight: 44,
                   background: 'var(--card-glass)',
                   backdropFilter: 'blur(24px) saturate(180%)',
                   WebkitBackdropFilter: 'blur(24px) saturate(180%)',
@@ -802,7 +1156,7 @@ const LawyersPageGlass = () => {
                 ),
                 endAdornment: searchQuery && (
                   <InputAdornment position="end">
-                    <IconButton size="small" onClick={() => handleSearchChange('')}>
+                    <IconButton aria-label={t('lawyers.clearSearch')} onClick={() => { setSearchQuery(''); setDebouncedSearch(''); setCurrentPage(1); }}>
                       <Close sx={{ color: 'var(--text3)', fontSize: 18 }} />
                     </IconButton>
                   </InputAdornment>
@@ -812,10 +1166,12 @@ const LawyersPageGlass = () => {
 
             {isMobile && (
               <button
+                type="button"
+                aria-label={t('lawyers.openFilters')}
                 onClick={() => setFilterDrawerOpen(true)}
                 style={{
                   display: 'flex', alignItems: 'center', gap: 8, ...glassCard, padding: '10px 16px',
-                  cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: 'var(--text2)',
+                  minHeight: 44, cursor: 'pointer', fontFamily: 'inherit', fontSize: 14, color: 'var(--text2)',
                 }}
               >
                 <TuneOutlined sx={{ fontSize: 18 }} /> {t('lawyers.filters')}
@@ -824,6 +1180,7 @@ const LawyersPageGlass = () => {
 
             <FormControl size="small" sx={{ minWidth: 200 }}>
               <Select
+                inputProps={{ 'aria-label': t('lawyers.sortLabel') }}
                 value={filters.sortBy}
                 onChange={(e) => handleFilterChange('sortBy', e.target.value)}
                 sx={glassSelectSx}
@@ -871,36 +1228,261 @@ const LawyersPageGlass = () => {
             </FormControl>
           </div>
 
-          {/* Быстрые фильтры-пресеты — в один тап */}
+          {/* Быстрые фильтры.
+              Раньше три из четырёх были ярлыками СОРТИРОВКИ: перезаписывали друг
+              друга, не выключались и дублировали выпадающий список, а «Высокий
+              рейтинг» горел всегда. Теперь сортировка по умолчанию — рекомендуемая,
+              а это
+              настоящие независимые фильтры: комбинируются, снимаются повторным
+              нажатием, показывают, сколько юристов под них попадает, и гаснут,
+              если таких нет. Пороги приходят с сервера (фасеты) — «недорого»
+              считается от реальных цен каталога, а не от константы. */}
           {(() => {
             const presets = [
-              { k: 'presetOnline', active: filters.onlineOnly, apply: () => handleFilterChange('onlineOnly', !filters.onlineOnly) },
-              { k: 'presetTop', active: filters.sortBy === 'rating', apply: () => handleFilterChange('sortBy', 'rating') },
-              { k: 'presetCheap', active: filters.sortBy === 'price_low', apply: () => handleFilterChange('sortBy', 'price_low') },
-              { k: 'presetExperienced', active: filters.sortBy === 'experience', apply: () => handleFilterChange('sortBy', 'experience') },
+              {
+                // «Доступен сейчас» = принимает записи И идёт его рабочее время
+                // (или он реально в сети). Раньше чип смотрел только на живое
+                // socket-соединение и был вечным нулём: юрист, не держащий
+                // вкладку открытой, всё равно принимает записи.
+                k: 'presetOnline',
+                active: filters.availableNow,
+                count: facets?.availableNow,
+                hint: t('lawyers.presetOnlineHint'),
+                emptyHint: t('lawyers.presetNoneNow'),
+                apply: () => handleFilterChange('availableNow', !filters.availableNow),
+              },
+              // Пока оценок нет ни у кого, фильтр по рейтингу не может выбрать
+              // никого — вместо мёртвого чипа показываем рабочий: язык
+              // консультации. Как только появятся первые оценки, чип
+              // «Высокий рейтинг» вернётся сам.
+              facets?.hasRatings === false
+                ? {
+                  k: 'presetEnglish',
+                  active: filters.language === ENGLISH,
+                  count: facets?.english?.count,
+                  hint: t('lawyers.presetEnglishHint'),
+                  apply: () => handleFilterChange('language', filters.language === ENGLISH ? '' : ENGLISH),
+                }
+                : {
+                  k: 'presetTop',
+                  active: filters.minRating === HIGH_RATING_FROM,
+                  count: facets?.highRating?.count,
+                  hint: t('lawyers.presetTopHint').replace('{n}', facets?.highRating?.from ?? HIGH_RATING_FROM),
+                  emptyHint: t('lawyers.presetNoRatings'),
+                  apply: () => handleFilterChange('minRating', filters.minRating === HIGH_RATING_FROM ? 0 : HIGH_RATING_FROM),
+                },
+              {
+                k: 'presetCheap',
+                active: budgetMax != null && filters.priceRange[1] === budgetMax,
+                count: facets?.budget?.count,
+                disabled: budgetMax == null,
+                hint: budgetMax != null ? t('lawyers.presetCheapHint').replace('{n}', budgetMax.toLocaleString()) : '',
+                apply: () => handleFilterChange(
+                  'priceRange',
+                  filters.priceRange[1] === budgetMax ? [filters.priceRange[0], MAX_PRICE] : [filters.priceRange[0], budgetMax],
+                ),
+              },
+              {
+                k: 'presetExperienced',
+                active: filters.experience === EXPERIENCED_PRESET,
+                count: facets?.experienced?.count,
+                hint: t('lawyers.presetExperiencedHint').replace('{n}', facets?.experienced?.from ?? 10),
+                apply: () => handleFilterChange('experience', filters.experience === EXPERIENCED_PRESET ? '' : EXPERIENCED_PRESET),
+              },
             ];
             return (
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 20 }}>
-                {presets.map((p) => (
-                  <button key={p.k} onClick={p.apply} style={{
-                    cursor: 'pointer', padding: '8px 15px', borderRadius: 999, fontSize: 13, fontFamily: 'inherit', fontWeight: p.active ? 600 : 400,
-                    border: `1px solid ${p.active ? 'var(--accent)' : 'var(--border-strong)'}`,
-                    background: p.active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--surface)',
-                    color: p.active ? '#fff' : 'var(--text2)', transition: 'all .15s',
-                  }}>{t('lawyers.' + p.k)}</button>
-                ))}
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, marginBottom: 16 }}>
+                {presets.map((p) => {
+                  // Чип без единого подходящего юриста бесполезен: гасим, чтобы
+                  // клиент не тыкал в него и не получал пустой экран.
+                  const empty = p.disabled || p.count === 0;
+                  return (
+                    <button
+                      key={p.k}
+                      onClick={empty ? undefined : p.apply}
+                      disabled={empty}
+                      title={empty ? (p.emptyHint || t('lawyers.presetNone')) : p.hint}
+                      aria-pressed={p.active}
+                      style={{
+                        minHeight: 44, cursor: empty ? 'not-allowed' : 'pointer', padding: '8px 15px', borderRadius: 999,
+                        fontSize: 13, fontFamily: 'inherit', fontWeight: p.active ? 600 : 400,
+                        border: `1px solid ${p.active ? 'var(--accent)' : 'var(--border-strong)'}`,
+                        background: p.active ? 'linear-gradient(135deg,var(--accent),var(--accent-dark))' : 'var(--surface)',
+                        color: p.active ? '#fff' : 'var(--text2)', transition: 'all .15s',
+                        opacity: empty ? 0.45 : 1,
+                        display: 'inline-flex', alignItems: 'center', gap: 7,
+                      }}
+                    >
+                      {t('lawyers.' + p.k)}
+                      {p.count != null && (
+                        <span style={{
+                          fontSize: 11, fontWeight: 600, lineHeight: 1, padding: '3px 6px', borderRadius: 999,
+                          background: p.active ? 'rgba(255,255,255,0.22)' : 'var(--border)',
+                          color: p.active ? '#fff' : 'var(--text3)',
+                        }}>{p.count}</span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
             );
           })()}
 
+          {/* ПОДБОР ПОД СЕБЯ.
+              Сортировка отвечает только на «в каком порядке показать» — список
+              при этом остаётся тем же. Здесь клиент сужает каталог до тех, кто
+              ему подходит: по бюджету и по уровню юриста. Границы цен и критерии
+              ступеней приходят с сервера и показаны прямо на кнопках, чтобы выбор
+              не был вслепую. */}
+          {(facets?.priceSegments?.length > 0 || facets?.statusSegments?.length > 0) && (
+            <div style={{ ...glassCard, padding: 18, marginBottom: 18 }}>
+              <div style={{ fontSize: 12, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 14 }}>
+                {t('lawyers.pickTitle')}
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
+                {[
+                  {
+                    field: 'budget',
+                    label: t('lawyers.pickBudget'),
+                    options: (facets.priceSegments || []).map((seg) => ({
+                      v: seg.key,
+                      count: seg.count,
+                      title: t('lawyers.seg' + seg.key.charAt(0).toUpperCase() + seg.key.slice(1)),
+                      hint: seg.key === 'economy'
+                        ? t('lawyers.segEconomyHint').replace('{n}', Number(seg.to || 0).toLocaleString())
+                        : seg.key === 'premium'
+                          ? t('lawyers.segPremiumHint').replace('{n}', Number(seg.from || 0).toLocaleString())
+                          : t('lawyers.segStandardHint')
+                            .replace('{a}', Number(seg.from || 0).toLocaleString())
+                            .replace('{b}', Number(seg.to || 0).toLocaleString()),
+                    })),
+                  },
+                  {
+                    field: 'status',
+                    label: t('lawyers.pickStatus'),
+                    options: (facets.statusSegments || []).map((seg) => {
+                      const r = facets.statusRules || {};
+                      const titleKey = { top: 'stTop', expert: 'stExpert', practitioner: 'stPractitioner' }[seg.key];
+                      const hint = seg.key === 'top'
+                        ? t('lawyers.stTopHint').replace('{r}', r.TOP_RATING ?? 4.8).replace('{n}', r.TOP_REVIEWS ?? 30)
+                        : seg.key === 'expert'
+                          ? t('lawyers.stExpertHint').replace('{y}', r.EXPERT_EXPERIENCE ?? 10).replace('{n}', r.EXPERT_REVIEWS ?? 20)
+                          : t('lawyers.stPractitionerHint');
+                      return { v: seg.key, count: seg.count, title: t('lawyers.' + titleKey), hint };
+                    }),
+                  },
+                ].map((group) => (
+                  <div key={group.field}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text)', marginBottom: 9 }}>{group.label}</div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 7 }}>
+                      {group.options.map((o) => {
+                        const active = filters[group.field] === o.v;
+                        // Пустой сегмент выбирать незачем — он гарантированно
+                        // приведёт на экран «никого не найдено».
+                        const empty = o.count === 0;
+                        return (
+                          <button
+                            key={o.v}
+                            disabled={empty}
+                            aria-pressed={active}
+                            onClick={() => handleFilterChange(group.field, active ? '' : o.v)}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10,
+                              minHeight: 44, textAlign: 'left', width: '100%', padding: '10px 13px', borderRadius: 12,
+                              cursor: empty ? 'not-allowed' : 'pointer', fontFamily: 'inherit',
+                              border: `1px solid ${active ? 'var(--accent)' : 'var(--border)'}`,
+                              background: active ? 'color-mix(in srgb, var(--accent) 12%, transparent)' : 'transparent',
+                              opacity: empty ? 0.45 : 1, transition: 'all .15s',
+                            }}
+                          >
+                            <span style={{ minWidth: 0 }}>
+                              <span style={{ display: 'block', fontSize: 13.5, fontWeight: active ? 600 : 500, color: 'var(--text)' }}>{o.title}</span>
+                              <span style={{ display: 'block', fontSize: 11.5, color: 'var(--text3)', marginTop: 2 }}>{o.hint}</span>
+                            </span>
+                            <span style={{
+                              flexShrink: 0, fontSize: 11.5, fontWeight: 700, padding: '3px 8px', borderRadius: 999,
+                              background: active ? 'var(--accent)' : 'var(--border)',
+                              color: active ? '#fff' : 'var(--text3)',
+                            }}>{o.count}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Активные фильтры: видно, что именно сужает выдачу, и каждый снимается
+              по отдельности — раньше был только «сбросить всё». */}
+          {activeChips.length > 0 && (
+            <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <span style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>
+                {t('lawyers.activeFilters')}
+              </span>
+              {activeChips.map((c) => (
+                <button
+                  key={c.key}
+                  type="button"
+                  onClick={c.clear}
+                  title={t('lawyers.clearOne')}
+                  aria-label={`${t('lawyers.clearOne')}: ${c.label}`}
+                  style={{
+                    minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                    padding: '6px 10px 6px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                    border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text2)',
+                  }}
+                >
+                  {c.label}
+                  <CloseRounded sx={{ fontSize: 14, color: 'var(--text3)' }} />
+                </button>
+              ))}
+              <button
+                onClick={handleClearFilters}
+                style={{
+                  minHeight: 44, cursor: 'pointer', padding: '6px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                  border: 'none', background: 'transparent', color: 'var(--accent-dark)', fontWeight: 600,
+                }}
+              >
+                {t('lawyers.clearAll')}
+              </button>
+            </div>
+          )}
+
+          {favoritesError && (
+            <div role="alert" style={{ ...glassCard, padding: 14, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>{t('lawyers.favLoadError')}</span>
+              <button type="button" onClick={() => setFavoritesRetryKey((value) => value + 1)} style={{ minHeight: 44, border: '1px solid var(--accent)', borderRadius: 10, background: 'transparent', color: 'var(--accent-dark)', padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit' }}>{t('common.retry')}</button>
+            </div>
+          )}
+
+          {/* Сколько всего нашлось — раньше количество нигде не показывалось */}
+          {!loading && !loadError && (
+            <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 14 }}>
+              {totalFound > 0 ? `${t('lawyers.found')}: ${totalFound}` : t('lawyers.foundNone')}
+            </div>
+          )}
+
           {/* results */}
+          {loadError && visibleLawyers.length > 0 && (
+            <div role="alert" style={{ ...glassCard, padding: 14, marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+              <span style={{ color: 'var(--text2)', fontSize: 13 }}>{t('lawyers.refreshFailed')}</span>
+              <button type="button" onClick={() => setRetryKey((value) => value + 1)} style={{ minHeight: 44, border: '1px solid var(--accent)', borderRadius: 10, background: 'transparent', color: 'var(--accent-dark)', padding: '8px 14px', cursor: 'pointer', fontFamily: 'inherit' }}>{t('common.retry')}</button>
+            </div>
+          )}
           {loading ? (
-            <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+            <div aria-busy="true" aria-label={t('lawyers.loading')} className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
               {Array.from({ length: 6 }).map((_, i) => <SkeletonCard key={i} lines={2} />)}
+            </div>
+          ) : loadError && visibleLawyers.length === 0 ? (
+            <div style={glassCard}>
+              <ErrorState error={loadError} onRetry={() => setRetryKey((value) => value + 1)} title={t('lawyers.loadFailed')} subtitle={t('lawyers.loadFailedHint')} />
             </div>
           ) : visibleLawyers.length > 0 ? (
             <>
-              <div className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20 }}>
+              <div aria-busy={refreshing} className="lawyers-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 20, opacity: refreshing ? 0.72 : 1, transition: 'opacity .15s' }}>
                 {visibleLawyers.map((lawyer, index) => renderCard(lawyer, index))}
               </div>
 
@@ -909,12 +1491,11 @@ const LawyersPageGlass = () => {
                   <Pagination
                     count={totalPages}
                     page={currentPage}
-                    onChange={(e, page) => {
-                      if (page === 1 || pageCursors[page]) setCurrentPage(page);
-                    }}
+                    siblingCount={isMobile ? 0 : 1}
+                    onChange={(e, page) => setCurrentPage(page)}
                     sx={{
                       '& .MuiPaginationItem-root': {
-                        color: 'var(--text2)', fontFamily: 'inherit', border: '1px solid var(--border)',
+                        minWidth: 44, height: 44, color: 'var(--text2)', fontFamily: 'inherit', border: '1px solid var(--border)',
                         borderRadius: 'var(--radius)', background: 'var(--card-glass)',
                         '&:hover': { borderColor: 'var(--accent)' },
                       },
@@ -934,11 +1515,38 @@ const LawyersPageGlass = () => {
               <div style={{ fontSize: 14, color: 'var(--text3)', marginBottom: 22 }}>
                 {t('lawyers.emptySub')}
               </div>
+
+              {/* Вместо одной кнопки «сбросить всё» предлагаем снять конкретное
+                  условие: чаще всего мешает один фильтр, а не все сразу. */}
+              {activeChips.length > 0 && (
+                <div style={{ marginBottom: 22 }}>
+                  <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 10 }}>{t('lawyers.emptyHint')}</div>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, justifyContent: 'center' }}>
+                    {activeChips.map((c) => (
+                      <button
+                        key={c.key}
+                        type="button"
+                        onClick={c.clear}
+                        aria-label={`${t('lawyers.clearOne')}: ${c.label}`}
+                        style={{
+                          minHeight: 44, display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
+                          padding: '7px 12px', borderRadius: 999, fontSize: 12.5, fontFamily: 'inherit',
+                          border: '1px solid var(--border-strong)', background: 'var(--surface)', color: 'var(--text2)',
+                        }}
+                      >
+                        {c.label}
+                        <CloseRounded sx={{ fontSize: 14, color: 'var(--text3)' }} />
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
               <button
                 onClick={handleClearFilters}
                 style={{
                   background: 'var(--accent)', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500,
-                  letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 26px',
+                  minHeight: 44, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 26px',
                   borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit',
                 }}
               >
@@ -952,7 +1560,12 @@ const LawyersPageGlass = () => {
       <BookingModal open={bookingModalOpen} onClose={handleCloseBookingModal} lawyer={selectedLawyer} />
 
       <style>{`
-        @media (max-width: 640px){ .lawyers-grid { grid-template-columns: 1fr !important; } }
+        @media (max-width: 640px){
+          .lawyers-grid { grid-template-columns: 1fr !important; }
+          .lawyer-card { padding: 16px !important; gap: 12px !important; }
+          .lawyer-card-footer { align-items: flex-start !important; flex-direction: column !important; }
+          .lawyer-card-footer > button { width: 100%; }
+        }
         .online-dot { animation: onlinePulse 2s ease-in-out infinite; }
         @keyframes onlinePulse { 0%,100%{ box-shadow: 0 0 0 0 rgba(90,160,106,0.5) } 50%{ box-shadow: 0 0 0 4px rgba(90,160,106,0) } }
         @media (prefers-reduced-motion: reduce){

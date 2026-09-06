@@ -1,7 +1,24 @@
 const router = require('express').Router();
+const jwt = require('jsonwebtoken');
 const { authenticate } = require('../middleware/auth');
 const { User, LawyerProfile, sequelize } = require('../models');
 const twoFactor = require('../services/twoFactorService');
+const { disconnectUserSockets } = require('../socket/io');
+const { passwordStateFor } = require('../services/authChallengeService');
+
+function rotateAccessToken(user, authLevel) {
+  return jwt.sign(
+    {
+      id: user.id,
+      role: user.role,
+      authLevel,
+      passwordState: passwordStateFor(user),
+      ...(authLevel === 'mfa' ? { twoFactorVersion: user.twoFactorVersion } : {}),
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || '7d' },
+  );
+}
 
 // Applicant/admin bootstrap is based on current account state, not legacy role.
 function is2FAAvailable(req) {
@@ -67,11 +84,14 @@ router.post('/enable', authenticate, require2FAEligible, async (req, res, next) 
       user.twoFactorBackupCodes = hashes;
       user.twoFactorVersion += 1;
       await user.save({ transaction });
-      return { backupCodes: plain };
+      return { backupCodes: plain, user };
     });
     if (result.error) return res.status(result.error[0]).json({ error: result.error[1] });
 
-    res.json({ success: true, backupCodes: result.backupCodes });
+    const accessToken = rotateAccessToken(result.user, 'mfa');
+    disconnectUserSockets(result.user.id);
+
+    res.json({ success: true, backupCodes: result.backupCodes, token: accessToken });
   } catch (err) {
     next(err);
   }
@@ -97,13 +117,16 @@ router.post('/disable', authenticate, async (req, res, next) => {
       await user.save({ transaction });
       await LawyerProfile.update(
         { operatingStatus: 'suspended', isAvailable: false },
-        { where: { userId: user.id }, transaction }
+        { where: { userId: user.id }, transaction },
       );
-      return { success: true };
+      return { user };
     });
     if (result.error) return res.status(result.error[0]).json({ error: result.error[1] });
 
-    res.json({ success: true });
+    const accessToken = rotateAccessToken(result.user, 'primary');
+    disconnectUserSockets(result.user.id);
+
+    res.json({ success: true, token: accessToken });
   } catch (err) {
     next(err);
   }

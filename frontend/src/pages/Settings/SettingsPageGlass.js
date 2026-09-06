@@ -17,6 +17,7 @@ import { toast } from 'react-toastify';
 import { logout } from '../../store/slices/authSlice';
 import pushService from '../../services/pushService';
 import TwoFactorSection from '../../components/Settings/TwoFactorSection';
+import ZoomConnectionSection from '../../components/Settings/ZoomConnectionSection';
 import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import LanguageSwitcher from '../../components/LanguageSwitcher';
@@ -222,6 +223,8 @@ const SettingsPageGlass = () => {
   useEffect(() => {
     const saved = loadSettings();
     setHasChanges(JSON.stringify(saved) !== JSON.stringify(settings));
+    // loadSettings is a synchronous localStorage snapshot; settings drives recalculation.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings]);
 
   // Загружаем настройки с сервера при открытии страницы (сервер — источник истины)
@@ -312,9 +315,8 @@ const SettingsPageGlass = () => {
         </Section>
 
         {/* ── Двухфакторная аутентификация (юристы/админ) ── */}
-        <div id="two-factor">
-          <TwoFactorSection />
-        </div>
+        <TwoFactorSection />
+        <ZoomConnectionSection />
 
         {/* ── Приватность ── */}
         <Section

@@ -180,7 +180,10 @@ test('consultation membership cache requests and stores only the fixed authoriza
 
   expect(loadConsultation).toHaveBeenCalledTimes(1);
   expect(loadConsultation).toHaveBeenCalledWith('c-1', { attributes: CONSULTATION_AUTH_ATTRIBUTES });
-  expect(CONSULTATION_AUTH_ATTRIBUTES).toEqual(['id', 'clientId', 'lawyerId', 'status', 'type']);
+  expect(CONSULTATION_AUTH_ATTRIBUTES).toEqual([
+    'id', 'clientId', 'lawyerId', 'status', 'type',
+    'scheduledStartAt', 'scheduledEndAt', 'meetingProvider', 'lifecycleStatus',
+  ]);
 });
 
 test('status-sensitive message mutation bypasses stale membership cache and blocks completed consultation', async () => {

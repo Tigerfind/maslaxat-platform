@@ -1,15 +1,16 @@
 import React from 'react';
+import { vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import LawyerApplicantPage from './LawyerApplicantPage';
 import { LanguageProvider } from '../../i18n';
 
-jest.mock('react-redux', () => ({ useSelector: (select) => select({ auth: { user: { id: 'u1', name: 'Aziza' } } }) }));
-jest.mock('react-router-dom', () => ({ useNavigate: () => jest.fn() }));
-jest.mock('../../components/GlassKit/GlassShell', () => ({
+vi.mock('react-redux', () => ({ useSelector: (select) => select({ auth: { user: { id: 'u1', name: 'Aziza' } } }) }));
+vi.mock('react-router-dom', () => ({ useNavigate: () => vi.fn() }));
+vi.mock('../../components/GlassKit/GlassShell', () => ({
   __esModule: true,
   default: ({ title, children }) => <section><h2>{title}</h2>{children}</section>,
 }));
-jest.mock('../../components/Lawyer/LinkedInPdfImport', () => ({
+vi.mock('../../components/Lawyer/LinkedInPdfImport', () => ({
   __esModule: true,
   default: () => <div>Импорт профиля из LinkedIn</div>,
 }));

@@ -1,13 +1,14 @@
 import api from './api';
+import { vi } from 'vitest';
 import promotionService from './promotionService';
 
-jest.mock('./api', () => ({
+vi.mock('./api', () => ({ default: {
   get: jest.fn(),
   post: jest.fn(),
   put: jest.fn(),
   patch: jest.fn(),
   delete: jest.fn(),
-}));
+} }));
 
 beforeEach(() => jest.clearAllMocks());
 

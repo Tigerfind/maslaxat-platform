@@ -2,7 +2,7 @@ const { toPublicProfile } = require('./publicLawyerDto');
 
 const PUBLIC_FIELDS = [
   'id', 'type', 'status', 'question', 'problems', 'specialization', 'description',
-  'preferredDate', 'preferredTime', 'duration', 'actualDuration', 'price',
+  'preferredDate', 'preferredTime', 'duration', 'actualDuration', 'price', 'lawyerSummary',
   'isFree', 'promoCode', 'freeSource', 'billingStatus', 'createdAt', 'updatedAt',
   'clientId', 'lawyerId',
 ];

@@ -389,7 +389,7 @@ describe('legacy Payme transaction binding', () => {
     const retry = await perform();
 
     expect(first.body.error.code).toBe(-31008);
-    expect(retry.body.error.code).toBe(-31060);
+    expect(retry.body.result.state).toBe(2);
     await payment.reload();
     expect(payment.status).toBe('paid');
     expect(await FinancialTransaction.count({

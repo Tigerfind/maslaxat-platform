@@ -160,7 +160,7 @@ seed_database() {
     echo "Waiting for database..."
     sleep 10
 
-    docker compose exec api node src/seeds/index.js
+    docker compose exec api npm run db:seed
 
     echo "✅ Database seeded"
 }

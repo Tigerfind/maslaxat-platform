@@ -121,6 +121,8 @@ const DocumentsPageGlass = () => {
 
   useEffect(() => {
     fetchDocuments();
+    // Initial load only; upload/delete actions refresh explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const fetchDocuments = async () => {

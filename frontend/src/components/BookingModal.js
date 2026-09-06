@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { Dialog } from '@mui/material';
 import { CalendarTodayOutlined, MailOutline, CardGiftcardOutlined } from '@mui/icons-material';
@@ -9,7 +9,7 @@ import api from '../services/api';
 import ConflictDetector from '../shared/validators/conflict-detector';
 import { useTranslation } from '../i18n';
 import { clearBookingAttempt, getOrCreateBookingAttempt } from '../utils/bookingAttempt';
-import { bookingErrorAction, bookingResponseAction } from '../utils/bookingResponse';
+import { bookingErrorAction } from '../utils/bookingResponse';
 import { createPromotionAttribution, withPromotionBooking } from '../utils/promotionAttribution';
 
 /**
@@ -21,9 +21,6 @@ import { createPromotionAttribution, withPromotionBooking } from '../utils/promo
 
 const DURATIONS = [30, 60, 90];
 
-const TIME_SLOTS = ['09:00', '10:00', '11:00', '14:00', '15:00', '16:00', '17:00', '18:00', '19:00'];
-const DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']; // JS getDay() → ключ расписания
-
 const STEPS = [1, 2, 3];
 
 const emptyForm = {
@@ -32,7 +29,7 @@ const emptyForm = {
   description: '',
   preferredDate: '',
   preferredTime: '',
-  consultationType: 'video',
+  consultationType: 'webrtc',
 };
 
 const BookingModal = ({ open, onClose, lawyer }) => {
@@ -72,12 +69,27 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [promoLoading, setPromoLoading] = useState(false);
   const [notify, setNotify] = useState(true);
   const [payMethod, setPayMethod] = useState('payme');
-  const [schedule, setSchedule] = useState(null); // недельные часы приёма юриста
+  const [availableDates, setAvailableDates] = useState([]);
+  const [slotMeta, setSlotMeta] = useState(null);
+  // Пока слоты грузятся, «нет окон» показывать нельзя — это будет мигать
+  // сообщением об отсутствии дат на каждом открытии формы.
+  const [slotsLoading, setSlotsLoading] = useState(true);
   const [loyalty, setLoyalty] = useState(null);
   const [useFree, setUseFree] = useState(false);
   const [subLeft, setSubLeft] = useState(0);
   const [useSubFree, setUseSubFree] = useState(false);
+  const [paymentConsent, setPaymentConsent] = useState(false);
   const [promotionAttribution, setPromotionAttribution] = useState(null);
+  const slotsRequest = useRef(null);
+  const offeredFormats = useMemo(() => {
+    const configured = lawyer?.consultationFormats || lawyer?.profile?.consultationFormats || ['chat', 'webrtc'];
+    const zoomAvailable = lawyer?.zoomAvailable === true || lawyer?.profile?.zoomAvailable === true;
+    return configured.filter((format) => format !== 'zoom' || zoomAvailable);
+  }, [lawyer]);
+  const offeredDurations = useMemo(() => {
+    const configured = lawyer?.consultationDurations || lawyer?.profile?.consultationDurations;
+    return configured?.length ? DURATIONS.filter((value) => configured.includes(value)) : DURATIONS;
+  }, [lawyer]);
 
   // При открытии: сначала акция «первая бесплатно» (приоритетнее), затем —
   // бесплатная консультация, включённая в подписку (если лоялти недоступна).
@@ -87,31 +99,18 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     setPromotionAttribution(attribution);
     if (attribution) clientService.lawyers.recordBookingStart(lawyer.id, attribution).catch(() => {});
     setUseFree(false);
+    setPaymentConsent(false);
     setUseSubFree(false);
     setSubLeft(0);
     // Память брони: подставляем последний выбор клиента (тип/длительность/оплата),
     // чтобы постоянному клиенту не переклиивать одно и то же.
     try {
       const prefs = JSON.parse(localStorage.getItem('booking:prefs') || '{}');
-      if (prefs.consultationType) setFormData((prev) => ({ ...prev, consultationType: prefs.consultationType }));
+      if (prefs.consultationType) setFormData((prev) => ({ ...prev, consultationType: prefs.consultationType === 'video' ? 'webrtc' : prefs.consultationType }));
       if (DURATIONS.includes(prefs.duration)) setDuration(prefs.duration);
       if (prefs.payMethod) setPayMethod(prefs.payMethod);
     } catch { /* нет сохранённых предпочтений */ }
     let alive = true;
-    // Реальные часы приёма юриста — чтобы показывать только открытые дни/слоты
-    // (prop может прийти из каталога без schedule, поэтому берём из /lawyers/:id).
-    setSchedule(lawyer?.profile?.schedule || null);
-    // Префилл категорий ПЕРВОЙ проблемы областями юриста (маппинг имя→id справочника).
-    // Раньше сравнивали id с именем — не срабатывало никогда.
-    if (lawyerCatIds.length) {
-      setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : { ...prev, problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)) }));
-    }
-    (async () => {
-      try {
-        const r = await api.get(`/lawyers/${lawyer.id}`);
-        if (alive) setSchedule(r.data?.lawyer?.profile?.schedule || null);
-      } catch { /* оставим prop/none — фолбэк на все слоты */ }
-    })();
     (async () => {
       let freeNow = false;
       try {
@@ -134,6 +133,49 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  useEffect(() => {
+    if (!open) return;
+    setFormData((current) => offeredFormats.includes(current.consultationType)
+      ? current
+      : { ...current, consultationType: offeredFormats[0] || 'chat', preferredDate: '', preferredTime: '' });
+    setDuration((current) => offeredDurations.includes(current) ? current : (offeredDurations[0] || 60));
+  }, [open, offeredFormats, offeredDurations]);
+
+  const loadSlots = async () => {
+    if (!lawyer?.id) return;
+    slotsRequest.current?.abort();
+    const controller = new AbortController();
+    slotsRequest.current = controller;
+    setSlotsLoading(true);
+    try {
+      const { data: slots } = await api.get(`/lawyers/${lawyer.id}/available-slots`, {
+        params: { duration, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone },
+        signal: controller.signal,
+      });
+      setAvailableDates(slots.dates || []);
+      setSlotMeta({ timezone: slots.timezone, clientTimezone: slots.clientTimezone, bookingBufferMinutes: slots.bookingBufferMinutes });
+    } catch (error) {
+      if (error.code === 'ERR_CANCELED' || error.name === 'CanceledError') return;
+      setAvailableDates([]);
+      if (open) toast.error(error.response?.data?.error || t('booking.toastError'));
+    } finally {
+      setSlotsLoading(false);
+    }
+  };
+  useEffect(() => {
+    if (open) loadSlots();
+    return () => slotsRequest.current?.abort();
+  }, [open, lawyer?.id, duration]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Префилл первой проблемы обновляется, когда догрузился справочник категорий.
+  useEffect(() => {
+    if (!open || !lawyerCatIds.length) return;
+    setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : {
+      ...prev,
+      problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)),
+    }));
+  }, [open, lawyerCatIds]);
+
   // Закрывать выпадающий список категорий по клику вне него
   useEffect(() => {
     if (openCat < 0) return undefined;
@@ -142,43 +184,21 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     return () => document.removeEventListener('mousedown', onDown);
   }, [openCat]);
 
-  const hasSchedule = schedule && typeof schedule === 'object'
-    && Object.values(schedule).some((d) => d && d.enabled);
-
-  const dates = useMemo(() => {
-    const arr = [];
-    const scan = hasSchedule ? 21 : 5; // ищем открытые дни среди ближайших
-    const want = hasSchedule ? 8 : 5;
-    for (let i = 1; i <= scan && arr.length < want; i += 1) {
-      const dt = new Date();
-      dt.setDate(dt.getDate() + i);
-      if (hasSchedule) {
-        const day = schedule[DAY_KEYS[dt.getDay()]];
-        if (!day || !day.enabled) continue; // закрытые дни не показываем
-      }
-      arr.push({
-        iso: dt.toISOString().split('T')[0],
-        dow: DOWS[dt.getDay()],
-        d: dt.getDate(),
-        label: `${dt.getDate()} ${MONTHS[dt.getMonth()]}`,
-      });
-    }
-    return arr;
-  }, [t, schedule, hasSchedule]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Слоты выбранного дня: почасовые старты внутри [from, to) расписания юриста.
-  // Без расписания — прежний фиксированный список (фолбэк, не блокируем бронь).
-  const timeSlots = useMemo(() => {
-    if (!hasSchedule) return TIME_SLOTS;
-    if (!formData.preferredDate) return [];
-    const day = schedule[DAY_KEYS[new Date(`${formData.preferredDate}T00:00:00`).getDay()]];
-    if (!day || !day.enabled) return [];
-    const fromH = parseInt(String(day.from).split(':')[0], 10);
-    const toH = parseInt(String(day.to).split(':')[0], 10);
-    const out = [];
-    for (let h = fromH; h < toH; h += 1) out.push(`${String(h).padStart(2, '0')}:00`);
-    return out;
-  }, [hasSchedule, schedule, formData.preferredDate]);
+  const dates = useMemo(() => availableDates.slice(0, 8).map((item) => {
+    const dt = new Date(`${item.date}T12:00:00`);
+    return { iso: item.date, dow: DOWS[dt.getDay()], d: dt.getDate(), label: `${dt.getDate()} ${MONTHS[dt.getMonth()]}` };
+  }), [availableDates, DOWS, MONTHS]);
+  const timeSlots = useMemo(
+    () => availableDates.find((item) => item.date === formData.preferredDate)?.slots.map((slot) => slot.time) || [],
+    [availableDates, formData.preferredDate],
+  );
+  const selectedDateSlots = availableDates.find((item) => item.date === formData.preferredDate)?.slots || [];
+  const slotLabel = (time) => {
+    const slot = selectedDateSlots.find((item) => item.time === time);
+    return slot && (slot.clientTime !== slot.time || slot.clientDate !== formData.preferredDate)
+      ? `${slot.time} · ${slot.clientDate} ${slot.clientTime} локально`
+      : time;
+  };
 
   // Если выбранное время выпало из доступных слотов (сменился день/юрист) — сбрасываем.
   useEffect(() => {
@@ -298,6 +318,10 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
   // Сервер создаёт бронь и снапшотированный Payme checkout одним идемпотентным запросом.
   const handlePayNow = async () => {
+    if (!paymentConsent) {
+      toast.error(t('booking.consentRequired'));
+      return;
+    }
     try {
       setLoading(true);
 
@@ -317,20 +341,23 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         promoCode: promoApplied && !freeBooking ? promo.trim().toUpperCase() : undefined,
         lawyerId: lawyer.id,
         lawyerName: lawyer.name,
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
         client: {
           id: currentUser.id,
           name: currentUser.name,
           avatar: null,
         },
         status: 'pending',
+        startsAt: selectedDateSlots.find((slot) => slot.time === formData.preferredTime)?.startsAt,
       };
 
       // Реальные консультации клиента (раньше читался несуществующий localStorage-ключ →
       // проверка конфликтов была фиктивной). Берём активные/предстоящие с сервера.
       let existingConsultations = [];
       try {
-        const all = await clientService.consultations.getConsultations('all');
-        existingConsultations = (Array.isArray(all) ? all : []).filter((c) =>
+        const all = await clientService.consultations.getConsultations({ bucket: 'all', limit: 100 });
+        existingConsultations = (all.consultations || []).filter((c) =>
           ['payment_pending', 'pending', 'accepted', 'in_progress'].includes(c.status)
         );
       } catch (e) {
@@ -374,21 +401,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         attempt.key
       );
 
-      const action = bookingResponseAction(booking);
-      if (action === 'redirect_checkout') {
-        if (!booking.checkoutUrl) throw new Error('Payment checkout is unavailable');
-        window.location.assign(booking.checkoutUrl);
-        return;
-      }
-      clearBookingAttempt({ lawyerId: lawyer.id });
-      if (action === 'restart_booking') {
-        toast.info(t('booking.toastError'));
-        return;
-      }
-      if (action === 'complete_booking') {
-        onClose?.();
-        window.location.assign('/consultations');
-        return;
+      // Модель B «оплата через 5 минут звонка»: предоплаты при брони НЕТ
+      // (requiresPayment=false). Деньги спишутся на 5-й минуте разговора.
+      // Блок ниже оставлен для обратной совместимости, если сервер вернёт requiresPayment.
+      const consultationId = booking?.consultation?.id;
+      if (!freeBooking && booking?.requiresPayment && consultationId) {
+        try {
+          const payment = await clientService.lawyers.payConsultation(consultationId);
+          if (payment.redirectUrl) { window.location.href = payment.redirectUrl; return; }
+        } catch (payErr) { throw payErr; }
       }
 
       // Запоминаем выбор для следующей брони (тип/длительность/оплата).
@@ -408,6 +429,11 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         navigate('/profile');
         return;
       }
+      if (error.response?.data?.code === 'SLOT_UNAVAILABLE') {
+        setStep(2);
+        setFormData((current) => ({ ...current, preferredTime: '' }));
+        await loadSlots();
+      }
       toast.error(error.response?.data?.error || t('booking.toastError'));
     } finally {
       setLoading(false);
@@ -416,16 +442,11 @@ const BookingModal = ({ open, onClose, lawyer }) => {
 
   // Реальный .ics: генерируем событие и скачиваем файл (раньше был фейковый тост).
   const addToCalendar = () => {
-    const date = formData.preferredDate; // YYYY-MM-DD
-    const time = formData.preferredTime; // HH:mm
-    if (!date || !time) { toast.info(t('booking.toastCalendar')); return; }
-    const [y, mo, d] = date.split('-').map(Number);
-    const [hh, mm] = time.split(':').map(Number);
-    const start = new Date(y, mo - 1, d, hh, mm);
-    const end = new Date(start.getTime() + duration * 60000);
-    const pad = (n) => String(n).padStart(2, '0');
-    // Плавающее локальное время (без TZID) — показывается в местном времени пользователя.
-    const fmt = (dt) => `${dt.getFullYear()}${pad(dt.getMonth() + 1)}${pad(dt.getDate())}T${pad(dt.getHours())}${pad(dt.getMinutes())}00`;
+    const slot = selectedDateSlots.find((item) => item.time === formData.preferredTime);
+    if (!slot?.startsAt || !slot?.endsAt) { toast.info(t('booking.toastCalendar')); return; }
+    const start = new Date(slot.startsAt);
+    const end = new Date(slot.endsAt);
+    const fmt = (dt) => dt.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
     const esc = (s) => String(s).replace(/([,;\\])/g, '\\$1').replace(/\n/g, '\\n');
     const ics = [
       'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//MaslaXat//RU', 'CALSCALE:GREGORIAN',
@@ -720,26 +741,19 @@ const BookingModal = ({ open, onClose, lawyer }) => {
           <>
             <div style={label}>{t('booking.typeLabel')}</div>
             <div style={{ display: 'flex', gap: 10, marginBottom: 20 }}>
-              <div
-                onClick={() => handleChange('consultationType', 'video')}
-                style={pill(formData.consultationType === 'video')}
-              >
-                {t('booking.video')}
-              </div>
-              <div
-                onClick={() => handleChange('consultationType', 'chat')}
-                style={pill(formData.consultationType === 'chat')}
-              >
-                {t('booking.chat')}
-              </div>
+              {offeredFormats.map((format) => (
+                <button type="button" key={format} onClick={() => handleChange('consultationType', format)} aria-pressed={formData.consultationType === format} style={pill(formData.consultationType === format)}>
+                  {format === 'webrtc' ? t('booking.video') : format === 'chat' ? t('booking.chat') : format === 'audio' ? 'Аудио' : 'Zoom'}
+                </button>
+              ))}
             </div>
 
             <div style={label}>{t('booking.duration')}</div>
             <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-              {DURATIONS.map((d) => (
-                <div key={d} onClick={() => setDuration(d)} style={pill(duration === d)}>
+              {offeredDurations.map((d) => (
+                <button type="button" key={d} onClick={() => setDuration(d)} aria-pressed={duration === d} style={pill(duration === d)}>
                   {d} {t('booking.min')}
-                </div>
+                </button>
               ))}
             </div>
 
@@ -838,17 +852,32 @@ const BookingModal = ({ open, onClose, lawyer }) => {
         {step === 2 && (
           <>
             <div style={label}>{t('booking.date')}</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            {/* Пустой календарь без объяснения выглядит как сломанная форма:
+                клиент видит подпись «ДАТА» и ничего под ней. Слотов не бывает
+                по двум причинам — юрист не указал часы приёма либо всё занято
+                на две недели вперёд. Говорим об этом прямо. */}
+            {!slotsLoading && dates.length === 0 && (
+              <div style={{
+                marginBottom: 20, padding: '14px 16px', borderRadius: 12,
+                border: '1px solid var(--border)', background: 'var(--surface)',
+                fontSize: 13, color: 'var(--text2)', lineHeight: 1.5,
+              }}>
+                {t('booking.noSlotsAtAll')}
+              </div>
+            )}
+            <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
               {dates.map((d) => {
                 const active = formData.preferredDate === d.iso;
                 return (
-                  <div
+                  <button
+                    type="button"
                     key={d.iso}
                     onClick={() => {
                       handleChange('preferredDate', d.iso);
                       setDateLabel(d.label);
                     }}
                     style={datePill(active)}
+                    aria-pressed={active}
                   >
                     <div style={{ fontSize: 11, color: 'var(--text3)' }}>{d.dow}</div>
                     <div
@@ -861,12 +890,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                     >
                       {d.d}
                     </div>
-                  </div>
+                  </button>
                 );
               })}
             </div>
 
             <div style={label}>{t('booking.time')}</div>
+            {slotMeta && <div style={{ fontSize: 12, color: 'var(--text3)', marginBottom: 10 }}>
+              {t('booking.timezoneHint', { lawyer: slotMeta.timezone, client: slotMeta.clientTimezone, buffer: slotMeta.bookingBufferMinutes })}
+            </div>}
             {timeSlots.length === 0 ? (
               <div style={{ fontSize: 13, color: 'var(--text3)', padding: '10px 0 22px' }}>
                 {formData.preferredDate ? t('booking.noSlots') : t('booking.pickDateFirst')}
@@ -881,13 +913,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
                 }}
               >
                 {timeSlots.map((slot) => (
-                  <div
+                  <button
+                    type="button"
                     key={slot}
                     onClick={() => handleChange('preferredTime', slot)}
                     style={timePill(formData.preferredTime === slot)}
+                    aria-pressed={formData.preferredTime === slot}
                   >
-                    {slot}
-                  </div>
+                    {slotLabel(slot)}
+                  </button>
                 ))}
               </div>
             )}
@@ -1134,6 +1168,16 @@ const BookingModal = ({ open, onClose, lawyer }) => {
             </div>
             </>
             )}
+            <label style={{ display: 'flex', gap: 10, alignItems: 'flex-start', cursor: 'pointer', margin: '4px 0 18px', color: 'var(--text2)', fontSize: 12.5, lineHeight: 1.5 }}>
+              <input type="checkbox" checked={paymentConsent} onChange={(e) => setPaymentConsent(e.target.checked)} style={{ marginTop: 3, accentColor: 'var(--accent)' }} />
+              <span>
+                {t('booking.consentPrefix')}{' '}
+                <a href="/terms" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.terms')}</a>,{' '}
+                <a href="/privacy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.privacy')}</a>{' '}
+                {t('booking.and')}{' '}
+                <a href="/refund-policy" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>{t('booking.refundPolicy')}</a>.
+              </span>
+            </label>
           </>
         )}
 
@@ -1252,7 +1296,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
               {t('booking.back')}
             </button>
             {step === 3 ? (
-              <button onClick={handlePayNow} disabled={loading} style={primaryBtn}>
+              <button onClick={handlePayNow} disabled={loading || !paymentConsent} style={{ ...primaryBtn, opacity: paymentConsent ? 1 : 0.55 }}>
                 {loading ? t('booking.paying') : (freeBooking ? t('booking.bookFree') : `${t('booking.pay')} · ${fmt(total)} ${t('booking.sum')}`)}
               </button>
             ) : (

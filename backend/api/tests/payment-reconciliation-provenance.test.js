@@ -72,7 +72,7 @@ test('current latest state returns only hashed database/snapshot identity and re
   });
 
   expect(evidence).toEqual({
-    migrationHead: '20260824000000-create-authorization-evidence-events.js',
+    migrationHead: '20260829000005-fix-reminder-column-names.js',
     databaseIdentityDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
     snapshotIdentityDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
     reconciledAt: '2026-08-19T12:00:00.000Z',

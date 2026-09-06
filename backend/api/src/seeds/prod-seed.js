@@ -1,6 +1,6 @@
 // Идемпотентный сид для ПРОДА — НЕ разрушающий.
 // В отличие от index.js (sync force:true — дропает всё), этот скрипт только
-// ДОБАВЛЯ�ет демо-данные через findOrCreate: существующие записи не трогает,
+// ДОБАВЛЯЕТ справочники через findOrCreate: существующие записи не трогает,
 // таблицы не пересоздаёт. Безопасно запускать повторно.
 require('dotenv').config();
 const { exitAfterFatal, reportCaughtException } = require('../instrument');
@@ -18,6 +18,7 @@ const lawyers = [
   { name: 'Юнусова Зарина', email: 'yunusova@maslaxat.uz', spec: 'Земельное право', exp: 7, price: 190000, rating: 4.9, reviews: 68, cases: 123, location: 'Ташкент, Шайхантахурский район' },
   { name: 'Алимов Фаррух', email: 'alimov@maslaxat.uz', spec: 'Интеллектуальная собственность', exp: 13, price: 450000, rating: 4.8, reviews: 54, cases: 156, location: 'Ташкент, Учтепинский район' },
   { name: 'Иванов Иван', email: 'ivanov@maslaxat.uz', spec: 'Корпоративное право', exp: 16, price: 380000, rating: 4.9, reviews: 142, cases: 289, location: 'Ташкент, Яккасарайский район' },
+  { name: 'Юладшев Абдулазиз', email: 'yuladshev@maslaxat.uz', spec: 'Налоговое право', exp: 10, price: 725000, rating: 0, reviews: 0, cases: 0, location: 'Ташкент' },
 ];
 
 const specializations = [
@@ -37,12 +38,22 @@ async function runProdSeed() {
   // Только проверяем соединение — НЕ дропаем и НЕ alter'им схему.
   await sequelize.authenticate();
 
-  let created = 0, skipped = 0;
+  let created = 0, skipped = 0, updated = 0;
+  const includeDemoData = process.env.ALLOW_PRODUCTION_DEMO_DATA === '1';
+  const demoPasswords = {
+    client: process.env.DEMO_CLIENT_PASSWORD,
+    admin: process.env.DEMO_ADMIN_PASSWORD,
+    lawyer: process.env.DEMO_LAWYER_PASSWORD,
+  };
+  if (includeDemoData && Object.values(demoPasswords).some((password) => !password || password.length < 12)) {
+    throw new Error('Demo data requires DEMO_CLIENT_PASSWORD, DEMO_ADMIN_PASSWORD and DEMO_LAWYER_PASSWORD (12+ chars)');
+  }
 
-    // Демо клиент и админ
+  if (includeDemoData) {
+    // Демо клиент и админ создаются только по отдельному explicit opt-in.
     const demoUsers = [
-      { email: 'client@maslaxat.uz', password: 'client123', name: 'Клиент Тестовый', phone: '+998901234567', role: 'client', isVerified: true },
-      { email: 'admin@maslaxat.uz', password: 'admin123', name: 'Администратор', phone: '+998901234568', role: 'admin', isVerified: true },
+      { email: 'client@maslaxat.uz', password: demoPasswords.client, name: 'Клиент Тестовый', phone: '+998901234567', role: 'client', isVerified: true },
+      { email: 'admin@maslaxat.uz', password: demoPasswords.admin, name: 'Администратор', phone: '+998901234568', role: 'admin', isVerified: true },
     ];
     for (const u of demoUsers) {
       const [, wasCreated] = await User.findOrCreate({ where: { email: u.email }, defaults: u });
@@ -50,12 +61,29 @@ async function runProdSeed() {
     }
 
     // Юристы + профили
+      // Часы приёма: без них availabilityService не выдаёт ни одного слота,
+      // и записаться к юристу физически невозможно — форма брони показывает
+      // пустой календарь. Демо-юристам ставим рабочую неделю пн–пт 09:00–18:00.
+      const WORK_WEEK = {
+        mon: { enabled: true, from: '09:00', to: '18:00' },
+        tue: { enabled: true, from: '09:00', to: '18:00' },
+        wed: { enabled: true, from: '09:00', to: '18:00' },
+        thu: { enabled: true, from: '09:00', to: '18:00' },
+        fri: { enabled: true, from: '09:00', to: '18:00' },
+        sat: { enabled: false, from: '09:00', to: '18:00' },
+        sun: { enabled: false, from: '09:00', to: '18:00' },
+      };
+
     for (const l of lawyers) {
       const [user, userCreated] = await User.findOrCreate({
         where: { email: l.email },
-        defaults: { email: l.email, password: 'lawyer123', name: l.name, role: 'lawyer', isVerified: true },
+        defaults: { email: l.email, password: demoPasswords.lawyer, name: l.name, role: 'lawyer', isVerified: true },
       });
       userCreated ? created++ : skipped++;
+      if (!userCreated && user.role !== 'lawyer') {
+        console.warn(`Пропуск ${l.email}: существующий аккаунт имеет роль ${user.role}`);
+        continue;
+      }
 
       const [, profCreated] = await LawyerProfile.findOrCreate({
         where: { userId: user.id },
@@ -65,18 +93,23 @@ async function runProdSeed() {
           specializations: [l.spec],
           experience: l.exp,
           price: l.price,
-          rating: l.rating,
-          reviewsCount: l.reviews,
-          completedCases: l.cases,
+          rating: 0,
+          reviewsCount: 0,
+          completedCases: 0,
           location: l.location,
           languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],
           description: `Опытный юрист. Специализация: ${l.spec}`,
+          schedule: WORK_WEEK,
           isAvailable: true,
           verificationStatus: 'approved',
         },
       });
       profCreated ? created++ : skipped++;
+
+      // Сид владеет только вновь созданной записью. Существующий профиль может
+      // уже принадлежать реальному человеку, поэтому его модерацию/цену/график не меняем.
     }
+  }
 
     // Специализации
     for (const s of specializations) {
@@ -86,14 +119,12 @@ async function runProdSeed() {
 
     const promotionPackages = [
       {
-        code: 'CATALOG_TOP_7',
-        name: { ru: 'TOP на 7 дней', uz: '7 kunlik TOP', en: '7-day TOP' },
+        code: 'CATALOG_TOP_7', name: { ru: 'TOP на 7 дней', uz: '7 kunlik TOP', en: '7-day TOP' },
         placement: 'catalog_top', durationDays: 7, priceAmountTiyin: 19900000,
         currency: 'UZS', maxActiveSlots: 2, sponsoredPositions: [0, 3], isActive: true, displayOrder: 10,
       },
       {
-        code: 'CATALOG_TOP_30',
-        name: { ru: 'TOP на 30 дней', uz: '30 kunlik TOP', en: '30-day TOP' },
+        code: 'CATALOG_TOP_30', name: { ru: 'TOP на 30 дней', uz: '30 kunlik TOP', en: '30-day TOP' },
         placement: 'catalog_top', durationDays: 30, priceAmountTiyin: 59900000,
         currency: 'UZS', maxActiveSlots: 2, sponsoredPositions: [0, 3], isActive: true, displayOrder: 20,
       },
@@ -105,7 +136,7 @@ async function runProdSeed() {
       wasCreated ? created++ : skipped++;
     }
 
-    // Промокоды (их сид уже идемпотентен)
+    // Промокоды добавляются только при отсутствии; отключённые админом не реактивируются.
     try {
       const { seedPromos } = require('./promos');
       await seedPromos();
@@ -115,8 +146,8 @@ async function runProdSeed() {
       logger.warn('production_promo_seed_skipped');
     }
 
-    console.log(`\nГотово. Создано: ${created}, уже было (пропущено): ${skipped}`);
-  return { created, skipped };
+    console.log(`\nГотово. Создано: ${created}, обновлено: ${updated}, уже было (пропущено): ${skipped}`);
+  return { created, skipped, updated };
 }
 
 module.exports = { runProdSeed };

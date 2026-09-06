@@ -73,6 +73,9 @@ router.post('/:consultationId/documents', authenticate, authorizeConsultationMod
         ...metadata,
       }, { transaction }),
     });
+    if (!doc) {
+      return res.status(413).json({ error: 'Превышен лимит документов консультации' });
+    }
     // Уведомляем другую сторону о новом документе (fail-safe)
     try {
       const me = await User.findByPk(req.userId, { attributes: ['name'] });

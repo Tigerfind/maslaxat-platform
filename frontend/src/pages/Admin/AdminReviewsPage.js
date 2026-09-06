@@ -1,60 +1,76 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
-  Box, Container, Typography, IconButton, CircularProgress, Rating,
-  Table, TableBody, TableCell, TableHead, TableRow, Paper, Switch, Chip,
+  Box, Container, CircularProgress, Rating,
+  Table, TableBody, TableCell, TableHead, TableRow, Paper, Switch, Chip, Pagination,
 } from '@mui/material';
-import { ArrowBack, Star } from '@mui/icons-material';
+import { Star } from '@mui/icons-material';
 import adminService from '../../services/adminService';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
+import GlassShell from '../../components/GlassKit/GlassShell';
+import ErrorState from '../../components/UI/ErrorState';
+import ConfirmDialog from '../../components/UI/ConfirmDialog';
+
+const PAGE_SIZE = 25;
 
 const AdminReviewsPage = () => {
-  const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [confirmToggle, setConfirmToggle] = useState(null);
+  const [acting, setActing] = useState(null);
 
-  const load = async () => {
+  const load = async (pageNum = 1) => {
     setLoading(true);
-    setReviews(await adminService.reviews.getReviews());
-    setLoading(false);
+    try {
+      const data = await adminService.reviews.getReviews({ page: pageNum, limit: PAGE_SIZE });
+      // Бэкенд теперь отдаёт объект с пагинацией; массив — старый формат.
+      setReviews(Array.isArray(data?.reviews) ? data.reviews : (Array.isArray(data) ? data : []));
+      setTotalPages(data?.totalPages || 1);
+      setError(null);
+    } catch (e) {
+      setError(e);
+      setReviews([]);
+    } finally {
+      setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(1); }, []);
 
-  const toggleHidden = async (review) => {
+  // Скрытие тянет пересчёт рейтинга юриста на бэкенде — случайный клик по
+  // переключателю менял публичный рейтинг без спроса. Теперь через подтверждение.
+  const toggleHidden = async () => {
+    const review = confirmToggle;
     const next = !review.isHidden;
+    setActing(review.id);
     try {
       await adminService.reviews.setHidden(review.id, next);
       setReviews((prev) => prev.map((x) => (x.id === review.id ? { ...x, isHidden: next } : x)));
       toast.success(next ? t('adminReviews.hidden') : t('adminReviews.shown'));
-    } catch (e) { toast.error(t('common.error')); }
+      setConfirmToggle(null);
+    } catch (e) {
+      toast.error(e.response?.data?.error || t('common.error'));
+    } finally {
+      setActing(null);
+    }
   };
 
-  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString('ru-RU', { day: 'numeric', month: 'short', year: 'numeric' }) : '');
+  // Даты по текущему языку интерфейса: раньше здесь была захардкожена 'ru-RU',
+  // и в узбекской/английской версии даты оставались русскими.
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
+  const fmtDate = (d) => (d ? new Date(d).toLocaleDateString(dateLocale, { day: 'numeric', month: 'short', year: 'numeric' }) : '');
 
   return (
-    <Box sx={{ minHeight: '100vh', bgcolor: axelionColors.bgCream, pb: 6 }}>
-      <Box sx={{ bgcolor: axelionColors.bgLight, borderBottom: `1px solid ${axelionColors.borderLight}`, py: { xs: 2, md: 3 } }}>
-        <Container maxWidth="lg">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            <IconButton onClick={() => navigate('/admin/dashboard')} sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px' }}>
-              <ArrowBack sx={{ color: axelionColors.textDark }} />
-            </IconButton>
-            <Typography sx={{ fontWeight: 300, fontSize: { xs: '1.25rem', md: '1.6rem' }, letterSpacing: '0.08em', textTransform: 'uppercase', color: axelionColors.textDark }}>
-              {t('adminReviews.title')}
-            </Typography>
-          </Box>
-          <Typography sx={{ mt: 1, ml: 7, fontSize: 13, color: axelionColors.textMuted }}>
-            {t('adminReviews.subtitle')}
-          </Typography>
-        </Container>
-      </Box>
-
-      <Container maxWidth="lg" sx={{ mt: 4 }}>
+    <GlassShell active="/admin/reviews" title={t('adminReviews.title')} subtitle={t('adminReviews.subtitle')} role="admin">
+      <Container maxWidth="lg" disableGutters>
         {loading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}><CircularProgress sx={{ color: axelionColors.gold }} /></Box>
+        ) : error ? (
+          <ErrorState error={error} onRetry={() => load(page)} />
         ) : (
           <Paper sx={{ border: `1px solid ${axelionColors.borderLight}`, borderRadius: '8px', overflow: 'hidden', boxShadow: 'none' }}>
             <Table>
@@ -82,7 +98,7 @@ const AdminReviewsPage = () => {
                     <TableCell sx={{ whiteSpace: 'nowrap', fontSize: 13, color: axelionColors.textMuted }}>{fmtDate(review.createdAt)}</TableCell>
                     <TableCell align="center">
                       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 0.5 }}>
-                        <Switch checked={!review.isHidden} onChange={() => toggleHidden(review)} size="small" sx={{ '& .Mui-checked': { color: axelionColors.gold }, '& .Mui-checked + .MuiSwitch-track': { bgcolor: axelionColors.gold } }} />
+                        <Switch checked={!review.isHidden} onChange={() => setConfirmToggle(review)} size="small" sx={{ '& .Mui-checked': { color: axelionColors.gold }, '& .Mui-checked + .MuiSwitch-track': { bgcolor: axelionColors.gold } }} />
                         {review.isHidden && <Chip label={t('adminReviews.hiddenTag')} size="small" sx={{ height: 20, fontSize: 11, bgcolor: 'rgba(196,163,90,0.16)', color: axelionColors.warning }} />}
                       </Box>
                     </TableCell>
@@ -92,8 +108,25 @@ const AdminReviewsPage = () => {
             </Table>
           </Paper>
         )}
+
+        {!loading && !error && totalPages > 1 && (
+          <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+            <Pagination count={totalPages} page={page} onChange={(e, p) => { setPage(p); load(p); }} shape="rounded" />
+          </Box>
+        )}
       </Container>
-    </Box>
+
+      <ConfirmDialog
+        open={Boolean(confirmToggle)}
+        title={confirmToggle?.isHidden ? t('adminReviews.confirmShowTitle') : t('adminReviews.confirmHideTitle')}
+        message={confirmToggle?.isHidden ? t('adminReviews.confirmShowMsg') : t('adminReviews.confirmHideMsg')}
+        confirmLabel={confirmToggle?.isHidden ? t('adminReviews.show') : t('adminReviews.hide')}
+        danger={!confirmToggle?.isHidden}
+        busy={acting === confirmToggle?.id}
+        onConfirm={toggleHidden}
+        onClose={() => setConfirmToggle(null)}
+      />
+    </GlassShell>
   );
 };
 

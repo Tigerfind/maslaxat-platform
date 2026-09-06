@@ -3,6 +3,7 @@ const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer } = require('./helpers');
 const { computeLoyalty } = require('../src/services/loyaltyService');
 const { markPaymentPaid } = require('../src/services/paymentService');
+const { DateTime } = require('luxon');
 
 const { Consultation, Payment, LawyerProfile } = models;
 
@@ -44,16 +45,18 @@ describe('деньги/эскроу — фиксы аудита', () => {
     const { user: lawyer, lp } = await makeLawyer('mf-l2@test.uz', { pendingBalance: 200000 });
     await lawyer.update({ twoFactorEnabled: true });
     const cons = await paidConsultation(client.id, lawyer.id, { status: 'in_progress' });
+    await cons.update({ callStartedAt: new Date() });
 
     const res = await request(app).post(`/api/video/consultation/${cons.id}/end`)
       .set('Authorization', `Bearer ${tokenFor(lawyer, 'mfa')}`)
       .set('X-Maslaxat-Mode', 'lawyer')
       .send({ durationSeconds: 725 });
     expect(res.status).toBe(200);
+    expect(res.body.awaitingClientConfirmation).toBe(true);
 
     const after = await LawyerProfile.findByPk(lp.id);
-    expect(Number(after.balance)).toBe(200000);
-    expect(Number(after.pendingBalance)).toBe(0);
+    expect(Number(after.balance)).toBe(0);
+    expect(Number(after.pendingBalance)).toBe(200000);
     // фактическая длительность звонка сохранена
     expect((await Consultation.findByPk(cons.id)).actualDuration).toBe(725);
   });
@@ -78,8 +81,9 @@ describe('деньги/эскроу — фиксы аудита', () => {
     expect(res.status).toBe(202);
 
     const after = await LawyerProfile.findByPk(lp.id);
-    expect(Number(after.pendingBalance)).toBe(200000); // резерв до подтверждения провайдера
-    expect((await Payment.findOne({ where: { consultationId: cons.id } })).status).toBe('refund_pending');
+    expect(Number(after.pendingBalance)).toBe(200000); // резерв снимается после подтверждения провайдера
+    const payment = await Payment.findOne({ where: { consultationId: cons.id } });
+    expect(payment.status).toBe('refund_pending');
   });
 
   test('нельзя отменить завершённую консультацию', async () => {
@@ -103,8 +107,12 @@ describe('деньги/эскроу — фиксы аудита', () => {
   test('/join НЕ переводит консультацию в in_progress (закрыт бэкдор эскроу)', async () => {
     const client = await makeClient('mf-c9@test.uz');
     const { user: lawyer } = await makeLawyer('mf-l9@test.uz');
-    await lawyer.update({ twoFactorEnabled: true });
-    const cons = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000 });
+    await lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' });
+    const start = new Date(Date.now() + 5 * 60000);
+    const cons = await Consultation.create({
+      clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'accepted', price: 100000,
+      scheduledStartAt: start, scheduledEndAt: new Date(start.getTime() + 60 * 60000),
+    });
     const res = await request(app).post(`/api/client/consultations/${cons.id}/join`)
       .set('Authorization', `Bearer ${tokenFor(lawyer, 'mfa')}`)
       .set('X-Maslaxat-Mode', 'lawyer');
@@ -121,18 +129,22 @@ describe('деньги/эскроу — фиксы аудита', () => {
     expect(loyalty.freeNow).toBe(false); // бонус уже использован
   });
 
-  test('продление: +15 мин добавляет доплату, эскроу выплачивает сумму всех платежей', async () => {
+  test('продление: +30 мин сохраняет допустимую длительность и выплачивает сумму всех платежей', async () => {
     const client = await makeClient('mf-ext-c@test.uz');
     const { user: lawyer, lp } = await makeLawyer('mf-ext-l@test.uz', { price: 200000, pendingBalance: 170000 });
     await lawyer.update({ twoFactorEnabled: true });
     // оплаченная идущая консультация (оригинал 200000 зарезервирован)
+    const scheduledStartAt = new Date(Date.now() - 10 * 60000);
     const cons = await Consultation.create({
-      clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress', price: 200000, duration: 60,
+      clientId: client.id, lawyerId: lawyer.id, question: 'q', status: 'in_progress',
+      price: 200000, duration: 60, callStartedAt: new Date(), scheduledStartAt,
+      scheduledEndAt: new Date(scheduledStartAt.getTime() + 60 * 60000), scheduleTimezone: 'Asia/Tashkent',
       commissionRateBps: 1500, grossAmountTiyin: 20000000, lawyerNetAmountTiyin: 17000000,
     });
     await Payment.create({
-      userId: client.id, consultationId: cons.id, purpose: 'consultation', amount: 200000,
-      amountTiyin: 20000000, currency: 'UZS', provider: 'payme', status: 'paid',
+      userId: client.id, consultationId: cons.id, purpose: 'consultation',
+      amount: 200000, amountTiyin: 20000000, refundedAmountTiyin: 0,
+      currency: 'UZS', provider: 'payme', status: 'paid',
     });
 
     // продление на 15 мин → доплата 50000
@@ -141,47 +153,49 @@ describe('деньги/эскроу — фиксы аудита', () => {
       .set('Authorization', `Bearer ${tokenFor(client)}`)
       .set('X-Maslaxat-Mode', 'client')
       .set('Idempotency-Key', key)
-      .send({ minutes: 15 });
+      .send({ minutes: 30 });
     expect(proposal.status).toBe(202);
     const ext = await request(app).post(`/api/video/consultation/${cons.id}/extend`)
       .set('Authorization', `Bearer ${tokenFor(lawyer, 'mfa')}`)
       .set('X-Maslaxat-Mode', 'lawyer')
       .set('Idempotency-Key', key)
-      .send({ minutes: 15 });
+      .send({ minutes: 30 });
     expect(ext.status).toBe(200);
-    expect(ext.body.addAmount).toBe(50000);
-    expect(ext.body.duration).toBe(60);
-
+    expect(ext.body.addAmount).toBe(100000);
     await markPaymentPaid({
       paymentId: ext.body.paymentId,
-      providerTransactionId: 'money-extension-provider',
-      amountTiyin: 5000000,
-      providerData: { performTime: 1700000000000 },
+      providerTransactionId: 'extension-payment-1',
+      amountTiyin: 10000000,
+      providerData: { performTime: Date.now() },
     });
     await cons.reload();
-    expect(cons.duration).toBe(75);
-    expect(cons.price).toBe(250000);
+    expect(cons.duration).toBe(90);
+    expect(Number(cons.price)).toBe(300000);
 
     const afterExt = await LawyerProfile.findByPk(lp.id);
-    expect(Number(afterExt.pendingBalance)).toBe(212500); // base net 170000 + extension net 42500
+    expect(Number(afterExt.pendingBalance)).toBe(255000);
 
     // завершение → выплачивается СУММА всех платежей (оригинал + продление)
     const end = await request(app).post(`/api/video/consultation/${cons.id}/end`)
       .set('Authorization', `Bearer ${tokenFor(lawyer, 'mfa')}`)
       .set('X-Maslaxat-Mode', 'lawyer');
     expect(end.status).toBe(200);
+    expect((await request(app).post(`/api/consultations/${cons.id}/complete`)
+      .set('Authorization', `Bearer ${tokenFor(client)}`)).status).toBe(200);
     const done = await LawyerProfile.findByPk(lp.id);
-    expect(Number(done.balance)).toBe(212500);
+    expect(Number(done.balance)).toBe(255000);
     expect(Number(done.pendingBalance)).toBe(0);
   });
 
   test('длительность масштабирует цену (90 мин = 1.5×)', async () => {
     const client = await makeClient('mf-c7@test.uz');
     const { user: lawyer } = await makeLawyer('mf-l7@test.uz', { price: 200000 });
+    let date = DateTime.now().setZone('Asia/Tashkent').plus({ weeks: 1 }).startOf('day');
+    while (date.weekday !== 1) date = date.plus({ days: 1 });
     const res = await request(app).post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .set('Idempotency-Key', 'money-duration-booking')
-      .send({ question: 'q', consultationType: 'video', duration: 90 });
+      .set('Idempotency-Key', 'duration-price-90')
+      .send({ question: 'q', consultationType: 'video', duration: 90, preferredDate: date.toISODate(), preferredTime: '09:00', acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(201);
     expect(res.body.consultation.duration).toBe(90);
     expect(res.body.consultation.price).toBe(300000); // 200000 * 90/60

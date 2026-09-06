@@ -13,13 +13,8 @@ const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer, makeAdmin } = require('./helpers');
 
 const {
-  User,
-  LawyerProfile,
-  LawyerDocument,
-  LawyerProfileImport,
-  ProfileImportAudit,
+  User, LawyerProfile, LawyerDocument, Notification, ProfileImportAudit, LawyerProfileImport,
   ObjectCleanupTask,
-  Notification,
 } = models;
 
 beforeAll(async () => {
@@ -34,10 +29,13 @@ describe('каталог показывает только одобренных 
 
     const res = await request(app).get('/api/lawyers?limit=50');
     expect(res.status).toBe(200);
-    const emails = res.body.lawyers.map((l) => l.profile.verificationStatus);
-    // все возвращённые — approved
-    expect(emails.every((s) => s === 'approved')).toBe(true);
     expect(res.body.lawyers.length).toBe(1);
+    expect(res.body.lawyers[0]).not.toHaveProperty('isVerified');
+    expect(res.body.lawyers[0]).not.toHaveProperty('createdAt');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('verificationStatus');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('rejectionReason');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('balance');
+    expect(res.body.lawyers[0].profile).not.toHaveProperty('pendingBalance');
   });
 });
 
@@ -52,6 +50,12 @@ describe('публичный профиль (GET /lawyers/:id)', () => {
     const r2 = await request(app).get(`/api/lawyers/${approved.id}`);
     expect(r2.status).toBe(200);
     expect(r2.body.lawyer.id).toBe(approved.id);
+    expect(r2.body.lawyer).not.toHaveProperty('isVerified');
+    expect(r2.body.lawyer).not.toHaveProperty('createdAt');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('verificationStatus');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('rejectionReason');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('balance');
+    expect(r2.body.lawyer.profile).not.toHaveProperty('pendingBalance');
   });
 });
 
@@ -63,7 +67,7 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${pending.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60 });
+      .send({ type: 'video', duration: 60, acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(400);
     expect(res.body.error).toMatch(/проверку/i);
   });
@@ -74,7 +78,8 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${approved.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ type: 'video', duration: 60, problems: [{ text: 'Q', categories: ['civil'] }] });
+      .set('Idempotency-Key', 'lawyer-verification-booking')
+      .send({ type: 'video', duration: 60, problems: [{ text: 'Q', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
     expect(res.status).toBe(403);
     expect(res.body.code).toBe('CONTACT_UNVERIFIED');
   });
@@ -86,8 +91,8 @@ describe('бронирование гейтится модерацией (POST /
     const res = await request(app)
       .post(`/api/lawyers/${approved.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .set('Idempotency-Key', 'lawyer-verification-booking')
-      .send({ type: 'video', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }] });
+      .set('Idempotency-Key', 'lawyer-verification-approved-booking')
+      .send({ consultationType: 'chat', duration: 60, problems: [{ text: 'Мой вопрос', categories: ['Гражданское право'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
     expect([200, 201]).toContain(res.status);
   });
 });
@@ -95,11 +100,12 @@ describe('бронирование гейтится модерацией (POST /
 describe('админ approve/reject', () => {
   test('approve делает юриста видимым + уведомление', async () => {
     const admin = await makeAdmin('vs-admin1@test.uz');
-    const { user: lawyer } = await makeLawyer('vs-p4@test.uz', { verificationStatus: 'pending' });
+    const { user: lawyer } = await makeLawyer('vs-p4@test.uz', { verificationStatus: 'pending_review' });
     await Promise.all([
-      admin.update({ twoFactorEnabled: true }),
-      lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
+      admin.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
+      lawyer.update({ avatar: '/uploads/lawyer.png', twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
     ]);
+    await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
 
     const res = await request(app)
       .post(`/api/admin/lawyers/${lawyer.id}/approve`)
@@ -119,11 +125,28 @@ describe('админ approve/reject', () => {
     expect(cat.body.lawyers.map((l) => l.id)).toContain(lawyer.id);
   });
 
+  test('админ не может одобрить неполный профиль', async () => {
+    const admin = await makeAdmin('vs-admin-incomplete@test.uz');
+    const { user: lawyer } = await makeLawyer('vs-incomplete@test.uz', { verificationStatus: 'pending_review' });
+
+    await Promise.all([
+      admin.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
+      lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
+    ]);
+    const res = await request(app)
+      .post(`/api/admin/lawyers/${lawyer.id}/approve`)
+      .set('Authorization', `Bearer ${tokenFor(admin, 'mfa')}`)
+      .set('X-Maslaxat-Mode', 'admin');
+
+    expect(res.status).toBe(400);
+    expect(res.body.missing).toEqual(expect.arrayContaining(['photo', 'documents']));
+  });
+
   test('reject с причиной убирает из каталога + пишет причину + уведомление', async () => {
     const admin = await makeAdmin('vs-admin2@test.uz');
-    const { user: lawyer } = await makeLawyer('vs-a4@test.uz', { verificationStatus: 'approved' });
-    await admin.update({ twoFactorEnabled: true });
+    const { user: lawyer } = await makeLawyer('vs-a4@test.uz', { verificationStatus: 'pending_review' });
 
+    await admin.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' });
     const res = await request(app)
       .post(`/api/admin/lawyers/${lawyer.id}/reject`)
       .set('Authorization', `Bearer ${tokenFor(admin, 'mfa')}`)
@@ -359,7 +382,8 @@ describe('profile review import retention trigger', () => {
     });
     await admin.update({ twoFactorEnabled: true });
     if (action === 'approve') {
-      await lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' });
+      await lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET', avatar: '/uploads/lawyer.png' });
+      await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
     }
     const imported = await LawyerProfileImport.create({
       userId: lawyer.id,
@@ -390,6 +414,8 @@ describe('profile review import retention trigger', () => {
       admin.update({ twoFactorEnabled: true }),
       lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
     ]);
+    await lawyer.update({ avatar: '/uploads/lawyer.png' });
+    await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
     const imported = await LawyerProfileImport.create({
       userId: lawyer.id, status: 'confirmed', storageKey: `profile-imports/${lawyer.id}/atomic`,
       originalName: 'profile.pdf', mimeType: 'application/pdf', size: 8,
@@ -419,6 +445,8 @@ describe('profile review import retention trigger', () => {
       admin.update({ twoFactorEnabled: true }),
       lawyer.update({ twoFactorEnabled: true, twoFactorSecret: 'TESTSECRET' }),
     ]);
+    await lawyer.update({ avatar: '/uploads/lawyer.png' });
+    await LawyerDocument.create({ userId: lawyer.id, type: 'diploma', name: 'diploma.pdf', path: '/tmp/diploma.pdf' });
     const imported = await LawyerProfileImport.create({
       userId: lawyer.id, status: 'confirmed', storageKey: `profile-imports/${lawyer.id}/locked`,
       originalName: 'profile.pdf', mimeType: 'application/pdf', size: 8,

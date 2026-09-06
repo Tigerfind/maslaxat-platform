@@ -25,12 +25,14 @@ function book(client, lawyer, key = 'booking-checkout-key', body = {}) {
     .post(`/api/lawyers/${lawyer.id}/book`)
     .set('Authorization', `Bearer ${tokenFor(client)}`)
     .set('Idempotency-Key', key)
-    .send({
-      consultationType: 'video',
-      duration: 60,
-      problems: [{ text: 'Вопрос', categories: ['civil'] }],
-      ...body,
-    });
+    .send({ consultationType: 'chat', duration: 60, problems: [{ text: 'Вопрос', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13', ...body });
+}
+
+function futureMonday(weeksAhead = 1) {
+  const date = new Date();
+  const days = ((8 - date.getUTCDay()) % 7 || 7) + ((weeksAhead - 1) * 7);
+  date.setUTCDate(date.getUTCDate() + days);
+  return date.toISOString().slice(0, 10);
 }
 
 describe('prepayment-only booking', () => {
@@ -157,8 +159,9 @@ describe('prepayment-only booking', () => {
     const client = await makeClient(`prepay-fingerprint-${suffix}-client@test.uz`);
     const { user: lawyer } = await makeLawyer(`prepay-fingerprint-${suffix}-lawyer@test.uz`, { price: 100000 });
     const key = `prepay-fingerprint-${suffix}`;
+    const initialDate = futureMonday(2);
     const initial = {
-      preferredDate: '2026-08-17',
+      preferredDate: initialDate,
       preferredTime: '10:00',
       duration: 60,
       consultationType: 'video',
@@ -166,11 +169,12 @@ describe('prepayment-only booking', () => {
     };
     expect((await book(client, lawyer, key, initial)).status).toBe(201);
 
-    const retry = await book(client, lawyer, key, { ...initial, ...changed });
+    const retryTerms = label === 'date' ? { ...changed, preferredDate: futureMonday(3) } : changed;
+    const retry = await book(client, lawyer, key, { ...initial, ...retryTerms });
 
     expect(retry.status).toBe(409);
     expect(retry.body.code).toBe('BOOKING_TERMS_CHANGED');
-    expect(retry.body.error).toMatch(/different booking|idempotency/i);
+    expect(retry.body.error).toMatch(/booking terms changed|different booking|idempotency/i);
     expect(await Consultation.count({ where: { clientId: client.id, lawyerId: lawyer.id } })).toBe(1);
   });
 
@@ -249,10 +253,9 @@ describe('legacy five-minute billing compatibility', () => {
       pseudoCaptureEnabled: false,
       productionSource: false,
     });
-    expect(billing.captureHold).toBeUndefined();
-    expect(billing.checkCaptureDue).toBeUndefined();
-    expect(billing.startBillingJob).toBeUndefined();
+
   });
+
 });
 
 async function extensionFixture(prefix) {

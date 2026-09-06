@@ -95,7 +95,7 @@ const LawyerProfileEditPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [verificationStatus, setVerificationStatus] = useState('pending');
+  const [verificationStatus, setVerificationStatus] = useState('draft');
   const [meta, setMeta] = useState({ rating: 0, cases: 0 }); // для мини-статистики шапки
   const [profileSnapshot, setProfileSnapshot] = useState(null);
   const [importRecord, setImportRecord] = useState(null);
@@ -129,15 +129,24 @@ const LawyerProfileEditPage = () => {
       try {
         const res = await api.get('/lawyer/profile');
         const p = res.data.profile || {};
-        setProfileSnapshot(p);
-        setForm((previous) => ({
-          ...mergeProfileIntoForm(previous, p),
-          avatarPreview: previous.avatarFile ? previous.avatarPreview : (res.data.user?.avatar || previous.avatarPreview),
-        }));
-        setVerificationStatus(p.verificationStatus || 'pending');
+        setForm({
+          description: p.description || '',
+          greeting: p.greeting || '',
+          experience: p.experience || 0,
+          price: p.price || 200000,
+          location: p.location || 'Ташкент',
+          specialization: p.specialization || '',
+          specializations: Array.isArray(p.specializations) && p.specializations.length
+            ? p.specializations
+            : (p.specialization ? [p.specialization] : []),
+          schedule: p.schedule || {},
+          avatarFile: null,
+          avatarPreview: res.data.user?.avatar || null,
+        });
+        setVerificationStatus(p.verificationStatus || 'draft');
         setMeta({ rating: p.rating || 0, cases: p.completedCases || 0 });
       } catch {
-        setError(t('lawyerPanel.loadProfileError'));
+        setError('lawyerPanel.loadProfileError');
       } finally {
         setLoading(false);
       }
@@ -262,7 +271,7 @@ const LawyerProfileEditPage = () => {
       <div style={{ maxWidth: 820, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}>
         {error && (
           <div style={{ ...glassCard, padding: '14px 18px', color: 'var(--error)', border: '1px solid var(--error)', fontSize: 14 }}>
-            {error}
+            {error.startsWith?.('lawyerPanel.') ? t(error) : error}
           </div>
         )}
 

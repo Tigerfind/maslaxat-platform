@@ -19,6 +19,7 @@ import {
   DarkModeOutlined,
   LightModeOutlined,
   MenuOutlined,
+  AccountBalanceWalletOutlined,
   CampaignOutlined,
 } from '@mui/icons-material';
 import { getHomePath, logout, switchMode } from '../../store/slices/authSlice';
@@ -59,6 +60,8 @@ const NAV = {
     { key: '/admin/users', tKey: 'admin.manageUsers', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/lawyers', tKey: 'admin.manageLawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/specializations', tKey: 'admin.specializations', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/consultations', tKey: 'adminConsult.title', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/admin/finance', tKey: 'adminFinance.title', icon: <AccountBalanceWalletOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/promos', tKey: 'admin.promos', icon: <ReceiptLongOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/promotions', tKey: 'nav.promotions', icon: <CampaignOutlined sx={{ fontSize: 20 }} /> },
     { key: '/admin/reviews', tKey: 'admin.reviews', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },

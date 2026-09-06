@@ -1,3 +1,12 @@
 # https://www.robotstxt.org/robotstxt.html
 User-agent: *
-Disallow:
+Allow: /
+Disallow: /dashboard
+Disallow: /admin/
+Disallow: /lawyer/
+Disallow: /consultations
+Disallow: /documents
+Disallow: /portfolio
+Disallow: /payments
+Disallow: /profile
+Disallow: /settings

@@ -1,5 +1,5 @@
 const CACHE_PREFIX = 'maslaxat-';
-const CACHE_NAME = 'maslaxat-shell-v3';
+const CACHE_NAME = 'maslaxat-shell-v4';
 const SHELL_URL = '/index.html';
 const MAX_CACHE_ENTRIES = 40;
 const SHELL_ASSETS = new Set([
@@ -11,7 +11,7 @@ const SHELL_ASSETS = new Set([
   '/icon-512.png',
   '/app-icon.svg',
 ]);
-const VERSIONED_STATIC = /^\/static\/(?:css|js|media)\/[^/?]*\.[a-f0-9]{8,}\.[^/?]+$/i;
+const VERSIONED_STATIC = /^\/assets\/[^/?]*-[a-f0-9]{8,}\.[^/?]+$/i;
 const PRIVATE_PATH = /^\/(?:api|socket\.io|auth|exports?|uploads?|files?)(?:\/|$)/i;
 const PRIVATE_DOCUMENT_PATH = /^\/documents\//i;
 const PUSH_STATE_CACHE = 'emaslaxat-push-state-v1';

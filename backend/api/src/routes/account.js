@@ -18,7 +18,7 @@ router.post('/lawyer-profile', authenticate, async (req, res, next) => {
           userId: user.id,
           specialization: null,
           specializations: [],
-          verificationStatus: 'pending',
+          verificationStatus: 'draft',
           operatingStatus: 'suspended',
           isAvailable: false,
         }, { transaction });

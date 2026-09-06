@@ -24,6 +24,25 @@ const {
  */
 async function completeConsultation(consultationId, notes, actualDuration) {
   return Consultation.sequelize.transaction(async (t) => {
+    const current = await Consultation.findByPk(consultationId, { transaction: t, lock: t.LOCK.UPDATE });
+    if (!current) return { consultation: null, released: false, alreadyCompleted: true };
+    if (current.status === 'completed') {
+      return { consultation: current, released: false, alreadyCompleted: true };
+    }
+    // Никогда не воскрешаем cancelled/rejected/payment_pending и не платим за них.
+    if (!['accepted', 'in_progress'].includes(current.status)) {
+      return { consultation: current, released: false, alreadyCompleted: false };
+    }
+
+    // Платная услуга не может стать completed без реально подтверждённого платежа:
+    // иначе юрист получает завершённое дело, а платформа теряет выручку.
+    if (!current.isFree) {
+      const paidCount = await Payment.count({
+        where: { consultationId, status: 'paid', refundStatus: 'none' }, transaction: t,
+      });
+      if (paidCount === 0) throw Object.assign(new Error('Оплата консультации не подтверждена'), { status: 409, code: 'PAYMENT_REQUIRED' });
+    }
+
     const patch = { status: 'completed' };
     if (notes) patch.notes = notes;
     // Фактическая длительность звонка (сек) — только если валидная и положительная
@@ -34,7 +53,7 @@ async function completeConsultation(consultationId, notes, actualDuration) {
     // Атомарный переход в completed (только если ещё НЕ completed). Служит гейтом
     // для «первого завершения» (completedCases), но БОЛЬШЕ не гейтит выплату.
     const [statusAffected] = await Consultation.update(patch, {
-      where: { id: consultationId, status: { [Op.ne]: 'completed' } },
+      where: { id: consultationId, status: { [Op.in]: ['accepted', 'in_progress'] } },
       transaction: t,
     });
 
@@ -76,7 +95,7 @@ async function completeConsultation(consultationId, notes, actualDuration) {
 async function refundConsultationEscrow(consultationId, options = {}) {
   const { requestPaymentCancellation } = require('./paymentService');
   const t = options.transaction;
-  const consultation = await Consultation.findByPk(consultationId, { transaction: t });
+  const consultation = await Consultation.findByPk(consultationId, { transaction: t, lock: t?.LOCK.UPDATE });
   if (!consultation) return { refunded: 0 };
 
   const payments = await Payment.findAll({
@@ -85,6 +104,7 @@ async function refundConsultationEscrow(consultationId, options = {}) {
     transaction: t,
   });
   let totalRefund = 0;
+  let cancellationRequested = false;
   for (const payment of payments) {
     const result = await requestPaymentCancellation({
       paymentId: payment.id,
@@ -93,9 +113,10 @@ async function refundConsultationEscrow(consultationId, options = {}) {
       transaction: t,
     });
     if (result.payment.status === 'refunded') totalRefund += Number(payment.amount);
+    if (result.outcome === 'cancellation_requested') cancellationRequested = true;
   }
 
-  return { refunded: totalRefund };
+  return { refunded: totalRefund, cancellationRequested };
 }
 
 module.exports = { completeConsultation, refundConsultationEscrow };

@@ -27,6 +27,15 @@ async function byProvider(providerTransactionId) {
 }
 
 function buildStatementResult(payments) {
+  const stateMap = {
+    pending: 1,
+    processing: 1,
+    paid: 2,
+    refund_pending: 2,
+    partially_refunded: 2,
+    failed: -1,
+    refunded: -2,
+  };
   return {
     transactions: payments.map((payment) => ({
       id: payment.transactionId,
@@ -37,8 +46,8 @@ function buildStatementResult(payments) {
       perform_time: payment.providerData?.performTime || payment.providerResponse?.performTime || 0,
       cancel_time: payment.providerData?.cancelTime || payment.providerResponse?.cancelTime || 0,
       transaction: payment.id,
-      state: 2,
-      reason: null,
+      state: stateMap[payment.status] || 1,
+      reason: payment.providerData?.reason || payment.providerResponse?.reason || null,
     })),
   };
 }
@@ -99,7 +108,10 @@ async function evaluatePaymentShadow(parsed) {
     case 'CheckTransaction': {
       const payment = await byProvider(parsed.providerTransactionId);
       if (!payment) return error(parsed.method, ERROR.TRANSACTION_NOT_FOUND);
-      const stateMap = { pending: 1, processing: 1, paid: 2, failed: -1, refunded: -2 };
+      const stateMap = {
+        pending: 1, processing: 1, paid: 2, refund_pending: 2, partially_refunded: 2,
+        failed: -1, refunded: -2,
+      };
       return result(parsed.method, {
         create_time: payment.providerData?.createTime || payment.providerResponse?.createTime || 0,
         perform_time: payment.providerData?.performTime || payment.providerResponse?.performTime || 0,
@@ -110,9 +122,13 @@ async function evaluatePaymentShadow(parsed) {
       });
     }
     case 'GetStatement': {
-      const payments = await Payment.findAll({
-        where: { status: 'paid', createdAt: { [Op.between]: [new Date(parsed.from), new Date(parsed.to)] } },
-        order: [['createdAt', 'ASC'], ['id', 'ASC']],
+      const candidates = await Payment.findAll({
+        where: { provider: 'payme' }, order: [['createdAt', 'ASC'], ['id', 'ASC']], limit: 1000,
+      });
+      const payments = candidates.filter((payment) => {
+        const created = payment.providerData?.createTime || payment.providerResponse?.createTime
+          || payment.createdAt.getTime();
+        return created >= parsed.from && created <= parsed.to;
       });
       return result(parsed.method, buildStatementResult(payments));
     }

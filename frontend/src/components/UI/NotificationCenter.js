@@ -5,13 +5,10 @@ import {
   Badge,
   Typography,
   Button,
-  Chip,
-  CircularProgress,
   ClickAwayListener,
   Popper,
   Paper,
   Fade,
-  Divider,
 } from '@mui/material';
 import {
   Notifications,
@@ -27,6 +24,8 @@ import {
   VerifiedUser,
   DescriptionOutlined,
   FactCheckOutlined,
+  AccountBalanceWalletOutlined,
+  SupportAgentOutlined,
 } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useSelector } from 'react-redux';
@@ -38,8 +37,8 @@ import { useTranslation } from '../../i18n';
 import { createModeSocket } from '../../services/modeSocket';
 import { notificationDestination } from '../../utils/modeNavigation';
 
-// socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
-const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+// socket.io на корне хоста; VITE_API_URL в проде содержит /api — срезаем.
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
 
 const NOTIFICATION_ICONS = {
   consultation_request: <Gavel sx={{ fontSize: 20, color: axelionColors.gold }} />,
@@ -57,6 +56,11 @@ const NOTIFICATION_ICONS = {
   verification_request: <FactCheckOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
   // Новый документ по делу (другой стороне консультации)
   case_document: <DescriptionOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Итог обработки заявки на вывод (юристу)
+  withdrawal: <AccountBalanceWalletOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  // Поддержка: ответ админа (клиенту) и новое обращение (админу)
+  support_reply: <SupportAgentOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
+  support_ticket: <SupportAgentOutlined sx={{ fontSize: 20, color: axelionColors.gold }} />,
 };
 
 const NotificationCenter = ({ sx = {} }) => {
@@ -67,7 +71,6 @@ const NotificationCenter = ({ sx = {} }) => {
   const anchorRef = useRef(null);
   const [open, setOpen] = useState(false);
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
@@ -93,6 +96,13 @@ const NotificationCenter = ({ sx = {} }) => {
       if (notif.title) {
         toast.info(notif.title, { autoClose: 5000 });
       }
+    });
+    socket.on('presence:update', (presence) => {
+      if (!presence?.userId) return;
+      window.dispatchEvent(new CustomEvent('maslaxat:presence', { detail: presence }));
+    });
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') setTimeout(() => socket.connect(), 250);
     });
 
     return () => { socket.disconnect(); unregister(); };
@@ -245,8 +255,23 @@ const NotificationCenter = ({ sx = {} }) => {
                           onClick={() => {
                             if (!notif.isRead) handleMarkRead(notif.id);
                             handleClose();
-                             const destination = notificationDestination(notif, auth);
-                             if (destination) navigate(destination);
+                            const m = notif.metadata || {};
+                            // Тип-специфичная навигация для модерации/документов.
+                            if (notif.type === 'verification_request') { navigate('/admin/lawyers'); return; }
+            // Баланс и вывод средств живут на странице аналитики юриста
+            if (notif.type === 'withdrawal') { navigate('/lawyer/analytics'); return; }
+            // Ответ поддержки: ведём на «Мои обращения», где виден ПОЛНЫЙ текст,
+            // а не обрезанные 140 символов из самого уведомления.
+            if (notif.type === 'support_reply') { navigate('/help'); return; }
+            if (notif.type === 'support_ticket') { navigate('/admin/support'); return; }
+                            if (notif.type === 'verification') { navigate('/lawyer/profile/edit'); return; }
+                            if (notif.type === 'case_document' && m.consultationId) { navigate(`/consultations/chat/${m.consultationId}`); return; }
+                            // Пропущенный звонок → открыть звонок (перезвонить);
+                            // прочие с консультацией → в «Мои консультации».
+                            if (m.consultationId) {
+                              if (m.missedCall) navigate(`/consultations/video/${m.consultationId}`);
+                              else navigate('/consultations');
+                            }
                           }}
                           sx={{
                             display: 'flex', gap: 1.5, p: 2,

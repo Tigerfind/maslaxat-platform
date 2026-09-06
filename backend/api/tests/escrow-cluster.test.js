@@ -65,8 +65,8 @@ describe('escrow released AT MOST ONCE (tied to payment, not status)', () => {
   });
 });
 
-describe('reject-after-pay requests provider refund', () => {
-  test('lawyer rejects a paid pending consultation → payment refund_pending, reserve unchanged', async () => {
+describe('reject-after-pay refunds the client (from pendingBalance)', () => {
+  test('lawyer rejects a paid pending consultation → refund requested, pendingBalance restored', async () => {
     const { lawyer, lp, cons, pay, price } = await seedPaid({ status: 'pending' });
     const token = tokenFor(lawyer, 'mfa');
 

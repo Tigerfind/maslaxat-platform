@@ -5,12 +5,25 @@ const jwt = require('jsonwebtoken');
 const Joi = require('joi');
 const { Op } = require('sequelize');
 const rateLimit = require('express-rate-limit');
-const { User, LawyerProfile, PhoneOtp } = require('../models');
-const { sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
+const { sequelize, User, LawyerProfile, PhoneOtp } = require('../models');
+const { isEmailConfigured, sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
 const authChallenges = require('../services/authChallengeService');
 const { authenticate, deriveCapabilities } = require('../middleware/auth');
 const { reportCaughtException } = require('../instrument');
+const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+const LEGAL_VERSION = '2026-08-13';
+const productionMax = (value) => process.env.NODE_ENV === 'production' ? value : 1000;
+const normalizedEmailKey = (req) => String(req.body?.email || '').trim().toLowerCase() || req.ip;
+const normalizedPhoneKey = (req) => smsService.normalizePhone(req.body?.phone) || req.ip;
+const loginAccountLimiter = distributedRateLimit({ prefix: 'login-account', windowSeconds: 15 * 60, max: productionMax(20), keyGenerator: normalizedEmailKey });
+const phoneRequestLimiter = distributedRateLimit({ prefix: 'phone-request', windowSeconds: 60 * 60, max: productionMax(5), keyGenerator: normalizedPhoneKey });
+const phoneVerifyLimiter = distributedRateLimit({ prefix: 'phone-verify', windowSeconds: 15 * 60, max: productionMax(10), keyGenerator: normalizedPhoneKey });
+const forgotAccountLimiter = distributedRateLimit({ prefix: 'forgot-account', windowSeconds: 60 * 60, max: productionMax(5), keyGenerator: normalizedEmailKey });
+const resetTokenLimiter = distributedRateLimit({ prefix: 'reset-token', windowSeconds: 60 * 60, max: productionMax(10), keyGenerator: (req) => req.body?.token || req.ip });
+const resendUserLimiter = distributedRateLimit({ prefix: 'resend-user', windowSeconds: 60 * 60, max: productionMax(5), keyGenerator: (req) => req.userId || req.ip });
+const twoFactorChallengeLimiter = distributedRateLimit({ prefix: 'twofa-challenge', windowSeconds: 15 * 60, max: productionMax(10), keyGenerator: (req) => req.body?.tempToken || req.ip });
+router.use('/linkedin', require('./linkedin-auth'));
 
 // Выделенный строгий лимит на ввод 2FA-кода — защита от перебора TOTP
 // (считаем все попытки, не только неудачные).
@@ -106,6 +119,32 @@ const finalizeLogin = async (user, res, { status = 200, fields = {}, sourceHash 
   });
 };
 
+const consumePhoneOtp = (phone, code, onValid) => sequelize.transaction(async (transaction) => {
+  const otp = await PhoneOtp.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
+  if (!otp) return { status: 400, error: 'Сначала запросите код' };
+  if (new Date(otp.expiresAt) < new Date()) {
+    await otp.destroy({ transaction });
+    return { status: 400, error: 'Код истёк, запросите новый' };
+  }
+  if (otp.attempts >= 5) {
+    await otp.destroy({ transaction });
+    return { status: 429, error: 'Слишком много попыток, запросите новый код' };
+  }
+  if (otp.code !== code) {
+    otp.attempts += 1;
+    if (otp.attempts >= 5) {
+      await otp.destroy({ transaction });
+      return { status: 429, error: 'Слишком много попыток, запросите новый код' };
+    }
+    await otp.save({ transaction });
+    return { status: 400, error: 'Неверный код' };
+  }
+  const result = await onValid(transaction);
+  if (result?.error) return result;
+  await otp.destroy({ transaction });
+  return { status: 200, result };
+});
+
 // POST /api/auth/register
 router.post('/register', emailLimiter, async (req, res, next) => {
   try {
@@ -117,6 +156,8 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       role: Joi.string().valid('client', 'lawyer').default('client'),
       specialization: Joi.string().optional(),
       specializations: Joi.array().items(Joi.string()).optional(),
+      acceptedTerms: Joi.boolean().valid(true).required(),
+      legalVersion: Joi.string().valid(LEGAL_VERSION).required(),
     });
     // Пароль ≥8 — усиление против подбора (было 6).
 
@@ -144,13 +185,18 @@ router.post('/register', emailLimiter, async (req, res, next) => {
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
-    const { specialization, specializations, phone: _rawPhone, ...userData } = value;
+    const {
+      specialization, specializations, phone: _rawPhone,
+      acceptedTerms: _acceptedTerms, legalVersion, ...userData
+    } = value;
     const user = await User.create({
       ...userData,
       phone: phone || null,
       verificationToken,
       accountType: 'member',
       preferredMode: value.role === 'lawyer' ? 'lawyer' : 'client',
+      legalAcceptedAt: new Date(),
+      legalVersion,
     });
 
     if (value.role === 'lawyer') {
@@ -164,9 +210,9 @@ router.post('/register', emailLimiter, async (req, res, next) => {
         userId: user.id,
         specialization: specs[0] || null,
         specializations: specs,
-        price: 200000,
+        price: 0,
         isAvailable: false, // скрыт до завершения онбординга
-        verificationStatus: 'pending',
+        verificationStatus: 'draft',
         operatingStatus: 'suspended',
       });
     }
@@ -196,7 +242,7 @@ router.post('/register', emailLimiter, async (req, res, next) => {
 // ─── ВХОД/РЕГИСТРАЦИЯ ПО ТЕЛЕФОНУ (SMS-код) ──────────────────
 
 // POST /api/auth/phone/request — запросить одноразовый код на номер
-router.post('/phone/request', emailLimiter, async (req, res, next) => {
+router.post('/phone/request', emailLimiter, phoneRequestLimiter, async (req, res, next) => {
   try {
     const phone = smsService.normalizePhone(req.body.phone);
     if (!phone) return res.status(400).json({ error: 'Неверный формат номера (пример: +998901234567)' });
@@ -213,7 +259,8 @@ router.post('/phone/request', emailLimiter, async (req, res, next) => {
 
     // Если провайдер подключён, но отправка не удалась — не врём «отправлено».
     // Пусть клиент повторит (код уже сохранён; повтор перезапишет его).
-    if (smsService.isConfigured() && !result.sent) {
+    if (!result.sent && (process.env.NODE_ENV === 'production' || smsService.isConfigured())) {
+      await PhoneOtp.destroy({ where: { phone, code } });
       return res.status(502).json({ error: 'Не удалось отправить SMS. Попробуйте ещё раз через минуту.' });
     }
 
@@ -227,37 +274,33 @@ router.post('/phone/request', emailLimiter, async (req, res, next) => {
 });
 
 // POST /api/auth/phone/verify — проверить код: вход (номер есть) или регистрация клиента
-router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
+router.post('/phone/verify', twoFactorLimiter, phoneVerifyLimiter, async (req, res, next) => {
   try {
     const phone = smsService.normalizePhone(req.body.phone);
     const code = String(req.body.code || '').trim();
     const name = typeof req.body.name === 'string' ? req.body.name.trim() : '';
     if (!phone || !code) return res.status(400).json({ error: 'Укажите номер и код' });
 
-    const otp = await PhoneOtp.findOne({ where: { phone } });
-    if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
-    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
-    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
-    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
-
-    // Код верный. Новому номеру нужно имя — просим его, НЕ сжигая код (повторим verify).
-    let user = await User.findOne({ where: { phone } });
-    if (!user && name.length < 2) {
-      return res.status(400).json({ error: 'Укажите имя для регистрации', needName: true });
-    }
-
-    await otp.destroy(); // код использован
-
-    let created = false;
-    if (!user) {
-      // Регистрация клиента по телефону: пароль случайный (вход по коду), телефон
-      // подтверждён (isVerified). email обязателен и уникален в модели — генерируем
-      // плейсхолдер по номеру; реальный email клиент сможет добавить в профиле.
+    let user;
+    const consumed = await consumePhoneOtp(phone, code, async (transaction) => {
+      user = await User.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
+      if (user) return { user, created: false };
+      // Код уже проверен под блокировкой, но не сжигаем его, пока клиент не
+      // передал обязательные поля регистрации.
+      if (name.length < 2) return { status: 400, error: 'Укажите имя для регистрации', needName: true };
+      if (req.body.acceptedTerms !== true || req.body.legalVersion !== LEGAL_VERSION) {
+        return { status: 400, error: 'Примите условия использования', needLegal: true };
+      }
       const randomPassword = crypto.randomBytes(16).toString('hex');
       const genEmail = `${phone.replace(/\D/g, '')}@phone.maslaxat.uz`;
-      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true });
-      created = true;
+      user = await User.create({ name, phone, email: genEmail, role: 'client', password: randomPassword, isVerified: true, isActive: true, legalAcceptedAt: new Date(), legalVersion: LEGAL_VERSION }, { transaction });
+      return { user, created: true };
+    });
+    if (consumed.error) {
+      const { status, ...body } = consumed;
+      return res.status(status).json(body);
     }
+    const { created } = consumed.result;
 
     await finalizeLogin(user, res, {
       status: created ? 201 : 200,
@@ -269,7 +312,7 @@ router.post('/phone/verify', twoFactorLimiter, async (req, res, next) => {
 });
 
 // POST /api/auth/login
-router.post('/login', async (req, res, next) => {
+router.post('/login', loginAccountLimiter, async (req, res, next) => {
   try {
     const schema = Joi.object({
       email: Joi.string().email().required(),
@@ -299,7 +342,7 @@ router.post('/login', async (req, res, next) => {
 });
 
 // POST /api/auth/login/2fa — второй шаг входа: проверка кода TOTP или резервного
-router.post('/login/2fa', twoFactorLimiter, async (req, res, next) => {
+router.post('/login/2fa', twoFactorLimiter, twoFactorChallengeLimiter, async (req, res, next) => {
   try {
     const { tempToken, code } = req.body || {};
     if (!tempToken || !code) {
@@ -352,6 +395,9 @@ router.post('/google', async (req, res, next) => {
     let user = await User.findOne({ where: { googleId: data.googleId } });
     if (!user) user = await User.findOne({ where: { email: data.email } });
     if (!user) {
+      if (req.body.acceptedTerms !== true || req.body.legalVersion !== LEGAL_VERSION) {
+        return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
+      }
       user = await User.create({
         email: data.email,
         name: data.name,
@@ -360,6 +406,8 @@ router.post('/google', async (req, res, next) => {
         isVerified: true,
         googleId: data.googleId,
         password: crypto.randomBytes(24).toString('hex'),
+        legalAcceptedAt: new Date(),
+        legalVersion: LEGAL_VERSION,
       });
     } else if (!user.googleId) {
       user.googleId = data.googleId;
@@ -375,11 +423,15 @@ router.post('/google', async (req, res, next) => {
 router.post('/telegram', async (req, res, next) => {
   try {
     if (!socialAuth.telegramEnabled()) return res.status(503).json({ error: 'Вход через Telegram недоступен' });
-    const data = socialAuth.verifyTelegramAuth(req.body);
+    const { acceptedTerms, legalVersion, ...telegramPayload } = req.body;
+    const data = socialAuth.verifyTelegramAuth(telegramPayload);
     if (!data) return res.status(401).json({ error: 'Не удалось подтвердить аккаунт Telegram' });
 
     let user = await User.findOne({ where: { telegramId: data.telegramId } });
     if (!user) {
+      if (acceptedTerms !== true || legalVersion !== LEGAL_VERSION) {
+        return res.status(400).json({ error: 'Примите условия использования', needLegal: true });
+      }
       user = await User.create({
         email: `tg${data.telegramId}@telegram.local`,
         name: data.name,
@@ -388,6 +440,8 @@ router.post('/telegram', async (req, res, next) => {
         isVerified: true,
         telegramId: data.telegramId,
         password: crypto.randomBytes(24).toString('hex'),
+        legalAcceptedAt: new Date(),
+        legalVersion: LEGAL_VERSION,
       });
     }
     await issueFor(user, res, authChallenges.hashAuthSource('telegram', req.body));
@@ -425,29 +479,24 @@ router.get('/me', authenticate, async (req, res, next) => {
 // POST /api/auth/phone/confirm — подтвердить телефон ЗАЛОГИНЕННОМУ пользователю
 // (в отличие от /phone/verify, который логинит/регистрирует). Привязывает номер к
 // текущему аккаунту и ставит isVerified=true. Дедуп: номер не должен быть у другого.
-router.post('/phone/confirm', authenticate, async (req, res, next) => {
+router.post('/phone/confirm', authenticate, phoneVerifyLimiter, async (req, res, next) => {
   try {
     const phone = smsService.normalizePhone(req.body.phone);
     const code = String(req.body.code || '').trim();
     if (!phone || !code) return res.status(400).json({ error: 'Укажите номер и код' });
 
-    const otp = await PhoneOtp.findOne({ where: { phone } });
-    if (!otp) return res.status(400).json({ error: 'Сначала запросите код' });
-    if (new Date(otp.expiresAt) < new Date()) { await otp.destroy(); return res.status(400).json({ error: 'Код истёк, запросите новый' }); }
-    if (otp.attempts >= 5) { await otp.destroy(); return res.status(429).json({ error: 'Слишком много попыток, запросите новый код' }); }
-    if (otp.code !== code) { await otp.increment('attempts'); return res.status(400).json({ error: 'Неверный код' }); }
-
-    // Дедуп: номер занят другим аккаунтом → нельзя привязать.
-    const taken = await User.findOne({ where: { phone } });
-    if (taken && taken.id !== req.userId) {
-      return res.status(409).json({ error: 'Этот номер уже используется другим аккаунтом' });
-    }
-
-    await otp.destroy(); // код использован
-    const user = await User.findByPk(req.userId);
-    user.phone = phone;
-    user.isVerified = true; // подтверждённый контакт → можно бронировать
-    await user.save();
+    let user;
+    const consumed = await consumePhoneOtp(phone, code, async (transaction) => {
+      const taken = await User.findOne({ where: { phone }, transaction, lock: transaction.LOCK.UPDATE });
+      if (taken && taken.id !== req.userId) return { status: 409, error: 'Этот номер уже используется другим аккаунтом' };
+      user = await User.findByPk(req.userId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!user) return { status: 404, error: 'Пользователь не найден' };
+      user.phone = phone;
+      user.isVerified = true;
+      await user.save({ transaction });
+      return { user };
+    });
+    if (consumed.error) return res.status(consumed.status).json({ error: consumed.error });
 
     res.json({ success: true, user: user.toJSON() });
   } catch (err) {
@@ -456,8 +505,11 @@ router.post('/phone/confirm', authenticate, async (req, res, next) => {
 });
 
 // POST /api/auth/forgot-password
-router.post('/forgot-password', emailLimiter, async (req, res, next) => {
+router.post('/forgot-password', emailLimiter, forgotAccountLimiter, async (req, res, next) => {
   try {
+    if (!isEmailConfigured()) {
+      return res.status(503).json({ error: 'Отправка email временно недоступна. Обратитесь в поддержку.', code: 'EMAIL_UNAVAILABLE' });
+    }
     const { email } = req.body;
     if (!email) {
       return res.status(400).json({ error: 'Email обязателен' });
@@ -490,7 +542,7 @@ router.post('/forgot-password', emailLimiter, async (req, res, next) => {
 });
 
 // POST /api/auth/reset-password
-router.post('/reset-password', async (req, res, next) => {
+router.post('/reset-password', resetTokenLimiter, async (req, res, next) => {
   try {
     const schema = Joi.object({
       token: Joi.string().required(),
@@ -502,22 +554,21 @@ router.post('/reset-password', async (req, res, next) => {
       return res.status(400).json({ error: error.details[0].message });
     }
 
-    const user = await User.findOne({
-      where: {
-        resetToken: value.token,
-        resetTokenExpiry: { [Op.gt]: new Date() },
-      },
+    const changed = await sequelize.transaction(async (transaction) => {
+      const user = await User.findOne({
+        where: { resetToken: value.token, resetTokenExpiry: { [Op.gt]: new Date() } },
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!user) return false;
+      user.password = value.password;
+      user.resetToken = null;
+      user.resetTokenExpiry = null;
+      user.passwordChangedAt = new Date(Date.now());
+      await user.save({ transaction });
+      return true;
     });
-
-    if (!user) {
-      return res.status(400).json({ error: 'Недействительная или просроченная ссылка для сброса' });
-    }
-
-    user.password = value.password;
-    user.resetToken = null;
-    user.resetTokenExpiry = null;
-    user.passwordChangedAt = new Date(Date.now()); // exact state invalidates earlier full/challenge JWTs
-    await user.save();
+    if (!changed) return res.status(400).json({ error: 'Недействительная или просроченная ссылка для сброса' });
 
     res.json({ message: 'Пароль успешно изменён' });
   } catch (err) {
@@ -545,8 +596,11 @@ router.get('/verify-email/:token', async (req, res, next) => {
 });
 
 // POST /api/auth/resend-verification
-router.post('/resend-verification', emailLimiter, authenticate, async (req, res, next) => {
+router.post('/resend-verification', emailLimiter, authenticate, resendUserLimiter, async (req, res, next) => {
   try {
+    if (process.env.NODE_ENV === 'production' && !isEmailConfigured()) {
+      return res.status(503).json({ error: 'Email service unavailable', code: 'EMAIL_UNAVAILABLE' });
+    }
     const user = await User.findByPk(req.userId);
     if (!user) {
       return res.status(404).json({ error: 'Пользователь не найден' });
@@ -556,10 +610,10 @@ router.post('/resend-verification', emailLimiter, authenticate, async (req, res,
     }
 
     const verificationToken = crypto.randomBytes(32).toString('hex');
+    const delivery = await sendVerificationEmail(user.email, verificationToken);
+    if (delivery?.skipped) return res.status(503).json({ error: 'Отправка email временно недоступна' });
     user.verificationToken = verificationToken;
     await user.save();
-
-    await sendVerificationEmail(user.email, verificationToken);
 
     res.json({ message: 'Письмо отправлено повторно' });
   } catch (err) {

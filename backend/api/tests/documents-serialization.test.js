@@ -131,8 +131,8 @@ test('document download and AI preparation read an R2-only record without exposi
   const analysis = await request(app)
     .post(`/api/documents/${stored.id}/ai-check`)
     .set('Authorization', `Bearer ${token}`)
-    .expect(200);
-  expect(analysis.body).toHaveProperty('score');
+    .expect(503);
+  expect(analysis.body.code).toBe('AI_UNAVAILABLE');
 });
 
 test('document DB persistence failure compensates the new object and leaves no business row', async () => {

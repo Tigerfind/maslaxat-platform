@@ -234,9 +234,12 @@ async function enumContract(queryInterface, table, column) {
   };
 }
 
-async function assertEnumContract(queryInterface, table, column, expectedType, expectedValues) {
+async function assertEnumContract(queryInterface, table, column, expectedType, expectedValues, allowAdditional = false) {
   const actual = await enumContract(queryInterface, table, column);
-  if (actual.type !== expectedType || JSON.stringify(actual.values) !== JSON.stringify(expectedValues)) {
+  const valuesMatch = allowAdditional
+    ? expectedValues.every((value) => actual.values.includes(value))
+    : JSON.stringify(actual.values) === JSON.stringify(expectedValues);
+  if (actual.type !== expectedType || !valuesMatch) {
     throw new Error(`Incompatible foundational schema; ${table}.${column} enum contract differs`);
   }
 }
@@ -400,8 +403,13 @@ async function preflightAdoption(queryInterface, existing) {
     if (!profiles.verification_status) {
       throw new Error('Incompatible foundational schema; lawyer_profiles.verification_status is missing');
     }
+    const verificationValues = ['pending', 'approved', 'rejected'];
+    if (applied.has('20260825000000-lawyer-resume-linkedin-zoom.js')) {
+      verificationValues.push('draft', 'pending_review', 'suspended');
+    }
     await assertEnumContract(queryInterface, 'lawyer_profiles', 'verification_status',
-      'enum_lawyer_profiles_verification_status', ['pending', 'approved', 'rejected']);
+      'enum_lawyer_profiles_verification_status', verificationValues,
+      applied.has('20260825000000-lawyer-resume-linkedin-zoom.js'));
   }
   if (applied.has('20260814000000-add-lawyer-documents.js')) {
     await assertAppliedTable(queryInterface, 'lawyer_documents', {
@@ -410,8 +418,11 @@ async function preflightAdoption(queryInterface, existing) {
       size: /^INTEGER$/i, user_id: /^UUID$/i, created_at: /^TIMESTAMP WITH TIME ZONE$/i,
       updated_at: /^TIMESTAMP WITH TIME ZONE$/i,
     }, [['user_id', 'users', 'id', 'c', 'c']]);
+    const documentTypes = ['diploma', 'license', 'id', 'other'];
+    if (applied.has('20260825000000-lawyer-resume-linkedin-zoom.js')) documentTypes.push('certificate');
     await assertEnumContract(queryInterface, 'lawyer_documents', 'type',
-      'enum_lawyer_documents_type', ['diploma', 'license', 'id', 'other']);
+      'enum_lawyer_documents_type', documentTypes,
+      applied.has('20260825000000-lawyer-resume-linkedin-zoom.js'));
   }
   if (applied.has('20260815000000-add-case-documents.js')) {
     await assertAppliedTable(queryInterface, 'case_documents', {

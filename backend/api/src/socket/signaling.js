@@ -6,6 +6,9 @@ const { getAuthorizationMode, recordAuthorizationDecision } = require('../servic
 const { passwordStateFor } = require('../services/authChallengeService');
 const { reportCaughtException } = require('../instrument');
 const { BoundedTtlLru, assertSocketTokenCurrent, createSocketEventGate } = require('./guards');
+const presenceService = require('../services/presenceService');
+const { isRedisAdapterAttached } = require('./redisAdapter');
+const { consultationAccess } = require('../services/consultationAccessService');
 
 const SOCKET_CAPABILITY = { client: 'client', lawyer: 'lawyer', admin: 'admin' };
 const SOCKET_LEGACY_ROLES = {
@@ -13,7 +16,10 @@ const SOCKET_LEGACY_ROLES = {
   lawyer: ['lawyer'],
   admin: ['admin'],
 };
-const CONSULTATION_AUTH_ATTRIBUTES = Object.freeze(['id', 'clientId', 'lawyerId', 'status', 'type']);
+const CONSULTATION_AUTH_ATTRIBUTES = Object.freeze([
+  'id', 'clientId', 'lawyerId', 'status', 'type', 'scheduledStartAt', 'scheduledEndAt',
+  'meetingProvider', 'lifecycleStatus',
+]);
 
 function projectConsultation(row) {
   if (!row) return null;
@@ -122,12 +128,16 @@ function initSignaling(io, {
   // Authenticate socket connections via JWT
   io.use(async (socket, next) => {
     try {
+      socket.data = socket.data || {};
       verifySocketToken(socket.handshake.auth?.token);
       const { user, capabilities, accountMode } = await authorizeSocket(socket, {
         allowDefaultMode: true,
         eventName: 'handshake',
       });
 
+      socket.data.userId = user.id;
+      socket.data.userRole = user.role;
+      socket.data.publicPresence = accountMode === 'lawyer' && capabilities.includes('lawyer');
       socket.userId = user.id;
       socket.userName = user.name;
       socket.userRole = accountMode;
@@ -144,6 +154,7 @@ function initSignaling(io, {
   });
 
   io.on('connection', (socket) => {
+    socket.data = socket.data || {};
     logger.debug('socket_connected', { userId: socket.userId, mode: socket.userRole });
 
     const reportSocketFailure = (error, event, context = {}) => {
@@ -184,6 +195,19 @@ function initSignaling(io, {
 
     // Персональная комната для realtime-уведомлений этого пользователя
     if (socket.userId) socket.join(`user:${socket.userId}`);
+    const becameLocallyOnline = socket.data?.publicPresence && presenceService.registerSocket(socket);
+    if (becameLocallyOnline) {
+      const onlineUpdate = {
+        userId: socket.userId,
+        role: socket.userRole,
+        online: true,
+        lastSeenAt: null,
+        observedAt: new Date().toISOString(),
+      };
+      if (!isRedisAdapterAttached() && typeof io.emit === 'function') {
+        io.emit('presence:update', onlineUpdate);
+      }
+    }
 
     const authorizeCurrent = async (eventName) => {
       try {
@@ -230,6 +254,8 @@ function initSignaling(io, {
         if (!isParticipant) {
           return socket.emit('error', { message: 'Access denied' });
         }
+        const access = consultationAccess(consultation);
+        if (!access.canJoin) return socket.emit('error', { message: 'Consultation access unavailable', code: access.reason, ...access });
 
         const roomId = `consultation:${consultationId}`;
         socket.join(roomId);
@@ -308,10 +334,8 @@ function initSignaling(io, {
         if (!consultation) return;
         const isParticipant = ownsConsultationPerspective(socket, consultation);
         if (!isParticipant) return;
-        // Звонок доступен только по подтверждённой/идущей консультации
-        if (!['accepted', 'in_progress'].includes(consultation.status)) {
-          return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации' });
-        }
+        const access = consultationAccess(consultation);
+        if (!access.canJoin) return socket.emit('call-error', { message: 'Звонок недоступен для этой консультации', code: access.reason, ...access });
         const calleeId = socket.accountMode === 'client' ? consultation.lawyerId : consultation.clientId;
 
         const payload = {
@@ -521,6 +545,10 @@ function initSignaling(io, {
           userName: socket.userName,
         });
         logger.debug('socket_room_left', { consultationId: socket.consultationId, userId: socket.userId });
+      }
+      const presenceUpdate = socket.data.publicPresence ? presenceService.unregisterSocket(socket) : null;
+      if (presenceUpdate && !isRedisAdapterAttached()) {
+        io.emit('presence:update', presenceUpdate);
       }
     });
 

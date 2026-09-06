@@ -1,12 +1,13 @@
 import api from './api';
+import { vi } from 'vitest';
 import { lawyerImportService } from './lawyerService';
 
-jest.mock('./api', () => ({
+vi.mock('./api', () => ({ default: {
   post: jest.fn(),
   get: jest.fn(),
   patch: jest.fn(),
   delete: jest.fn(),
-}));
+} }));
 
 beforeEach(() => jest.clearAllMocks());
 

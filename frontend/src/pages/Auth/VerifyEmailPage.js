@@ -23,25 +23,26 @@ const VerifyEmailPage = () => {
   useEffect(() => {
     if (!token) {
       setStatus('error');
-      setMessage(t('authFlow.verifyNoToken'));
+      setMessage('authFlow.verifyNoToken');
       return;
     }
 
     api.get(`/auth/verify-email/${token}`)
       .then(() => {
         setStatus('success');
-        setMessage(t('authFlow.verifyOk'));
+        setMessage('authFlow.verifyOk');
         // Обновляем redux/localStorage, чтобы баннер «подтвердите email» исчез сразу
         if (isAuthenticated) dispatch(updateProfile({ isVerified: true }));
       })
       .catch((err) => {
         setStatus('error');
-        setMessage(err.response?.data?.error || t('authFlow.verifyBad'));
+        setMessage(err.response?.data?.error || 'authFlow.verifyBad');
       });
   }, [token, isAuthenticated, dispatch]);
 
   // Куда вести после успеха: залогинен → кабинет, иначе → вход
   const goHome = () => navigate(isAuthenticated ? '/dashboard' : '/login');
+  const messageText = message.startsWith?.('authFlow.') ? t(message) : message;
 
   return (
     <Box
@@ -87,7 +88,7 @@ const VerifyEmailPage = () => {
               {t('authFlow.verifyOkTitle')}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              {message}
+              {messageText}
             </Typography>
             <Button
               variant="contained"
@@ -106,7 +107,7 @@ const VerifyEmailPage = () => {
               {t('authFlow.verifyErrTitle')}
             </Typography>
             <Typography color="text.secondary" sx={{ mb: 3 }}>
-              {message}
+              {messageText}
             </Typography>
             <Button
               variant="outlined"

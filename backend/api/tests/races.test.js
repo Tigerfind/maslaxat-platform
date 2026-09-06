@@ -2,6 +2,11 @@
 // через Promise.all. #4 требует Redis, которого в тестах нет → мокаем in-memory
 // клиент с атомарным incr/decr (jest однопоточный: тело incr атомарно на вызов).
 
+process.env.ANTHROPIC_API_KEY = 'test-anthropic-key';
+jest.mock('@anthropic-ai/sdk', () => jest.fn().mockImplementation(() => ({
+  messages: { create: jest.fn().mockResolvedValue({ content: [{ text: 'Проверенный тестовый ответ.\n[КАТЕГОРИЯ: Гражданское право]' }] }) },
+})));
+
 const mockRedisStore = {};
 let mockRedisEnabled = true;
 const mockRedis = {
@@ -54,7 +59,7 @@ describe('#4 AI daily limit — reserve + refund', () => {
     expect(mockRedisStore[limitKey()] || 0).toBe(0);
   });
 
-  test('fallback-ответ (200) слот ПОТРАЧИВАЕТ', async () => {
+  test('успешный AI-ответ (200) слот ПОТРАЧИВАЕТ', async () => {
     const client = await makeClient(`ai3_${Date.now()}@t.uz`);
     const r = await send(tokenFor(client));
     expect(r.status).toBe(200);
@@ -113,11 +118,11 @@ describe('#4 AI daily limit — reserve + refund', () => {
 });
 
 describe('#3 free-consultation — нет double-spend под конкуренцией', () => {
-  const book = (token, lawyerId, body, key) =>
+  const book = (token, lawyerId, body, idempotencyKey) =>
     request(app).post(`/api/client/lawyers/${lawyerId}/book`)
       .set('Authorization', `Bearer ${token}`)
-      .set('Idempotency-Key', key)
-      .send(body);
+      .set('Idempotency-Key', idempotencyKey)
+      .send({ consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13', ...body });
 
   test('N параллельных loyalty-броней у нового клиента → ровно одна бесплатная', async () => {
     const client = await makeClient(`l3_${Date.now()}@t.uz`);

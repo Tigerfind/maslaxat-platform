@@ -225,8 +225,10 @@ export const lawyerPaymentService = {
     const response = await api.get('/payments/balance');
     return response.data;
   },
-  withdraw: async (amount) => {
-    const response = await api.post('/payments/withdraw', { amount });
+  withdraw: async (amount, destination, idempotencyKey) => {
+    const response = await api.post('/payments/withdraw', { amount, destination }, {
+      headers: { 'Idempotency-Key': idempotencyKey },
+    });
     return response.data;
   },
   getWithdrawals: async () => {
@@ -269,7 +271,7 @@ export const lawyerVerificationService = {
   },
 };
 
-export default {
+const lawyerService = {
   schedule: lawyerScheduleService,
   reviews: lawyerReviewsService,
   dashboard: lawyerDashboardService,
@@ -279,3 +281,5 @@ export default {
   verification: lawyerVerificationService,
   imports: lawyerImportService,
 };
+
+export default lawyerService;

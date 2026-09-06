@@ -263,11 +263,20 @@ async function releaseConsultationEscrow(consultationOrId, tx) {
   const id = typeof consultationOrId === 'string' ? consultationOrId : consultationOrId.id;
   const consultation = await Consultation.findByPk(id, { lock: tx.LOCK.UPDATE, transaction: tx });
   if (!consultation) throw new Error('Consultation not found');
+  const profile = await LawyerProfile.findOne({
+    where: { userId: consultation.lawyerId }, lock: tx.LOCK.UPDATE, transaction: tx,
+  });
+  if (!profile) throw new Error('Lawyer profile not found');
   const hasPaidEscrow = await Payment.count({
     where: { consultationId: id, status: 'paid', escrowReleased: false }, transaction: tx,
   });
   if (hasPaidEscrow === 0) return null;
   const { gross, lawyerNet } = await validateConsultationObligation(consultation, tx);
+  if (Math.round(Number(profile.pendingBalance) * 100) < lawyerNet) {
+    throw Object.assign(new Error('Escrow balance does not match the consultation obligation'), {
+      code: 'ESCROW_BALANCE_MISMATCH',
+    });
+  }
   const commission = gross - lawyerNet;
   const entries = [
     { account: ACCOUNTS.CONSULTATION_ESCROW, direction: 'debit', amountTiyin: gross },
@@ -282,8 +291,8 @@ async function releaseConsultationEscrow(consultationOrId, tx) {
   }, { transaction: tx });
   if (posted.wasCreated) {
     await Payment.update({ escrowReleased: true }, { where: { consultationId: id, status: 'paid', escrowReleased: false }, transaction: tx });
-    await LawyerProfile.decrement('pendingBalance', { by: lawyerNet / 100, where: { userId: consultation.lawyerId }, transaction: tx });
-    await LawyerProfile.increment('balance', { by: lawyerNet / 100, where: { userId: consultation.lawyerId }, transaction: tx });
+    await profile.decrement('pendingBalance', { by: lawyerNet / 100, transaction: tx });
+    await profile.increment('balance', { by: lawyerNet / 100, transaction: tx });
   }
   return posted;
 }

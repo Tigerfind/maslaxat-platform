@@ -189,6 +189,12 @@ const authSlice = createSlice({
     updateProfile: (state, action) => {
       state.user = state.user ? { ...state.user, ...action.payload } : null;
     },
+    updateToken: (state, action) => {
+      state.token = action.payload;
+      state.isAuthenticated = Boolean(action.payload);
+      if (action.payload) localStorage.setItem('token', action.payload);
+      else localStorage.removeItem('token');
+    },
     clearError: (state) => {
       state.error = null;
       state.modeUnavailable = null;
@@ -211,6 +217,7 @@ export const {
   sessionBoundaryRotated,
   tokenReplaced,
   updateProfile,
+  updateToken,
   clearError,
 } = authSlice.actions;
 

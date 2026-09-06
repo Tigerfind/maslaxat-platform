@@ -1,10 +1,9 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Fab,
   Dialog,
   DialogTitle,
   DialogContent,
-  DialogActions,
   Typography,
   TextField,
   Button,
@@ -20,7 +19,6 @@ import {
   ExpandMore,
   Email,
   Phone,
-  Telegram,
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import { axelionColors } from '../../theme/axelionTheme';
@@ -34,6 +32,16 @@ const SupportFAB = () => {
   const [tab, setTab] = useState('faq'); // 'faq' | 'contact'
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
+  const [supportContacts, setSupportContacts] = useState([]);
+
+  useEffect(() => {
+    api.get('/system/capabilities').then(({ data }) => {
+      const contacts = [];
+      if (data?.support?.email) contacts.push({ icon: <Email />, text: data.support.email, href: `mailto:${data.support.email}` });
+      if (data?.support?.phone) contacts.push({ icon: <Phone />, text: data.support.phone, href: `tel:${data.support.phone}` });
+      setSupportContacts(contacts);
+    }).catch(() => setSupportContacts([]));
+  }, []);
 
   const handleSendMessage = async () => {
     if (!message.trim()) {
@@ -180,23 +188,19 @@ const SupportFAB = () => {
                 {sending ? t('support.sending') : t('support.send')}
               </Button>
 
-              <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
+              {supportContacts.length > 0 && <Box sx={{ mt: 3, pt: 3, borderTop: `1px solid ${axelionColors.borderLight}` }}>
                 <Typography variant="subtitle2" sx={{ color: axelionColors.textDark, mb: 2 }}>
                   {t('support.otherWays')}
                 </Typography>
-                {[
-                  { icon: <Email />, text: 'support@maslaxat.uz' },
-                  { icon: <Phone />, text: '+998 71 200 00 00' },
-                  { icon: <Telegram />, text: '@maslaxat_support' },
-                ].map((item, i) => (
-                  <Box key={i} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1 }}>
+                {supportContacts.map((item) => (
+                  <Box component="a" href={item.href} key={item.href} sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1, textDecoration: 'none' }}>
                     <Box sx={{ color: axelionColors.gold }}>{item.icon}</Box>
                     <Typography variant="body2" sx={{ color: axelionColors.textMuted }}>
                       {item.text}
                     </Typography>
                   </Box>
                 ))}
-              </Box>
+              </Box>}
             </Box>
           )}
         </DialogContent>

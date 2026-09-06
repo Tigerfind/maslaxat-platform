@@ -1,10 +1,11 @@
+import { vi } from 'vitest';
 import {
   canShowMemberModeSwitcher,
   MODE_SWITCH_MIN_SIZE,
   navKeysForAuth,
 } from './GlassShell';
 
-jest.mock('../../services/api', () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn() } }));
+vi.mock('../../services/api', () => ({ __esModule: true, default: { get: vi.fn(), put: vi.fn() } }));
 
 test('only dual-capability members receive the mode switcher', () => {
   expect(canShowMemberModeSwitcher({ accountType: 'member', capabilities: ['client', 'lawyerApplicant'] })).toBe(true);

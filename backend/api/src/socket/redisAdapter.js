@@ -4,6 +4,7 @@ const logger = require('../config/logger');
 const { reportCaughtException } = require('../instrument');
 
 let adapterSubClient = null;
+let attached = false;
 
 /**
  * Подключает Redis-адаптер к Socket.io — нужен, чтобы события (уведомления, чат)
@@ -26,6 +27,7 @@ async function attachRedisAdapter(io) {
     await subClient.connect();
     io.adapter(createAdapter(pubClient, subClient));
     adapterSubClient = subClient;
+    attached = true;
     logger.info('[Socket] Redis-адаптер подключён (горизонтальное масштабирование)');
     return true;
   } catch (err) {
@@ -39,7 +41,12 @@ async function attachRedisAdapter(io) {
 async function closeRedisAdapter() {
   const client = adapterSubClient;
   adapterSubClient = null;
+  attached = false;
   if (client?.isOpen) await client.quit();
 }
 
-module.exports = { attachRedisAdapter, closeRedisAdapter };
+function isRedisAdapterAttached() {
+  return attached;
+}
+
+module.exports = { attachRedisAdapter, closeRedisAdapter, isRedisAdapterAttached };

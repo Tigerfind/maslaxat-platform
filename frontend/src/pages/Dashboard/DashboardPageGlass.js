@@ -20,6 +20,7 @@ import { useTranslation } from '../../i18n';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import AILimitUpsell from '../../components/AILimitUpsell';
 import BookingModal from '../../components/BookingModal';
+import { launchConsultation } from '../../services/meetingLauncher';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -91,6 +92,7 @@ const DashboardPageGlass = () => {
   const { t } = useTranslation();
 
   const [stats, setStats] = useState(null);
+  const [capabilities, setCapabilities] = useState(null);
   const [upcoming, setUpcoming] = useState([]);
   const [sub, setSub] = useState(null);
   const [notifications, setNotifications] = useState([]);
@@ -102,12 +104,24 @@ const DashboardPageGlass = () => {
 
   // Отправить вопрос в AI-чат: он авто-отправится там (location.state.autoSend).
   const goToChat = (text) => {
+    if (capabilities?.ai === false) {
+      toast.info(t('ai.serviceUnavailable'));
+      return;
+    }
     const q = (text || '').trim();
     navigate('/ai-chat', q ? { state: { autoSend: q } } : undefined);
   };
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => {
+    load();
+    // Dashboard is loaded once; upgrade/actions call load explicitly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    api.get('/system/capabilities').then(({ data }) => setCapabilities(data)).catch(() => setCapabilities(null));
+  }, []);
 
   const load = async () => {
     try {
@@ -133,8 +147,7 @@ const DashboardPageGlass = () => {
 
   const join = async (c) => {
     try {
-      await clientService.consultations.joinConsultation(c.id);
-      navigate(c.type === 'video' ? `/consultations/video/${c.id}` : `/consultations/chat/${c.id}`);
+      await launchConsultation(c, navigate);
     } catch {
       toast.error(t('common.error') || 'Ошибка');
     }
@@ -233,7 +246,7 @@ const DashboardPageGlass = () => {
                 <div style={{ width: 36, height: 36, borderRadius: '50%', background: 'linear-gradient(140deg,#C9A980,#8B7355)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', boxShadow: '0 4px 14px rgba(0,0,0,0.3)' }}><AutoAwesome sx={{ fontSize: 19 }} /></div>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 500, color: '#F3EDE2' }}>{t('dashboard.aiAssistantTitle')}</div>
-                  <div style={{ fontSize: 11, color: '#9FBF8E', letterSpacing: '0.04em' }}>● {t('dashboard.aiOnline')}</div>
+                  <div style={{ fontSize: 11, color: capabilities?.ai ? '#9FBF8E' : '#D6A06D', letterSpacing: '0.04em' }}>● {capabilities?.ai ? t('dashboard.aiOnline') : t('dashboard.aiUnavailable')}</div>
                 </div>
               </div>
               <button onClick={() => navigate('/ai-chat')} style={{ fontSize: 12, fontWeight: 500, letterSpacing: '0.06em', textTransform: 'uppercase', color: '#D4B483', background: 'transparent', border: 'none', cursor: 'pointer', fontFamily: 'inherit' }}>{t('dashboard.openChat')} →</button>

@@ -76,11 +76,15 @@ warning and Router/CRA remediation tracks are deferred to Session B and are not 
 | `SMS_PROVIDER` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) | Eskiz.uz (регистрация → API-пароль) или Play Mobile | Вход/регистрация по телефону: в dev код возвращается в ответе (`devCode`), в проде `phone/request` вернёт ошибку — реальная SMS не уходит |
 | `JWT_SECRET` | Сгенерировать: `openssl rand -base64 48` | Слабый секрет = взлом токенов. **Обязательно заменить** |
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |
-| `TURN_URL/USERNAME/CREDENTIAL` | Свой coturn-сервер или платный TURN (Twilio, Metered) | Видео нестабильно за реальными NAT (сейчас публичный демо-TURN) |
+| `TURN_URL` + `TURN_SECRET` | Свой coturn `use-auth-secret` или платный TURN | Видео нестабильно за реальными NAT. Статические credentials разрешаются только явным `TURN_ALLOW_STATIC=1` |
 | `SOCKET_REDIS` | `1` только при деплое на >1 инстанс | На одном инстансе не нужен (оставить `0`) |
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
 | `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_BOT_USERNAME` | @BotFather (токен бота и его username без `@`) | Кнопка «Войти через Telegram» скрыта |
+| `LINKEDIN_CLIENT_ID/SECRET/REDIRECT_URI` | LinkedIn Developer Portal → OpenID Connect | Регистрация/привязка LinkedIn для юристов скрыта |
+| `ZOOM_CLIENT_ID/SECRET/REDIRECT_URI` + `ZOOM_WEBHOOK_SECRET` | Zoom App Marketplace → General OAuth app | Zoom нельзя подключить; WebRTC продолжает работать |
+| `OAUTH_TOKEN_ENCRYPTION_KEY` | `openssl rand -base64 32` | Zoom OAuth fail-closed; ключ нельзя менять после подключения аккаунтов |
+| `SENTRY_DSN` / `VITE_SENTRY_DSN` | sentry.io → Project Settings → Client Keys | Ошибки остаются только в Railway/Winston logs |
 
 > ⚠️ **Никогда не коммить `.env`** — он уже в `.gitignore`. Реальные секреты вносите
 > через хранилище платформы (Railway Variables, Docker secrets, env хостинга).
@@ -162,7 +166,7 @@ rollback window may a separate reviewed operation remove retained local files. T
 does not perform that removal. `--schedule-deletion` only creates idempotent R2 cleanup tasks.
 
 Фронтенд (`frontend/.env` или переменные сборки):
-- `REACT_APP_API_URL=https://ВАШ_ДОМЕН/api`
+- `VITE_API_URL=https://ВАШ_ДОМЕН/api`
 
 ---
 
@@ -186,6 +190,10 @@ does not perform that removal. `--schedule-deletion` only creates idempotent R2 
 - **Соц-вход**: `GOOGLE_CLIENT_ID` показывает кнопку Google; `TELEGRAM_BOT_TOKEN` +
   `TELEGRAM_BOT_USERNAME` — кнопку Telegram. Прод-примечание: для внешних скриптов в CSP фронта
   разрешить `accounts.google.com` и `telegram.org`.
+- **LinkedIn для юристов**: после настройки OIDC появляется регистрация/привязка LinkedIn.
+- **Zoom**: после настройки OAuth юрист подключает свой аккаунт в настройках; webhook URL:
+  `https://<backend>/api/zoom/webhook`. Полная настройка и API описаны в
+  `docs/LAWYER_LINKEDIN_ZOOM.md`.
 
 ---
 
@@ -247,7 +255,7 @@ Backend `backend/api/railway.json` использует digest-pinned Dockerfile
 range: Node.js `>=22.18.0 <23`; image pin: 22.18.0. БД читает `DATABASE_URL`, Redis — `REDIS_URL`.
 Frontend остаётся отдельным static-build сервисом по `frontend/railway.json`.
 
-Пошагово (аккаунт на railway.app + этот GitHub-репозиторий подключён):
+Пошагово для уже созданного Railway project:
 
 1. **New Project → Deploy from GitHub repo** → выбрать `maslaxat-platform`.
 2. **Плагины:** в проекте → *New* → **Database → PostgreSQL**; ещё раз → **Database → Redis**.
@@ -268,15 +276,17 @@ Frontend остаётся отдельным static-build сервисом по 
      - `JWT_SECRET` = сгенерировать (`openssl rand -base64 48`)
      - `CORS_ORIGINS` и `FRONTEND_URL` = публичный URL фронта (заполнить после шага 4)
      - ключи по мере готовности: `ANTHROPIC_API_KEY`, `PAYME_*`, `SMTP_*`, `SMS_PROVIDER`+`ESKIZ_*`, `TURN_*`
-4. **Сервис Frontend:** в проекте → *New* → **GitHub Repo** (тот же репозиторий) → *Settings*:
-   - **Root Directory:** `frontend`
-   - Railway подхватит `frontend/railway.json` (build + `serve`).
-   - **Variables:** `REACT_APP_API_URL` = `https://<домен backend-сервиса>/api`
-     (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
-     нажать *Generate Domain*).
+4. **Сервис Frontend:** local upload выполняется из `frontend`, где Railway автоматически
+   подхватывает `/railway.json` и Dockerfile.
+    - **Variables:** `VITE_API_URL` = `https://<домен backend-сервиса>/api`
+      (домен backend виден в его *Settings → Networking → Public Domain*; при необходимости
+      нажать *Generate Domain*).
+      Для Railway эта переменная обязательна: frontend и backend работают на разных доменах.
 5. **Сгенерировать домены** обоим сервисам (*Settings → Networking → Generate Domain*), затем
    вернуться в backend и вписать в `CORS_ORIGINS`/`FRONTEND_URL` публичный домен фронта.
-6. **Redeploy** обоих сервисов (кнопка *Deploy* или пуш в `main` — Railway деплоит автоматически).
+6. **Deploy** вручную:
+   `cd backend/api && railway up --service backend --environment production`, затем
+   `cd ../../../frontend && railway up --service frontend --environment production`.
 
 > Порядок: Postgres/Redis → Docker build → advisory-locked predeploy → exact startup assertion →
 > `/api/ready`. При отказе проверять migration state, DB/Redis/R2 probes и обязательные production
@@ -289,7 +299,7 @@ Frontend остаётся отдельным static-build сервисом по 
 - **Загрузки (аватары/документы) исчезнут при редеплое** — диск Railway эфемерный. Реши так:
   backend-сервис → *Volumes* → добавь том с Mount path, напр. `/data`, и поставь переменную
   `UPLOAD_DIR=/data/uploads`. Без этого сайт работает, но загруженные файлы не переживут деплой.
-- **`REACT_APP_API_URL` вшивается при СБОРКЕ фронта** — если поменял его после первого билда,
+- **`VITE_API_URL` вшивается при СБОРКЕ фронта** — если поменял его после первого билда,
   обязательно передеплой фронт (иначе он стучится на localhost).
 
 ### Вариант B — Docker Compose (есть `docker-compose.yml` + Dockerfiles)
@@ -298,6 +308,7 @@ Frontend остаётся отдельным static-build сервисом по 
 docker compose up -d --build
 ```
 Проверить, что переменные окружения проброшены в контейнеры (не хардкодить в образ).
+Compose-сеть использует `api:3001` и `frontend:3000`; nginx-конфигурация уже настроена на эти имена.
 
 ---
 
@@ -309,6 +320,9 @@ docker compose up -d --build
 - [ ] Тест-оплата **недоступна** в проде (`/payments/simulate` → 403)
 - [ ] Письмо сброса пароля реально приходит на почту
 - [ ] Видеозвонок между двумя устройствами соединяется (нужен TURN)
+- [ ] Zoom General App: OAuth + Meeting SDK Embed включены, Marketplace review завершён для external lawyer accounts
+- [ ] Zoom staging: host role получает ZAK, client role не получает ZAK/start URL; Component View и mobile fallback проверены
+- [ ] Zoom webhooks `meeting.started/ended`, `participant.joined/left`, `app_deauthorized` доставляются и видны в admin diagnostics
 - [ ] Уведомления приходят мгновенно (socket), не только по опросу
 - [ ] На телефоне сайт предлагает «Установить приложение» (PWA-иконки на месте)
 - [ ] 2FA: юрист/админ включает в Настройках (QR + код), при след. входе спрашивает код

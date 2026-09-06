@@ -566,7 +566,10 @@ describe('business path integration', () => {
     const booking = await request(app)
       .post(`/api/client/lawyers/${lawyer.id}/book`)
       .set('Authorization', `Bearer ${tokenFor(client)}`)
-      .send({ question: 'Included consultation', consultationType: 'video', useSubscriptionFree: true });
+      .send({
+        question: 'Included consultation', consultationType: 'chat', useSubscriptionFree: true,
+        acceptedTerms: true, legalVersion: '2026-08-13',
+      });
     expect(booking.status).toBe(201);
     await payment.reload();
     expect(payment.providerData.consumedConsultationIds).toContain(booking.body.consultation.id);

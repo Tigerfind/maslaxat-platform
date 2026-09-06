@@ -10,10 +10,11 @@ beforeAll(async () => {
 });
 
 async function book(token, lawyerId, body) {
+  bookingSequence += 1;
   return request(app).post(`/api/client/lawyers/${lawyerId}/book`)
     .set('Authorization', `Bearer ${token}`)
-    .set('Idempotency-Key', `subscription-benefit-${bookingSequence += 1}`)
-    .send({ question: 'q', consultationType: 'video', ...body });
+    .set('Idempotency-Key', `subscription-booking-${bookingSequence}`)
+    .send({ question: 'q', consultationType: 'chat', acceptedTerms: true, legalVersion: '2026-08-13', ...body });
 }
 
 describe('подписочная льгота: N бесплатных консультаций/мес', () => {

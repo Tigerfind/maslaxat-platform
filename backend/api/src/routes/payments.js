@@ -1,4 +1,5 @@
 const router = require('express').Router();
+const crypto = require('crypto');
 const logger = require('../config/logger');
 const observability = require('../instrument');
 const { Op } = require('sequelize');
@@ -15,6 +16,7 @@ const {
   markPaymentPaid,
   createCheckout,
 } = require('../services/paymentService');
+const { expireReservationById } = require('../services/reservationExpiryService');
 
 const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
 const lawyerAccess = authorizeCompat({ legacyRoles: ['lawyer'], capability: 'lawyer', telemetryName: 'http.lawyer' });
@@ -51,7 +53,11 @@ const verifyPayme = (req, res, next) => {
   const isCanonical = decodedBytes && decodedBytes.toString('base64') === token;
   const decoded = isCanonical ? decodedBytes.toString('utf8') : '';
 
-  if (!isCanonical || decoded !== `Paycom:${configuredKey}`) {
+  const actual = Buffer.from(decoded);
+  const expected = Buffer.from(`Paycom:${configuredKey}`);
+  const valid = Boolean(isCanonical && actual.length === expected.length
+    && crypto.timingSafeEqual(actual, expected));
+  if (!valid) {
     return res.status(401).json({
       jsonrpc: '2.0',
       id: req.body?.id ?? null,
@@ -65,6 +71,12 @@ const verifyPayme = (req, res, next) => {
 // Клиент бронирует → создаём Payment + Payme checkout URL
 router.post('/create', authenticate, clientAccess, async (req, res, next) => {
   try {
+    const paymeKey = String(process.env.PAYME_KEY || '').trim();
+    const merchantId = String(process.env.PAYME_MERCHANT_ID || '').trim();
+    if (!merchantId || paymeKey === 'CHANGE_ME' || paymeKey === 'sk-CHANGE_ME'
+      || (process.env.NODE_ENV === 'production' && !paymeKey)) {
+      return res.status(503).json({ error: 'Payme checkout is not configured', code: 'PAYMENT_UNAVAILABLE' });
+    }
     const { consultationId } = req.body;
     const idempotencyKey = req.get('Idempotency-Key');
     if (!idempotencyKey) return res.status(400).json({ error: 'Idempotency-Key обязателен' });
@@ -106,28 +118,33 @@ router.post('/simulate', authenticate, clientAccess, async (req, res, next) => {
     if (!consultation) {
       return res.status(404).json({ error: 'Консультация не найдена' });
     }
-    if (consultation.status !== 'payment_pending') {
-      return res.status(400).json({ error: 'Консультацию нельзя оплатить (уже оплачена или отменена)' });
+    if (await expireReservationById(consultation.id)) {
+      return res.status(410).json({ error: 'Время оплаты истекло', code: 'RESERVATION_EXPIRED' });
     }
-
-    let payment = await Payment.findOne({ where: { consultationId } });
-    if (payment && payment.status === 'paid') {
-      return res.status(400).json({ error: 'Консультация уже оплачена' });
-    }
-    if (!payment) {
-      payment = await Payment.create({
-        consultationId,
-        userId: req.userId,
-        amount: consultation.price,
-        currency: 'UZS',
-        provider: 'payme',
-        status: 'pending',
-      });
-    }
-
+    let payment;
+    let alreadyPaid = false;
     await Payment.sequelize.transaction(async (tx) => {
-      payment = await Payment.findByPk(payment.id, { lock: tx.LOCK.UPDATE, transaction: tx });
-      await snapshotConsultationFinancials(consultation, Math.round(Number(payment.amount) * 100), tx);
+      const lockedConsultation = await Consultation.findOne({
+        where: { id: consultationId, clientId: req.userId }, lock: tx.LOCK.UPDATE, transaction: tx,
+      });
+      payment = await Payment.findOne({ where: { consultationId }, lock: tx.LOCK.UPDATE, transaction: tx });
+      if (payment?.status === 'paid') {
+        alreadyPaid = true;
+        return;
+      }
+      if (lockedConsultation.status !== 'payment_pending') {
+        const error = new Error('Консультацию нельзя оплатить (уже оплачена или отменена)');
+        error.status = 400;
+        throw error;
+      }
+      if (!payment) {
+        payment = await Payment.create({
+          consultationId, userId: req.userId, amount: lockedConsultation.price,
+          amountTiyin: Math.round(Number(lockedConsultation.price) * 100),
+          purpose: 'consultation', currency: 'UZS', provider: 'payme', status: 'pending',
+        }, { transaction: tx });
+      }
+      await snapshotConsultationFinancials(lockedConsultation, Math.round(Number(payment.amount) * 100), tx);
       await payment.update({
         purpose: 'consultation',
         amountTiyin: payment.amountTiyin || Math.round(Number(payment.amount) * 100),
@@ -135,12 +152,12 @@ router.post('/simulate', authenticate, clientAccess, async (req, res, next) => {
         paidAt: new Date(),
         providerResponse: { test: true, paidAt: Date.now() },
       }, { transaction: tx });
-      await Consultation.update({ status: 'pending' }, { where: { id: consultation.id }, transaction: tx });
+      await lockedConsultation.update({ status: 'pending' }, { transaction: tx });
       await recordConsultationEscrow(payment, tx);
     });
 
     // Уведомляем юриста об оплаченной консультации
-    await notificationService.createNotification(
+    if (!alreadyPaid) await notificationService.createNotification(
       consultation.lawyerId,
       'new_booking',
       'Новая консультация',
@@ -148,7 +165,7 @@ router.post('/simulate', authenticate, clientAccess, async (req, res, next) => {
       { consultationId: consultation.id }
     );
 
-    res.json({ success: true, message: 'Оплата прошла', paymentId: payment.id });
+    res.json({ success: true, message: 'Оплата прошла', paymentId: payment.id, alreadyPaid });
   } catch (err) {
     next(err);
   }
@@ -258,7 +275,11 @@ router.post('/webhook', verifyPayme, async (req, res) => {
             amountTiyin: Number(payment.amountTiyin ?? Math.round(Number(payment.amount) * 100)),
             providerData: {},
           });
-          return replyError(ERRORS.ALREADY_DONE);
+          return reply({
+            perform_time: payment.providerData?.performTime || payment.providerResponse?.performTime || 0,
+            transaction: payment.id,
+            state: 2,
+          });
         }
         if (payment.status === 'failed') return replyError(ERRORS.CANT_PERFORM);
 
@@ -301,7 +322,10 @@ router.post('/webhook', verifyPayme, async (req, res) => {
         });
         if (!payment) return replyError(ERRORS.TRANSACTION_NOT_FOUND);
 
-        const stateMap = { pending: 1, paid: 2, failed: -1, refunded: -2 };
+        const stateMap = {
+          pending: 1, processing: 1, paid: 2, refund_pending: 2, partially_refunded: 2,
+          failed: -1, refunded: -2,
+        };
         return reply({
           create_time: payment.providerData?.createTime || payment.providerResponse?.createTime || 0,
           perform_time: payment.providerData?.performTime || payment.providerResponse?.performTime || 0,
@@ -314,17 +338,13 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 
       // ── GetStatement ───────────────────────────────────────
       case 'GetStatement': {
-        const payments = await Payment.findAll({
-          where: {
-            status: 'paid',
-            createdAt: {
-              [require('sequelize').Op.between]: [
-                new Date(params.from),
-                new Date(params.to),
-              ],
-            },
-          },
-          order: [['createdAt', 'ASC'], ['id', 'ASC']],
+        const candidates = await Payment.findAll({
+          where: { provider: 'payme' }, order: [['createdAt', 'ASC'], ['id', 'ASC']], limit: 1000,
+        });
+        const payments = candidates.filter((payment) => {
+          const created = payment.providerData?.createTime || payment.providerResponse?.createTime
+            || payment.createdAt.getTime();
+          return created >= params.from && created <= params.to;
         });
 
         return reply(buildStatementResult(payments));
@@ -384,7 +404,11 @@ router.get('/balance', authenticate, lawyerAccess, async (req, res, next) => {
 // Запрос на вывод баланса юристом (B3)
 router.post('/withdraw', authenticate, lawyerAccess, async (req, res, next) => {
   try {
-    const { amount } = req.body;
+    const { amount, destination } = req.body;
+    const idempotencyKey = req.get('Idempotency-Key');
+    if (!idempotencyKey || idempotencyKey.length > 200) {
+      return res.status(400).json({ error: 'Idempotency-Key обязателен' });
+    }
 
     // Валидация суммы: положительное конечное число
     const amt = Number(amount);
@@ -399,6 +423,23 @@ router.post('/withdraw', authenticate, lawyerAccess, async (req, res, next) => {
     let withdrawal;
     try {
       await LawyerProfile.sequelize.transaction(async (t) => {
+        await LawyerProfile.sequelize.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended(:key, 0))',
+          { replacements: { key: `withdrawal:${req.userId}:${idempotencyKey}` }, transaction: t },
+        );
+        withdrawal = await Withdrawal.findOne({
+          where: { lawyerId: req.userId, idempotencyKey }, transaction: t, lock: t.LOCK.UPDATE,
+        });
+        if (withdrawal) {
+          if (Number(withdrawal.amount) !== amt
+            || JSON.stringify(withdrawal.destinationSnapshot || {}) !== JSON.stringify(destination || {})) {
+            const error = new Error('Idempotency key was already used for different withdrawal terms');
+            error.status = 409;
+            throw error;
+          }
+          profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'], transaction: t });
+          return;
+        }
         const [affected] = await LawyerProfile.update(
           { balance: LawyerProfile.sequelize.literal(`balance - ${amt}`) },
           { where: { userId: req.userId, balance: { [Op.gte]: amt } }, transaction: t }
@@ -413,6 +454,8 @@ router.post('/withdraw', authenticate, lawyerAccess, async (req, res, next) => {
           amount: amt,
           status: 'pending',
           provider: 'manual',
+          idempotencyKey,
+          destinationSnapshot: destination || {},
         }, { transaction: t });
         profile = await LawyerProfile.findOne({ where: { userId: req.userId }, attributes: ['balance'], transaction: t });
       });

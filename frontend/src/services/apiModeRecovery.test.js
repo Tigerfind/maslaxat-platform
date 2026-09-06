@@ -1,10 +1,11 @@
 import { attachInterceptors } from './api';
+import { vi } from 'vitest';
 
-jest.mock('axios', () => ({
+vi.mock('axios', () => ({ default: {
   create: jest.fn(() => ({
     interceptors: { request: { use: jest.fn() }, response: { use: jest.fn() } },
   })),
-}));
+} }));
 
 const modeError = (config, code, status = 400) => Promise.reject({
   config, response: { status, data: { code } },

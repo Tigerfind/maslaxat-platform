@@ -1,16 +1,40 @@
 const router = require('express').Router();
-const { Consultation, User, LawyerProfile } = require('../models');
+const crypto = require('crypto');
+const { DateTime } = require('luxon');
+const { Consultation, User, LawyerProfile, Payment } = require('../models');
 const {
   authenticate,
   authorizeConsultationMode,
   ownsConsultationPerspective,
 } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
+const { consultationAccess } = require('../services/consultationAccessService');
+const availabilityService = require('../services/availabilityService');
 const {
   cancelExtensionProposal,
   consentToExtensionCheckout,
   getExtensionProposalState,
 } = require('../services/paymentService');
+
+function buildIceServers(userId) {
+  const servers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+  const urls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
+    .split(',').map((url) => url.trim()).filter(Boolean);
+  if (!urls.length) return servers;
+
+  if (process.env.TURN_SECRET) {
+    const username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
+    const credential = crypto.createHmac('sha1', process.env.TURN_SECRET).update(username).digest('base64');
+    servers.push({ urls, username, credential });
+  } else if ((process.env.NODE_ENV !== 'production' || process.env.TURN_ALLOW_STATIC === '1')
+    && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
+    servers.push({ urls, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+  }
+  return servers;
+}
 
 // All routes require authentication (any role)
 router.use(authenticate);
@@ -47,6 +71,20 @@ router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipa
     if (!consultation) {
       return res.status(404).json({ error: 'Consultation not found' });
     }
+    if (consultation.meetingProvider === 'zoom') {
+      return res.status(409).json({ error: 'Используйте защищённый Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
+    }
+
+    // Only participants can access
+    const isParticipant =
+      consultation.clientId === req.userId ||
+      consultation.lawyerId === req.userId;
+
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    const access = consultationAccess(consultation);
+    const canUseVideo = consultation.type === 'video' && access.canJoin;
 
     res.json({
       id: consultation.id,
@@ -64,6 +102,11 @@ router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipa
       lawyerId: consultation.lawyerId,
       client: consultation.client,
       lawyer: consultation.lawyer,
+      iceServers: canUseVideo ? buildIceServers(req.userId) : [],
+      iceServersExpiresAt: canUseVideo && process.env.TURN_SECRET
+        ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
+        : null,
+      access,
     });
   } catch (err) {
     next(err);
@@ -73,15 +116,37 @@ router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipa
 // POST /api/video/consultation/:id/start — mark consultation as in_progress
 router.post('/consultation/:id/start', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = req.consultation;
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation) {
+      return res.status(404).json({ error: 'Consultation not found' });
+    }
+    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Используйте Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
+
+    const isParticipant =
+      consultation.clientId === req.userId ||
+      consultation.lawyerId === req.userId;
+
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
+    if (!['accepted', 'in_progress'].includes(consultation.status)) {
+      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
+    }
+    const access = consultationAccess(consultation);
+    if (!access.canJoin) return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
 
     // Старт только из подтверждённой юристом консультации (accepted).
     // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
     if (consultation.status === 'accepted') {
-      consultation.status = 'in_progress';
-      await consultation.save();
-    } else if (consultation.status !== 'in_progress') {
-      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
+      if (!consultation.callStartedAt) {
+        return res.status(409).json({ error: 'Ожидается соединение второго участника', code: 'PEER_NOT_CONNECTED' });
+      }
+      const [affected] = await Consultation.update(
+        { status: 'in_progress' },
+        { where: { id: consultation.id, status: 'accepted' } }
+      );
+      if (affected === 0) return res.status(400).json({ error: 'Консультация уже изменена' });
+      await consultation.reload();
     }
 
     res.json({ success: true, status: consultation.status });
@@ -93,26 +158,47 @@ router.post('/consultation/:id/start', authorizeConsultationMode, requireVideoPa
 // POST /api/video/consultation/:id/end — mark consultation as completed
 router.post('/consultation/:id/end', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = req.consultation;
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation) {
+      return res.status(404).json({ error: 'Consultation not found' });
+    }
+    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Завершение Zoom фиксируется сервером', code: 'ZOOM_PROVIDER_REQUIRED' });
+
+    const isParticipant =
+      consultation.clientId === req.userId ||
+      consultation.lawyerId === req.userId;
+
+    if (!isParticipant) {
+      return res.status(403).json({ error: 'Access denied' });
+    }
 
     // Завершить можно только идущую сессию (in_progress) — иначе юрист мог бы
     // забрать эскроу за непроведённую консультацию (pending/accepted).
     if (consultation.status !== 'in_progress') {
       return res.status(400).json({ error: 'Завершить можно только начатую консультацию' });
     }
+    if (!consultation.callStartedAt) {
+      return res.status(400).json({ error: 'Нет подтверждения соединения участников' });
+    }
 
-    // Единый идемпотентный путь: завершение + высвобождение эскроу (раньше видео-
-    // завершение НЕ платило юристу — деньги застревали в pendingBalance).
     const durationSeconds = parseInt(req.body?.durationSeconds, 10);
-    await completeConsultation(consultation.id, undefined, durationSeconds);
+    if (consultation.clientId === req.userId) {
+      await completeConsultation(consultation.id, undefined, durationSeconds);
+      return res.json({ success: true, status: 'completed' });
+    }
 
-    res.json({ success: true, status: 'completed' });
+    await consultation.update({
+      lawyerEndedAt: consultation.lawyerEndedAt || new Date(),
+      ...(Number.isFinite(durationSeconds) && durationSeconds >= 0 ? { actualDuration: durationSeconds } : {}),
+    });
+
+    res.json({ success: true, status: consultation.status, awaitingClientConfirmation: true });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/video/consultation/:id/extend — durable consent + prepaid extension checkout.
+// Durable consent and prepaid extension checkout.
 const EXTEND_MINUTES = [15, 30];
 router.get('/consultation/:id/extension', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
@@ -167,6 +253,8 @@ router.post('/consultation/:id/extend', authorizeConsultationMode, requireVideoP
     if (/not in progress|unsupported|idempotency|active checkout|terminal/i.test(err.message)) {
       return res.status(err.status || 400).json({ error: err.message });
     }
+    if (err.code === 'INVALID_EXTENSION_DURATION') return res.status(409).json({ error: 'Максимальная длительность консультации — 90 минут' });
+    if (err.code === 'SLOT_UNAVAILABLE') return res.status(409).json({ error: 'Следующее время занято, продление невозможно', code: err.code });
     next(err);
   }
 });

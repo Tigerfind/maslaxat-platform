@@ -1,16 +1,18 @@
 import React, { useState } from 'react';
+import { toast } from 'react-toastify';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useDispatch } from 'react-redux';
 import {
   Container, Box, Typography, TextField, Button, Alert, CircularProgress,
-  InputAdornment, IconButton, Card,
+  InputAdornment, IconButton, Card, Checkbox,
 } from '@mui/material';
 import {
   Visibility, VisibilityOff, Person, Lock, Email, Phone, Gavel, ArrowBack,
   ArrowForward, CheckCircle,
 } from '@mui/icons-material';
 import { motion, AnimatePresence } from 'framer-motion';
-import { establishSession, getHomePath } from '../../store/slices/authSlice';
+import { establishSession, getHomePath, loginSuccess } from '../../store/slices/authSlice';
+import SocialLogin from '../../components/Auth/SocialLogin';
 import api from '../../services/api';
 import { axelionColors } from '../../theme/axelionTheme';
 import { useTranslation } from '../../i18n';
@@ -44,6 +46,7 @@ const RegisterPage = () => {
     name: '', email: '', phone: '', password: '', confirmPassword: '', specializations: [],
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
 
   // Шаги зависят от роли: у юриста добавляется выбор специализации.
@@ -65,6 +68,7 @@ const RegisterPage = () => {
       if (!formData.email || !/\S+@\S+\.\S+/.test(formData.email)) { setError(t('register.emailInvalid')); return false; }
       if (!formData.password || formData.password.length < 8) { setError(t('register.passwordMin')); return false; }
       if (formData.password !== formData.confirmPassword) { setError(t('register.passwordsMismatch')); return false; }
+      if (!acceptedTerms) { setError(t('register.acceptRequired')); return false; }
     }
     if (key === 'spec' && formData.specializations.length === 0) { setError(t('register.specRequired')); return false; }
     return true;
@@ -79,6 +83,7 @@ const RegisterPage = () => {
   const back = () => { setError(''); if (step === 0) navigate('/login'); else setStep((s) => s - 1); };
 
   const handleSubmit = async () => {
+    if (!acceptedTerms) { setError(t('register.acceptRequired')); return; }
     setSubmitting(true);
     setError('');
     try {
@@ -88,6 +93,8 @@ const RegisterPage = () => {
         password: formData.password,
         phone: formData.phone || undefined,
         role,
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
         ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
@@ -99,6 +106,15 @@ const RegisterPage = () => {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleLinkedInSuccess = (data) => {
+    if (data.twoFactorRequired) {
+      toast.error(t('login.twoFA.required'));
+      return;
+    }
+    dispatch(loginSuccess({ user: data.user, token: data.token, role: data.role }));
+    navigate('/lawyer/dashboard', { replace: true });
   };
 
   const inputStyles = {
@@ -197,6 +213,20 @@ const RegisterPage = () => {
               value={formData.confirmPassword} onChange={handleChange} placeholder={t('register.confirmPlaceholder')}
               sx={{ ...inputStyles }}
               InputProps={{ startAdornment: <InputAdornment position="start"><Lock sx={{ color: axelionColors.textMuted, fontSize: 20 }} /></InputAdornment> }} />
+            <Box sx={{ mt: 1.5, display: 'flex', alignItems: 'flex-start' }}>
+              <Checkbox inputProps={{ 'aria-label': t('register.acceptRequired') }} checked={acceptedTerms} onChange={(e) => { setAcceptedTerms(e.target.checked); setError(''); }} size="small" />
+              <Typography component="span" sx={{ pt: 1, fontSize: '0.76rem', color: axelionColors.textSecondary, lineHeight: 1.5 }}>
+                {t('register.acceptPrefix')} <Box component="a" href="/terms" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.terms')}</Box>{' '}
+                {t('register.and')} <Box component="a" href="/privacy" target="_blank" rel="noopener noreferrer" sx={{ color: axelionColors.goldDark }}>{t('register.privacy')}</Box>
+              </Typography>
+            </Box>
+            {role === 'lawyer' && (
+              <SocialLogin
+                role="lawyer"
+                onSuccess={handleLinkedInSuccess}
+                onError={(socialError) => toast.error(socialError.response?.data?.error || t('login.social.linkedinFailed'))}
+              />
+            )}
           </Box>
         </Box>
       );

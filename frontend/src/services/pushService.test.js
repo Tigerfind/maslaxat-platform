@@ -1,9 +1,10 @@
 import api from './api';
+import { vi } from 'vitest';
 import pushService from './pushService';
 
-jest.mock('./api', () => ({
+vi.mock('./api', () => ({
   __esModule: true,
-  default: { get: jest.fn(), post: jest.fn() },
+  default: { get: vi.fn(), post: vi.fn() },
 }));
 
 const makeSubscription = (events = []) => ({

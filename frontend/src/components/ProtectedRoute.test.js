@@ -1,5 +1,6 @@
-/* eslint-disable testing-library/no-unnecessary-act */
-import React, { act } from 'react';
+import React from 'react';
+import { act } from 'react-dom/test-utils';
+import { vi } from 'vitest';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { configureStore } from '@reduxjs/toolkit';
@@ -7,7 +8,7 @@ import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom';
 import authReducer from '../store/slices/authSlice';
 import ProtectedRoute from './ProtectedRoute';
 
-jest.mock('../services/api', () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn() } }));
+vi.mock('../services/api', () => ({ __esModule: true, default: { get: vi.fn(), put: vi.fn() } }));
 
 global.IS_REACT_ACT_ENVIRONMENT = true;
 const Path = () => <div data-path={useLocation().pathname} />;

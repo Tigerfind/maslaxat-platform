@@ -168,6 +168,7 @@ describe('юрист управляет верификационными док�
 
   test('submit-for-review переводит статус в pending (профиль полный)', async () => {
     const { user, lp } = await makeLawyer('doc-l3@test.uz', { verificationStatus: 'rejected', rejectionReason: 'Нет диплома' });
+    await user.update({ avatar: '/uploads/lawyer.png' });
     // Гейт полноты: нужен ≥1 документ (описание/расписание/цена/спец уже в makeLawyer).
     await request(app)
       .post('/api/lawyer/verification-documents')
@@ -180,7 +181,7 @@ describe('юрист управляет верификационными док�
     expect(res.status).toBe(200);
 
     await lp.reload();
-    expect(lp.verificationStatus).toBe('pending');
+    expect(lp.verificationStatus).toBe('pending_review');
     expect(lp.rejectionReason).toBeNull();
   });
 
@@ -191,6 +192,7 @@ describe('юрист управляет верификационными док�
       .post('/api/lawyer/verification/submit')
       .set(lawyerAuth(user));
     expect(res.status).toBe(400);
+    expect(res.body.missing).toContain('photo');
     expect(res.body.missing).toContain('documents');
   });
 

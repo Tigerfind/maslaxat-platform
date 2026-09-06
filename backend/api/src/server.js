@@ -108,7 +108,7 @@ app.use('/api/', rateLimit({
   windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
   max: parseInt(process.env.RATE_LIMIT_MAX) || 1000,
   message: { error: 'Слишком много запросов, попробуйте позже' },
-  skip: () => isDev,
+  skip: (req) => isDev || req.path === '/payments/webhook' || req.path === '/zoom/webhook',
 }));
 
 // Строгий лимит на аутентификацию — защита от подбора пароля (действует и в проде, и в dev)
@@ -120,6 +120,10 @@ app.use('/api/auth', rateLimit({
 }));
 
 // Body parsing
+app.post('/api/zoom/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res, next) => {
+  require('./services/zoomWebhookService').handle(req, res).catch(next);
+});
+app.use('/api/payments/webhook', express.json({ limit: '128kb' }));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
@@ -174,6 +178,7 @@ app.use('/api/auth', require('./routes/auth'));
 app.use('/api/account', require('./routes/account'));
 app.use('/api/users', usersRouter);
 app.use('/api/client/users', usersRouter);
+app.use('/api/system', require('./routes/system'));
 app.use('/api/lawyers', require('./routes/lawyers'));
 app.use('/api/consultations', require('./routes/consultations'));
 // Рабочие документы по делу (участник = клиент или юрист консультации). Отдельный
@@ -190,6 +195,7 @@ app.use('/api/2fa', require('./routes/twofa'));
 app.use('/api/chat', require('./routes/chat'));
 app.use('/api/client/chat', require('./routes/chat'));
 app.use('/api/video', require('./routes/video'));
+app.use('/api/zoom', require('./routes/zoom'));
 app.use('/api/favorites', require('./routes/favorites'));
 app.use('/api/client/favorites', require('./routes/favorites'));
 app.use('/api/payments', require('./routes/payments'));

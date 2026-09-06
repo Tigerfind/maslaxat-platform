@@ -16,19 +16,31 @@ const {
   Payment,
   PlatformSettingAudit,
   PromotionPackage,
+  ConsultationMeeting,
+  MeetingEvent,
+  ZoomConnection,
+  LawyerExperience,
+  LawyerEducation,
+  LawyerCertificate,
+  LawyerProfileStatusHistory,
+  Withdrawal,
+  FinancialEvent,
 } = require('../models');
 const { authenticate, authorizeCompat, evaluateAuthorizationDecision } = require('../middleware/auth');
 const { getAuthorizationMode, recordAuthorizationDecision } = require('../services/authorizationRuntime');
 const { resolveHttpAuthorizationSurface } = require('../config/authorizationSurfaces');
 const { recomputeLawyerRating } = require('../services/ratingService');
+const { withLawyerCounts } = require('../services/specializationStats');
 const notifications = require('../services/notificationService');
 const { getCommissionRateBps, setCommissionRateBps } = require('../services/platformSettingsService');
 const { earnedPromotionTiyin } = require('../services/promotionService');
 const profileImportService = require('../services/profileImportService');
+const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 const { getFileStorageService } = require('../services/fileStorageRuntime');
 const { streamFile } = require('../services/fileHttpService');
 const { FILE_LIMITS } = require('../config/fileLimits');
 const { registerUuidParams } = require('../middleware/uuidParams');
+const { disconnectUserSockets } = require('../socket/io');
 const {
   serializeCampaign,
   serializePackage,
@@ -250,39 +262,25 @@ router.get('/activity/recent', async (req, res, next) => {
       limit: parseInt(limit),
     });
 
-    const activity = recentConsultations.map((c) => {
-      let type = 'consultation_completed';
-      let description = '';
+    // Текст и дату собирает фронт по текущему языку: раньше бэкенд отдавал готовые
+    // русские строки и дату 'ru-RU', и админ с UZ/EN интерфейсом всё равно видел
+    // «Новый юрист: …» и «12 авг.». Отсюда — только данные.
+    const STATUS_TO_TYPE = {
+      pending: 'consultation_pending',
+      accepted: 'consultation_accepted',
+      completed: 'consultation_completed',
+      cancelled: 'consultation_cancelled',
+    };
 
-      if (c.status === 'pending') {
-        type = 'consultation_pending';
-        description = `Новый запрос на консультацию от ${c.client?.name || 'клиента'}`;
-      } else if (c.status === 'accepted') {
-        type = 'consultation_accepted';
-        description = `Консультация принята юристом ${c.lawyer?.name || ''}`;
-      } else if (c.status === 'completed') {
-        type = 'consultation_completed';
-        description = `Консультация завершена: ${c.client?.name || 'клиент'} — ${c.lawyer?.name || 'юрист'}`;
-      } else if (c.status === 'cancelled') {
-        type = 'consultation_cancelled';
-        description = `Консультация отменена`;
-      } else {
-        description = `Консультация: ${c.client?.name || 'клиент'} — ${c.lawyer?.name || 'юрист'} (${c.status})`;
-      }
-
-      return {
-        type,
-        description,
-        userName: c.client?.name || 'Пользователь',
-        ts: new Date(c.createdAt).getTime(), // сырой timestamp для сортировки
-        date: new Date(c.createdAt).toLocaleDateString('ru-RU', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-    });
+    const activity = recentConsultations.map((c) => ({
+      type: STATUS_TO_TYPE[c.status] || 'consultation_other',
+      status: c.status,
+      clientName: c.client?.name || null,
+      lawyerName: c.lawyer?.name || null,
+      userName: c.client?.name || null,
+      createdAt: c.createdAt,
+      ts: new Date(c.createdAt).getTime(), // сырой timestamp для сортировки
+    }));
 
     // Also add recent user registrations
     const recentUsers = await User.findAll({
@@ -294,15 +292,10 @@ router.get('/activity/recent', async (req, res, next) => {
     recentUsers.forEach((u) => {
       activity.push({
         type: 'user_registration',
-        description: `Новый ${u.role === 'lawyer' ? 'юрист' : 'клиент'}: ${u.name}`,
+        role: u.role,
         userName: u.name,
+        createdAt: u.createdAt,
         ts: new Date(u.createdAt).getTime(),
-        date: new Date(u.createdAt).toLocaleDateString('ru-RU', {
-          day: 'numeric',
-          month: 'short',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
       });
     });
 
@@ -333,19 +326,28 @@ router.get('/users', async (req, res, next) => {
       ];
     }
 
-    const { count, rows } = await User.findAndCountAll({
-      where,
-      attributes: ['id', 'name', 'email', 'role', 'isActive', 'isVerified', 'createdAt'],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset,
-    });
+    // Счётчики считаем по ВСЕЙ таблице, а не по выданной странице: KPI-карточки
+    // на фронте раньше брались из users.length и при limit=50 показывали «Всего: 50».
+    const [{ count, rows }, all, clients, lawyers, blocked] = await Promise.all([
+      User.findAndCountAll({
+        where,
+        attributes: ['id', 'name', 'email', 'role', 'isActive', 'isVerified', 'createdAt'],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      User.count(),
+      User.count({ where: { role: 'client' } }),
+      User.count({ where: { role: 'lawyer' } }),
+      User.count({ where: { isActive: false } }),
+    ]);
 
     res.json({
       users: rows,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
+      counts: { all, clients, lawyers, blocked },
     });
   } catch (err) {
     next(err);
@@ -377,6 +379,7 @@ router.put('/users/:id/status', async (req, res, next) => {
 
     user.isActive = req.body.status === 'active';
     await user.save();
+    if (!user.isActive) disconnectUserSockets(user.id);
 
     res.json({ success: true, user });
   } catch (err) {
@@ -389,28 +392,64 @@ router.put('/users/:id/status', async (req, res, next) => {
 // GET /lawyers — list all lawyers with profiles
 router.get('/lawyers', loadAdminLawyerListTargets, async (req, res, next) => {
   try {
-    const { verified, search, page = 1, limit = 50 } = req.query;
+    const { verified, status, search, page = 1, limit = 50 } = req.query;
     const offset = (page - 1) * limit;
 
     // Фильтр по статусу модерации (на профиле). verified=true → одобренные,
     // verified=false → на проверке (очередь для админа).
     const profileWhere = {};
-    if (verified === 'true') profileWhere.verificationStatus = 'approved';
-    if (verified === 'false') profileWhere.verificationStatus = 'pending';
+    if (['draft', 'pending_review', 'approved', 'rejected', 'suspended'].includes(status)) {
+      profileWhere.verificationStatus = status;
+    } else if (verified === 'true') {
+      profileWhere.verificationStatus = 'approved';
+    } else if (verified === 'false') {
+      profileWhere.verificationStatus = 'pending_review';
+    }
 
     const filtered = req.lawyerTargets.filter((user) => !Object.keys(profileWhere).length
       || user.profile?.verificationStatus === profileWhere.verificationStatus);
     const count = filtered.length;
     const rows = filtered.slice(offset, offset + parseInt(limit));
+    const lawyers = rows;
+    const all = req.lawyerTargets.length;
+    const approved = req.lawyerTargets.filter((user) => user.profile?.verificationStatus === 'approved').length;
+    const pending = req.lawyerTargets.filter((user) => user.profile?.verificationStatus === 'pending_review').length;
+    const rejected = req.lawyerTargets.filter((user) => user.profile?.verificationStatus === 'rejected').length;
 
     res.json({
-      lawyers: rows,
+      lawyers,
       total: count,
       page: parseInt(page),
       totalPages: Math.ceil(count / limit),
+      counts: { all, approved, pending, rejected },
     });
   } catch (err) {
     next(err);
+  }
+});
+
+router.get('/lawyers/:id/moderation', async (req, res, next) => {
+  try {
+    const lawyer = await User.findOne({
+      where: { id: req.params.id, role: 'lawyer' },
+      attributes: ['id', 'name', 'email', 'phone', 'avatar', 'isVerified', 'isActive'],
+      include: [
+        { model: LawyerProfile, as: 'profile' },
+        { model: LawyerExperience, as: 'lawyerExperiences', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerEducation, as: 'lawyerEducations', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerCertificate, as: 'lawyerCertificates', separate: true, order: [['displayOrder', 'ASC']] },
+        { model: LawyerDocument, as: 'lawyerDocuments', separate: true, attributes: ['id', 'type', 'name', 'mimeType', 'size', 'verifiedAt', 'createdAt'] },
+      ],
+    });
+    if (!lawyer?.profile) return res.status(404).json({ error: 'Юрист не найден' });
+    const history = await LawyerProfileStatusHistory.findAll({
+      where: { lawyerProfileId: lawyer.profile.id },
+      include: [{ model: User, as: 'actor', attributes: ['id', 'name', 'role'] }],
+      order: [['createdAt', 'DESC']],
+    });
+    return res.json({ lawyer, history, completeness: await computeProfileCompleteness(lawyer.id) });
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -444,23 +483,47 @@ router.post('/lawyers/:id/approve', loadAdminLawyerTarget, async (req, res, next
         error.status = 404;
         throw error;
       }
+      if (!['pending_review', 'pending'].includes(profile.verificationStatus)) {
+        const error = new Error('Профиль не ожидает проверки');
+        error.status = 409;
+        throw error;
+      }
       if (!targetCapabilityAllowed(lockedUser, profile)) {
         const error = new Error('Юрист не найден');
         error.status = 404;
+        throw error;
+      }
+      const completeness = await computeProfileCompleteness(lockedUser.id, { transaction });
+      if (!completeness.complete) {
+        const error = new Error('PROFILE_INCOMPLETE');
+        error.status = 400;
+        error.missing = completeness.missing;
         throw error;
       }
       await profileImportService.scheduleReviewedImportCleanup({
         userId: lockedUser.id,
         transaction,
       });
+      const fromStatus = profile.verificationStatus;
       await profile.update({
         verificationStatus: 'approved',
         operatingStatus: 'enabled',
         rejectionReason: null,
+        isAvailable: true,
+        schedulePolicyAcceptedAt: new Date(),
+      }, { transaction });
+      await LawyerDocument.update(
+        { verificationStatus: 'approved', approvedAt: new Date(), approvedByUserId: req.userId, verifiedAt: new Date(), verifiedBy: req.userId },
+        { where: { userId: lockedUser.id, verifiedAt: null }, transaction },
+      );
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id, actorUserId: req.userId,
+        fromStatus, toStatus: 'approved', metadata: { source: 'admin_review' },
       }, { transaction });
       if (!lockedUser.isActive) await lockedUser.update({ isActive: true }, { transaction });
       return lockedUser;
     });
+    disconnectUserSockets(user.id);
 
     // Уведомляем юриста об одобрении (fail-safe: ошибка уведомления не валит запрос)
     try {
@@ -477,6 +540,11 @@ router.post('/lawyers/:id/approve', loadAdminLawyerTarget, async (req, res, next
     });
     res.json({ success: true, message: 'Юрист одобрен', user: responseUser });
   } catch (err) {
+    if (err.message === 'PROFILE_INCOMPLETE') return res.status(400).json({ error: 'Профиль юриста заполнен не полностью', missing: err.missing });
+    if (err.status) return res.status(err.status).json({
+      error: err.code === 'LAWYER_2FA_REQUIRED' ? err.message : 'Решение уже принято другим администратором',
+      ...(err.code ? { code: err.code } : {}),
+    });
     next(err);
   }
 });
@@ -485,6 +553,7 @@ router.post('/lawyers/:id/approve', loadAdminLawyerTarget, async (req, res, next
 router.post('/lawyers/:id/reject', loadAdminLawyerTarget, async (req, res, next) => {
   try {
     const reason = (req.body && typeof req.body.reason === 'string') ? req.body.reason.trim().slice(0, 500) : '';
+    if (!reason) return res.status(400).json({ error: 'Укажите причину отклонения' });
     const user = await sequelize.transaction(async (transaction) => {
       const lockedUser = await User.findOne({
         where: { id: req.params.id },
@@ -506,6 +575,11 @@ router.post('/lawyers/:id/reject', loadAdminLawyerTarget, async (req, res, next)
         error.status = 404;
         throw error;
       }
+      if (!['pending_review', 'pending'].includes(profile.verificationStatus)) {
+        const error = new Error('Профиль не ожидает проверки');
+        error.status = 409;
+        throw error;
+      }
       if (!targetCapabilityAllowed(lockedUser, profile)) {
         const error = new Error('Юрист не найден');
         error.status = 404;
@@ -515,12 +589,20 @@ router.post('/lawyers/:id/reject', loadAdminLawyerTarget, async (req, res, next)
         userId: lockedUser.id,
         transaction,
       });
+      const fromStatus = profile.verificationStatus;
       await profile.update({
         verificationStatus: 'rejected',
         rejectionReason: reason || null,
+        operatingStatus: 'suspended',
+        isAvailable: false,
+      }, { transaction });
+      await LawyerProfileStatusHistory.create({
+        lawyerProfileId: profile.id, actorUserId: req.userId,
+        fromStatus, toStatus: 'rejected', reason, metadata: { source: 'admin_review' },
       }, { transaction });
       return lockedUser;
     });
+    disconnectUserSockets(user.id);
 
     try {
       await notifications.createNotification(
@@ -538,6 +620,7 @@ router.post('/lawyers/:id/reject', loadAdminLawyerTarget, async (req, res, next)
     });
     res.json({ success: true, message: 'Юрист отклонён', user: responseUser });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: 'Решение уже принято другим администратором' });
     next(err);
   }
 });
@@ -553,6 +636,17 @@ router.get('/lawyers/:id/verification-documents', async (req, res, next) => {
     res.json({ documents: docs });
   } catch (err) {
     next(err);
+  }
+});
+
+router.patch('/lawyers/:id/verification-documents/:docId/verify', async (req, res, next) => {
+  try {
+    const doc = await LawyerDocument.findOne({ where: { id: req.params.docId, userId: req.params.id } });
+    if (!doc) return res.status(404).json({ error: 'Документ не найден' });
+    await doc.update({ verifiedAt: doc.verifiedAt || new Date(), verifiedBy: req.userId });
+    return res.json({ document: { id: doc.id, type: doc.type, verifiedAt: doc.verifiedAt } });
+  } catch (error) {
+    return next(error);
   }
 });
 
@@ -676,7 +770,9 @@ router.get('/specializations', async (req, res, next) => {
     const specializations = await Specialization.findAll({
       order: [['name', 'ASC']],
     });
-    res.json(specializations);
+    // lawyerCount из колонки — стухший литерал из сида (у всех «1»). Считаем реально,
+    // тем же способом, что и публичный каталог.
+    res.json(await withLawyerCounts(specializations));
   } catch (err) {
     next(err);
   }
@@ -710,20 +806,49 @@ router.put('/specializations/:id', async (req, res, next) => {
     }
 
     const { name, nameUz, nameEn, icon, isActive } = req.body;
+    const oldName = specialization.name;
+    const renaming = name !== undefined && name !== oldName;
+
     if (name !== undefined) specialization.name = name;
     if (nameUz !== undefined) specialization.nameUz = nameUz;
     if (nameEn !== undefined) specialization.nameEn = nameEn;
     if (icon !== undefined) specialization.icon = icon;
     if (isActive !== undefined) specialization.isActive = isActive;
-    await specialization.save();
 
-    res.json(specialization);
+    // Специализации хранятся у юристов строками без FK: простое переименование
+    // молча осиротило бы все профили со старым названием (юрист выпадал из
+    // фильтра каталога). Переносим их в одной транзакции с самим переименованием.
+    let migratedProfiles = 0;
+    await Specialization.sequelize.transaction(async (t) => {
+      await specialization.save({ transaction: t });
+      if (renaming) {
+        const [affected] = await LawyerProfile.update(
+          { specialization: name },
+          { where: { specialization: oldName }, transaction: t }
+        );
+        migratedProfiles = affected;
+        // Массив specializations — тот же перенос по элементу массива
+        await LawyerProfile.sequelize.query(
+          `UPDATE lawyer_profiles
+             SET specializations = array_replace(specializations, :oldName, :newName)
+           WHERE :oldName = ANY(specializations)`,
+          { replacements: { oldName, newName: name }, transaction: t }
+        );
+      }
+    });
+
+    res.json({ ...specialization.toJSON(), migratedProfiles });
   } catch (err) {
+    if (err.name === 'SequelizeUniqueConstraintError') {
+      return res.status(400).json({ error: 'Специализация с таким названием уже существует' });
+    }
     next(err);
   }
 });
 
 // DELETE /specializations/:id — delete
+// Удаление используемой специализации осиротило бы профили юристов (FK нет),
+// поэтому по умолчанию блокируем и сообщаем, скольких это затронет.
 router.delete('/specializations/:id', async (req, res, next) => {
   try {
     const specialization = await Specialization.findByPk(req.params.id);
@@ -731,8 +856,16 @@ router.delete('/specializations/:id', async (req, res, next) => {
       return res.status(404).json({ error: 'Специализация не найдена' });
     }
 
+    const inUse = await LawyerProfile.count({ where: { specialization: specialization.name } });
+    if (inUse > 0 && req.query.force !== 'true') {
+      return res.status(409).json({
+        error: `Специализация используется у ${inUse} юрист(ов). Переименуйте её или отключите вместо удаления.`,
+        inUse,
+      });
+    }
+
     await specialization.destroy();
-    res.json({ success: true, message: 'Специализация удалена' });
+    res.json({ success: true, message: 'Специализация удалена', inUse });
   } catch (err) {
     next(err);
   }
@@ -776,16 +909,216 @@ router.get('/consultations', async (req, res, next) => {
   }
 });
 
+router.get('/consultations/:id/meeting-diagnostics', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id, {
+      attributes: ['id', 'status', 'lifecycleStatus', 'duration', 'scheduledStartAt', 'scheduledEndAt', 'scheduleTimezone', 'meetingProvider', 'lawyerFirstJoinedAt', 'clientFirstJoinedAt', 'conversationStartedAt', 'finalLeftAt', 'graceEndsAt'],
+      include: [{
+        model: ConsultationMeeting, as: 'meeting',
+        attributes: ['id', 'provider', 'externalMeetingId', 'status', 'desiredState', 'pendingOperation', 'attemptCount', 'nextAttemptAt', 'lastAttemptAt', 'lastHttpStatus', 'providerRequestId', 'lastSafeError', 'startedAt', 'endedAt', 'scheduledAt', 'duration'],
+        include: [{ model: ZoomConnection, as: 'zoomConnection', attributes: ['status', 'connectedAt', 'tokenExpiresAt', 'lastError'] }],
+      }],
+    });
+    if (!consultation) return res.status(404).json({ error: 'Консультация не найдена' });
+    const events = await MeetingEvent.findAll({
+      where: { consultationId: consultation.id },
+      attributes: ['id', 'eventType', 'participantRole', 'occurredAt', 'correlationId', 'metadata'],
+      order: [['occurredAt', 'DESC']], limit: 100,
+    });
+    return res.json({ consultation, events });
+  } catch (error) { return next(error); }
+});
+
+router.post('/consultations/:id/meeting/retry', async (req, res, next) => {
+  try {
+    const consultation = await Consultation.findByPk(req.params.id);
+    if (!consultation || consultation.meetingProvider !== 'zoom') return res.status(404).json({ error: 'Zoom-консультация не найдена' });
+    const service = require('../services/zoomMeetingService');
+    const existing = await ConsultationMeeting.findOne({ where: { consultationId: consultation.id }, attributes: ['externalMeetingId', 'status'] });
+    const operation = ['cancelled', 'rejected'].includes(consultation.status)
+      ? 'cancel'
+      : consultation.lifecycleStatus === 'completed' ? 'end'
+        : existing?.externalMeetingId ? 'update' : 'create';
+    if (!existing && !['accepted'].includes(consultation.status)) return res.status(409).json({ error: 'Повторная операция недоступна в текущем статусе' });
+    const meeting = await service.queueOperation(consultation.id, operation);
+    setImmediate(() => service.processMeetingOperation(meeting.id).catch(() => {}));
+    return res.status(202).json({ status: 'meeting_creating' });
+  } catch (error) { return next(error); }
+});
+
+router.get('/meeting-metrics', async (req, res, next) => {
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const [total, ready, failed, backlog, joined, reconnects, connectedConsultations] = await Promise.all([
+      ConsultationMeeting.count({ where: { provider: 'zoom', createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { provider: 'zoom', status: { [Op.in]: ['ready', 'started', 'ended'] }, createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { provider: 'zoom', status: 'failed', createdAt: { [Op.gte]: since } } }),
+      ConsultationMeeting.count({ where: { pendingOperation: { [Op.ne]: null } } }),
+      MeetingEvent.count({ where: { eventType: 'join_succeeded', occurredAt: { [Op.gte]: since } } }),
+      MeetingEvent.count({ where: { eventType: 'reconnect_started', occurredAt: { [Op.gte]: since } } }),
+      Consultation.findAll({ where: { meetingProvider: 'zoom', conversationStartedAt: { [Op.ne]: null }, createdAt: { [Op.gte]: since } }, attributes: ['scheduledStartAt', 'conversationStartedAt'], raw: true }),
+    ]);
+    const delays = connectedConsultations.map((item) => Math.max(0, (new Date(item.conversationStartedAt) - new Date(item.scheduledStartAt)) / 1000));
+    return res.json({
+      periodDays: 30, meetingCreateSuccessRate: total ? Math.round((ready / total) * 1000) / 10 : null,
+      connectionSuccessRate: total ? Math.round((connectedConsultations.length / total) * 1000) / 10 : null,
+      averageConnectionDelaySeconds: delays.length ? Math.round(delays.reduce((sum, value) => sum + value, 0) / delays.length) : null,
+      total, ready, failed, backlog, successfulJoins: joined, reconnects,
+    });
+  } catch (error) { return next(error); }
+});
+
+// ─── WITHDRAWALS AND PAYMENTS ───────────────────────────────
+router.get('/withdrawals', async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+    const where = {};
+    if (['pending', 'processing', 'paid', 'failed', 'cancelled'].includes(status)) where.status = status;
+    const [{ count, rows }, all, pending, processing, paid, pendingSum] = await Promise.all([
+      Withdrawal.findAndCountAll({
+        where,
+        include: [{
+          model: User, as: 'lawyer', attributes: ['id', 'name', 'email'],
+          include: [{ model: LawyerProfile, as: 'profile', attributes: ['balance', 'pendingBalance'] }],
+        }],
+        order: [['createdAt', 'DESC']], limit: parseInt(limit, 10), offset,
+      }),
+      Withdrawal.count(),
+      Withdrawal.count({ where: { status: 'pending' } }),
+      Withdrawal.count({ where: { status: 'processing' } }),
+      Withdrawal.count({ where: { status: 'paid' } }),
+      Withdrawal.sum('amount', { where: { status: { [Op.in]: ['pending', 'processing'] } } }),
+    ]);
+    res.json({
+      withdrawals: rows, total: count, page: parseInt(page, 10),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, pending, processing, paid, pendingAmount: Number(pendingSum) || 0 },
+    });
+  } catch (err) { next(err); }
+});
+
+router.patch('/withdrawals/:id', async (req, res, next) => {
+  try {
+    const { status, note, provider, providerTransactionId, providerReference, failureCode } = req.body;
+    if (!['processing', 'paid', 'cancelled', 'failed'].includes(status)) {
+      return res.status(400).json({ error: 'Недопустимый статус заявки' });
+    }
+    const withdrawal = await Withdrawal.findByPk(req.params.id);
+    if (!withdrawal) return res.status(404).json({ error: 'Заявка не найдена' });
+    const allowedFrom = { processing: 'pending', cancelled: 'pending', paid: 'processing', failed: 'processing' };
+    if (withdrawal.status !== allowedFrom[status]) return res.status(409).json({ error: `Недопустимый переход ${withdrawal.status} → ${status}` });
+    if (['cancelled', 'failed'].includes(status) && !String(note || '').trim()) return res.status(400).json({ error: 'Укажите причину отказа' });
+    if (status === 'paid' && (!String(providerTransactionId || '').trim() || !String(providerReference || '').trim())) {
+      return res.status(400).json({ error: 'Для выплаты обязательны transaction ID и банковский reference' });
+    }
+    const amount = Number(withdrawal.amount) || 0;
+    const refund = ['cancelled', 'failed'].includes(status);
+    await Withdrawal.sequelize.transaction(async (transaction) => {
+      const patch = { status, note: note ? String(note).slice(0, 500) : withdrawal.note, processedBy: req.userId };
+      if (status === 'processing') patch.processingAt = new Date();
+      if (['paid', 'failed', 'cancelled'].includes(status)) patch.processedAt = new Date();
+      if (status === 'paid') {
+        patch.provider = String(provider || 'manual').slice(0, 30);
+        patch.providerTransactionId = String(providerTransactionId).trim().slice(0, 150);
+        patch.providerReference = String(providerReference).trim().slice(0, 150);
+      }
+      if (status === 'failed') {
+        patch.failureCode = String(failureCode || 'manual_failure').slice(0, 80);
+        patch.failureMessage = String(note).slice(0, 500);
+      }
+      const [affected] = await Withdrawal.update(patch, {
+        where: { id: withdrawal.id, status: allowedFrom[status] }, transaction,
+      });
+      if (affected === 0) throw Object.assign(new Error('Заявка уже обработана'), { status: 409 });
+      if (refund) {
+        const [profileAffected] = await LawyerProfile.update(
+          { balance: LawyerProfile.sequelize.literal(`balance + ${amount}`) },
+          { where: { userId: withdrawal.lawyerId }, transaction },
+        );
+        if (profileAffected !== 1) throw new Error('Lawyer profile missing during withdrawal refund');
+      }
+      await FinancialEvent.create({
+        withdrawalId: withdrawal.id, actorUserId: req.userId, source: 'admin',
+        type: `withdrawal_${status}`, amount,
+        idempotencyKey: `withdrawal_${status}:${withdrawal.id}`,
+        metadata: { note: note || null, provider: provider || null, providerReference: providerReference || null },
+      }, { transaction });
+    });
+    try {
+      await notifications.createNotification(
+        withdrawal.lawyerId, 'withdrawal',
+        status === 'paid' ? 'Выплата отправлена' : status === 'processing' ? 'Выплата обрабатывается' : 'Заявка на вывод отклонена',
+        status === 'paid' ? `Выплата ${amount.toLocaleString('ru-RU')} сум отправлена.`
+          : status === 'processing' ? `Заявка на ${amount.toLocaleString('ru-RU')} сум взята в обработку.`
+            : `Заявка на ${amount.toLocaleString('ru-RU')} сум отклонена, сумма возвращена на баланс.${note ? ` Причина: ${note}` : ''}`,
+        { withdrawalId: withdrawal.id, status },
+      );
+    } catch (_error) { /* Notification delivery must not roll back money state. */ }
+    const updated = await Withdrawal.findByPk(withdrawal.id);
+    return res.json({ success: true, withdrawal: updated, refunded: refund });
+  } catch (err) {
+    if (err.status === 409) return res.status(409).json({ error: err.message });
+    if (err.name === 'SequelizeUniqueConstraintError') return res.status(409).json({ error: 'Такой ID банковской операции уже использован' });
+    return next(err);
+  }
+});
+
+router.get('/payments', async (req, res, next) => {
+  try {
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+    const where = {};
+    if (['pending', 'paid', 'failed', 'refunded'].includes(status)) where.status = status;
+    const [{ count, rows }, all, paidCount, paidSum] = await Promise.all([
+      Payment.findAndCountAll({
+        where, include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+        order: [['createdAt', 'DESC']], limit: parseInt(limit, 10), offset,
+      }),
+      Payment.count(),
+      Payment.count({ where: { status: 'paid', refundStatus: 'none' } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none' } }),
+    ]);
+    return res.json({
+      payments: rows, total: count, page: parseInt(page, 10), totalPages: Math.ceil(count / limit),
+      counts: { all, paid: paidCount, paidAmount: Number(paidSum) || 0 },
+    });
+  } catch (err) { return next(err); }
+});
+
 // ─── SUPPORT TICKETS (управление) ───────────────────────────
 // GET /admin/support — список обращений
 router.get('/support', async (req, res, next) => {
   try {
-    const tickets = await SupportTicket.findAll({
-      include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
-      order: [['createdAt', 'DESC']],
-      limit: 100,
+    const { status, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Раньше отдавались первые 100 без пагинации и фильтра: открытые обращения
+    // тонули среди закрытых, а всё после 100-го было недостижимо.
+    const where = {};
+    if (['open', 'in_progress', 'closed'].includes(status)) where.status = status;
+
+    const [{ count, rows }, all, open, inProgress, closed] = await Promise.all([
+      SupportTicket.findAndCountAll({
+        where,
+        include: [{ model: User, as: 'user', attributes: ['id', 'name', 'email'] }],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      SupportTicket.count(),
+      SupportTicket.count({ where: { status: 'open' } }),
+      SupportTicket.count({ where: { status: 'in_progress' } }),
+      SupportTicket.count({ where: { status: 'closed' } }),
+    ]);
+
+    res.json({
+      tickets: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, open, in_progress: inProgress, closed },
     });
-    res.json(tickets);
   } catch (err) {
     next(err);
   }
@@ -836,15 +1169,36 @@ router.patch('/support/:id', async (req, res, next) => {
 // GET /admin/reviews — все отзывы (с автором и юристом)
 router.get('/reviews', async (req, res, next) => {
   try {
-    const reviews = await Review.findAll({
-      include: [
-        { model: User, as: 'client', attributes: ['id', 'name'] },
-        { model: User, as: 'lawyer', attributes: ['id', 'name'] },
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: 100,
+    const { visibility, page = 1, limit = 25 } = req.query;
+    const offset = (page - 1) * limit;
+
+    // Пагинация вместо жёсткого limit=100: после сотого отзыва модерация была слепа.
+    const where = {};
+    if (visibility === 'hidden') where.isHidden = true;
+    if (visibility === 'visible') where.isHidden = false;
+
+    const [{ count, rows }, all, hidden] = await Promise.all([
+      Review.findAndCountAll({
+        where,
+        include: [
+          { model: User, as: 'client', attributes: ['id', 'name'] },
+          { model: User, as: 'lawyer', attributes: ['id', 'name'] },
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset,
+      }),
+      Review.count(),
+      Review.count({ where: { isHidden: true } }),
+    ]);
+
+    res.json({
+      reviews: rows,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      counts: { all, hidden, visible: all - hidden },
     });
-    res.json(reviews);
   } catch (err) {
     next(err);
   }
@@ -1273,6 +1627,16 @@ router.post('/promos', async (req, res, next) => {
     if (!Number.isInteger(pct) || pct < 1 || pct > 100) {
       return res.status(400).json({ error: 'Скидка должна быть от 1 до 100%' });
     }
+    // Дата в прошлом молча создавала мёртвый код: promoService всегда отклонял бы его.
+    if (expiresAt && new Date(expiresAt) < new Date(new Date().toDateString())) {
+      return res.status(400).json({ error: 'Дата окончания не может быть в прошлом' });
+    }
+    if (minAmount != null && Number(minAmount) < 0) {
+      return res.status(400).json({ error: 'Минимальная сумма не может быть отрицательной' });
+    }
+    if (usageLimit != null && usageLimit !== '' && Number(usageLimit) < 1) {
+      return res.status(400).json({ error: 'Лимит использований должен быть не меньше 1' });
+    }
     const [promo, created] = await Promo.findOrCreate({
       where: { code: String(code).trim().toUpperCase() },
       defaults: {
@@ -1304,9 +1668,24 @@ router.patch('/promos/:id', async (req, res, next) => {
       }
       promo.discountPercent = pct;
     }
-    if (minAmount != null) promo.minAmount = Number(minAmount) || 0;
-    if (usageLimit !== undefined) promo.usageLimit = usageLimit === '' || usageLimit === null ? null : Number(usageLimit);
-    if (expiresAt !== undefined) promo.expiresAt = expiresAt || null;
+    if (minAmount != null) {
+      if (Number(minAmount) < 0) return res.status(400).json({ error: 'Минимальная сумма не может быть отрицательной' });
+      promo.minAmount = Number(minAmount) || 0;
+    }
+    if (usageLimit !== undefined) {
+      const lim = usageLimit === '' || usageLimit === null ? null : Number(usageLimit);
+      // Лимит ниже уже использованного количества сделал бы код мёртвым «задним числом».
+      if (lim != null && lim < (promo.usedCount || 0)) {
+        return res.status(400).json({ error: `Лимит нельзя опустить ниже уже использованных (${promo.usedCount})` });
+      }
+      promo.usageLimit = lim;
+    }
+    if (expiresAt !== undefined) {
+      if (expiresAt && new Date(expiresAt) < new Date(new Date().toDateString())) {
+        return res.status(400).json({ error: 'Дата окончания не может быть в прошлом' });
+      }
+      promo.expiresAt = expiresAt || null;
+    }
     if (isActive != null) promo.isActive = Boolean(isActive);
     await promo.save();
     res.json(promo);

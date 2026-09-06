@@ -131,7 +131,7 @@ test('offline API failures reject even if an old cache contains a private respon
 
 test('offline navigation falls back to the shell rather than a private route entry', async () => {
   const harness = createHarness(jest.fn().mockRejectedValue(new Error('offline')));
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response({ body: 'public shell' }));
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response({ body: 'public shell' }));
   await harness.cacheFor('maslaxat-runtime-v2').put('https://maslaxat.test/dashboard', response({ body: 'User A dashboard' }));
 
   const result = await harness.dispatch('fetch', {
@@ -143,7 +143,7 @@ test('offline navigation falls back to the shell rather than a private route ent
 
 test('offline frontend documents navigation receives the shell', async () => {
   const harness = createHarness(jest.fn().mockRejectedValue(new Error('offline')));
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response({ body: 'public shell' }));
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response({ body: 'public shell' }));
 
   const result = await harness.dispatch('fetch', {
     request: request('/documents', { mode: 'navigate', destination: 'document' }),
@@ -155,7 +155,7 @@ test('offline frontend documents navigation receives the shell', async () => {
 test('document download navigation stays network-only while offline', async () => {
   const failure = new Error('offline');
   const harness = createHarness(jest.fn().mockRejectedValue(failure));
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response({ body: 'public shell' }));
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response({ body: 'public shell' }));
 
   const pending = harness.dispatch('fetch', {
     request: request('/documents/42/download', { mode: 'navigate', destination: 'document' }),
@@ -167,7 +167,7 @@ test('document download navigation stays network-only while offline', async () =
 test('navigation-shaped private requests reject offline instead of receiving the shell', async () => {
   const failure = new Error('offline');
   const harness = createHarness(jest.fn().mockRejectedValue(failure));
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response({ body: 'public shell' }));
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response({ body: 'public shell' }));
 
   const pending = harness.dispatch('fetch', {
     request: request('/api/auth/me', { mode: 'navigate', destination: 'document' }),
@@ -181,7 +181,7 @@ test('static runtime cache stays bounded', async () => {
 
   for (let index = 0; index < 45; index += 1) {
     await harness.dispatch('fetch', {
-      request: request(`/static/js/chunk.${String(index).padStart(8, 'a')}.js`, { destination: 'script' }),
+      request: request(`/assets/chunk-${String(index).padStart(8, 'a')}.js`, { destination: 'script' }),
     });
   }
 
@@ -191,15 +191,15 @@ test('static runtime cache stays bounded', async () => {
 
 test('bounded trimming never evicts the offline index shell', async () => {
   const harness = createHarness();
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response({ body: 'public shell' }));
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response({ body: 'public shell' }));
 
   for (let index = 0; index < 45; index += 1) {
     await harness.dispatch('fetch', {
-      request: request(`/static/js/chunk.${String(index).padStart(8, 'b')}.js`, { destination: 'script' }),
+      request: request(`/assets/chunk-${String(index).padStart(8, 'b')}.js`, { destination: 'script' }),
     });
   }
 
-  const shellCache = harness.stores.get('maslaxat-shell-v3');
+  const shellCache = harness.stores.get('maslaxat-shell-v4');
   expect(shellCache.get('/index.html').body).toBe('public shell');
   expect(shellCache.size).toBeLessThanOrEqual(40);
 });
@@ -226,7 +226,7 @@ test('an installed update waits for explicit activation', async () => {
 
 test('explicit update and logout messages activate the worker and purge all MaslaXat caches', async () => {
   const harness = createHarness();
-  await harness.cacheFor('maslaxat-shell-v3').put('/index.html', response());
+  await harness.cacheFor('maslaxat-shell-v4').put('/index.html', response());
   await harness.cacheFor('maslaxat-runtime-v2').put('/api/private', response());
   await harness.cacheFor('unrelated-cache').put('/keep', response());
 

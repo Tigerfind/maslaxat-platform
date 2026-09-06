@@ -49,7 +49,7 @@ test('public lawyer DTO allowlists plain profile fields and strips provenance in
   });
   expect(dto.receivedReviews).toEqual([{
     id: 'visible', rating: 5, text: 'Helpful', createdAt: '2026-08-17',
-    client: { id: 'client-1', name: 'Client', avatar: null },
+    client: { name: 'Client', avatar: null },
   }]);
   expect(JSON.stringify(dto)).not.toMatch(/profileSources|verifiedSnapshot|import-secret|doc-secret|admin-secret|rejectionReason|balance|promotionPilot|password/);
   expect(JSON.stringify(dto)).not.toMatch(/hidden|Moderated|moderationReason|lawyerId|private@example/);

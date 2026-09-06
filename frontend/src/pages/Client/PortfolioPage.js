@@ -87,28 +87,27 @@ const PortfolioPage = () => {
   const [consultations, setConsultations] = useState([]);
   const [aiConversations, setAiConversations] = useState([]);
   const [favorites, setFavorites] = useState([]);
-  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     loadPortfolioData();
+    // Portfolio datasets are loaded once when the route opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadPortfolioData = async () => {
     try {
       setLoading(true);
-      const [docsData, consData, aiData, favsData, statsData] = await Promise.all([
+      const [docsData, consData, aiData, favsData] = await Promise.all([
         clientService.documents.getDocuments(),
-        clientService.consultations.getConsultations('all'),
+        clientService.consultations.getConsultations({ bucket: 'all', limit: 100 }),
         clientService.aiChat.getConversations(),
         clientService.favorites.getFavorites(),
-        clientService.dashboard.getStats(),
       ]);
 
       setDocuments(Array.isArray(docsData) ? docsData : []);
-      setConsultations(Array.isArray(consData) ? consData : []);
+      setConsultations(Array.isArray(consData?.consultations) ? consData.consultations : []);
       setAiConversations(Array.isArray(aiData) ? aiData : []);
       setFavorites(Array.isArray(favsData) ? favsData : []);
-      setStats(statsData);
     } catch (error) {
       console.error('Error loading portfolio:', error);
       toast.error(t('portfolio.loadError'));

@@ -426,6 +426,9 @@ test('impression, profile view, booking start, and created booking increment exa
     .set('Idempotency-Key', 'catalog-promoted-booking')
     .send({
       question: 'Нужна консультация',
+      consultationType: 'chat',
+      acceptedTerms: true,
+      legalVersion: '2026-08-13',
       promotionAttributionToken: card.promotionAttributionToken,
       promotionRequestId: 'booking-created-1',
     });

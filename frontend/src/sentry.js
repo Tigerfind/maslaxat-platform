@@ -486,10 +486,11 @@ export function captureRenderError(error, info) {
 
 clearSensitiveAuthQuery();
 
+const runtimeEnv = import.meta.env || {};
 Sentry.init({
-  dsn: process.env.NODE_ENV === 'test' ? undefined : (process.env.REACT_APP_SENTRY_DSN || undefined),
-  environment: process.env.REACT_APP_SENTRY_ENVIRONMENT || process.env.NODE_ENV,
-  release: process.env.REACT_APP_SENTRY_RELEASE || undefined,
+  dsn: runtimeEnv.MODE === 'test' ? undefined : (runtimeEnv.VITE_SENTRY_DSN || undefined),
+  environment: runtimeEnv.VITE_SENTRY_ENVIRONMENT || runtimeEnv.MODE,
+  release: runtimeEnv.VITE_SENTRY_RELEASE || undefined,
   sampleRate: 1,
   tracesSampler,
   sendDefaultPii: false,

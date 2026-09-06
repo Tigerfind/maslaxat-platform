@@ -21,14 +21,14 @@ import { useTranslation } from '../../i18n';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import { createModeSocket } from '../../services/modeSocket';
 
-// socket.io на корне хоста; REACT_APP_API_URL в проде содержит /api — срезаем.
-const API_URL = (process.env.REACT_APP_API_URL || 'http://localhost:3001/api').replace(/\/api\/?$/, '');
+// socket.io на корне хоста; VITE_API_URL в проде содержит /api — срезаем.
+const API_URL = (import.meta.env.VITE_API_URL || `${window.location.origin}/api`).replace(/\/api\/?$/, '');
 
 const ChatPage = () => {
   const { consultationId } = useParams();
   const navigate = useNavigate();
   const { t } = useTranslation();
-  const { user, token, activeMode } = useSelector((state) => state.auth);
+  const { user, token: authToken, activeMode } = useSelector((state) => state.auth);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [loading, setLoading] = useState(true);
@@ -65,16 +65,20 @@ const ChatPage = () => {
       }
     };
     loadData();
-  }, [activeMode, consultationId]);
+  }, [consultationId, t]);
 
   // Socket connection
   useEffect(() => {
-    if (!token || !activeMode || !consultationId) return undefined;
+    const token = authToken || localStorage.getItem('token');
+    if (!token || !consultationId) return;
 
     const { socket, unregister } = createModeSocket(io, API_URL, token, activeMode);
 
     socket.on('connect', () => {
       socket.emit('join-chat', { consultationId });
+    });
+    socket.on('disconnect', (reason) => {
+      if (reason === 'io server disconnect') setTimeout(() => socket.connect(), 250);
     });
 
     socket.on('message-received', (message) => {
@@ -99,7 +103,7 @@ const ChatPage = () => {
       socket.disconnect();
       unregister();
     };
-  }, [activeMode, consultationId, token]);
+  }, [activeMode, consultationId, authToken]);
 
   // Auto-scroll on new messages
   useEffect(() => {

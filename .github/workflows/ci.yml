@@ -104,7 +104,7 @@ jobs:
         run: npm run lint 2>&1 | tee ../artifacts/frontend-lint.txt
         working-directory: frontend
       - id: frontend_test
-        run: CI=true npm test -- --watchAll=false --runInBand 2>&1 | tee ../artifacts/frontend-tests.txt
+        run: CI=true npm test 2>&1 | tee ../artifacts/frontend-tests.txt
         working-directory: frontend
       - id: frontend_build
         run: CI=true npm run build 2>&1 | tee ../artifacts/frontend-build.txt
@@ -277,19 +277,61 @@ jobs:
           path: artifacts/
           retention-days: 14
 
+  e2e:
+    needs: [backend, frontend]
+    runs-on: ubuntu-24.04
+    services:
+      postgres:
+        image: postgres:16.4
+        env:
+          POSTGRES_DB: emaslaxat_e2e
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: --health-cmd="pg_isready -U postgres -d emaslaxat_e2e" --health-interval=5s --health-timeout=5s --health-retries=10
+    env:
+      E2E_DB_USER: postgres
+      E2E_DB_PASSWORD: postgres
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.18.0
+          cache: npm
+          cache-dependency-path: |
+            backend/api/package-lock.json
+            frontend/package-lock.json
+      - run: npm ci
+        working-directory: backend/api
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run e2e
+        working-directory: frontend
+      - if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: playwright-${{ github.sha }}
+          path: |
+            frontend/playwright-report
+            frontend/test-results
+          retention-days: 7
+          if-no-files-found: ignore
+
   gate:
     if: always()
-    needs: [secrets, backend, frontend, migration-empty, migration-representative, dependency-audit, image]
+    needs: [secrets, backend, frontend, migration-empty, migration-representative, dependency-audit, image, e2e]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - run: bash .github/scripts/ci-evidence.sh start artifacts/gate.txt release-gate
       - id: required_gate
         run: |
-          printf 'secrets=%s\nbackend=%s\nfrontend=%s\nmigration_empty=%s\nmigration_representative=%s\ndependency_audit=%s\nimage=%s\n' \
+          printf 'secrets=%s\nbackend=%s\nfrontend=%s\nmigration_empty=%s\nmigration_representative=%s\ndependency_audit=%s\nimage=%s\ne2e=%s\n' \
             '${{ needs.secrets.result }}' '${{ needs.backend.result }}' '${{ needs.frontend.result }}' \
             "${{ needs['migration-empty'].result }}" "${{ needs['migration-representative'].result }}" \
-            "${{ needs['dependency-audit'].result }}" '${{ needs.image.result }}' | tee -a artifacts/gate.txt
+            "${{ needs['dependency-audit'].result }}" '${{ needs.image.result }}' '${{ needs.e2e.result }}' | tee -a artifacts/gate.txt
           test '${{ needs.secrets.result }}' = success
           test '${{ needs.backend.result }}' = success
           test '${{ needs.frontend.result }}' = success
@@ -297,6 +339,7 @@ jobs:
           test "${{ needs['migration-representative'].result }}" = success
           test "${{ needs['dependency-audit'].result }}" = success
           test '${{ needs.image.result }}' = success
+          test '${{ needs.e2e.result }}' = success
       - if: always()
         run: bash .github/scripts/ci-evidence.sh finish artifacts/gate.txt "gate:${{ steps.required_gate.outcome }}" "${{ job.status }}"
       - if: always()

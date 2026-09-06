@@ -1,5 +1,6 @@
 const router = require('express').Router();
 const { Op } = require('sequelize');
+const { DateTime } = require('luxon');
 const sequelize = require('../config/database');
 const { Consultation, User, LawyerProfile, Document, Review, Specialization, Notification, AIConversation, Payment } = require('../models');
 
@@ -18,6 +19,8 @@ const monthKey = (date) => {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 };
 const { authenticate, authorizeCompat } = require('../middleware/auth');
+const { withLawyerCounts } = require('../services/specializationStats');
+const { computeProfileCompleteness } = require('../services/lawyerProfileCompleteness');
 
 const clientAccess = authorizeCompat({ legacyRoles: ['client', 'lawyer'], capability: 'client', telemetryName: 'http.client' });
 const lawyerAccess = authorizeCompat({ legacyRoles: ['lawyer'], capability: 'lawyer', telemetryName: 'http.lawyer' });
@@ -58,6 +61,7 @@ router.get('/lawyer/stats', authenticate, lawyerAccess, async (req, res, next) =
     ]);
 
     const profile = await LawyerProfile.findOne({ where: { userId: req.userId } });
+    const profileCompleteness = await computeProfileCompleteness(req.userId);
 
     // Weekly activity: consultations per day for last 7 days
     const sevenDaysAgo = new Date();
@@ -79,9 +83,7 @@ router.get('/lawyer/stats', authenticate, lawyerAccess, async (req, res, next) =
     // Build 7-day array [Mon..Sun] mapped to actual counts
     const weeklyActivity = [];
     for (let i = 6; i >= 0; i--) {
-      const d = new Date();
-      d.setDate(d.getDate() - i);
-      const dateStr = d.toISOString().split('T')[0];
+      const dateStr = DateTime.utc().minus({ days: i }).toISODate();
       const found = weeklyRaw.find((r) => r.date === dateStr);
       weeklyActivity.push(parseInt(found?.count) || 0);
     }
@@ -133,13 +135,18 @@ router.get('/lawyer/stats', authenticate, lawyerAccess, async (req, res, next) =
       // Профиль настроен? Признак = заполнено описание (его ставит онбординг/редактор
       // профиля и НЕ трогает переключатель онлайн/офлайн — в отличие от isAvailable).
       // Нужен фронту, чтобы показывать мастер онбординга только пока профиль не заполнен.
-      profileComplete: !!(profile && profile.description && String(profile.description).trim()),
+      profileComplete: Boolean(profile && ['pending_review', 'approved'].includes(profile.verificationStatus)),
       // Реальный онлайн/офлайн — чтобы пилюля статуса отражала состояние после загрузки,
       // а не всегда «онлайн».
       isAvailable: profile ? Boolean(profile.isAvailable) : false,
       // Статус модерации админом — для баннера в кабинете (на проверке/одобрен/отклонён).
-      verificationStatus: profile?.verificationStatus || 'pending',
+      verificationStatus: profile?.verificationStatus || 'draft',
       rejectionReason: profile?.rejectionReason || null,
+      onboardingStep: profile?.onboardingStep || 0,
+      verificationSubmittedAt: profile?.verificationSubmittedAt || null,
+      scheduleComplete: !profileCompleteness.missing.includes('schedule'),
+      scheduleSlots: profileCompleteness.scheduleSlots,
+      requiredScheduleSlots: profileCompleteness.requiredScheduleSlots,
     });
   } catch (err) {
     next(err);
@@ -208,7 +215,7 @@ router.get('/admin/reports', authenticate, adminAccess, async (req, res, next) =
     const sixMonthsAgo = new Date(months[0].year, months[0].month, 1);
 
     // Выручка платформы — по оплаченным платежам
-    const paidRows = await Payment.findAll({ where: { status: 'paid' }, attributes: ['amount', 'createdAt'], raw: true });
+    const paidRows = await Payment.findAll({ where: { status: 'paid', refundStatus: 'none' }, attributes: ['amount', 'createdAt'], raw: true });
     const revenueByMonth = Object.fromEntries(months.map((m) => [m.key, 0]));
     let totalRevenue = 0;
     for (const p of paidRows) {
@@ -268,8 +275,8 @@ router.get('/admin/stats', authenticate, adminAccess, async (req, res, next) => 
       Consultation.count({ where: { status: { [Op.in]: ['pending', 'accepted', 'in_progress'] } } }),
       // Доход = сумма ОПЛАЧЕННЫХ платежей (как в /reports), скаляром для KPI-карточек,
       // которые раньше читали несуществующие поля → всегда 0.
-      Payment.sum('amount', { where: { status: 'paid' } }),
-      Payment.sum('amount', { where: { status: 'paid', createdAt: { [Op.gte]: startOfMonth } } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none' } }),
+      Payment.sum('amount', { where: { status: 'paid', refundStatus: 'none', createdAt: { [Op.gte]: startOfMonth } } }),
     ]);
 
     res.json({
@@ -323,17 +330,9 @@ router.get('/specializations', async (req, res, next) => {
       where: { isActive: true },
       order: [['name', 'ASC']],
     });
-    // Реальное число юристов по каждой специализации (раньше lawyerCount всегда был 1 из сида)
-    const counts = await LawyerProfile.findAll({
-      attributes: ['specialization', [sequelize.fn('COUNT', sequelize.col('id')), 'cnt']],
-      group: ['specialization'],
-      raw: true,
-    });
-    const countMap = {};
-    counts.forEach((c) => { countMap[c.specialization] = parseInt(c.cnt, 10) || 0; });
-
-    const result = specializations.map((s) => ({ ...s.toJSON(), lawyerCount: countMap[s.name] || 0 }));
-    res.json(result);
+    // Реальное число юристов по каждой специализации (раньше lawyerCount всегда был 1 из сида).
+    // Общий хелпер — тот же, что использует админка, чтобы цифры не расходились.
+    res.json(await withLawyerCounts(specializations));
   } catch (err) {
     next(err);
   }

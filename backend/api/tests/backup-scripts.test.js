@@ -985,7 +985,7 @@ describe('PostgreSQL backup scripts', () => {
     seedRetentionTriplet(harness, BACKUP_ID, SOURCE_CREATED_AT);
     const result = runScript('prune-backups.sh', harness, {
       BACKUP_BUCKET: 'private-backups', BACKUP_R2_ENDPOINT: 'https://account.r2.cloudflarestorage.com',
-      ...verificationEnv(harness), RETENTION_NOW: '2026-08-20T00:00:00Z',
+      ...verificationEnv(harness), RETENTION_NOW: new Date(SOURCE_DATE.getTime() + 3600000).toISOString(),
       FAKE_OBJECT_LIST: triplet(BACKUP_ID).join('\t'),
     }, ['--check-key-retirement', 'release-2026q3']);
     expect(result.status).toBe(65);

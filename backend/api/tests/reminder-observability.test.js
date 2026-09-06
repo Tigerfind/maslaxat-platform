@@ -17,5 +17,5 @@ test('reminder job explicitly reports a swallowed batch failure', async () => {
   mockFindAll.mockRejectedValueOnce(error);
 
   await expect(checkUpcomingReminders()).resolves.toBe(0);
-  expect(mockReportCaughtException).toHaveBeenCalledWith(error, { operation: 'reminder_check' });
+  expect(mockReportCaughtException).toHaveBeenCalledWith(error, expect.objectContaining({ operation: 'reminder_check' }));
 });

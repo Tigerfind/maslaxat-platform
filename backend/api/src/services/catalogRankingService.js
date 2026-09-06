@@ -11,6 +11,7 @@ const {
 const { getRedis } = require('../config/redis');
 const { issuePromotionAttributionToken, recordPromotionEvent } = require('./promotionAnalyticsService');
 const { getAuthorizationMode } = require('./authorizationRuntime');
+const { recommendedScoreSql } = require('./lawyerRecommendation');
 
 const SESSION_SECONDS = 15 * 60;
 const MAX_PAGE_SIZE = 50;
@@ -18,7 +19,7 @@ const MAX_SNAPSHOT_IDS = 500;
 const LIVE_SCAN_CHUNK = 10;
 const ROTATION_TTL_SECONDS = 30 * 24 * 60 * 60;
 const MAX_NEXT_RANK_RETRIES = 10;
-const VALID_SORTS = new Set(['rating', 'price_low', 'price_high', 'experience']);
+const VALID_SORTS = new Set(['recommended', 'rating', 'price_low', 'price_high', 'experience']);
 const STRING_LIMITS = { specialization: 600, search: 100, location: 120, language: 30 };
 
 function catalogError(message, status, code) {
@@ -51,7 +52,7 @@ function normalizeFilters(input = {}) {
     normalized[name] = value;
   }
   normalized.onlineOnly = input.onlineOnly === true || input.onlineOnly === 'true';
-  normalized.sortBy = input.sortBy || 'rating';
+  normalized.sortBy = input.sortBy || 'recommended';
   if (!VALID_SORTS.has(normalized.sortBy)) throw catalogError('Invalid sortBy', 400, 'CATALOG_FILTER_INVALID');
   return normalized;
 }
@@ -89,6 +90,7 @@ function userWhereFor(filters, authorizationMode = getAuthorizationMode()) {
 function orderFor(sortBy) {
   const onlineFirst = [{ model: LawyerProfile, as: 'profile' }, 'isAvailable', 'DESC'];
   const sort = {
+    recommended: [[literal(recommendedScoreSql()), 'DESC']],
     rating: [[{ model: LawyerProfile, as: 'profile' }, 'rating', 'DESC']],
     price_low: [[{ model: LawyerProfile, as: 'profile' }, 'price', 'ASC']],
     price_high: [[{ model: LawyerProfile, as: 'profile' }, 'price', 'DESC']],

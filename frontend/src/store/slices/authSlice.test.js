@@ -1,4 +1,5 @@
 import { configureStore } from '@reduxjs/toolkit';
+import { vi } from 'vitest';
 import api from '../../services/api';
 import aiReducer, { aiActions } from './aiSlice';
 import {
@@ -20,7 +21,7 @@ import authReducer, {
   synchronizeTokenFromStorage,
 } from './authSlice';
 
-jest.mock('../../services/api', () => ({
+vi.mock('../../services/api', () => ({
   __esModule: true,
   default: { get: jest.fn(), put: jest.fn() },
 }));

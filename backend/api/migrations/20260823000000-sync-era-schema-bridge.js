@@ -172,7 +172,7 @@ async function ensureWithdrawals(queryInterface, Sequelize, transaction) {
         type: /^USER-DEFINED$/i,
         allowNull: true,
         defaultValue: 'pending',
-        special: ['pending', 'paid', 'failed', 'cancelled'],
+        special: ['pending', 'paid', 'failed', 'cancelled', 'processing'],
       },
       provider: { type: /^CHARACTER VARYING\(255\)$/i, allowNull: true, defaultValue: 'manual' },
       note: { type: /^TEXT$/i, allowNull: true, defaultValue: null },

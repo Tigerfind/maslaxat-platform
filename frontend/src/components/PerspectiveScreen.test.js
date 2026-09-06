@@ -1,5 +1,5 @@
-/* eslint-disable testing-library/no-unnecessary-act */
-import React, { act, useEffect, useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { act } from 'react-dom/test-utils';
 import { createRoot } from 'react-dom/client';
 import { Provider } from 'react-redux';
 import { configureStore, createSlice } from '@reduxjs/toolkit';

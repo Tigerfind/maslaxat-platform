@@ -19,7 +19,12 @@ async function consultationInMinutes(mins, status = 'accepted') {
   const pad = (n) => String(n).padStart(2, '0');
   const date = `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
   const time = `${pad(when.getHours())}:${pad(when.getMinutes())}`;
-  const c = await Consultation.create({ clientId: client.id, lawyerId: lawyer.id, question: 'q', status, price: 100000, preferredDate: date, preferredTime: time, reminderSent: false });
+  const c = await Consultation.create({
+    clientId: client.id, lawyerId: lawyer.id, question: 'q', status, price: 100000,
+    preferredDate: date, preferredTime: time, scheduledStartAt: when,
+    scheduledEndAt: new Date(when.getTime() + 60 * 60 * 1000), scheduleTimezone: 'Asia/Tashkent',
+    reminderSent: false,
+  });
   return { client, lawyer, c };
 }
 
@@ -46,11 +51,15 @@ describe('reminderService.checkUpcomingReminders', () => {
     expect(after).toBe(before);
   });
 
-  test('не шлёт, если до консультации больше часа', async () => {
-    await consultationInMinutes(180); // через 3 часа
+  test('шлёт отдельное напоминание за 24 часа и не дублирует его', async () => {
+    const { c } = await consultationInMinutes(180); // попадает в окно 24h, но не 1h
     const before = await Notification.count({ where: { type: 'consultation_reminder' } });
     await checkUpcomingReminders();
+    await c.reload();
     const after = await Notification.count({ where: { type: 'consultation_reminder' } });
-    expect(after).toBe(before);
+    expect(after).toBe(before + 2);
+    expect(c.reminder24Sent).toBe(true);
+    await checkUpcomingReminders();
+    expect(await Notification.count({ where: { type: 'consultation_reminder' } })).toBe(after);
   });
 });

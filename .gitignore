@@ -1,6 +1,10 @@
 # Dependencies
 node_modules/
+frontend/playwright-report/
+frontend/test-results/
 */node_modules/
+# Lock-файлы по умолчанию не коммитим. Docker-сервисы backend/frontend собираются
+# через npm ci, поэтому их lock-файлы обязаны попадать и в Git, и в Railway upload.
 package-lock.json
 !backend/api/package-lock.json
 !frontend/package-lock.json

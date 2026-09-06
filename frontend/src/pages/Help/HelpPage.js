@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
 import { useSelector } from 'react-redux';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import {
   ChatBubbleOutline,
@@ -69,13 +69,19 @@ const HelpPage = () => {
   const navigate = useNavigate();
   const auth = useSelector((s) => s.auth);
   const { activeMode } = auth;
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
+  const dateLocale = language === 'en' ? 'en-US' : language === 'uz' ? 'uz-UZ' : 'ru-RU';
 
   const [faqOpen, setFaqOpen] = useState(null);
   const [supCat, setSupCat] = useState('catGeneral');
   const [supSubject, setSupSubject] = useState('');
   const [supMsg, setSupMsg] = useState('');
   const [sending, setSending] = useState(false);
+  // Мои обращения: GET /api/support/my существовал, но его не вызывал никто —
+  // ответ поддержки доходил до клиента только первыми 140 символами в уведомлении.
+  const [tickets, setTickets] = useState([]);
+  const [ticketsError, setTicketsError] = useState(null);
+  const [capabilities, setCapabilities] = useState(null);
 
   const primaryDestination = helpPrimaryDestination(auth);
   const primaryChannel = primaryDestination ? {
@@ -89,27 +95,41 @@ const HelpPage = () => {
     } : null;
   const supChannels = [
     ...(primaryChannel ? [primaryChannel] : []),
-    {
+    ...(capabilities?.support?.phone ? [{
       icon: <PhoneOutlined sx={{ fontSize: 22 }} />,
       title: t('help.phoneTitle'),
-      desc: '+998 71 200-70-70 · 9:00–21:00',
+      desc: capabilities.support.phone,
       action: t('help.phoneAction'),
       tint: 'rgba(90,120,150,0.14)',
       color: '#5A7896',
-      go: () => { window.location.href = 'tel:+998712007070'; },
-    },
-    {
+      go: () => { window.location.href = `tel:${capabilities.support.phone}`; },
+    }] : []),
+    ...(capabilities?.support?.email ? [{
       icon: <EmailOutlined sx={{ fontSize: 22 }} />,
       title: t('help.emailTitle'),
-      desc: 'support@emaslaxat.uz',
+      desc: capabilities.support.email,
       action: t('help.emailAction'),
       tint: '#F5EFE0',
       color: '#C4A35A',
-      go: () => { window.location.href = 'mailto:support@emaslaxat.uz'; },
-    },
+      go: () => { window.location.href = `mailto:${capabilities.support.email}`; },
+    }] : []),
   ];
 
   const disabled = !supSubject.trim() && !supMsg.trim();
+
+  const loadTickets = async () => {
+    try {
+      const { data } = await api.get('/support/my');
+      setTickets(Array.isArray(data?.tickets) ? data.tickets : []);
+      setTicketsError(null);
+    } catch (e) {
+      setTicketsError(e);
+    }
+  };
+  useEffect(() => {
+    loadTickets();
+    api.get('/system/capabilities').then(({ data }) => setCapabilities(data)).catch(() => setCapabilities(null));
+  }, []);
 
   const handleSubmit = async () => {
     if (!supMsg.trim()) {
@@ -123,6 +143,7 @@ const HelpPage = () => {
       toast.success(t('help.sent'));
       setSupSubject('');
       setSupMsg('');
+      loadTickets();
     } catch (e) {
       toast.error(e.response?.data?.error || t('help.sendError'));
     } finally {
@@ -135,7 +156,7 @@ const HelpPage = () => {
       <div style={{ maxWidth: 960, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 24 }}>
 
         {/* SUPPORT CHANNELS */}
-        <div className="sup-channels" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+        <div className="sup-channels" style={{ display: 'grid', gridTemplateColumns: `repeat(${Math.max(1, supChannels.length)}, minmax(0, 1fr))`, gap: 16 }}>
           {supChannels.map((c, i) => (
             <div key={i} style={{ ...glassCard, padding: 24, display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ width: 48, height: 48, borderRadius: 'var(--radius)', background: c.tint, color: c.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{c.icon}</div>
@@ -183,7 +204,7 @@ const HelpPage = () => {
           </div>
 
           {/* TICKET FORM */}
-          <div style={{ ...glassCard, padding: 24 }}>
+          <div id="support-ticket-form" style={{ ...glassCard, padding: 24 }}>
             <div style={{ fontSize: 16, fontWeight: 500, color: 'var(--text)', marginBottom: 4 }}>{t('help.notFound')}</div>
             <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 20 }}>{t('help.notFoundSub')}</div>
 
@@ -224,6 +245,42 @@ const HelpPage = () => {
             >
               {sending ? t('help.sending') : t('help.submit')}
             </button>
+          </div>
+        </div>
+
+        {/* МОИ ОБРАЩЕНИЯ — полный текст ответа, а не 140 символов из уведомления */}
+        <div>
+          <div style={sectionLabel}>{t('help.myTickets')}</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {ticketsError ? (
+              <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.ticketsError')}</div>
+            ) : tickets.length === 0 ? (
+              <div style={{ ...glassCard, padding: 20, fontSize: 13, color: 'var(--text3)' }}>{t('help.noTickets')}</div>
+            ) : tickets.map((tk) => (
+              <div key={tk.id} style={{ ...glassCard, padding: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)' }}>{tk.subject}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <span style={{ fontSize: 12, color: 'var(--text3)' }}>{new Date(tk.createdAt).toLocaleDateString(dateLocale)}</span>
+                    <span style={{ fontSize: 11, letterSpacing: '0.04em', textTransform: 'uppercase', padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border)', color: 'var(--text2)' }}>
+                      {tk.status === 'closed' ? t('help.ticketStClosed') : tk.status === 'in_progress' ? t('help.ticketStProgress') : t('help.ticketStOpen')}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ marginTop: 10, fontSize: 13, lineHeight: 1.7, color: 'var(--text2)', whiteSpace: 'pre-wrap' }}>{tk.message}</div>
+                {tk.response ? (
+                  <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                    <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 6 }}>{t('help.ticketAnswer')}</div>
+                    <div style={{ fontSize: 13, lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>{tk.response}</div>
+                    {tk.respondedAt && (
+                      <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text3)' }}>{new Date(tk.respondedAt).toLocaleString(dateLocale)}</div>
+                    )}
+                  </div>
+                ) : (
+                  <div style={{ marginTop: 12, fontSize: 12, color: 'var(--text3)' }}>{t('help.ticketNoAnswer')}</div>
+                )}
+              </div>
+            ))}
           </div>
         </div>
       </div>

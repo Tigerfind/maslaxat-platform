@@ -114,6 +114,9 @@ const authenticate = async (req, res, next) => {
         return res.status(401).json({ error: 'Сессия недействительна, войдите заново' });
       }
     }
+    if (user.twoFactorEnabled && decoded.authLevel !== 'mfa') {
+      return res.status(401).json({ error: 'Требуется подтверждение 2FA', code: 'TWO_FACTOR_REQUIRED' });
+    }
 
     req.user = user;
     req.userId = user.id;

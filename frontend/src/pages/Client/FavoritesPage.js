@@ -13,7 +13,6 @@ import {
   keyframes,
 } from '@mui/material';
 import {
-  ArrowBack,
   Favorite,
   FavoriteBorder,
   Star,
@@ -47,6 +46,8 @@ const FavoritesPage = () => {
 
   useEffect(() => {
     loadFavorites();
+    // Initial load only; remove actions update local state.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadFavorites = async () => {

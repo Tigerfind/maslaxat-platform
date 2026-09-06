@@ -260,7 +260,7 @@ describe('FixRound1 support and public lawyer boundaries', () => {
       request(app).patch(`/api/admin/support/${ticket.id}`).set(primary).send({ status: 'closed' }),
     ]);
 
-    expect(responses.map((response) => response.status)).toEqual([403, 403, 403]);
+    expect(responses.map((response) => response.status)).toEqual([401, 401, 401]);
     responses.forEach((response) => expect(JSON.stringify(response.body)).not.toContain(client.email));
     await ticket.reload();
     expect(ticket.status).toBe('open');

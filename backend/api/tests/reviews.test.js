@@ -91,22 +91,19 @@ describe('reviews: рейтинг юриста пересчитывается и
     expect(pub.body.reviews.some((r) => r.id === lowId)).toBe(false);
     expect(pub.body.reviews).toHaveLength(1);
     expect(Object.keys(pub.body.reviews[0]).sort()).toEqual([
-      'client', 'createdAt', 'id', 'rating', 'text',
+      'client', 'createdAt', 'helpfulCount', 'id', 'rating', 'repliedAt', 'replyText', 'text',
     ]);
-    expect(Object.keys(pub.body.reviews[0].client).sort()).toEqual(['avatar', 'id', 'name']);
+    expect(Object.keys(pub.body.reviews[0].client).sort()).toEqual(['avatar', 'name']);
     expect(pub.body.reviews[0]).not.toHaveProperty('clientId');
     expect(pub.body.reviews[0]).not.toHaveProperty('lawyerId');
     expect(pub.body.reviews[0]).not.toHaveProperty('consultationId');
     expect(pub.body.reviews[0]).not.toHaveProperty('isHidden');
-    expect(pub.body.reviews[0]).not.toHaveProperty('replyText');
-    expect(pub.body.reviews[0]).not.toHaveProperty('repliedAt');
-    expect(pub.body.reviews[0]).not.toHaveProperty('helpfulCount');
 
     const publicProfile = await request(app).get(`/api/lawyers/${lawyer.id}`);
     expect(publicProfile.status).toBe(200);
     expect(publicProfile.body.lawyer.receivedReviews.some((review) => review.id === lowId)).toBe(false);
     expect(Object.keys(publicProfile.body.lawyer.receivedReviews[0]).sort()).toEqual([
-      'client', 'createdAt', 'id', 'rating', 'text',
+      'client', 'createdAt', 'helpfulCount', 'id', 'rating', 'repliedAt', 'replyText', 'text',
     ]);
 
     // Возврат → рейтинг снова 3.0

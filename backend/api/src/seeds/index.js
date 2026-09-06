@@ -1,6 +1,8 @@
 require('dotenv').config();
-const { exitAfterFatal } = require('../instrument');
-const logger = require('../config/logger');
+if (process.env.NODE_ENV === 'production' || process.env.ALLOW_DESTRUCTIVE_SEED !== '1') {
+  console.error('Destructive reset seed blocked. Use only on a disposable DB with ALLOW_DESTRUCTIVE_SEED=1 and NODE_ENV!=production.');
+  process.exit(1);
+}
 const { sequelize, User, LawyerProfile, Specialization } = require('../models');
 
 const lawyers = [
@@ -71,9 +73,9 @@ async function seed() {
         specializations: [l.spec],
         experience: l.exp,
         price: l.price,
-        rating: l.rating,
-        reviewsCount: l.reviews,
-        completedCases: l.cases,
+        rating: 0,
+        reviewsCount: 0,
+        completedCases: 0,
         location: l.location,
         // Языки: все владеют русским и узбекским, часть — ещё и английским
         languages: l.exp % 2 === 0 ? ['Русский', 'Узбекский', 'Английский'] : ['Русский', 'Узбекский'],

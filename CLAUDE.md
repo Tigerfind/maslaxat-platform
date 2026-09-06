@@ -471,13 +471,81 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   повтор не платит второй раз, статус completed, без оплаты не высвобождает (4 теста).
 - `backend/api/tests/security.test.js` — гейт /payments/simulate (403 при PAYME_KEY, 401 без токена),
   подделка отзывов (403/400), whitelist статусов (400), чужой юрист (403) — 7 тестов.
-- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 16 наборов, 86 тестов, зелёные.
+- Запуск: `createdb emaslaxat_test` (один раз) → `npm test`. Итог: 38 наборов, 218 тестов, зелёные.
 - `tests/recent-features.test.js` — фильтр цены каталога (min/maxPrice), категория права в
   брони (specialization + problems), привязка email (PUT /client/users/email: формат/уникальность/
   нормализация/verified). Email замокан (без сети).
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Release/security hardening 24.08.2026: публичный `/api/system/capabilities` и честные offline-состояния
+  AI/support; без Anthropic AI endpoints возвращают 503 и не расходуют лимит; phone/Google/Telegram
+  больше не обходят 2FA; OTP/reset token потребляются атомарно; account-scoped rate limits используют
+  Redis с bounded local fallback; Payme auth сравнивается constant-time, webhook ограничен 128 KB.
+- Upload hardening: единая проверка extension+MIME+magic bytes, DOCX structure/size, атомарные storage
+  quotas через advisory lock, очистка orphan-файлов и старых аватаров. Публичные отзывы больше не
+  раскрывают UUID, avatar и полное имя клиента.
+- Escrow hardening: юрист больше не может сам высвободить себе оплату через status/start/end;
+  `lawyerEndedAt` фиксирует запрос завершения, выплата идёт после подтверждения клиента или решения
+  администратора. Добавлена миграция `20260828000003-add-consultation-lawyer-ended-at`.
+- Readiness `/api/health/ready` проверяет PostgreSQL и показывает degraded Redis. Локальный restore-drill
+  custom-format backup PostgreSQL 16 успешен: 31 таблица и ключевые row counts совпали.
+- Финальный локальный gate: backend 62 suites / 327 tests, frontend 10 files / 37 tests,
+  Chromium E2E 24/24, frontend lint/build зелёные.
+- Production release 24.08.2026: backup `emaslaxat-prod-before-security-20260824.dump`
+  (SHA-256 `29a3635a27ba2546a44c21ca505686a0b101110983dc771a20fa46c5860f50e2`),
+  migrations `20260828000002/00003` applied, backend deployment `a3af832c...`, frontend
+  `b260310d...`; readiness DB/Redis green. 11 fake lawyers and known-password demo admin/client
+  deactivated; public catalog intentionally empty until real lawyers are approved.
+- Каталог доверия: новые/повторно модерируемые юристы обязаны иметь минимум 3
+  получасовых слота, существующие approved-профили grandfathered и получают предупреждение;
+  default-сортировка «Рекомендуем» считает реальные документы/полноту/стаж/отзывы;
+  публично отдаются только типы индивидуально проверенных документов; медиана ответа
+  появляется только после 3 консультаций с сохранённым acceptedAt.
+- LinkedIn/профиль/Zoom: OIDC с PKCE/state/nonce и one-use tickets; структурированное резюме и
+  модерация; timezone-aware слоты с client/lawyer locks; Zoom OAuth с AES-GCM токенами,
+  signed/idempotent webhook, безопасным disconnect и WebRTC fallback при deauthorization.
+  Миграции `20260825000000..2` проверены на legacy-копии БД с backfill education/certificates;
+  DB audit без drift. Zoom webhook не высвобождает escrow без клиентского completion.
+- Production Zoom-консультации: официальный `@zoom/meetingsdk` 6.2.0 (Component View desktop,
+  Client View mobile, официальный Zoom fallback), server-side SDK JWT + host-only ZAK, equipment
+  lobby, server-clock timer 10/5/1, 5-минутный grace, attendance/no-show из signed webhooks,
+  durable versioned create/update/cancel/end queue с lease/backoff/reconciliation, 10-минутный
+  booking buffer, delayed-attendance settlement перед refund, admin diagnostics и безопасные telemetry events. Миграции `20260829000000..4`;
+  архитектура и production checklist: `docs/ZOOM_PRODUCTION_ARCHITECTURE.md`. Live smoke ждёт ключи.
+- Zoom foundation release 26.08.2026: backup `emaslaxat-prod-before-zoom-20260826.dump`
+  (SHA-256 `5bedc54e767f3a712b3e26ecb180e78058f359f42e67f5d486e0b47f45343005`),
+  migrations `20260829000000..5` applied; backend `418bfd76...`, frontend `4e06201e...` successful.
+  Production smoke: DB/Redis ready, public routes 320/375/768/1440 без overflow/errors, auth guards 401,
+  reminder/timing jobs healthy. Zoom SDK remains fail-closed until credentials and Marketplace approval.
+- CI/monitoring: GitHub Actions (backend/frontend/Playwright), guarded emaslaxat_e2e, 19 Chromium E2E
+  (включая realtime chat, WebRTC с fake media и finance workflow); Sentry backend/frontend fail-safe без DSN.
+- Dependency hardening: nodemailer 9.0.5, socket.io-parser 4.2.7; неиспользуемый react-pdf удалён;
+  optional canvas/tar исключён из frontend install через `.npmrc`.
+- Railway local deploy: `watchPatterns` удалены, потому что при `railway up` из каталога сервиса
+  monorepo-пути не входят в архив и deployment получал SKIPPED. Docker build использует `npm ci`.
+- Playwright E2E: изолированная БД emaslaxat_e2e, Chromium 11 сценариев (legal/auth/roles/catalog/booking/mobile), GitHub Actions backend+frontend+e2e.
+- Публичные legal pages: /terms, /privacy, /refund-policy + обязательные согласия при регистрации/бронировании; production smoke проверяет SPA routes, health, public API и auth guards.
+- Финансы: локальная отмена больше не выдаётся за завершённый Payme refund; refund requested→provider confirmed, FinancialEvent audit, withdrawal idempotency и pending→processing→paid/failed с обязательным bank reference.
+- Legal RAG: LegalDocument/LegalChunk + PostgreSQL FTS, разрешённый JSON/JSONL-импорт, обязательные [S#] citations и сохранение sources/fallback в истории; массовый scraping LexUZ запрещён без разрешения.
+- Frontend lint очищен (42 предупреждения → 0), исправлены stale/race в бронировании, AI-беседах и WebRTC; добавлены первые frontend unit-тесты.
+- Клиентский каталог/профиль юристов: truthful loyalty/online/rating, единый price contract до 10 млн,
+  debounce+AbortController, раздельные error/empty/background states, optimistic favorites с rollback/retry,
+  avatar fallback, честный «Спросить AI», keyboard/a11y и adaptive 320/375/768/1440. Frontend unit 24/24.
+- Frontend переведён CRA/react-app-rewired → Vite 7 + Vitest; Node 20, legacy build, ручной PWA,
+  Nginx Railway runtime, VITE_* env, production audit без high/critical.
+- Realtime presence отделён от booking availability: single-instance events, Redis cluster snapshots,
+  atomic multi-tab, degraded unknown state, sessionVersion JWT и принудительный отзыв sockets.
+- Read-only production DB audit: 23 таблицы, все 32 historical migrations в SequelizeMeta; найдено
+  3376 duplicate indexes и 9 пустых consultation.problems. Три forward-only reconciliation
+  migrations применены 18.08.2026 после backup; production post-audit: 40 индексов,
+  drift/data violations = 0, SequelizeMeta = 35 записей.
+- Единый гейт полноты профиля юриста применяется при submit и admin approve: обязательны фото, описание, реальная специализация, цена, расписание и документ.
+- Публичный каталог/профиль юриста больше не отдаёт balance, pendingBalance, moderation fields и служебные timestamps; отзывы фильтруются по isHidden.
+- Frontend route-level lazy loading: main bundle 572 KB → 318 KB gzip; production source maps отключены.
+- Метрики рейтинга/отзывов/завершённых дел сверяются с реальными Review/Consultation при старте; сиды больше не создают вымышленные агрегаты.
+- Payme Create/Perform/Cancel атомарны и идемпотентны; параллельный Perform резервирует сумму один раз; добавлен unique provider+transactionId.
+- Docker Compose: исправлены frontend port и nginx upstream service names; sw.js больше не кэшируется immutable.
 - Subscription.upsert → findOne + update/create (upsert не работал без уникального индекса)
 - User.toJSON() теперь скрывает resetToken, resetTokenExpiry, verificationToken
 - signaling.js: console.log/error → winston logger
@@ -496,7 +564,9 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
   тесты 11/11 зелёные, сервер 200.
 
 ### BACKLOG (техдолг, отдельными решениями):
-- (Опц.) baseline-миграция для полностью чистого прод-деплоя без sync().
+- (Опц.) baseline для чистого деплоя без sync: стратегия в docs/DB_BASELINE_PLAN.md. НЕ включать
+  автоматический `db:migrate`, пока reconciliation migrations не применены в maintenance window и
+  explicit baseline DDL не проверен на пустой БД и production backup clone.
 - [x] **`POST /lawyers/:id/review` идемпотентен** (один отзыв на консультацию): `Review.findOrCreate`
   по `consultationId` + unique-индекс `reviews_consultation_id_unique` → повтор/гонка = 409, не 500.
   Миграции `20260808000000-dedupe-duplicate-reviews` (чистка дублей) +

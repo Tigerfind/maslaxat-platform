@@ -9,6 +9,7 @@ import {
 } from '@mui/icons-material';
 import { toast } from 'react-toastify';
 import api from '../../services/api';
+import { launchConsultation } from '../../services/meetingLauncher';
 import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
@@ -127,15 +128,25 @@ const LawyerConsultationsPage = () => {
     } catch { toast.error(t('lawyerPanel.rejectError')); }
     finally { setActing(null); }
   };
-  const start = async (id) => {
-    setActing(id);
-    try { await lawyerService.consultation.startConsultation(id); await load(); }
-    catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
+  const start = async (consultation) => {
+    setActing(consultation.id);
+    try {
+      if (consultation.meetingProvider === 'zoom' || consultation.type === 'video') {
+        await launchConsultation(consultation, navigate);
+      } else {
+        await lawyerService.consultation.startConsultation(consultation.id);
+      }
+      await load();
+    }
+    catch (error) { toast.error(error.code === 'POPUP_BLOCKED' ? 'Разрешите всплывающие окна, чтобы открыть Zoom' : t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
   const finish = async (id) => {
     if (!window.confirm(t('lawyerConsult.finishConfirm'))) return;
+    const summary = window.prompt(t('lawyerConsult.summaryPrompt'));
+    if (summary === null) return;
+    if (!summary.trim()) { toast.error(t('lawyerConsult.summaryRequired')); return; }
     setActing(id);
-    try { await lawyerService.consultation.endConsultation(id, ''); toast.success(t('lawyerConsult.finished')); await load(); }
+    try { await lawyerService.consultation.endConsultation(id, summary.trim()); toast.success(t('lawyerConsult.awaitingConfirmation')); await load(); }
     catch { toast.error(t('lawyerPanel.genericError')); } finally { setActing(null); }
   };
 
@@ -327,20 +338,23 @@ const LawyerConsultationsPage = () => {
                       </>
                     )}
                     {c.status === 'accepted' && (
-                      <button disabled={busy} onClick={() => start(c.id)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
+                      <button disabled={busy} onClick={() => start(c)} style={{ ...footBtn('#fff'), background: 'var(--accent)', border: 'none' }}>
                         <PlayArrowOutlined sx={{ fontSize: 17 }} /> {t('lawyerConsult.start')}
                       </button>
                     )}
                     {['accepted', 'in_progress'].includes(c.status) && (
-                      <button onClick={() => navigate(`/consultations/${isVideo ? 'video' : 'chat'}/${c.id}`)} style={footBtn('var(--accent-dark)')}>
+                      <button onClick={() => launchConsultation(c, navigate).catch(() => toast.error(t('lawyerPanel.genericError')))} style={footBtn('var(--accent-dark)')}>
                         {isVideo ? <VideocamOutlined sx={{ fontSize: 16 }} /> : <ChatBubbleOutline sx={{ fontSize: 16 }} />}
                         {isVideo ? t('lawyerConsult.openVideo') : t('lawyerConsult.openChat')}
                       </button>
                     )}
-                    {c.status === 'in_progress' && (
+                    {c.status === 'in_progress' && !c.lawyerEndedAt && (
                       <button disabled={busy} onClick={() => finish(c.id)} style={footBtn('#7A9A6B')}>
                         <CheckOutlined sx={{ fontSize: 16 }} /> {t('lawyerConsult.finish')}
                       </button>
+                    )}
+                    {c.status === 'in_progress' && c.lawyerEndedAt && (
+                      <span style={{ fontSize: 12.5, color: 'var(--text3)' }}>{t('lawyerConsult.awaitingConfirmation')}</span>
                     )}
                     {c.status === 'completed' && (
                       <button onClick={() => navigate(`/consultations/chat/${c.id}`)} style={footBtn('var(--text2)')}>

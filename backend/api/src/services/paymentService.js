@@ -19,6 +19,7 @@ const {
   requestConsultationRefund,
 } = require('./ledgerService');
 const { createCheckoutUrl } = require('./providers/payme');
+const { isPaymentReservationExpired } = require('./availabilityService');
 
 const SUBSCRIPTION_PRICES = Object.freeze({ basic: 9900000, pro: 29900000 });
 const EXTENSION_PROPOSAL_TTL_MS = 15 * 60 * 1000;
@@ -166,6 +167,12 @@ async function checkoutTerms({ userId, purpose, subjectId, plan, extensionMinute
     const consultation = await Consultation.findByPk(subjectId, { lock: tx.LOCK.UPDATE, transaction: tx });
     if (!consultation || consultation.clientId !== userId) throw new Error('Consultation subject not found');
     if (consultation.status !== 'payment_pending') throw new Error('Consultation is not awaiting payment');
+    if (isPaymentReservationExpired(consultation)) {
+      const error = new Error('Payment reservation expired');
+      error.status = 410;
+      error.code = 'PAYMENT_RESERVATION_EXPIRED';
+      throw error;
+    }
     const amountTiyin = exactTiyin(Math.round(Number(consultation.price) * 100));
     await snapshotConsultationFinancials(consultation, amountTiyin, tx);
     return {
@@ -282,7 +289,7 @@ async function createCheckout({
       if (!sameCheckoutRequest(existing, { purpose, subjectId, plan, extensionMinutes, providerData })) {
         throw new Error('Idempotency key was already used for a different checkout');
       }
-      return { payment: existing, checkoutUrl: checkoutUrlFactory(existing) };
+      return { payment: existing, checkoutUrl: null };
     }
     const terms = await checkoutTerms({ userId, purpose, subjectId, plan, extensionMinutes, providerData, tx });
     if (existing) {

@@ -59,7 +59,6 @@ const ConsultationTimeline = ({ status, role = 'client' }) => {
         {STEPS.map((s, i) => {
           const done = i < cur;
           const active = i === cur;
-          const color = done ? 'var(--success, #6E9A5F)' : active ? 'var(--accent)' : 'var(--border-strong)';
           return (
             <React.Fragment key={s}>
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, minWidth: 0 }}>

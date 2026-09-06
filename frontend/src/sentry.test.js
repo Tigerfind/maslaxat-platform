@@ -1,20 +1,19 @@
+import { vi } from 'vitest';
+
 const mockInit = jest.fn();
 const mockCaptureException = jest.fn();
 const mockBrowserTracingIntegration = jest.fn(() => ({ name: 'BrowserTracing' }));
 
-jest.mock('@sentry/react', () => ({
+vi.mock('@sentry/react', () => ({
   init: mockInit,
   captureException: mockCaptureException,
   browserTracingIntegration: mockBrowserTracingIntegration,
 }), { virtual: true });
 
-function loadSentry(path = '/') {
+async function loadSentry(path = '/') {
   window.history.replaceState({}, '', path);
-  let sentry;
-  jest.isolateModules(() => {
-    sentry = require('./sentry');
-  });
-  return sentry;
+  vi.resetModules();
+  return import('./sentry');
 }
 
 beforeEach(() => {
@@ -23,8 +22,8 @@ beforeEach(() => {
   mockBrowserTracingIntegration.mockClear();
 });
 
-test('frontend sanitizer strips Redux, storage, axios bodies, auth, contact data, and signed URLs', () => {
-  loadSentry();
+test('frontend sanitizer strips Redux, storage, axios bodies, auth, contact data, and signed URLs', async () => {
+  await loadSentry();
   const event = mockInit.mock.calls[0][0].beforeSend({
     event_id: 'event-safe',
     reduxState: { auth: { token: 'redux-secret' } },
@@ -46,8 +45,8 @@ test('frontend sanitizer strips Redux, storage, axios bodies, auth, contact data
   expect(serialized).not.toMatch(/client@example\.com|998 90 123 45 67|signed-secret/);
 });
 
-test('frontend sanitizer canonicalizes sensitive key variants and international phones', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend sanitizer canonicalizes sensitive key variants and international phones', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   const output = sanitizeTelemetry([
     'Bearer FRONTEND_VARIANT_MARKER_W6P4',
     '+1 (415) 555-2671 / 0044 20 7946 0958',
@@ -56,8 +55,8 @@ test('frontend sanitizer canonicalizes sensitive key variants and international 
   expect(JSON.stringify(output)).not.toMatch(/FRONTEND_VARIANT_MARKER_W6P4|415.{0,8}555|7946.{0,5}0958/);
 });
 
-test('generic frontend sanitizer never traverses object values', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('generic frontend sanitizer never traverses object values', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   let ownKeys = 0;
   const proxy = new Proxy({}, { ownKeys() { ownKeys += 1; return ['secret']; } });
   const output = sanitizeTelemetry({ nested: proxy, safe: 1 });
@@ -66,8 +65,8 @@ test('generic frontend sanitizer never traverses object values', () => {
   expect(ownKeys).toBe(0);
 });
 
-test('frontend key normalization bounds oversized keys before regex work', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend key normalization bounds oversized keys before regex work', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   const originalReplace = String.prototype.replace;
   let largestReceiver = 0;
   const replaceSpy = jest.spyOn(String.prototype, 'replace').mockImplementation(function boundedReplace(...args) {
@@ -84,8 +83,8 @@ test('frontend key normalization bounds oversized keys before regex work', () =>
   expect(largestReceiver).toBe(0);
 });
 
-test('frontend sanitizer is bounded, getter-safe, BigInt-safe, and prototype-safe', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend sanitizer is bounded, getter-safe, BigInt-safe, and prototype-safe', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   const hostile = Object.create(null);
   Object.defineProperty(hostile, 'danger', { enumerable: true, get() { throw new Error('FRONTEND_GETTER_MARKER'); } });
   hostile.safe = 99n;
@@ -105,8 +104,8 @@ test('frontend sanitizer is bounded, getter-safe, BigInt-safe, and prototype-saf
   expect(JSON.stringify(output)).not.toMatch(/FRONTEND_GETTER_MARKER|FRONTEND_PROXY_MARKER/);
 });
 
-test('frontend sanitizer caps inspected strings before regex processing', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend sanitizer caps inspected strings before regex processing', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   const originalReplace = String.prototype.replace;
   let largestReceiver = 0;
   const replaceSpy = jest.spyOn(String.prototype, 'replace').mockImplementation(function boundedReplace(...args) {
@@ -122,8 +121,8 @@ test('frontend sanitizer caps inspected strings before regex processing', () => 
   expect(largestReceiver).toBeLessThanOrEqual(8192);
 });
 
-test('frontend sanitizer never enumerates huge proxy or accessor objects', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend sanitizer never enumerates huge proxy or accessor objects', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   const keyCount = 100_000;
   let descriptorReads = 0;
   const hugeProxy = new Proxy(Object.create(null), {
@@ -144,8 +143,8 @@ test('frontend sanitizer never enumerates huge proxy or accessor objects', () =>
   expect(descriptorReads).toBe(0);
 });
 
-test('frontend sanitizer accepts only plain data and marks unsupported objects', () => {
-  const { sanitizeTelemetry } = loadSentry();
+test('frontend sanitizer accepts only plain data and marks unsupported objects', async () => {
+  const { sanitizeTelemetry } = await loadSentry();
   class CustomRecord {
     constructor() { this.safe = 'must-not-traverse'; }
   }
@@ -160,8 +159,8 @@ test('frontend sanitizer accepts only plain data and marks unsupported objects',
   ]) expect(sanitizeTelemetry(value)).toBe('[UnsupportedObject]');
 });
 
-test('frontend Sentry boundary drops hostile proxy events and nested fields without throwing', () => {
-  loadSentry();
+test('frontend Sentry boundary drops hostile proxy events and nested fields without throwing', async () => {
+  await loadSentry();
   const options = mockInit.mock.calls[0][0];
   let rootOwnKeys = 0;
   const hostileRoot = new Proxy({}, {
@@ -227,8 +226,8 @@ test('frontend Sentry boundary drops hostile proxy events and nested fields with
   expect(dataOwnKeys).toBe(0);
 });
 
-test('frontend Sentry preserves bounded stack frames and debug images without enumeration or source secrets', () => {
-  loadSentry();
+test('frontend Sentry preserves bounded stack frames and debug images without enumeration or source secrets', async () => {
+  await loadSentry();
   const options = mockInit.mock.calls[0][0];
   let frameOwnKeys = 0;
   let varsOwnKeys = 0;
@@ -350,8 +349,8 @@ test('frontend Sentry preserves bounded stack frames and debug images without en
   expect(imageOwnKeys).toBe(0);
 });
 
-test('frontend Sentry keeps newest frames and prioritizes their debug images before bounded fill', () => {
-  loadSentry();
+test('frontend Sentry keeps newest frames and prioritizes their debug images before bounded fill', async () => {
+  await loadSentry();
   const options = mockInit.mock.calls[0][0];
   const frames = Array.from({ length: 55 }, (_, index) => ({
     filename: `/assets/frame-${index}.js?token=frame-secret`,
@@ -384,11 +383,11 @@ test('frontend Sentry keeps newest frames and prioritizes their debug images bef
   });
 });
 
-test('Sentry initializes without console breadcrumbs and with privacy hooks and five percent traces', () => {
-  process.env.REACT_APP_SENTRY_DSN = 'https://public@example.ingest.sentry.io/1';
-  process.env.REACT_APP_SENTRY_ENVIRONMENT = 'staging';
-  process.env.REACT_APP_SENTRY_RELEASE = 'abc123';
-  const sentry = loadSentry();
+test('Sentry initializes without console breadcrumbs and with privacy hooks and five percent traces', async () => {
+  vi.stubEnv('VITE_SENTRY_DSN', 'https://public@example.ingest.sentry.io/1');
+  vi.stubEnv('VITE_SENTRY_ENVIRONMENT', 'staging');
+  vi.stubEnv('VITE_SENTRY_RELEASE', 'abc123');
+  const sentry = await loadSentry();
   expect(mockInit).toHaveBeenCalledTimes(1);
   const options = mockInit.mock.calls[0][0];
   expect(options.sendDefaultPii).toBe(false);
@@ -410,15 +409,13 @@ test('Sentry initializes without console breadcrumbs and with privacy hooks and 
     stack: '[REDACTED_EXCEPTION]',
   });
   expect(sentry).toHaveProperty('captureRenderError');
-  delete process.env.REACT_APP_SENTRY_DSN;
-  delete process.env.REACT_APP_SENTRY_ENVIRONMENT;
-  delete process.env.REACT_APP_SENTRY_RELEASE;
+  vi.unstubAllEnvs();
 });
 
 test.each(['/reset-password?token=reset-secret', '/verify-email?token=verify-secret']) (
   'auth token is removed from browser history immediately for %s',
-  (path) => {
-    const sentry = loadSentry(path);
+  async (path) => {
+    const sentry = await loadSentry(path);
     expect(window.location.search).toBe('');
     expect(window.location.pathname).toBe(path.split('?')[0]);
     expect(sentry.consumeAuthQueryToken(window.location.pathname)).toMatch(/^(reset|verify)-secret$/);
@@ -426,8 +423,8 @@ test.each(['/reset-password?token=reset-secret', '/verify-email?token=verify-sec
   }
 );
 
-test('SPA navigation clears and consumes an auth query after Sentry is already initialized', () => {
-  const sentry = loadSentry('/');
+test('SPA navigation clears and consumes an auth query after Sentry is already initialized', async () => {
+  const sentry = await loadSentry('/');
   window.history.pushState({}, '', '/reset-password?token=late-secret');
 
   expect(sentry.consumeAuthQueryToken('/reset-password')).toBe('late-secret');
@@ -435,8 +432,8 @@ test('SPA navigation clears and consumes an auth query after Sentry is already i
   expect(window.location.search).toBe('');
 });
 
-test('render errors include only a bounded component stack', () => {
-  const { captureRenderError } = loadSentry();
+test('render errors include only a bounded component stack', async () => {
+  const { captureRenderError } = await loadSentry();
   const error = new Error('render failed');
   captureRenderError(error, {
     componentStack: '\n at SecretForm (http://localhost/app.js:1:2)',

@@ -25,9 +25,10 @@ function loadGoogleScript() {
   return gisPromise;
 }
 
-const SocialLogin = ({ onSuccess, onError }) => {
+const SocialLogin = ({ onSuccess, onError, role = 'client' }) => {
   const { t } = useTranslation();
   const [config, setConfig] = useState(null);
+  const [acceptedTerms, setAcceptedTerms] = useState(false);
   const googleBtnRef = useRef(null);
   const tgRef = useRef(null);
 
@@ -41,7 +42,7 @@ const SocialLogin = ({ onSuccess, onError }) => {
 
   // ── Google Identity Services ──
   useEffect(() => {
-    if (!config || !config.google || !config.google.enabled || !googleBtnRef.current) return undefined;
+    if (!acceptedTerms || !config || !config.google || !config.google.enabled || !googleBtnRef.current) return undefined;
     let cancelled = false;
     loadGoogleScript().then(() => {
       if (cancelled || !window.google || !googleBtnRef.current) return;
@@ -49,7 +50,7 @@ const SocialLogin = ({ onSuccess, onError }) => {
         client_id: config.google.clientId,
         callback: async (resp) => {
           try {
-            const { data } = await api.post('/auth/google', { credential: resp.credential });
+            const { data } = await api.post('/auth/google', { credential: resp.credential, acceptedTerms: true, legalVersion: '2026-08-13' });
             onSuccess(data);
           } catch (e) { if (onError) onError(e); }
         },
@@ -59,15 +60,15 @@ const SocialLogin = ({ onSuccess, onError }) => {
       });
     }).catch(() => {});
     return () => { cancelled = true; };
-  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, acceptedTerms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Telegram Login Widget ──
   useEffect(() => {
-    if (!config || !config.telegram || !config.telegram.enabled || !tgRef.current) return undefined;
+    if (!acceptedTerms || !config || !config.telegram || !config.telegram.enabled || !tgRef.current) return undefined;
     // Виджет вызывает глобальную функцию по имени из data-onauth
     window.__maslaxatTelegramAuth = async (user) => {
       try {
-        const { data } = await api.post('/auth/telegram', user);
+        const { data } = await api.post('/auth/telegram', { ...user, acceptedTerms: true, legalVersion: '2026-08-13' });
         onSuccess(data);
       } catch (e) { if (onError) onError(e); }
     };
@@ -82,11 +83,24 @@ const SocialLogin = ({ onSuccess, onError }) => {
     tgRef.current.innerHTML = '';
     tgRef.current.appendChild(s);
     return () => {};
-  }, [config]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [config, acceptedTerms]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const googleOn = config && config.google && config.google.enabled;
   const telegramOn = config && config.telegram && config.telegram.enabled;
-  if (!googleOn && !telegramOn) return null;
+  const linkedinOn = role === 'lawyer' && config?.linkedin?.enabled;
+  if (!googleOn && !telegramOn && !linkedinOn) return null;
+
+  const startLinkedIn = async () => {
+    try {
+      const { data } = await api.post('/auth/linkedin/start', {
+        acceptedTerms: true,
+        legalVersion: '2026-08-13',
+      });
+      window.location.assign(data.authorizationUrl);
+    } catch (error) {
+      if (onError) onError(error);
+    }
+  };
 
   return (
     <div style={{ marginTop: 24 }}>
@@ -96,8 +110,25 @@ const SocialLogin = ({ onSuccess, onError }) => {
         <div style={{ flex: 1, height: 1, background: axelionColors.borderLight }} />
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-        {googleOn && <div ref={googleBtnRef} />}
-        {telegramOn && <div ref={tgRef} />}
+        <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, maxWidth: 300, fontSize: 12, color: axelionColors.textMuted }}>
+          <input type="checkbox" checked={acceptedTerms} onChange={(e) => setAcceptedTerms(e.target.checked)} />
+          <span>{t('login.social.acceptLegal')} <a href="/terms" target="_blank" rel="noopener noreferrer">{t('login.social.terms')}</a> / <a href="/privacy" target="_blank" rel="noopener noreferrer">{t('login.social.privacy')}</a></span>
+        </label>
+        {acceptedTerms && googleOn && <div ref={googleBtnRef} />}
+        {acceptedTerms && telegramOn && <div ref={tgRef} />}
+        {acceptedTerms && linkedinOn && (
+          <button
+            type="button"
+            onClick={startLinkedIn}
+            style={{
+              width: 300, minHeight: 44, border: '1px solid #0A66C2', borderRadius: 10,
+              background: '#0A66C2', color: '#fff', fontFamily: 'inherit', fontWeight: 600,
+              cursor: 'pointer', fontSize: 14,
+            }}
+          >
+            {t('login.social.linkedin')}
+          </button>
+        )}
       </div>
     </div>
   );

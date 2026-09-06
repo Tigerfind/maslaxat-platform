@@ -20,7 +20,7 @@ const {
   models,
 } = require('./helpers');
 
-const { Consultation, LawyerProfile } = models;
+const { Consultation, LawyerProfile, LawyerDocument } = models;
 
 function tokenFor(user, authLevel = 'primary') {
   return jwt.sign({
@@ -106,7 +106,10 @@ describe('P2 Task 3 multi-role route compatibility', () => {
     const { user: shared } = await makeApprovedOperator('shared-booking@test.uz');
     const { user: otherLawyer } = await makeApprovedOperator('book-target@test.uz');
     await shared.update({ twoFactorEnabled: true });
-    const payload = { question: 'Need advice', useFreePromo: true };
+    const payload = {
+      question: 'Need advice', useFreePromo: true,
+      acceptedTerms: true, legalVersion: '2026-08-13', consultationType: 'chat',
+    };
 
     const other = await request(app)
       .post(`/api/lawyers/${otherLawyer.id}/book`)
@@ -201,7 +204,15 @@ describe('P2 Task 3 multi-role route compatibility', () => {
 
   test('admin approval conflicts without applicant 2FA and enables an MFA-ready profile', async () => {
     const admin = await makeAdmin('approval-admin@test.uz');
-    const { user: applicant, lp } = await makeApplicant('approval-applicant@test.uz');
+    const { user: applicant, lp } = await makeApplicant('approval-applicant@test.uz', {
+      professionalTitle: 'Advokat', description: 'A'.repeat(80), location: 'Tashkent',
+      languages: ['uz'], licenseNumber: 'L-1', licenseIssuer: 'Palata', licenseIssuedAt: '2020-01-01',
+      price: 100000, specialization: 'civil', specializations: ['civil'],
+      schedule: { mon: { enabled: true, from: '09:00', to: '10:30' } },
+      verificationStatus: 'pending_review',
+    });
+    await applicant.update({ avatar: '/uploads/lawyer.png', phone: '+998901234567' });
+    await LawyerDocument.create({ userId: applicant.id, type: 'license', name: 'license.pdf', path: '/tmp/license.pdf' });
     await admin.update({ twoFactorEnabled: true });
     const headers = auth(admin, 'admin', 'mfa');
 
@@ -244,7 +255,7 @@ describe('P2 Task 3 multi-role route compatibility', () => {
       .get('/api/admin/users')
       .set(auth(admin, 'admin', 'primary'));
 
-    expect(response.status).toBe(403);
+    expect(response.status).toBe(401);
   });
 
   test('disabling 2FA suspends an approved lawyer profile', async () => {

@@ -238,7 +238,7 @@ describe('shared primary and MFA login finalization', () => {
   });
 
   test('admin without enabled 2FA receives only a primary JWT with no admin capability', async () => {
-    const admin = await makeAdmin('login-admin-primary@test.uz');
+    const admin = await makeAdmin('login-admin-primary@test.uz', { twoFactorEnabled: false, twoFactorSecret: null });
 
     const response = await request(app).post('/api/auth/login').send({
       email: admin.email,
@@ -716,7 +716,7 @@ describe('2FA bootstrap and current-session compatibility', () => {
   });
 
   test('an admin primary session has no admin capability but can bootstrap 2FA', async () => {
-    const admin = await makeAdmin('twofa-admin-primary@test.uz');
+    const admin = await makeAdmin('twofa-admin-primary@test.uz', { twoFactorEnabled: false, twoFactorSecret: null });
     const authorization = `Bearer ${fullToken(admin)}`;
 
     const status = await request(app).get('/api/2fa/status').set('Authorization', authorization);
@@ -733,7 +733,7 @@ describe('2FA bootstrap and current-session compatibility', () => {
   });
 
   test('increments factor version on setup reset, enable, and disable', async () => {
-    const admin = await makeAdmin('twofa-version-transitions@test.uz');
+    const admin = await makeAdmin('twofa-version-transitions@test.uz', { twoFactorEnabled: false, twoFactorSecret: null });
     const authorization = `Bearer ${fullToken(admin)}`;
 
     const firstSetup = await request(app).post('/api/2fa/setup').set('Authorization', authorization);

@@ -12,6 +12,7 @@ import lawyerService from '../../services/lawyerService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import CaseDocuments from '../../components/Consultations/CaseDocuments';
 import { useTranslation } from '../../i18n';
+import { MIN_WEEKLY_SLOTS, countWeeklySlots } from '../../utils/schedulePolicy';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -69,6 +70,7 @@ const LawyerSchedulePage = () => {
   const DAY_KEYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
   const [availability, setAvailability] = useState({});
   const [availSaving, setAvailSaving] = useState(false);
+  const [availabilityLoadError, setAvailabilityLoadError] = useState(false);
 
   useEffect(() => {
     (async () => {
@@ -78,22 +80,23 @@ const LawyerSchedulePage = () => {
         const filled = {};
         DAY_KEYS.forEach((d) => {
           filled[d] = {
-            enabled: s[d]?.enabled ?? (d !== 'sat' && d !== 'sun'),
+            enabled: Boolean(s[d]?.enabled),
             from: s[d]?.from || '09:00',
             to: s[d]?.to || '18:00',
           };
         });
         setAvailability(filled);
+        setAvailabilityLoadError(false);
       } catch {
-        const filled = {};
-        DAY_KEYS.forEach((d) => { filled[d] = { enabled: d !== 'sat' && d !== 'sun', from: '09:00', to: '18:00' }; });
-        setAvailability(filled);
+        setAvailability({});
+        setAvailabilityLoadError(true);
       }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const setDay = (day, patch) => setAvailability((prev) => ({ ...prev, [day]: { ...prev[day], ...patch } }));
+  const weeklySlots = countWeeklySlots(availability);
 
   const handleSaveAvailability = async () => {
     setAvailSaving(true);
@@ -389,15 +392,21 @@ const LawyerSchedulePage = () => {
             </div>
             <button
               onClick={handleSaveAvailability}
-              disabled={availSaving}
+              disabled={availSaving || availabilityLoadError}
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: 7, background: 'var(--accent)', color: '#FFFFFF',
                 border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.03em', padding: '10px 20px',
-                borderRadius: 'var(--radius)', cursor: availSaving ? 'default' : 'pointer', fontFamily: 'inherit', opacity: availSaving ? 0.6 : 1,
+                borderRadius: 'var(--radius)', cursor: availSaving || availabilityLoadError ? 'default' : 'pointer', fontFamily: 'inherit', opacity: availSaving || availabilityLoadError ? 0.6 : 1,
               }}
             >
               <CheckOutlined sx={{ fontSize: 17 }} /> {availSaving ? t('lawyerPanel.savingProfile') : t('lawyerPanel.saveHours')}
             </button>
+          </div>
+
+          <div style={{ marginBottom: 14, padding: '10px 12px', borderRadius: 10, background: weeklySlots >= MIN_WEEKLY_SLOTS ? 'rgba(122,154,107,0.12)' : 'rgba(196,163,90,0.14)', color: 'var(--text2)', fontSize: 13 }}>
+            {availabilityLoadError
+              ? t('lawyerPanel.availabilityLoadError')
+              : t('lawyerPanel.availabilityProgress', { count: weeklySlots, required: MIN_WEEKLY_SLOTS })}
           </div>
 
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -464,4 +473,3 @@ const LawyerSchedulePage = () => {
 };
 
 export default LawyerSchedulePage;
-

@@ -1,80 +1,38 @@
-const mockSentryWebpackPlugin = jest.fn(() => ({ name: 'SentryWebpackPlugin' }));
+// @vitest-environment node
+import { describe, expect, test, vi } from 'vitest';
+import { createSentryBuildConfig } from '../vite.config.mjs';
 
-jest.mock('@sentry/webpack-plugin', () => ({ sentryWebpackPlugin: mockSentryWebpackPlugin }), { virtual: true });
+vi.mock('@sentry/vite-plugin', () => ({
+  sentryVitePlugin: vi.fn((options) => ({ name: 'sentry-vite-plugin', options })),
+}));
 
-const ENV_KEYS = [
-  'SENTRY_SOURCE_MAPS_ENABLED',
-  'SENTRY_AUTH_TOKEN',
-  'SENTRY_ORG',
-  'SENTRY_FRONTEND_PROJECT',
-  'RAILWAY_GIT_COMMIT_SHA',
-  'SENTRY_RELEASE',
-  'REACT_APP_SENTRY_RELEASE',
-];
+const completeEnv = {
+  SENTRY_SOURCE_MAPS_ENABLED: '1',
+  SENTRY_AUTH_TOKEN: 'token',
+  SENTRY_ORG: 'org',
+  SENTRY_FRONTEND_PROJECT: 'frontend',
+  RAILWAY_GIT_COMMIT_SHA: 'abc123',
+  SENTRY_RELEASE: 'abc123',
+  VITE_SENTRY_RELEASE: 'abc123',
+};
 
-function baseConfig() {
-  return { resolve: { fallback: {} }, plugins: [], module: { rules: [] }, devtool: 'source-map' };
-}
-
-function loadOverride() {
-  let override;
-  jest.isolateModules(() => {
-    override = require('../config-overrides');
-  });
-  return override;
-}
-
-beforeEach(() => {
-  mockSentryWebpackPlugin.mockClear();
-  ENV_KEYS.forEach((key) => delete process.env[key]);
-});
-
-afterAll(() => ENV_KEYS.forEach((key) => delete process.env[key]));
-
-test('disabled source-map uploads emit no source maps and no Sentry plugin', () => {
-  const result = loadOverride()(baseConfig());
-  expect(result.devtool).toBe(false);
-  expect(mockSentryWebpackPlugin).not.toHaveBeenCalled();
-});
-
-test('enabled source-map uploads fail the build when any credential is missing', () => {
-  process.env.SENTRY_SOURCE_MAPS_ENABLED = '1';
-  process.env.SENTRY_AUTH_TOKEN = 'token';
-  expect(() => loadOverride()(baseConfig())).toThrow(/SENTRY_ORG/);
-});
-
-test('enabled source-map uploads fail when any release value differs', () => {
-  Object.assign(process.env, {
-    SENTRY_SOURCE_MAPS_ENABLED: '1',
-    SENTRY_AUTH_TOKEN: 'token',
-    SENTRY_ORG: 'org',
-    SENTRY_FRONTEND_PROJECT: 'frontend',
-    RAILWAY_GIT_COMMIT_SHA: 'abc123',
-    SENTRY_RELEASE: 'abc123',
-    REACT_APP_SENTRY_RELEASE: 'different',
+describe('Vite Sentry source maps', () => {
+  test('remain disabled unless explicitly enabled', () => {
+    expect(createSentryBuildConfig({})).toEqual({ plugin: null, sourcemap: false });
   });
 
-  expect(() => loadOverride()(baseConfig())).toThrow(/release.*match/i);
-});
-
-test('enabled complete source-map uploads use release and delete maps after upload', () => {
-  Object.assign(process.env, {
-    SENTRY_SOURCE_MAPS_ENABLED: '1',
-    SENTRY_AUTH_TOKEN: 'token',
-    SENTRY_ORG: 'org',
-    SENTRY_FRONTEND_PROJECT: 'frontend',
-    RAILWAY_GIT_COMMIT_SHA: 'abc123',
-    SENTRY_RELEASE: 'abc123',
-    REACT_APP_SENTRY_RELEASE: 'abc123',
+  test('fail closed when credentials are incomplete', () => {
+    expect(() => createSentryBuildConfig({ SENTRY_SOURCE_MAPS_ENABLED: '1' })).toThrow(/Missing Sentry/);
   });
 
-  const result = loadOverride()(baseConfig());
-  expect(result.devtool).toBe('source-map');
-  expect(mockSentryWebpackPlugin).toHaveBeenCalledWith(expect.objectContaining({
-    authToken: 'token',
-    org: 'org',
-    project: 'frontend',
-    release: expect.objectContaining({ name: process.env.REACT_APP_SENTRY_RELEASE }),
-    sourcemaps: expect.objectContaining({ filesToDeleteAfterUpload: expect.anything() }),
-  }));
+  test('require all release identifiers to match', () => {
+    expect(() => createSentryBuildConfig({ ...completeEnv, VITE_SENTRY_RELEASE: 'other' })).toThrow(/match/);
+  });
+
+  test('upload hidden source maps and delete them after upload', () => {
+    const result = createSentryBuildConfig(completeEnv);
+    expect(result.sourcemap).toBe('hidden');
+    expect(result.plugin.options.release.name).toBe('abc123');
+    expect(result.plugin.options.sourcemaps.filesToDeleteAfterUpload).toBe('./build/**/*.map');
+  });
 });
