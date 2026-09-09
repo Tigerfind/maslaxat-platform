@@ -478,6 +478,10 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Redis reconnect 09.09.2026: убран `reconnectStrategy:false`, добавлен bounded exponential backoff,
+  startup timeout с local fallback и ready-only `getRedis()`. После Railway Redis restart backend
+  восстанавливает cache/distributed counters без ручного restart. Backend gate: 70 suites / 426 tests,
+  production dependency audit — 0 vulnerabilities; попутно обновлены Joi 17.13.7 и Nodemailer 9.1.1.
 - Полная mobile/PWA-адаптация 04.09.2026: role-aware bottom navigation для client/lawyer/admin,
   `100dvh` и safe-area shell/dialogs, responsive client/lawyer/admin cards и таблицы, keyboard-safe
   AI/chat/booking, mobile uploads/PDF fallback, WebRTC camera→audio recovery, Safari playback action,
