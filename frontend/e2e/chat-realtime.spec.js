@@ -21,6 +21,8 @@ test('client и lawyer получают сообщения realtime и исто�
 
     const clientInput = clientPage.getByPlaceholder('Сообщение…');
     const lawyerInput = lawyerPage.getByPlaceholder('Сообщение…');
+    const clientMessages = clientPage.getByLabel('Сообщения консультации');
+    const lawyerMessages = lawyerPage.getByLabel('Сообщения консультации');
     await expect(async () => {
       await clientInput.fill(`typing-${Math.random().toString(36).slice(2, 7)}`);
       await expect(lawyerPage.getByText('печатает…', { exact: true })).toBeVisible({ timeout: 1000 });
@@ -31,14 +33,14 @@ test('client и lawyer получают сообщения realtime и исто�
     const clientMessage = `client-message-${suffix}`;
     await clientInput.fill(clientMessage);
     await clientInput.press('Enter');
-    await expect(clientPage.getByText(clientMessage, { exact: true })).toBeVisible();
-    await expect(lawyerPage.getByText(clientMessage, { exact: true })).toBeVisible();
+    await expect(clientMessages.getByText(clientMessage, { exact: true })).toBeVisible();
+    await expect(lawyerMessages.getByText(clientMessage, { exact: true })).toBeVisible();
 
     const lawyerMessage = `lawyer-message-${suffix}`;
     await lawyerInput.fill(lawyerMessage);
     await lawyerInput.press('Enter');
-    await expect(clientPage.getByText(lawyerMessage, { exact: true })).toBeVisible();
-    await expect(lawyerPage.getByText(lawyerMessage, { exact: true })).toBeVisible();
+    await expect(clientMessages.getByText(lawyerMessage, { exact: true })).toBeVisible();
+    await expect(lawyerMessages.getByText(lawyerMessage, { exact: true })).toBeVisible();
 
     const token = await clientPage.evaluate(() => localStorage.getItem('token'));
     const history = await request.get(`http://127.0.0.1:3101/api/chat/${CHAT_CONSULTATION_ID}/messages`, {
