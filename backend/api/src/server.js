@@ -212,11 +212,17 @@ async function start() {
     await sequelize.authenticate();
     logger.info('PostgreSQL connected');
 
+    // Production must already have the guaranteed baseline anchor and every
+    // forward migration. Railway applies them in predeploy; startup only verifies.
+    await require('./db/productionSchemaGate').assertProductionSchema({
+      sequelizeInstance: sequelize,
+    });
+
     // Схема БД:
     //  • dev — sync({ alter: true }): удобно, подгоняет схему под модели на лету
-    //  • prod — sync() без alter: создаёт недостающие таблицы, но НЕ меняет существующие
-    //    (безопасно). Осознанные изменения схемы в проде — только через миграции:
-    //    `npm run db:migrate` (см. migrations/ и DEPLOY.md).
+    //  • prod — только после migration gate; sync() остаётся без alter для
+    //    совместимости моделей, а изменения существующей схемы идут через
+    //    `npm run db:migrate:runtime` (см. migrations/ и DEPLOY.md).
     if (process.env.NODE_ENV === 'production') {
       await sequelize.sync();
     } else {
@@ -242,9 +248,9 @@ async function start() {
     const metrics = await require('./services/ratingService').reconcileLawyerMetrics();
     logger.info('Lawyer metrics reconciled', metrics);
 
-    // Прод: досоздаём индексы, которых нет в моделях (частичные/условные unique
-    // из миграций — sync() их не создаёт). Идемпотентно и дёшево (2 проверки
-    // pg_indexes), безопасно на каждом старте. Ошибка не мешает старту.
+    // Legacy safety check for databases created before the runtime runner.
+    // Anchored production should already have these migration-owned indexes;
+    // this is expected to be a no-op and is not a migration substitute.
     if (process.env.NODE_ENV === 'production') {
       try {
         const { ensureProdIndexes } = require('./db/ensure-prod-indexes');

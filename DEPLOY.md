@@ -80,31 +80,48 @@ cp .env.example .env
 
 Схема:
 - **dev** — `sync({ alter: true })` (подгоняет схему под модели на лету, удобно).
-- **prod** — `sync()` без alter (создаёт недостающие таблицы, но НЕ меняет существующие —
-  безопасно). Осознанные изменения схемы в проде — **только через миграции**.
+- **prod** — Railway predeploy запускает forward-only runtime runner, после чего startup gate
+  проверяет схему до `sync()`, фоновых jobs и `listen`. Если predeploy или gate падает, новая версия
+  не становится active/healthy. `sync()` остаётся без `alter`; изменения схемы — только миграциями.
 
-Миграции на sequelize-cli уже настроены (`migrations/`, `.sequelizerc`, `src/config/db-cli.js`):
+Production runner не требует `sequelize-cli` (его нет в production dependencies). Docker image содержит
+`migrations/`; runner использует установленный `sequelize` и точный anchor
+`20260829000005-fix-reminder-column-names.js`. Он рассматривает только `.js`-файлы, лексикографически
+идущие после anchor. Текущее production содержит 56 записей `SequelizeMeta`, включая anchor.
+
+Production/runtime команды:
 
 ```bash
 cd backend/api
-npm run db:migrate          # применить все новые миграции
-npm run db:migrate:status   # что применено / ожидает
-npm run db:migrate:undo     # откатить последнюю
+npm run db:migrate:runtime:status  # anchor, applied и pending
+npm run db:migrate:runtime:check   # exit != 0 и имена, если есть pending
+npm run db:migrate:runtime         # advisory lock, повторная проверка, затем up по порядку
 ```
 
-Порядок при первом продакшен-запуске:
-1. Поднять PostgreSQL, создать базу и пользователя, заполнить `DB_*` в `.env`.
-2. Первый старт приложения создаст таблицы (`sync()` в prod).
-3. Применить миграции: `NODE_ENV=production npm run db:migrate`.
-4. (Опц.) неразрушающий начальный сид: `npm run db:seed`. Он только добавляет отсутствующие записи.
-   Полный сброс доступен лишь локально через `ALLOW_DESTRUCTIVE_SEED=1 npm run db:reset-and-seed`
-   и заблокирован при `NODE_ENV=production`.
+`up` удерживает PostgreSQL session advisory lock, повторно читает pending после получения lock,
+выполняет `migration.up(queryInterface, Sequelize)` по порядку и записывает имя в `SequelizeMeta`
+только после успеха. Повторный запуск безопасен и при актуальной схеме ничего не делает.
+
+Runner намеренно fail-closed, если отсутствует каталог миграций, таблица `SequelizeMeta`, файл anchor
+или запись anchor в `SequelizeMeta`. Он никогда не создаёт/не stamp-ит baseline и не проигрывает
+исторические delta-миграции. Поэтому **чистая база не поддерживается этим runner**: сначала нужен
+отдельный проверенный baseline по `docs/DB_BASELINE_PLAN.md`.
+
+Локальные development-команды `db:migrate`, `db:migrate:status` и `db:migrate:undo` по-прежнему
+используют `sequelize-cli`; их нельзя использовать как замену production runtime runner.
 
 Порядок обычного обновления существующего production:
 1. Сделать резервную копию PostgreSQL.
-2. Выполнить `NODE_ENV=production npm run db:migrate`.
-3. Выполнить `NODE_ENV=production npm run db:audit` и убедиться, что `drift`/`unsafeData` пусты.
-4. Запустить новую версию API и проверить `/api/health`.
+2. На восстановленном disposable clone выполнить `npm run db:migrate:runtime:status`, затем дважды
+   `npm run db:migrate:runtime`; второй запуск обязан быть no-op.
+3. Выполнить `NODE_ENV=production npm run db:audit` на clone и проверить `drift`/`unsafeData`.
+4. Deploy: Railway автоматически выполнит `node src/scripts/runMigrations.js up` в predeploy.
+5. Проверить `/api/health/ready` и `npm run db:migrate:runtime:check`.
+
+Rollback приложения разрешён только на версию, совместимую с уже применённой forward-схемой.
+Runtime runner не выполняет `down`. Если миграция не прошла, исправить её/данные и повторить deploy;
+если она прошла, но приложение нужно откатить, сначала оценить совместимость и использовать ручной,
+проверенный план восстановления. Не удалять записи `SequelizeMeta` и не откатывать DDL вслепую.
 
 Правовая база AI загружается отдельно только из разрешённой выгрузки:
 `npm run legal:import -- /path/corpus.json`. Формат и лицензионные ограничения описаны в
@@ -114,8 +131,8 @@ npm run db:migrate:undo     # откатить последнюю
 `payments_provider_transaction_id_unique`. Если в базе уже есть повторяющиеся Payme transaction ID,
 миграция остановится без удаления финансовых записей — дубли нужно разобрать вручную.
 
-> Новые изменения схемы вносим миграцией (`npx sequelize-cli migration:generate --name ...`),
-> а не правкой моделей «на живую» в проде.
+> Новые изменения схемы вносим миграцией с именем после anchor, а не правкой моделей «на живую».
+> Генерировать файл локально можно через `npx sequelize-cli migration:generate --name ...`.
 
 ---
 
@@ -123,8 +140,8 @@ npm run db:migrate:undo     # откатить последнюю
 
 ### Вариант A — Railway (проще всего, конфиги уже в репозитории)
 
-Готово в репозитории: `backend/api/railway.json` (Dockerfile, `npm start`, healthcheck
-`/api/health`) и `frontend/railway.json` (Vite build → Nginx на `$PORT`).
+Готово в репозитории: `backend/api/railway.json` (Dockerfile, migration predeploy, `npm start`,
+healthcheck `/api/health`) и `frontend/railway.json` (Vite build → Nginx на `$PORT`).
 БД читает `DATABASE_URL` (плагин Railway), Redis — `REDIS_URL`. Backend работает на Node 20,
 frontend требует Node 20.19+. Деплой выполняется локальным Railway CLI из каталога каждого сервиса;
 `watchPatterns` намеренно отсутствуют, потому что monorepo-пути не существуют внутри local-upload архива.
@@ -157,9 +174,9 @@ frontend требует Node 20.19+. Деплой выполняется лок�
    `cd backend/api && railway up --service backend --environment production`, затем
    `cd ../../../frontend && railway up --service frontend --environment production`.
 
-> Порядок первого запуска: сначала поднимется Postgres/Redis, затем backend (создаст схему через
-> `sync()` и пройдёт healthcheck `/api/health`), затем frontend. Если backend не проходит
-> healthcheck — почти всегда не проброшен `DATABASE_URL`/`REDIS_URL` или отсутствует `JWT_SECRET`.
+> Backend можно направлять только на подготовленную anchored-базу. На чистой базе predeploy
+> намеренно завершится ошибкой до активации deployment. Помимо `DATABASE_URL`/`JWT_SECRET`, при
+> ошибке запуска проверяйте runtime migration status; Redis может работать в degraded mode.
 
 **Грабли, которые уже учтены/важно знать:**
 - **Билдер:** оба `railway.json` используют Dockerfile. Root Directory каждого сервиса должен
@@ -187,7 +204,7 @@ Compose-сеть использует `api:3001` и `frontend:3000`; nginx-ко�
 - [ ] `GET /api/system/capabilities` соответствует реально заданным ключам и не содержит секретов
 - [ ] Перед миграциями создан custom-format backup клиентом той же major-версии PostgreSQL
 - [ ] Backup восстановлен в отдельную disposable-БД; совпали число таблиц и ключевые row counts
-- [ ] `npm run db:migrate:status` не показывает неожиданные pending migration
+- [ ] `npm run db:migrate:runtime:check` завершается с кодом 0 и без pending
 - [ ] Регистрация + вход работают (JWT выдаётся)
 - [ ] AI-чат отвечает (реальный Claude, если ключ задан)
 - [ ] Тест-оплата **недоступна** в проде (`/payments/simulate` → 403)
@@ -210,11 +227,10 @@ Compose-сеть использует `api:3001` и `frontend:3000`; nginx-ко�
 
 - Реальный вывод денег юристом (сейчас тест-флоу; нужен Payme Transfer/выплаты).
 - Метрики и alerting поверх подготовленной Sentry-интеграции (нужны DSN и внешний uptime monitor).
-- Baseline для чистой БД требует отдельного контролируемого перехода: сначала проверить backup-клон
-  production и содержимое `SequelizeMeta`, затем добавить имя baseline в `SequelizeMeta` живой БД
-  до её первого запуска. Без этого ранняя baseline будет считаться pending и попытается повторно
-  создать существующие таблицы. До такого перехода первый старт остаётся через безопасный `sync()`.
-  Read-only проверка production 18.08.2026 показала 23 таблицы и применённые 32 delta-миграции.
+- Baseline для чистой БД остаётся отдельной задачей. Runtime runner не создаёт и не stamp-ит его,
+  поэтому clean deployment безопасно блокируется. Production сейчас имеет 56 записей
+  `SequelizeMeta`; гарантированный runtime anchor — `20260829000005-fix-reminder-column-names.js`.
+  Read-only проверка production 18.08.2026 показала 23 таблицы и применённые тогда 32 delta-миграции.
   Обнаруженные 3376 исторически продублированных индексов и 9 пустых `problems` исправлены
   в maintenance window 18.08.2026. Post-audit: 40 индексов, drift/data violations = 0.
   Полный baseline-план: `docs/DB_BASELINE_PLAN.md`.

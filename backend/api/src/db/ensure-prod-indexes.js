@@ -1,7 +1,6 @@
-// Идемпотентно создаёт индексы, которые есть ТОЛЬКО в миграциях и не выражаются
-// в моделях (→ sync() их не создаёт). Нужно для прод-БД, поднятой через sync().
-// Логика 1:1 повторяет миграции 20260807000000 и 20260808000001, но инлайном,
-// т.к. в контейнер (Dockerfile COPY src/) папка migrations/ не попадает.
+// Legacy safety check for indexes introduced before the anchored runtime runner.
+// Current images include migrations/, and production predeploy applies all files
+// after the baseline anchor. This should therefore be a no-op on current prod.
 //
 // Безопасно: перед CREATE проверяет наличие индекса и конфликтующих дублей,
 // при дублях НЕ трогает данные, а бросает понятную ошибку.

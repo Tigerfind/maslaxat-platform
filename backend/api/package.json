@@ -15,6 +15,9 @@
     "db:migrate": "sequelize-cli db:migrate",
     "db:migrate:undo": "sequelize-cli db:migrate:undo",
     "db:migrate:status": "sequelize-cli db:migrate:status",
+    "db:migrate:runtime": "node src/scripts/runMigrations.js up",
+    "db:migrate:runtime:status": "node src/scripts/runMigrations.js status",
+    "db:migrate:runtime:check": "node src/scripts/runMigrations.js check",
     "db:audit": "node src/scripts/auditDatabase.js",
     "legal:import": "node src/scripts/importLegalCorpus.js",
     "test": "jest --forceExit --detectOpenHandles"

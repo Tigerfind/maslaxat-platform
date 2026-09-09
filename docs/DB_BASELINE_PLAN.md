@@ -2,6 +2,10 @@
 
 ## Current production audit
 
+Current deployment invariant: production has 56 `SequelizeMeta` entries and includes the exact
+anchor `20260829000005-fix-reminder-column-names.js`. This anchor is guaranteed for the existing
+production database; it is not a baseline capable of creating a new database.
+
 Read-only audit on 2026-08-18:
 
 - 23 expected tables, no missing or extra tables.
@@ -48,7 +52,7 @@ Do not manually drop suffixed indexes. Most are constraint-backed and require
 baseline, a separate reviewed contract must compare every column type/nullability/default, enum,
 foreign key action, CHECK constraint and index definition against the explicit baseline DDL.
 
-The existing 32 files are deltas over a schema historically created by `sequelize.sync()` and
+The historical files are deltas over a schema historically created by `sequelize.sync()` and
 cannot initialize an empty database. After production reconciliation:
 
 1. Generate an explicit reviewed baseline that creates all 23 tables, enums, foreign keys,
@@ -57,15 +61,44 @@ cannot initialize an empty database. After production reconciliation:
    them for audit history.
 3. Test the baseline against a completely empty PostgreSQL database.
 4. Run `db:audit` against both the clean baseline database and a restored production backup.
-5. During a maintenance window, insert only the reviewed baseline filename into `SequelizeMeta`
-   after verifying the production contract. Do not stamp blindly.
+5. Define a reviewed transition from the current anchor to that baseline. Any `SequelizeMeta`
+   change requires a maintenance window and verified production contract; do not stamp blindly.
 6. Replace production `sequelize.sync()` with `sequelize.authenticate()`.
-7. Only then add an automatic Railway pre-deploy migration command.
+7. Update the runtime runner anchor only after both empty-DB and restored-production paths pass.
+
+## Anchored forward runner
+
+`src/scripts/runMigrations.js` is the production deploy runner. It deliberately solves only the
+forward path for the known production lineage:
+
+- The immutable anchor is `20260829000005-fix-reminder-column-names.js`.
+- Only migration filenames lexicographically after that anchor are considered.
+- Missing `migrations/`, missing `SequelizeMeta`, missing anchor file, or missing applied anchor all
+  fail closed. The runner never creates or stamps a baseline.
+- `up` uses a PostgreSQL session advisory lock, rechecks metadata after locking, executes migrations
+  in filename order, and records each name only after its `up` succeeds.
+- `status` is observational; `check` fails when forward migrations are pending; repeated `up` is a no-op.
+- Railway runs `node src/scripts/runMigrations.js up` as predeploy. A failure prevents the candidate
+  deployment from becoming active. Production startup independently checks that no forward migration
+  is pending before `sync()`, jobs, or `listen`.
+
+This does not make a clean database deployable. A clean database has no historical schema and no
+anchor record, so both predeploy and startup refuse it until the explicit baseline above exists.
+
+## Rollout and rollback
+
+1. Back up production and restore it into a disposable PostgreSQL database.
+2. On the clone, run runtime `status`, `up`, audit, and `up` again; the second `up` must apply nothing.
+3. Deploy normally. Review predeploy output and then readiness/runtime `check`.
+4. If predeploy fails before metadata insertion, fix the migration or data and retry. Migration files
+   should be idempotent because DDL may have succeeded before an interrupted metadata insert.
+5. The runner is forward-only and never calls `down`. Roll back application code only when it remains
+   compatible with the applied schema; otherwise use a separately reviewed restore/repair procedure.
 
 ## Safety rules
 
 - Never run `sync({ alter: true })` against production.
-- Never replay the 32 historical data migrations on an existing production database.
+- Never replay historical delta migrations on an existing production database.
 - Never run an audit through `server.js`; startup performs writes and index checks.
 - Use a read-only PostgreSQL role and `PGOPTIONS` statement/lock timeouts for audits.
-- Do not enable automatic migrations before the baseline has passed empty-DB and backup-clone tests.
+- Never move the runtime anchor or stamp a baseline merely to make a failed deployment pass.

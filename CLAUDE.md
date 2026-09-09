@@ -478,6 +478,10 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- P0.2 production migrations 09.09.2026: Docker включает `migrations/`; dependency-free runtime
+  runner выполняет только forward-файлы после гарантированного anchor под PostgreSQL advisory lock.
+  Railway predeploy применяет миграции, а production startup gate блокирует запуск при pending или
+  неизвестной/чистой БД. Baseline не stamp-ится и historical deltas не переигрываются.
 - Redis reconnect 09.09.2026: убран `reconnectStrategy:false`, добавлен bounded exponential backoff,
   startup timeout с local fallback и ready-only `getRedis()`. После Railway Redis restart backend
   восстанавливает cache/distributed counters без ручного restart. Backend gate: 70 suites / 426 tests,
