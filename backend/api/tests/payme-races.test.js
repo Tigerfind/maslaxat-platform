@@ -7,7 +7,7 @@ const { resetDb, models, makeClient, makeLawyer } = require('./helpers');
 const { Consultation, Payment, LawyerProfile, Notification, FinancialTransaction } = models;
 const auth = `Basic ${Buffer.from('Paycom:test-payme-key').toString('base64')}`;
 
-beforeAll(async () => {
+beforeEach(async () => {
   await resetDb();
 });
 
