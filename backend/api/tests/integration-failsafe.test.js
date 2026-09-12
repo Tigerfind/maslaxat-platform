@@ -4,7 +4,7 @@ const app = require('../src/server');
 const { resetDb, models, makeClient, makeLawyer, tokenFor } = require('./helpers');
 
 const originalEnv = {};
-const ENV_KEYS = ['NODE_ENV', 'SMS_PROVIDER', 'ESKIZ_EMAIL', 'ESKIZ_PASSWORD', 'PLAYMOBILE_URL', 'PLAYMOBILE_LOGIN', 'PLAYMOBILE_PASSWORD', 'PAYME_KEY', 'PAYME_MERCHANT_ID', 'SMTP_HOST', 'TURN_URL', 'TURN_URLS', 'TURN_SECRET', 'TURN_USERNAME', 'TURN_CREDENTIAL'];
+const ENV_KEYS = ['NODE_ENV', 'SMS_PROVIDER', 'ESKIZ_EMAIL', 'ESKIZ_PASSWORD', 'PLAYMOBILE_URL', 'PLAYMOBILE_LOGIN', 'PLAYMOBILE_PASSWORD', 'PAYME_KEY', 'PAYME_MERCHANT_ID', 'SMTP_HOST', 'TURN_URL', 'TURN_URLS', 'TURN_SECRET', 'TURN_USERNAME', 'TURN_CREDENTIAL', 'TURN_ALLOW_STATIC'];
 
 beforeAll(() => ENV_KEYS.forEach((key) => { originalEnv[key] = process.env[key]; }));
 beforeEach(async () => {
@@ -117,4 +117,28 @@ test('video endpoint выдаёт краткоживущие TURN credentials т
     .set('Authorization', `Bearer ${tokenFor(client)}`);
   expect(cancelled.status).toBe(200);
   expect(cancelled.body.iceServers).toEqual([]);
+});
+
+test('video endpoint не подменяет неполную TURN конфигурацию публичным STUN', async () => {
+  process.env.TURN_URL = 'turn:turn.example.uz:3478';
+  const client = await makeClient('turn-invalid-client@test.uz');
+  const { user: lawyer } = await makeLawyer('turn-invalid-lawyer@test.uz');
+  const start = new Date(Date.now() + 5 * 60000);
+  const consultation = await models.Consultation.create({
+    clientId: client.id,
+    lawyerId: lawyer.id,
+    type: 'video',
+    status: 'accepted',
+    question: 'TURN fail closed',
+    price: 0,
+    scheduledStartAt: start,
+    scheduledEndAt: new Date(start.getTime() + 60 * 60000),
+  });
+
+  const response = await request(app)
+    .get(`/api/video/consultation/${consultation.id}`)
+    .set('Authorization', `Bearer ${tokenFor(client)}`);
+
+  expect(response.status).toBe(500);
+  expect(response.body.iceServers).toBeUndefined();
 });

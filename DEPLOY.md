@@ -76,7 +76,7 @@ warning and Router/CRA remediation tracks are deferred to Session B and are not 
 | `SMS_PROVIDER` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) | Eskiz.uz (регистрация → API-пароль) или Play Mobile | Вход/регистрация по телефону: в dev код возвращается в ответе (`devCode`), в проде `phone/request` вернёт ошибку — реальная SMS не уходит |
 | `JWT_SECRET` | Сгенерировать: `openssl rand -base64 48` | Слабый секрет = взлом токенов. **Обязательно заменить** |
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |
-| `TURN_URL` + `TURN_SECRET` | Свой coturn `use-auth-secret` или платный TURN | Видео нестабильно за реальными NAT. Статические credentials разрешаются только явным `TURN_ALLOW_STATIC=1` |
+| `TURN_URL`/`TURN_URLS` + `TURN_SECRET` | Свой coturn `use-auth-secret` или платный TURN | Видео нестабильно за реальными NAT. URL без полной credential-конфигурации останавливает запуск; статические `TURN_USERNAME` + `TURN_CREDENTIAL` разрешаются только с `TURN_ALLOW_STATIC=1` и не смешиваются с `TURN_SECRET` |
 | `SOCKET_REDIS` | `1` только при деплое на >1 инстанс | На одном инстансе не нужен (оставить `0`) |
 | `VAPID_PUBLIC_KEY` + `VAPID_PRIVATE_KEY` + `VAPID_SUBJECT` | Сгенерировать один раз: `node -e "console.log(require('web-push').generateVAPIDKeys())"` (приватный — секрет) | Web-push отключён (уведомления только в приложении + socket); кнопка «Push на устройство» скрыта |
 | `GOOGLE_CLIENT_ID` | console.cloud.google.com → OAuth client (Web) | Кнопка «Войти через Google» скрыта |

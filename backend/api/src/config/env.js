@@ -70,6 +70,48 @@ function completeTuple(env, names, issues, { required = false } = {}) {
   return any || required ? values : null;
 }
 
+function parseTurn(env, issues) {
+  const singleUrl = text(env, 'TURN_URL');
+  const multipleUrls = text(env, 'TURN_URLS');
+  const secret = text(env, 'TURN_SECRET');
+  const username = text(env, 'TURN_USERNAME');
+  const credential = text(env, 'TURN_CREDENTIAL');
+  const allowStatic = boolean(env, 'TURN_ALLOW_STATIC', false, issues);
+  const configured = singleUrl || multipleUrls || secret || username || credential || allowStatic;
+  if (!configured) return null;
+
+  if (singleUrl && multipleUrls) issues.push('TURN_URL', 'TURN_URLS');
+  const urls = (multipleUrls || singleUrl).split(',').map((url) => url.trim()).filter(Boolean);
+  if (!urls.length) issues.push('TURN_URL');
+  urls.forEach((url) => {
+    if (!validUrl(url, ['turn:', 'turns:']) || isPlaceholder(url)) issues.push(multipleUrls ? 'TURN_URLS' : 'TURN_URL');
+  });
+
+  if (secret) {
+    if (isPlaceholder(secret)) issues.push('TURN_SECRET');
+    if (username) issues.push('TURN_USERNAME');
+    if (credential) issues.push('TURN_CREDENTIAL');
+    if (allowStatic) issues.push('TURN_ALLOW_STATIC');
+    return { mode: 'rest', urls, secret };
+  }
+
+  if (!username && !credential) {
+    issues.push('TURN_SECRET', 'TURN_USERNAME', 'TURN_CREDENTIAL');
+    return null;
+  }
+  if (!username || isPlaceholder(username)) issues.push('TURN_USERNAME');
+  if (!credential || isPlaceholder(credential)) issues.push('TURN_CREDENTIAL');
+  if (!allowStatic) issues.push('TURN_ALLOW_STATIC');
+  return { mode: 'static', urls, username, credential };
+}
+
+function loadTurnConfig(env = process.env) {
+  const issues = [];
+  const turn = parseTurn(env, issues);
+  if (issues.length) throw new EnvConfigError(issues);
+  return deepFreeze(turn);
+}
+
 function parseSmtp(env, issues) {
   if (text(env, 'SMTP_PASSWORD')) issues.push('SMTP_PASSWORD');
   const names = ['SMTP_HOST', 'SMTP_PORT', 'SMTP_USER', 'SMTP_PASS', 'SMTP_FROM'];
@@ -228,8 +270,7 @@ function loadEnv(env = process.env) {
   }
 
   const smtp = parseSmtp(env, issues);
-  const turnTuple = completeTuple(env, ['TURN_URL', 'TURN_USERNAME', 'TURN_CREDENTIAL'], issues);
-  if (turnTuple && !validUrl(turnTuple.TURN_URL, ['turn:', 'turns:'])) issues.push('TURN_URL');
+  const turn = parseTurn(env, issues);
 
   const anthropicKey = text(env, 'ANTHROPIC_API_KEY');
   if (anthropicKey && isPlaceholder(anthropicKey)) issues.push('ANTHROPIC_API_KEY');
@@ -316,7 +357,7 @@ function loadEnv(env = process.env) {
       shadow: null,
     },
     smtp,
-    turn: turnTuple ? { url: turnTuple.TURN_URL, username: turnTuple.TURN_USERNAME, credential: turnTuple.TURN_CREDENTIAL } : null,
+    turn,
     anthropic: anthropicKey ? { apiKey: anthropicKey } : null,
     sms,
     vapid: vapidTuple ? { publicKey: vapidTuple.VAPID_PUBLIC_KEY, privateKey: vapidTuple.VAPID_PRIVATE_KEY, subject: vapidTuple.VAPID_SUBJECT } : null,
@@ -350,4 +391,4 @@ function loadEnv(env = process.env) {
   });
 }
 
-module.exports = { EnvConfigError, loadEmailConfig, loadEnv, loadSmtpConfig };
+module.exports = { EnvConfigError, loadEmailConfig, loadEnv, loadSmtpConfig, loadTurnConfig };

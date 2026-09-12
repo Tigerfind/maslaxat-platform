@@ -1,7 +1,7 @@
 const router = require('express').Router();
 const crypto = require('crypto');
 const { DateTime } = require('luxon');
-const { Consultation, User, LawyerProfile, Payment } = require('../models');
+const { Consultation, User, LawyerProfile, sequelize } = require('../models');
 const {
   authenticate,
   authorizeConsultationMode,
@@ -9,7 +9,7 @@ const {
 } = require('../middleware/auth');
 const { completeConsultation } = require('../services/escrow');
 const { consultationAccess } = require('../services/consultationAccessService');
-const availabilityService = require('../services/availabilityService');
+const { loadTurnConfig } = require('../config/env');
 const {
   cancelExtensionProposal,
   consentToExtensionCheckout,
@@ -21,17 +21,15 @@ function buildIceServers(userId) {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ];
-  const urls = String(process.env.TURN_URLS || process.env.TURN_URL || '')
-    .split(',').map((url) => url.trim()).filter(Boolean);
-  if (!urls.length) return servers;
+  const turn = loadTurnConfig(process.env);
+  if (!turn) return servers;
 
-  if (process.env.TURN_SECRET) {
+  if (turn.mode === 'rest') {
     const username = `${Math.floor(Date.now() / 1000) + 3600}:${userId}`;
-    const credential = crypto.createHmac('sha1', process.env.TURN_SECRET).update(username).digest('base64');
-    servers.push({ urls, username, credential });
-  } else if ((process.env.NODE_ENV !== 'production' || process.env.TURN_ALLOW_STATIC === '1')
-    && process.env.TURN_USERNAME && process.env.TURN_CREDENTIAL) {
-    servers.push({ urls, username: process.env.TURN_USERNAME, credential: process.env.TURN_CREDENTIAL });
+    const credential = crypto.createHmac('sha1', turn.secret).update(username).digest('base64');
+    servers.push({ urls: turn.urls, username, credential });
+  } else {
+    servers.push({ urls: turn.urls, username: turn.username, credential: turn.credential });
   }
   return servers;
 }
@@ -103,7 +101,7 @@ router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipa
       client: consultation.client,
       lawyer: consultation.lawyer,
       iceServers: canUseVideo ? buildIceServers(req.userId) : [],
-      iceServersExpiresAt: canUseVideo && process.env.TURN_SECRET
+      iceServersExpiresAt: canUseVideo && loadTurnConfig(process.env)?.mode === 'rest'
         ? new Date(Date.now() + 55 * 60 * 1000).toISOString()
         : null,
       access,
@@ -116,41 +114,36 @@ router.get('/consultation/:id', authorizeConsultationMode, requireVideoParticipa
 // POST /api/video/consultation/:id/start — mark consultation as in_progress
 router.post('/consultation/:id/start', authorizeConsultationMode, requireVideoParticipant, async (req, res, next) => {
   try {
-    const consultation = await Consultation.findByPk(req.params.id);
-    if (!consultation) {
-      return res.status(404).json({ error: 'Consultation not found' });
-    }
-    if (consultation.meetingProvider === 'zoom') return res.status(409).json({ error: 'Используйте Zoom-вход', code: 'ZOOM_PROVIDER_REQUIRED' });
-
-    const isParticipant =
-      consultation.clientId === req.userId ||
-      consultation.lawyerId === req.userId;
-
-    if (!isParticipant) {
-      return res.status(403).json({ error: 'Access denied' });
-    }
-    if (!['accepted', 'in_progress'].includes(consultation.status)) {
-      return res.status(400).json({ error: 'Консультация ещё не подтверждена юристом' });
-    }
-    const access = consultationAccess(consultation);
-    if (!access.canJoin) return res.status(403).json({ error: 'Подключение сейчас недоступно', code: access.reason, ...access });
-
-    // Старт только из подтверждённой юристом консультации (accepted).
-    // Идемпотентно: если уже in_progress — просто возвращаем текущий статус.
-    if (consultation.status === 'accepted') {
-      if (!consultation.callStartedAt) {
-        return res.status(409).json({ error: 'Ожидается соединение второго участника', code: 'PEER_NOT_CONNECTED' });
+    const consultation = await sequelize.transaction(async (transaction) => {
+      const locked = await Consultation.findByPk(req.params.id, {
+        transaction,
+        lock: transaction.LOCK.UPDATE,
+      });
+      if (!locked) throw Object.assign(new Error('Consultation not found'), { status: 404 });
+      if (!ownsConsultationPerspective(req, locked)) {
+        throw Object.assign(new Error('Access denied'), { status: 403 });
       }
-      const [affected] = await Consultation.update(
-        { status: 'in_progress' },
-        { where: { id: consultation.id, status: 'accepted' } }
-      );
-      if (affected === 0) return res.status(400).json({ error: 'Консультация уже изменена' });
-      await consultation.reload();
-    }
+      if (locked.meetingProvider === 'zoom') {
+        throw Object.assign(new Error('Используйте Zoom-вход'), { status: 409, code: 'ZOOM_PROVIDER_REQUIRED' });
+      }
+      if (!['accepted', 'in_progress'].includes(locked.status)) {
+        throw Object.assign(new Error('Консультация ещё не подтверждена юристом'), { status: 400, code: 'INVALID_VIDEO_STATUS' });
+      }
+      const access = consultationAccess(locked);
+      if (!access.canJoin) {
+        throw Object.assign(new Error('Подключение сейчас недоступно'), { status: 403, code: access.reason, access });
+      }
+      if (locked.status === 'accepted') {
+        locked.status = 'in_progress';
+        locked.callStartedAt = new Date();
+        await locked.save({ transaction, fields: ['status', 'callStartedAt'] });
+      }
+      return locked;
+    });
 
     res.json({ success: true, status: consultation.status });
   } catch (err) {
+    if (err.status) return res.status(err.status).json({ error: err.message, code: err.code, ...err.access });
     next(err);
   }
 });
@@ -170,6 +163,10 @@ router.post('/consultation/:id/end', authorizeConsultationMode, requireVideoPart
 
     if (!isParticipant) {
       return res.status(403).json({ error: 'Access denied' });
+    }
+
+    if (consultation.status === 'completed') {
+      return res.json({ success: true, status: 'completed' });
     }
 
     // Завершить можно только идущую сессию (in_progress) — иначе юрист мог бы

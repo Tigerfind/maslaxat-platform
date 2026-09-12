@@ -89,6 +89,54 @@ describe('loadEnv', () => {
     expect(loadEnv(env).database).toMatchObject({ host: 'db.internal', port: 5432, name: 'maslaxat' });
   });
 
+  test('accepts TURN REST shared-secret credentials and multiple TURN URLs', () => {
+    const config = loadEnv(productionEnv({
+      TURN_URLS: 'turn:turn.example.com:3478,turns:turn.example.com:5349',
+      TURN_SECRET: 'turn-rest-secret',
+    }));
+
+    expect(config.turn).toEqual({
+      mode: 'rest',
+      urls: ['turn:turn.example.com:3478', 'turns:turn.example.com:5349'],
+      secret: 'turn-rest-secret',
+    });
+  });
+
+  test('rejects TURN URLs without credentials instead of silently returning STUN only', () => {
+    expect(invalidNames(productionEnv({ TURN_URL: 'turn:turn.example.com:3478' })))
+      .toEqual(expect.arrayContaining(['TURN_SECRET', 'TURN_USERNAME', 'TURN_CREDENTIAL']));
+  });
+
+  test('static TURN credentials require a complete tuple and explicit opt-in', () => {
+    expect(invalidNames(productionEnv({
+      TURN_URL: 'turn:turn.example.com:3478',
+      TURN_ALLOW_STATIC: '1',
+      TURN_USERNAME: 'static-user',
+    }))).toContain('TURN_CREDENTIAL');
+
+    expect(invalidNames(productionEnv({
+      TURN_URL: 'turn:turn.example.com:3478',
+      TURN_USERNAME: 'static-user',
+      TURN_CREDENTIAL: 'static-password',
+    }))).toContain('TURN_ALLOW_STATIC');
+
+    expect(loadEnv(productionEnv({
+      TURN_URL: 'turn:turn.example.com:3478',
+      TURN_ALLOW_STATIC: '1',
+      TURN_USERNAME: 'static-user',
+      TURN_CREDENTIAL: 'static-password',
+    })).turn).toEqual({
+      mode: 'static',
+      urls: ['turn:turn.example.com:3478'],
+      username: 'static-user',
+      credential: 'static-password',
+    });
+  });
+
+  test('TURN_ALLOW_STATIC=0 alone leaves TURN disabled', () => {
+    expect(loadEnv(productionEnv({ TURN_ALLOW_STATIC: '0' })).turn).toBeNull();
+  });
+
   test('production rejects an incomplete DB tuple by variable name', () => {
     const names = invalidNames(productionEnv({ DATABASE_URL: '', DB_HOST: 'db.internal' }));
 

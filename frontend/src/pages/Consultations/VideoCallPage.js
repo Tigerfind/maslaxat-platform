@@ -35,6 +35,7 @@ import { toast } from 'react-toastify';
 import api from '../../services/api';
 import { useTranslation } from '../../i18n';
 import { createModeSocket } from '../../services/modeSocket';
+import { notifyVideoLifecycleFailure } from '../../services/videoLifecycleFeedback';
 
 // Короткий сигнал (Web Audio, без файлов) — уведомление о времени
 function beep() {
@@ -205,9 +206,11 @@ const VideoCallPage = () => {
   useEffect(() => {
     if (peerConnected && !callStartTime) {
       setCallStartTime(Date.now());
-      api.post(`/video/consultation/${consultationId}/start`).catch(() => {});
+      api.post(`/video/consultation/${consultationId}/start`).catch((startError) => {
+        notifyVideoLifecycleFailure(t('videoCall.startError'), startError, toast.error);
+      });
     }
-  }, [peerConnected, callStartTime, consultationId]);
+  }, [peerConnected, callStartTime, consultationId, t]);
 
   // Держим ref в синхроне со state (для доступа из endCall-замыкания)
   useEffect(() => { peerConnectedRef.current = peerConnected; }, [peerConnected]);
@@ -424,7 +427,7 @@ const VideoCallPage = () => {
         durationSeconds: seconds,
       });
     } catch (err) {
-      // Silently ignore — may already be completed
+      notifyVideoLifecycleFailure(t('videoCall.endError'), err, toast.error);
     }
 
     // Если был реальный сеанс — показываем сводку (уходим по кнопке «Готово»),
@@ -436,7 +439,7 @@ const VideoCallPage = () => {
     } else {
       navigate('/consultations');
     }
-  }, [activeMode, consultationId, navigate]);
+  }, [activeMode, consultationId, navigate, t]);
 
   const leaveSummary = () => {
     navigate(activeMode === 'lawyer' ? '/lawyer/dashboard' : '/consultations');
