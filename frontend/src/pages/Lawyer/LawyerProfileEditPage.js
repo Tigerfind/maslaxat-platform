@@ -16,6 +16,7 @@ import VerificationDocuments from '../../components/Lawyer/VerificationDocuments
 import { useTranslation } from '../../i18n';
 import { specLabel } from '../../utils/specLabel';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
+import { formatMoneyInput, parseMoneyInput } from '../../utils/consultationLocale';
 
 /*
   ─────────────────────────────────────────────────────────────
@@ -83,7 +84,7 @@ const initialsOf = (name = '') =>
 
 const LawyerProfileEditPage = () => {
   const navigate = useNavigate();
-  const { t } = useTranslation();
+  const { t, language } = useTranslation();
   const DAYS = t('lawyerPanel.days');
   const dispatch = useDispatch();
   const { user } = useSelector((state) => state.auth);
@@ -341,10 +342,10 @@ const LawyerProfileEditPage = () => {
               <TextField
                 fullWidth
                 size="small"
-                type="number"
-                value={form.price}
-                onChange={(e) => handleChange('price', Number(e.target.value))}
-                inputProps={{ min: 50000, step: 10000 }}
+                type="text"
+                value={formatMoneyInput(form.price, language)}
+                onChange={(e) => handleChange('price', parseMoneyInput(e.target.value))}
+                inputProps={{ inputMode: 'numeric', pattern: '[0-9 ]*', maxLength: 13, 'aria-label': t('lawyerPanel.priceSum') }}
                 sx={inputSx}
               />
             </div>

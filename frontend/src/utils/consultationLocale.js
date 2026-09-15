@@ -27,6 +27,16 @@ export const formatConsultationCurrency = (value, language, currency = 'UZS') =>
   { style: 'currency', currency, maximumFractionDigits: 0 },
 ).format(Number(value) || 0);
 
+export const formatMoneyInput = (value, language) => new Intl.NumberFormat(
+  localeForLanguage(language),
+  { maximumFractionDigits: 0 },
+).format(Number(value) || 0).replace(/[\u00a0\u202f]/g, ' ');
+
+export const parseMoneyInput = (value) => {
+  const digits = String(value ?? '').replace(/\D/g, '');
+  return digits ? Number(digits) : 0;
+};
+
 export const consultationDialogPaperSx = {
   m: { xs: 1.5, sm: 4 },
   width: { xs: 'calc(100% - 24px)', sm: 'calc(100% - 64px)' },

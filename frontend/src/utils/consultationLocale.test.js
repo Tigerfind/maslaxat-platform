@@ -3,7 +3,9 @@ import {
   CONSULTATION_TIMEZONE,
   formatConsultationCurrency,
   formatConsultationDateTime,
+  formatMoneyInput,
   localeForLanguage,
+  parseMoneyInput,
   zoomLocaleForLanguage,
 } from './consultationLocale';
 
@@ -28,5 +30,11 @@ describe('consultation locale helpers', () => {
     expect(zoomLocaleForLanguage('ru')).toBe('ru-RU');
     expect(zoomLocaleForLanguage('uz')).toBe('en-US');
     expect(zoomLocaleForLanguage('en')).toBe('en-US');
+  });
+
+  test('formats and parses lawyer prices with readable digit groups', () => {
+    expect(formatMoneyInput(1500000, 'ru')).toBe('1 500 000');
+    expect(parseMoneyInput('1 500 000 сум')).toBe(1500000);
+    expect(parseMoneyInput('')).toBe(0);
   });
 });
