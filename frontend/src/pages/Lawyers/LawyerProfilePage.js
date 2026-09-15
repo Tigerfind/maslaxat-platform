@@ -1,521 +1,403 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { toast } from 'react-toastify';
 import {
+  AccessTimeOutlined,
+  CalendarMonthOutlined,
+  ChatBubbleOutline,
+  CheckCircleOutline,
+  Favorite,
+  FavoriteBorder,
+  HeadsetMicOutlined,
+  LocationOnOutlined,
+  OpenInNew,
   SchoolOutlined,
   TranslateOutlined,
+  VerifiedOutlined,
+  VideocamOutlined,
+  WorkOutline,
   WorkspacePremiumOutlined,
-  ChevronRightOutlined,
-  CheckCircleOutline,
 } from '@mui/icons-material';
-import { Rating } from '@mui/material';
+import { CircularProgress, Rating } from '@mui/material';
 import clientService, { resolvePublicAssetUrl } from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
 import BookingModal from '../../components/BookingModal';
+import { SkeletonLine } from '../../components/UI/Skeleton';
 import { useTranslation } from '../../i18n';
+import './LawyerProfilePage.css';
 
-/*
-  ─────────────────────────────────────────────────────────────
-  CLIENT — LAWYER PROFILE  (/lawyers/:lawyerId)
-  Ported 1:1 from ClaudeDesign → client/05_LAWYER_PROFILE.html.
-  Data: clientService.lawyers.getLawyerDetails(lawyerId)
-        → { lawyer: { …, profile, receivedReviews } }
-  Anti-bypass: lawyer phone/email are NEVER rendered (backend also
-  strips them from this endpoint).
-  Chrome (sidebar + topbar) = <GlassShell>.
-  ─────────────────────────────────────────────────────────────
-*/
+const REVIEW_PAGE_SIZE = 6;
+const LOCALES = { ru: 'ru-RU', uz: 'uz-UZ', en: 'en-US' };
+const FORMAT_ICONS = { chat: ChatBubbleOutline, audio: HeadsetMicOutlined, webrtc: VideocamOutlined, zoom: VideocamOutlined };
 
-const glassCard = {
-  background: 'var(--card-glass)',
-  backdropFilter: 'blur(24px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-  border: '1px solid var(--card-brd)',
-  boxShadow: 'var(--card-shadow)',
-  borderRadius: 'var(--radius)',
+const initialsOf = (name = '') => name.split(/\s+/).filter(Boolean).map((word) => word[0]).slice(0, 2).join('').toUpperCase() || '—';
+const safeExternalUrl = (value) => {
+  try {
+    const url = new URL(value);
+    return ['http:', 'https:'].includes(url.protocol) ? url.href : null;
+  } catch { return null; }
+};
+const dateValue = (value) => value ? Date.parse(value) : NaN;
+const formatDate = (value, language, options = { month: 'long', year: 'numeric' }) => (
+  Number.isNaN(dateValue(value)) ? '' : new Intl.DateTimeFormat(LOCALES[language], options).format(new Date(value))
+);
+const experienceDuration = (start, end, t) => {
+  if (Number.isNaN(dateValue(start))) return '';
+  const from = new Date(start);
+  const to = Number.isNaN(dateValue(end)) ? new Date() : new Date(end);
+  const months = Math.max(0, (to.getUTCFullYear() - from.getUTCFullYear()) * 12 + to.getUTCMonth() - from.getUTCMonth());
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  return [years ? `${years} ${t('lawyerProfileV2.yearShort')}` : '', rest ? `${rest} ${t('lawyerProfileV2.monthShort')}` : ''].filter(Boolean).join(' ');
 };
 
-const AV_BG = [
-  'linear-gradient(135deg,#B8956E,#8B7355)',
-  'linear-gradient(135deg,#6A8A9A,#4A6A7A)',
-  'linear-gradient(135deg,#7A9A6B,#5A7A4B)',
-  'linear-gradient(135deg,#9A6A8A,#7A4A6A)',
-];
-
-const initialsOf = (name = '') =>
-  name.split(' ').map((w) => w[0]).slice(0, 2).join('').toUpperCase() || '—';
-
-const tabBtnStyle = (active) => ({
-  flex: 1,
-  padding: '11px 14px',
-  background: active ? 'var(--accent)' : 'transparent',
-  border: 'none',
-  borderRadius: 'var(--radius)',
-  fontFamily: 'inherit',
-  fontSize: 13,
-  fontWeight: active ? 500 : 400,
-  letterSpacing: '0.04em',
-  color: active ? '#FFFFFF' : 'var(--text2)',
-  cursor: 'pointer',
-  transition: 'background 0.2s, color 0.2s',
-});
-
-const outlineBtn = {
-  flex: 1,
-  background: 'transparent',
-  border: '1px solid var(--border)',
-  color: 'var(--text)',
-  fontSize: 12,
-  letterSpacing: '0.05em',
-  textTransform: 'uppercase',
-  padding: 12,
-  borderRadius: 'var(--radius)',
-  cursor: 'pointer',
-  fontFamily: 'inherit',
+const normalizeLawyer = (payload, fallbackName) => {
+  const source = payload?.lawyer || payload || {};
+  const profile = source.profile || {};
+  const specializations = Array.isArray(profile.specializations) && profile.specializations.length
+    ? profile.specializations : (profile.specialization ? [profile.specialization] : []);
+  return {
+    id: source.id,
+    name: source.name || fallbackName,
+    avatar: resolvePublicAssetUrl(source.avatar || source.photo),
+    verified: profile.isVerifiedLawyer === true,
+    professionalTitle: profile.professionalTitle || '',
+    specializations,
+    bio: profile.description || '',
+    experience: Number(profile.experience) || 0,
+    rating: Number(profile.rating) || 0,
+    reviewsCount: Number(profile.reviewsCount) || 0,
+    completedConsultations: Number(profile.completedCases) || 0,
+    priceFrom: Number(profile.price) || 0,
+    location: profile.location || '',
+    region: profile.region || '',
+    languages: Array.isArray(profile.languages) ? profile.languages : [],
+    consultationFormats: Array.isArray(profile.consultationFormats) ? profile.consultationFormats : [],
+    consultationDurations: Array.isArray(profile.consultationDurations) ? profile.consultationDurations : [],
+    zoomAvailable: profile.zoomAvailable === true,
+    isAvailable: profile.isAvailable === true,
+    verifiedDocumentTypes: Array.isArray(profile.verifiedDocumentTypes) ? profile.verifiedDocumentTypes : [],
+    medianResponseMinutes: Number.isFinite(Number(profile.medianResponseMinutes)) ? Number(profile.medianResponseMinutes) : null,
+    licenseNumber: profile.licenseNumber || '',
+    licenseIssuer: profile.licenseIssuer || '',
+    licenseIssuedAt: profile.licenseIssuedAt || null,
+    licenseExpiresAt: profile.licenseExpiresAt || null,
+    linkedinUrl: safeExternalUrl(profile.linkedinUrl),
+    experiences: Array.isArray(source.lawyerExperiences) ? source.lawyerExperiences : [],
+    education: Array.isArray(source.lawyerEducations) ? [...source.lawyerEducations].sort((a, b) => Number(b.endYear || b.startYear || 0) - Number(a.endYear || a.startYear || 0)) : [],
+    certifications: Array.isArray(source.lawyerCertificates) ? source.lawyerCertificates : [],
+    online: source.presence?.online == null ? null : source.presence.online === true,
+    lastSeenAt: source.presence?.lastSeenAt || null,
+    presenceObservedAt: source.presence?.observedAt || null,
+  };
 };
+
+const ProfileSkeleton = () => (
+  <div className="lpv2-wrap" aria-label="Загрузка профиля">
+    <div className="lpv2-card lpv2-skeleton-hero">
+      <div className="sk lpv2-skeleton-avatar" />
+      <div><SkeletonLine width="55%" height={28} /><SkeletonLine width="38%" height={15} style={{ marginTop: 14 }} /><SkeletonLine width="85%" height={13} style={{ marginTop: 20 }} /></div>
+    </div>
+    <div className="lpv2-layout"><div className="lpv2-card lpv2-skeleton-body"><SkeletonLine height={44} /><SkeletonLine height={18} style={{ marginTop: 28 }} /><SkeletonLine height={12} style={{ marginTop: 16 }} /><SkeletonLine width="78%" height={12} style={{ marginTop: 10 }} /></div><div className="lpv2-card lpv2-skeleton-book"><SkeletonLine width="45%" height={15} /><SkeletonLine width="70%" height={30} style={{ marginTop: 14 }} /><SkeletonLine height={44} style={{ marginTop: 28 }} /></div></div>
+  </div>
+);
 
 const LawyerProfilePage = () => {
   const { lawyerId } = useParams();
   const navigate = useNavigate();
-  const { t } = useTranslation();
-  const LANG_NAMES = t('lawyerProfile.langNames');
-
+  const { t, language } = useTranslation();
   const [lawyer, setLawyer] = useState(null);
-  const [reviews, setReviews] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [tab, setTab] = useState('about');
-  const [bookingOpen, setBookingOpen] = useState(false);
+  const [loadError, setLoadError] = useState(null);
+  const [retryKey, setRetryKey] = useState(0);
+  const [activeTab, setActiveTab] = useState('about');
+  const [expandedBio, setExpandedBio] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
+  const [bookingOpen, setBookingOpen] = useState(false);
+  const [online, setOnline] = useState(typeof navigator === 'undefined' ? true : navigator.onLine);
+  const [favorite, setFavorite] = useState({ ready: false, value: false, pending: false, error: false });
+  const [favoriteRetry, setFavoriteRetry] = useState(0);
+  const [slots, setSlots] = useState({ loading: false, error: false, nearest: null });
+  const [slotsRetry, setSlotsRetry] = useState(0);
+  const [reviews, setReviews] = useState([]);
+  const [reviewSummary, setReviewSummary] = useState(null);
+  const [reviewSort, setReviewSort] = useState('newest');
+  const [reviewPage, setReviewPage] = useState(1);
+  const [reviewPages, setReviewPages] = useState(1);
+  const [reviewsLoading, setReviewsLoading] = useState(false);
+  const [reviewsError, setReviewsError] = useState(null);
+  const [reviewsRetry, setReviewsRetry] = useState(0);
   const latestPresenceRef = useRef(null);
+  const favoriteGenerationRef = useRef(0);
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      try {
-        setLoading(true);
-        setError(false);
-        setAvatarFailed(false);
-        latestPresenceRef.current = null;
-        const data = await clientService.lawyers.getLawyerDetails(lawyerId);
-        if (!alive) return;
-        const l = data?.lawyer || data || {};
-        const p = l.profile || {};
-        const normalized = {
-          id: l.id,
-          name: l.name || t('lawyerProfile.lawyerFallback'),
-          avatar: resolvePublicAssetUrl(l.avatar || l.photo || p.avatar || p.photo),
-          // Публичный профиль существует только для одобренного юриста.
-          verified: true,
-          rating: p.rating || 0,
-          reviewsCount: p.reviewsCount || 0,
-          completedConsultations: p.completedCases || 0,
-          specializations: Array.isArray(p.specializations) && p.specializations.length
-            ? p.specializations
-            : (p.specialization ? [p.specialization] : []),
-          experience: p.experience || 0,
-          location: p.location || '',
-          region: p.region || '',
-          priceFrom: p.price || 0,
-          bio: p.description || '',
-          professionalTitle: p.professionalTitle || '',
-          linkedinUrl: p.linkedinUrl || '',
-          licenseNumber: p.licenseNumber || '',
-          licenseIssuer: p.licenseIssuer || '',
-          licenseIssuedAt: p.licenseIssuedAt || null,
-          licenseExpiresAt: p.licenseExpiresAt || null,
-          consultationFormats: Array.isArray(p.consultationFormats) ? p.consultationFormats : [],
-          consultationDurations: Array.isArray(p.consultationDurations) ? p.consultationDurations : [],
-          verifiedDocumentTypes: Array.isArray(p.verifiedDocumentTypes) ? p.verifiedDocumentTypes : [],
-          medianResponseMinutes: p.medianResponseMinutes != null && Number.isFinite(Number(p.medianResponseMinutes))
-            ? Number(p.medianResponseMinutes) : null,
-          experiences: Array.isArray(l.lawyerExperiences) ? l.lawyerExperiences : [],
-          education: Array.isArray(l.lawyerEducations) && l.lawyerEducations.length ? l.lawyerEducations : (Array.isArray(p.education) ? p.education : []),
-          certifications: Array.isArray(l.lawyerCertificates) && l.lawyerCertificates.length ? l.lawyerCertificates : (Array.isArray(p.certificates) ? p.certificates : []),
-          languages: Array.isArray(p.languages) ? p.languages : [],
-          isAvailable: p.isAvailable === true,
-          online: l.presence?.online == null ? null : l.presence.online === true,
-          lastSeenAt: l.presence?.lastSeenAt || null,
-          presenceObservedAt: l.presence?.observedAt || null,
-        };
-        const latestPresence = latestPresenceRef.current;
-        const normalizedWithPresence = latestPresence
-          && Date.parse(latestPresence.observedAt || 0) > Date.parse(normalized.presenceObservedAt || 0)
-          ? {
-            ...normalized,
-            online: latestPresence.online === true,
-            lastSeenAt: latestPresence.lastSeenAt || null,
-            presenceObservedAt: latestPresence.observedAt,
-          }
-          : normalized;
-        setLawyer(normalizedWithPresence);
-        const rv = (l.receivedReviews || []).map((r) => ({
-          id: r.id,
-          name: r.client?.name || t('lawyerProfile.clientFallback'),
-          rating: r.rating || 0,
-          text: r.text || r.comment || '',
-        }));
-        setReviews(rv);
-      } catch (e) {
-        if (alive) setError(true);
-      } finally {
-        if (alive) setLoading(false);
-      }
-    })();
-    return () => { alive = false; };
-  }, [lawyerId, t]);
+    const controller = new AbortController();
+    setLoading(true);
+    setLoadError(null);
+    setAvatarFailed(false);
+    setExpandedBio(false);
+    setActiveTab('about');
+    latestPresenceRef.current = null;
+    clientService.lawyers.getLawyerDetails(lawyerId, { signal: controller.signal })
+      .then((data) => {
+        const normalized = normalizeLawyer(data, t('lawyerProfile.lawyerFallback'));
+        const latest = latestPresenceRef.current;
+        if (latest && Date.parse(latest.observedAt || 0) > Date.parse(normalized.presenceObservedAt || 0)) {
+          normalized.online = latest.online === true;
+          normalized.lastSeenAt = latest.lastSeenAt || null;
+          normalized.presenceObservedAt = latest.observedAt;
+        }
+        setLawyer(normalized);
+      })
+      .catch((error) => {
+        if (error.code !== 'ERR_CANCELED' && error.name !== 'CanceledError') setLoadError(error);
+      })
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [lawyerId, retryKey, t]);
+
+  useEffect(() => {
+    const handleConnection = () => setOnline(navigator.onLine);
+    window.addEventListener('online', handleConnection);
+    window.addEventListener('offline', handleConnection);
+    return () => { window.removeEventListener('online', handleConnection); window.removeEventListener('offline', handleConnection); };
+  }, []);
+
+  useEffect(() => {
+    document.body.classList.add('lawyer-profile-active');
+    return () => document.body.classList.remove('lawyer-profile-active');
+  }, []);
 
   useEffect(() => {
     const handlePresence = ({ detail }) => {
       if (detail?.userId !== lawyerId || detail.role !== 'lawyer') return;
       const update = { ...detail, observedAt: detail.observedAt || new Date().toISOString() };
-      if (latestPresenceRef.current
-        && Date.parse(latestPresenceRef.current.observedAt || 0) >= Date.parse(update.observedAt || 0)) return;
+      if (latestPresenceRef.current && Date.parse(latestPresenceRef.current.observedAt || 0) >= Date.parse(update.observedAt || 0)) return;
       latestPresenceRef.current = update;
-      setLawyer((current) => current && ({
-        ...current,
-        online: detail.online === true,
-        lastSeenAt: detail.lastSeenAt || null,
-        presenceObservedAt: update.observedAt,
-      }));
+      setLawyer((current) => current && ({ ...current, online: update.online === true, lastSeenAt: update.lastSeenAt || null, presenceObservedAt: update.observedAt }));
     };
     window.addEventListener('maslaxat:presence', handlePresence);
     return () => window.removeEventListener('maslaxat:presence', handlePresence);
   }, [lawyerId]);
 
   useEffect(() => {
-    let timer;
-    let stopped = false;
-    const poll = async () => {
-      if (!stopped && document.visibilityState === 'visible') {
-        try {
-          const data = await clientService.lawyers.getLawyerDetails(lawyerId);
-          const presence = data?.lawyer?.presence;
-          if (presence) {
-            window.dispatchEvent(new CustomEvent('maslaxat:presence', {
-              detail: { userId: lawyerId, role: 'lawyer', ...presence },
-            }));
-          }
-        } catch (pollError) {
-          console.error('Presence refresh failed:', pollError);
-        }
-      }
-      if (!stopped) timer = setTimeout(poll, 25000 + Math.random() * 10000);
-    };
-    timer = setTimeout(poll, 25000 + Math.random() * 10000);
-    return () => { stopped = true; clearTimeout(timer); };
-  }, [lawyerId]);
+    if (!lawyer?.id) return undefined;
+    const controller = new AbortController();
+    const generation = ++favoriteGenerationRef.current;
+    setFavorite((current) => ({ ...current, ready: false, error: false }));
+    clientService.favorites.getFavorites({ signal: controller.signal })
+      .then((items) => {
+        if (generation === favoriteGenerationRef.current) setFavorite({ ready: true, value: items.some((item) => item.id === lawyer.id), pending: false, error: false });
+      })
+      .catch((error) => {
+        if (generation === favoriteGenerationRef.current && error.code !== 'ERR_CANCELED' && error.name !== 'CanceledError') setFavorite({ ready: false, value: false, pending: false, error: true });
+      });
+    return () => controller.abort();
+  }, [lawyer?.id, favoriteRetry]);
 
-  const goAiChat = () => navigate('/ai-chat');
-  // Видеозвонок возможен только по забронированной консультации — открываем бронь
-  // (раньше кнопка вела на /consultations/video/<lawyerId> с id юриста вместо
-  // consultationId → экран звонка не находил консультацию и не работал).
+  useEffect(() => {
+    if (!lawyer?.id || !lawyer.isAvailable || !lawyer.consultationDurations.length) return undefined;
+    const controller = new AbortController();
+    const duration = lawyer.consultationDurations.includes(60) ? 60 : lawyer.consultationDurations[0];
+    setSlots({ loading: true, error: false, nearest: null });
+    clientService.lawyers.getAvailableSlots(lawyer.id, {
+      duration, days: 21, clientTimezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    }, { signal: controller.signal })
+      .then((data) => {
+        const date = (data.dates || []).find((item) => item.slots?.length);
+        setSlots({ loading: false, error: false, nearest: date ? { date: date.slots[0].clientDate || date.date, time: date.slots[0].clientTime || date.slots[0].time } : null });
+      })
+      .catch((error) => {
+        if (error.code !== 'ERR_CANCELED' && error.name !== 'CanceledError') setSlots({ loading: false, error: true, nearest: null });
+      });
+    return () => controller.abort();
+  }, [lawyer?.id, lawyer?.isAvailable, lawyer?.consultationDurations, slotsRetry]);
 
-  // ── loading / error states (inside the shell so chrome persists) ──
-  if (loading) {
+  useEffect(() => {
+    if (!lawyer?.id) return undefined;
+    const controller = new AbortController();
+    setReviewsLoading(true);
+    setReviewsError(null);
+    clientService.lawyers.getReviews(lawyer.id, { page: reviewPage, limit: REVIEW_PAGE_SIZE, sort: reviewSort }, { signal: controller.signal })
+      .then((data) => {
+        setReviews((current) => {
+          if (reviewPage === 1) return data.reviews || [];
+          const byId = new Map(current.map((item) => [item.id, item]));
+          (data.reviews || []).forEach((item) => byId.set(item.id, item));
+          return [...byId.values()];
+        });
+        setReviewPages(data.totalPages || 1);
+        setReviewSummary(data.summary || null);
+      })
+      .catch((error) => {
+        if (error.code !== 'ERR_CANCELED' && error.name !== 'CanceledError') setReviewsError(error);
+      })
+      .finally(() => { if (!controller.signal.aborted) setReviewsLoading(false); });
+    return () => controller.abort();
+  }, [lawyer?.id, reviewPage, reviewSort, reviewsRetry]);
+
+  if (loading) return <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={t('lawyerProfile.loading')}><ProfileSkeleton /></GlassShell>;
+
+  if (loadError || !lawyer?.id) {
+    const notFound = loadError?.response?.status === 404;
     return (
-      <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={t('lawyerProfile.loading')}>
-        <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
-          {t('lawyerProfile.loadingProfile')}
+      <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={notFound ? t('lawyerProfile.notFoundSub') : t('lawyerProfileV2.loadError')}>
+        <div className="lpv2-card lpv2-state" role="alert">
+          <h1>{notFound ? t('lawyerProfile.notFound') : (online ? t('lawyerProfileV2.loadError') : t('lawyerProfileV2.offlineTitle'))}</h1>
+          <p>{notFound ? t('lawyerProfileV2.unavailableDesc') : (online ? t('lawyerProfileV2.loadErrorHint') : t('lawyerProfileV2.offlineHint'))}</p>
+          {!notFound && <button type="button" className="lpv2-btn lpv2-btn-primary" onClick={() => setRetryKey((value) => value + 1)}>{t('lawyerProfileV2.retry')}</button>}
+          <button type="button" className="lpv2-btn lpv2-btn-quiet" onClick={() => navigate('/lawyers')}>{t('lawyerProfile.backToCatalog')}</button>
         </div>
       </GlassShell>
     );
   }
 
-  if (error || !lawyer) {
-    return (
-      <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={t('lawyerProfile.notFoundSub')}>
-        <div style={{ ...glassCard, maxWidth: 1120, margin: '0 auto', padding: 48, textAlign: 'center' }}>
-          <div style={{ fontSize: 17, fontWeight: 300, color: 'var(--text)', marginBottom: 8 }}>{t('lawyerProfile.notFound')}</div>
-          <div style={{ fontSize: 13, color: 'var(--text3)', marginBottom: 22 }}>{t('lawyerProfile.notFoundDesc')}</div>
-          <button type="button" onClick={() => navigate('/lawyers')} style={{ minHeight: 44, background: 'var(--accent)', color: '#FFFFFF', border: 'none', fontSize: 12, fontWeight: 500, letterSpacing: '0.08em', textTransform: 'uppercase', padding: '12px 22px', borderRadius: 'var(--radius)', cursor: 'pointer', fontFamily: 'inherit' }}>
-            {t('lawyerProfile.backToCatalog')}
-          </button>
-        </div>
-      </GlassShell>
-    );
-  }
-
-  const specText = lawyer.specializations.join(', ');
-  const langText = lawyer.languages.map((c) => LANG_NAMES[c] || c).join(', ');
-
-  const profileMetrics = [
-    { value: lawyer.experience, label: t('lawyerProfile.mExperience') },
-    { value: lawyer.completedConsultations, label: t('lawyerProfile.mConsultations') },
-    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: t('lawyerProfile.mRating') },
-    { value: [lawyer.location, lawyer.region].filter(Boolean).join(', ') || '—', label: t('lawyerProfile.mRegion') },
-  ];
-
-  const portfolioMetrics = [
-    { value: lawyer.completedConsultations, label: t('lawyerProfile.pCompleted') },
-    { value: lawyer.rating ? lawyer.rating.toFixed(1) : '—', label: t('lawyerProfile.pAvgRating') },
-    { value: lawyer.experience, label: t('lawyerProfile.pYears') },
-    { value: lawyer.reviewsCount, label: t('lawyerProfile.pReviews') },
-  ];
-
-  const subtitle = specText || t('lawyerProfile.lawyerFallback');
-  const profileTabs = [
-    { key: 'about', label: t('lawyerProfile.tabAbout') },
-    { key: 'reviews', label: t('lawyerProfile.tabReviews') },
-    { key: 'portfolio', label: t('lawyerProfile.tabPortfolio') },
-  ];
-  const handleTabKeyDown = (event, index) => {
-    let nextIndex = index;
-    if (event.key === 'ArrowRight') nextIndex = (index + 1) % profileTabs.length;
-    else if (event.key === 'ArrowLeft') nextIndex = (index - 1 + profileTabs.length) % profileTabs.length;
-    else if (event.key === 'Home') nextIndex = 0;
-    else if (event.key === 'End') nextIndex = profileTabs.length - 1;
+  const canBook = lawyer.isAvailable && lawyer.priceFrom > 0 && lawyer.consultationFormats.length > 0 && lawyer.consultationDurations.length > 0;
+  const showOnline = lawyer.isAvailable && lawyer.online === true;
+  const place = [lawyer.location, lawyer.region].filter((value, index, values) => value && values.indexOf(value) === index).join(', ');
+  const langNames = t('lawyerProfile.langNames');
+  const tabs = [
+    { id: 'about', label: t('lawyerProfile.tabAbout'), show: true },
+    { id: 'experience', label: t('lawyerProfileV2.experience'), show: lawyer.experiences.length > 0 },
+    { id: 'education', label: t('lawyerProfile.education'), show: lawyer.education.length > 0 },
+    { id: 'certificates', label: t('lawyerProfileV2.certificates'), show: Boolean(lawyer.licenseNumber || lawyer.certifications.length) },
+    { id: 'reviews', label: t('lawyerProfile.tabReviews'), show: true },
+  ].filter((item) => item.show);
+  const openBooking = () => { if (canBook) setBookingOpen(true); };
+  const toggleFavorite = async () => {
+    if (favorite.error) { setFavoriteRetry((value) => value + 1); return; }
+    if (!favorite.ready || favorite.pending) return;
+    const previous = favorite.value;
+    const generation = favoriteGenerationRef.current;
+    setFavorite({ ready: true, value: !previous, pending: true, error: false });
+    try {
+      if (previous) await clientService.favorites.removeFavorite(lawyer.id);
+      else await clientService.favorites.addFavorite(lawyer.id);
+      if (generation !== favoriteGenerationRef.current) return;
+      setFavorite({ ready: true, value: !previous, pending: false, error: false });
+      toast.success(t(previous ? 'lawyers.favRemoved' : 'lawyers.favAdded'));
+    } catch {
+      if (generation !== favoriteGenerationRef.current) return;
+      setFavorite({ ready: true, value: previous, pending: false, error: false });
+      toast.error(t('lawyers.favError'));
+    }
+  };
+  const changeReviewSort = (sort) => { setReviewSort(sort); setReviewPage(1); setReviews([]); };
+  const tabKeyDown = (event, index) => {
+    let target = index;
+    if (event.key === 'ArrowRight') target = (index + 1) % tabs.length;
+    else if (event.key === 'ArrowLeft') target = (index - 1 + tabs.length) % tabs.length;
+    else if (event.key === 'Home') target = 0;
+    else if (event.key === 'End') target = tabs.length - 1;
     else return;
     event.preventDefault();
-    const nextTab = profileTabs[nextIndex].key;
-    setTab(nextTab);
-    document.getElementById(`lawyer-tab-${nextTab}`)?.focus();
+    setActiveTab(tabs[target].id);
+    document.getElementById(`lawyer-tab-${tabs[target].id}`)?.focus();
   };
+  const formatName = (format) => t(`lawyerProfileV2.format_${format}`);
+  const nearestLabel = slots.nearest
+    ? `${formatDate(`${slots.nearest.date}T12:00:00`, language, { day: 'numeric', month: 'long' })}, ${slots.nearest.time}` : '';
+  const licenseExpired = lawyer.licenseExpiresAt && dateValue(`${lawyer.licenseExpiresAt}T23:59:59.999`) < Date.now();
+  const trustedDocumentTypes = lawyer.verifiedDocumentTypes.filter((type) => type !== 'license' || !licenseExpired);
+  const summary = reviewSummary || { rating: lawyer.rating, reviewsCount: lawyer.reviewsCount, distribution: {} };
 
   return (
-    <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={subtitle}>
-      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-        <button
-          type="button"
-          aria-label={t('lawyerProfile.backToCatalog')}
-          onClick={() => navigate('/lawyers')}
-          style={{ minHeight: 44, display: 'flex', alignItems: 'center', gap: 8, background: 'transparent', border: 'none', color: 'var(--accent-dark)', fontSize: 13, letterSpacing: '0.04em', cursor: 'pointer', fontFamily: 'inherit', marginBottom: 22 }}
-        >
-          {t('lawyerProfile.backToCatalog')}
-        </button>
+    <GlassShell active="/lawyers" title={t('lawyerProfile.headerTitle')} subtitle={lawyer.professionalTitle || lawyer.specializations[0]}>
+      <div className="lpv2-wrap">
+        <button type="button" className="lpv2-back" onClick={() => navigate('/lawyers')}>{t('lawyerProfile.backToCatalog')}</button>
 
-        <div className="lp-grid" style={{ display: 'grid', gridTemplateColumns: '340px 1fr', gap: 24, alignItems: 'start' }}>
-          {/* ── LEFT ── (закреплена, чтобы цена и «Записаться» были на виду при прокрутке) */}
-          <div className="lp-left" style={{ ...glassCard, padding: 30, textAlign: 'center', position: 'sticky', top: 12, alignSelf: 'start' }}>
-            <div style={{ width: 100, height: 100, margin: '0 auto 18px', borderRadius: '50%', background: AV_BG[0], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 34, fontWeight: 300, position: 'relative' }}>
-              {initialsOf(lawyer.name)}
-              {lawyer.avatar && !avatarFailed && (
-                <img
-                  src={lawyer.avatar}
-                  alt={t('lawyerProfile.photoAlt').replace('{name}', lawyer.name)}
-                  loading="lazy"
-                  decoding="async"
-                  onError={() => setAvatarFailed(true)}
-                  style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover' }}
-                />
+        <section className="lpv2-card lpv2-hero" aria-labelledby="lawyer-profile-name">
+          <div className="lpv2-avatar" aria-hidden={!lawyer.avatar || avatarFailed}>
+            <span>{initialsOf(lawyer.name)}</span>
+            {lawyer.avatar && !avatarFailed && <img src={lawyer.avatar} alt={t('lawyerProfile.photoAlt').replace('{name}', lawyer.name)} decoding="async" fetchpriority="high" onError={() => setAvatarFailed(true)} />}
+          </div>
+          <div className="lpv2-identity">
+            <div className="lpv2-status-row">
+              {lawyer.verified && <span className="lpv2-badge lpv2-verified"><VerifiedOutlined />{t('lawyerProfileV2.verifiedLawyer')}</span>}
+              {showOnline && <span className="lpv2-badge lpv2-online"><i />{t('lawyerProfile.onlineNow')}</span>}
+              {!showOnline && lawyer.isAvailable && <span className="lpv2-badge">{t('lawyerProfile.available')}</span>}
+            </div>
+            <h1 id="lawyer-profile-name">{lawyer.name}</h1>
+            {lawyer.professionalTitle && <p className="lpv2-professional-title">{lawyer.professionalTitle}</p>}
+            {lawyer.specializations.length > 0 && <div className="lpv2-chips">{lawyer.specializations.map((item) => <span key={item}>{item}</span>)}</div>}
+            <div className="lpv2-facts">
+              {place && <span><LocationOnOutlined />{place}</span>}
+              {lawyer.languages.length > 0 && <span><TranslateOutlined />{lawyer.languages.map((code) => langNames[code] || code).join(', ')}</span>}
+              {lawyer.experience > 0 && <span><WorkOutline />{lawyer.experience} {t('lawyerProfile.years')}</span>}
+            </div>
+            <div className="lpv2-trust-row">
+              <div className="lpv2-rating" aria-label={lawyer.rating ? t('lawyerProfile.ratingAria').replace('{rating}', lawyer.rating.toFixed(1)).replace('{count}', lawyer.reviewsCount) : t('lawyerProfile.noRating')}>
+                {lawyer.rating > 0 ? <><Rating value={lawyer.rating} precision={0.5} readOnly aria-hidden="true" /><strong>{lawyer.rating.toFixed(1)}</strong><span>{lawyer.reviewsCount} {t('lawyerProfile.reviewsCount')}</span></> : <span>{t('lawyerProfile.noRating')}</span>}
+              </div>
+              <span className="lpv2-stat"><strong>{lawyer.completedConsultations}</strong> {t('lawyerProfileV2.consultations')}</span>
+              {lawyer.medianResponseMinutes != null && <span className="lpv2-stat"><AccessTimeOutlined /><strong>~{Math.max(1, Math.ceil(lawyer.medianResponseMinutes / 60))}</strong> {t('lawyerProfileV2.hoursToReply')}</span>}
+            </div>
+            <div className="lpv2-actions">
+              <button type="button" className="lpv2-btn lpv2-btn-primary" disabled={!canBook} onClick={openBooking}>{canBook ? t('lawyerProfile.book') : t('lawyerProfile.unavailable')}</button>
+              <button type="button" className="lpv2-btn lpv2-btn-secondary" disabled={!canBook} onClick={openBooking}><CalendarMonthOutlined />{t('lawyerProfileV2.viewTimes')}</button>
+              <button type="button" className={`lpv2-icon-btn ${favorite.value ? 'is-active' : ''}`} disabled={favorite.pending || (!favorite.ready && !favorite.error)} onClick={toggleFavorite} aria-pressed={favorite.value} aria-label={favorite.error ? t('lawyerProfileV2.retryFavorite') : t(favorite.value ? 'lawyers.removeFavoriteAria' : 'lawyers.addFavoriteAria').replace('{name}', lawyer.name)} title={favorite.error ? t('lawyerProfileV2.retryFavorite') : ''}>
+                {favorite.pending ? <CircularProgress size={20} color="inherit" /> : favorite.value ? <Favorite /> : <FavoriteBorder />}
+              </button>
+              <button type="button" className="lpv2-btn lpv2-btn-quiet" onClick={() => navigate('/ai-chat')}><ChatBubbleOutline />{t('lawyerProfile.askAi')}</button>
+            </div>
+          </div>
+        </section>
+
+        <div className="lpv2-layout">
+          <div className="lpv2-main">
+            <div className="lpv2-card lpv2-tabs" role="tablist" aria-label={t('lawyerProfile.profileSections')}>
+              {tabs.map((item, index) => <button key={item.id} id={`lawyer-tab-${item.id}`} type="button" role="tab" tabIndex={activeTab === item.id ? 0 : -1} aria-selected={activeTab === item.id} aria-controls={`lawyer-panel-${item.id}`} onClick={() => setActiveTab(item.id)} onKeyDown={(event) => tabKeyDown(event, index)}>{item.label}</button>)}
+            </div>
+
+            <div className="lpv2-panel" id={`lawyer-panel-${activeTab}`} role="tabpanel" aria-labelledby={`lawyer-tab-${activeTab}`}>
+              {activeTab === 'about' && (
+                <section className="lpv2-card lpv2-section">
+                  <h2>{t('lawyerProfile.aboutHeading')}</h2>
+                  {lawyer.bio ? <><p className={`lpv2-bio ${expandedBio ? 'is-expanded' : ''}`}>{lawyer.bio}</p>{lawyer.bio.length > 320 && <button type="button" className="lpv2-text-btn" onClick={() => setExpandedBio((value) => !value)} aria-expanded={expandedBio}>{t(expandedBio ? 'lawyerProfileV2.collapse' : 'lawyerProfileV2.expand')}</button>}</> : <p className="lpv2-muted">{t('lawyerProfile.noBio')}</p>}
+                  <div className="lpv2-detail-grid">
+                    {lawyer.specializations.length > 0 && <div><h3>{t('lawyerProfileV2.specializations')}</h3><div className="lpv2-chips">{lawyer.specializations.map((item) => <span key={item}>{item}</span>)}</div></div>}
+                    {lawyer.languages.length > 0 && <div><h3>{t('lawyerProfile.languages')}</h3><p>{lawyer.languages.map((code) => langNames[code] || code).join(', ')}</p></div>}
+                    {place && <div><h3>{t('lawyerProfileV2.workRegion')}</h3><p>{place}</p></div>}
+                    {lawyer.consultationFormats.length > 0 && <div><h3>{t('lawyerProfileV2.formats')}</h3><div className="lpv2-format-list">{lawyer.consultationFormats.map((format) => { const Icon = FORMAT_ICONS[format] || ChatBubbleOutline; return <span key={format}><Icon />{formatName(format)}</span>; })}</div></div>}
+                  </div>
+                  {lawyer.linkedinUrl && <a className="lpv2-external" href={lawyer.linkedinUrl} target="_blank" rel="noopener noreferrer">LinkedIn <OpenInNew /></a>}
+                </section>
               )}
-              {lawyer.verified && (
-                <span title={t('lawyerProfile.verified')} aria-label={t('lawyerProfile.verified')} style={{ position: 'absolute', bottom: 2, right: 8, width: 26, height: 26, borderRadius: '50%', background: '#7A9A6B', border: '3px solid #FFFFFF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 14 }}>✓</span>
+
+              {activeTab === 'experience' && <section className="lpv2-card lpv2-section"><h2>{t('lawyerProfileV2.experience')}</h2><div className="lpv2-timeline">{lawyer.experiences.map((item) => <article key={item.id}><span className="lpv2-timeline-dot" /><div className="lpv2-item-heading"><div><h3>{item.position}</h3><p>{item.organization}</p></div>{item.isCurrent && <span className="lpv2-badge">{t('lawyerProfileV2.current')}</span>}</div><div className="lpv2-period">{formatDate(item.startDate, language)} — {item.isCurrent ? t('lawyerProfileV2.present') : formatDate(item.endDate, language)}{experienceDuration(item.startDate, item.isCurrent ? null : item.endDate, t) && ` · ${experienceDuration(item.startDate, item.isCurrent ? null : item.endDate, t)}`}</div>{item.description && <p className="lpv2-description">{item.description}</p>}</article>)}</div></section>}
+
+              {activeTab === 'education' && <section className="lpv2-card lpv2-section"><h2>{t('lawyerProfile.education')}</h2><div className="lpv2-list">{lawyer.education.map((item) => <article key={item.id}><div className="lpv2-item-icon"><SchoolOutlined /></div><div><h3>{item.university}</h3><p>{[item.degree, item.specialty, item.faculty].filter(Boolean).join(' · ')}</p><div className="lpv2-period">{[item.startYear && item.endYear ? `${item.startYear}–${item.endYear}` : (item.endYear || item.startYear), [item.city, item.country].filter(Boolean).join(', ')].filter(Boolean).join(' · ')}</div></div></article>)}</div></section>}
+
+              {activeTab === 'certificates' && <section className="lpv2-card lpv2-section"><h2>{t('lawyerProfileV2.certificates')}</h2>{lawyer.licenseNumber && <article className="lpv2-license"><div className="lpv2-item-icon"><VerifiedOutlined /></div><div><div className="lpv2-item-heading"><h3>{t('lawyerProfileV2.license')} № {lawyer.licenseNumber}</h3><span className={`lpv2-badge ${licenseExpired ? 'lpv2-expired' : ''}`}>{licenseExpired ? t('lawyerProfileV2.expired') : lawyer.verifiedDocumentTypes.includes('license') ? t('lawyerProfileV2.documentVerified') : t('lawyerProfileV2.statusNotShown')}</span></div>{lawyer.licenseIssuer && <p>{lawyer.licenseIssuer}</p>}<div className="lpv2-period">{[lawyer.licenseIssuedAt && `${t('lawyerProfileV2.issued')} ${formatDate(lawyer.licenseIssuedAt, language)}`, lawyer.licenseExpiresAt && `${t('lawyerProfileV2.validUntil')} ${formatDate(lawyer.licenseExpiresAt, language)}`].filter(Boolean).join(' · ')}</div></div></article>}<div className="lpv2-list">{lawyer.certifications.map((item) => { const link = safeExternalUrl(item.credentialUrl); return <article key={item.id}><div className="lpv2-item-icon"><WorkspacePremiumOutlined /></div><div><h3>{item.title}</h3>{item.organization && <p>{item.organization}</p>}<div className="lpv2-period">{item.issuedAt && `${t('lawyerProfileV2.issued')} ${formatDate(item.issuedAt, language)}`}</div>{link && <a className="lpv2-external" href={link} target="_blank" rel="noopener noreferrer">{t('lawyerProfileV2.openCredential')} <OpenInNew /></a>}</div></article>; })}</div></section>}
+
+              {activeTab === 'reviews' && (
+                <section className="lpv2-card lpv2-section">
+                  <div className="lpv2-review-heading"><div><h2>{t('lawyerProfile.tabReviews')}</h2><p>{summary.reviewsCount || 0} {t('lawyerProfile.reviewsCount')}</p></div><div className="lpv2-sort" role="group" aria-label={t('lawyerProfileV2.reviewSort')}><button type="button" aria-pressed={reviewSort === 'newest'} className={reviewSort === 'newest' ? 'is-active' : ''} onClick={() => changeReviewSort('newest')}>{t('lawyerProfileV2.newest')}</button><button type="button" aria-pressed={reviewSort === 'helpful'} className={reviewSort === 'helpful' ? 'is-active' : ''} onClick={() => changeReviewSort('helpful')}>{t('lawyerProfileV2.helpful')}</button></div></div>
+                  {(summary.reviewsCount || 0) > 0 && <div className="lpv2-review-summary"><div className="lpv2-review-score"><strong>{Number(summary.rating || 0).toFixed(1)}</strong><Rating value={Number(summary.rating) || 0} precision={0.5} readOnly /><span>{summary.reviewsCount} {t('lawyerProfile.reviewsCount')}</span></div><div className="lpv2-distribution">{[5, 4, 3, 2, 1].map((star) => { const count = Number(summary.distribution?.[star] || 0); const percent = summary.reviewsCount ? (count / summary.reviewsCount) * 100 : 0; return <div key={star}><span>{star}</span><div><i style={{ width: `${percent}%` }} /></div><span>{count}</span></div>; })}</div></div>}
+                  {reviewsError && <div className="lpv2-inline-state" role="alert"><p>{online ? t('lawyerProfileV2.reviewsError') : t('lawyerProfileV2.offlineHint')}</p><button type="button" className="lpv2-btn lpv2-btn-secondary" onClick={() => { setReviewsError(null); setReviewPage(1); setReviewsRetry((value) => value + 1); }}>{t('lawyerProfileV2.retry')}</button></div>}
+                  {!reviewsError && reviews.length === 0 && !reviewsLoading && <div className="lpv2-inline-state"><p>{t('lawyerProfile.noReviews')}</p><span>{t('lawyerProfile.noReviewsSub')}</span></div>}
+                  <div className="lpv2-reviews">{reviews.map((review) => <article key={review.id}><div className="lpv2-review-top"><div className="lpv2-reviewer"><span>{initialsOf(review.client?.name)}</span><div><h3>{review.client?.name || t('lawyerProfile.clientFallback')}</h3>{review.createdAt && <time dateTime={review.createdAt}>{formatDate(review.createdAt, language, { day: 'numeric', month: 'long', year: 'numeric' })}</time>}</div></div><Rating value={Number(review.rating) || 0} precision={0.5} readOnly aria-label={t('lawyerProfile.reviewRatingAria').replace('{rating}', Number(review.rating || 0).toFixed(1))} /></div>{review.verifiedConsultation && <div className="lpv2-confirmed"><CheckCircleOutline />{t('lawyerProfileV2.verifiedConsultation')}</div>}{review.text && <p>{review.text}</p>}{review.replyText && <blockquote><strong>{t('lawyerProfileV2.lawyerReply')}</strong>{review.replyText}</blockquote>}{Number(review.helpfulCount) > 0 && <div className="lpv2-helpful">{t('lawyerProfileV2.helpfulCount').replace('{count}', review.helpfulCount)}</div>}</article>)}</div>
+                  {reviewsLoading && <div className="lpv2-review-loading" role="status" aria-label={t('lawyerProfileV2.loadingReviews')}><SkeletonLine height={90} /><SkeletonLine height={90} /></div>}
+                  {!reviewsLoading && !reviewsError && reviewPage < reviewPages && <button type="button" className="lpv2-btn lpv2-btn-secondary lpv2-load-more" onClick={() => setReviewPage((page) => page + 1)}>{t('lawyerProfileV2.showMore')}</button>}
+                </section>
               )}
-            </div>
-            <h1 style={{ fontSize: 22, fontWeight: 400, color: 'var(--text)', margin: 0 }}>{lawyer.name}</h1>
-            {lawyer.professionalTitle && <div style={{ fontSize: 14, color: 'var(--text2)', marginTop: 5 }}>{lawyer.professionalTitle}</div>}
-            {specText && (
-              <div style={{ fontSize: 13, color: 'var(--text3)', letterSpacing: '0.04em', marginTop: 4 }}>{specText}</div>
-            )}
-            {lawyer.online === true && (
-              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, color: '#5AA06A', fontSize: 12, fontWeight: 600, marginTop: 8 }}>
-                <span className="online-dot" style={{ width: 7, height: 7, borderRadius: '50%', background: '#5AA06A' }} />
-                {t('lawyerProfile.onlineNow')}
-              </div>
-            )}
-            {lawyer.verifiedDocumentTypes.length > 0 && (
-              <div tabIndex={0} aria-label={t('lawyerProfile.verifiedDocumentsHint')} title={t('lawyerProfile.verifiedDocumentsHint')} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, marginTop: 10, padding: '7px 10px', borderRadius: 10, background: 'rgba(122,154,107,0.12)', color: '#4F815B', fontSize: 12, fontWeight: 600 }}>
-                <CheckCircleOutline sx={{ fontSize: 17 }} />
-                {t('lawyerProfile.verifiedDocuments').replace('{documents}', lawyer.verifiedDocumentTypes.map((type) => t(`lawyerProfile.doc_${type}`)).join(', '))}
-              </div>
-            )}
-            {lawyer.medianResponseMinutes && (
-              <div style={{ marginTop: 9, color: 'var(--text2)', fontSize: 12 }}>
-                {t('lawyerProfile.responseTime').replace('{hours}', Math.max(1, Math.ceil(lawyer.medianResponseMinutes / 60)))}
-              </div>
-            )}
-            <div aria-label={lawyer.rating ? t('lawyerProfile.ratingAria').replace('{rating}', lawyer.rating.toFixed(1)).replace('{count}', lawyer.reviewsCount) : t('lawyerProfile.noRating')} style={{ color: 'var(--accent)', fontSize: 17, margin: '14px 0', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 7, flexWrap: 'wrap' }}>
-              {lawyer.rating ? (
-                <>
-                  <Rating value={lawyer.rating} precision={0.5} readOnly size="small" aria-hidden="true" sx={{ '& .MuiRating-iconFilled': { color: 'var(--accent)' }, '& .MuiRating-iconEmpty': { color: 'var(--border)' } }} />
-                  <span>{lawyer.rating.toFixed(1)}</span>
-                </>
-              ) : <span style={{ color: 'var(--text3)', fontSize: 13 }}>{t('lawyerProfile.noRating')}</span>}
-              <span style={{ fontSize: 13, color: 'var(--text3)' }}>({t('lawyerProfile.reviewsLabel')}: {lawyer.reviewsCount})</span>
-            </div>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, margin: '22px 0', textAlign: 'left' }}>
-              {profileMetrics.map((pm, i) => (
-                <div key={i} style={{ background: 'var(--canvas)', borderRadius: 'var(--radius)', padding: '13px 15px' }}>
-                  <div style={{ fontSize: 18, fontWeight: 400, color: 'var(--text)' }}>{pm.value}</div>
-                  <div style={{ fontSize: 11, color: 'var(--text3)', letterSpacing: '0.03em', marginTop: 3 }}>{pm.label}</div>
-                </div>
-              ))}
-            </div>
-
-            <div style={{ textAlign: 'left', padding: '16px 0', borderTop: '1px solid var(--canvas)', marginBottom: 18 }}>
-              <div style={{ fontSize: 12, color: 'var(--text3)', letterSpacing: '0.05em', textTransform: 'uppercase' }}>{t('lawyerProfile.priceLabel')}</div>
-              <div style={{ fontSize: 26, fontWeight: 300, color: 'var(--text)', marginTop: 4 }}>
-                {lawyer.priceFrom.toLocaleString()} <span style={{ fontSize: 14, color: 'var(--text3)' }}>{t('lawyerProfile.sum')}</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setBookingOpen(true)}
-              disabled={!lawyer.isAvailable}
-              style={{ width: '100%', minHeight: 44, background: lawyer.isAvailable ? 'linear-gradient(135deg, var(--accent), var(--accent-dark))' : 'var(--border-strong)', color: '#FFFFFF', border: 'none', fontSize: 13, fontWeight: 500, letterSpacing: '0.07em', textTransform: 'uppercase', padding: 15, borderRadius: 'var(--radius)', cursor: lawyer.isAvailable ? 'pointer' : 'not-allowed', fontFamily: 'inherit', marginBottom: 10 }}
-            >
-              {lawyer.isAvailable ? t('lawyerProfile.book') : t('lawyerProfile.unavailable')}
-            </button>
-            <div style={{ display: 'flex', gap: 10 }}>
-              <button type="button" onClick={goAiChat} style={{ ...outlineBtn, minHeight: 44 }}>{t('lawyerProfile.askAi')}</button>
-              <button type="button" disabled={!lawyer.isAvailable} onClick={() => setBookingOpen(true)} style={{ ...outlineBtn, minHeight: 44, opacity: lawyer.isAvailable ? 1 : 0.5, cursor: lawyer.isAvailable ? 'pointer' : 'not-allowed' }}>{t('lawyerProfile.video')}</button>
             </div>
           </div>
 
-          {/* ── RIGHT ── */}
-          <div>
-            <div role="tablist" aria-label={t('lawyerProfile.profileSections')} className="lp-tabs" style={{ ...glassCard, display: 'flex', gap: 4, padding: 5, marginBottom: 20 }}>
-              {profileTabs.map((pt, index) => (
-                <button key={pt.key} id={`lawyer-tab-${pt.key}`} type="button" role="tab" tabIndex={tab === pt.key ? 0 : -1} aria-selected={tab === pt.key} aria-controls={`lawyer-panel-${pt.key}`} onKeyDown={(event) => handleTabKeyDown(event, index)} onClick={() => setTab(pt.key)} style={{ ...tabBtnStyle(tab === pt.key), minHeight: 44 }}>
-                  {pt.label}
-                </button>
-              ))}
-            </div>
-
-            {/* About */}
-            {tab === 'about' && (
-              <div id="lawyer-panel-about" role="tabpanel" aria-labelledby="lawyer-tab-about" style={{ ...glassCard, padding: 28 }}>
-                <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 12 }}>{t('lawyerProfile.aboutHeading')}</div>
-                <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text2)', marginBottom: 24 }}>
-                  {lawyer.bio || t('lawyerProfile.noBio')}
-                </p>
-
-                {lawyer.experiences.length > 0 && (
-                  <div style={{ marginBottom: 24 }}>
-                    <div style={{ fontSize: 15, fontWeight: 500, marginBottom: 14 }}>Опыт работы</div>
-                    <div style={{ borderLeft: '2px solid var(--accent)', paddingLeft: 18, display: 'grid', gap: 16 }}>
-                      {lawyer.experiences.map((item) => (
-                        <div key={item.id}>
-                          <strong>{item.position}</strong> · {item.organization}
-                          <div style={{ fontSize: 12, color: 'var(--text3)', marginTop: 3 }}>{item.startDate} — {item.isCurrent ? 'по настоящее время' : item.endDate}</div>
-                          {item.description && <p style={{ margin: '6px 0 0', color: 'var(--text2)' }}>{item.description}</p>}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
-                {(lawyer.education.length > 0 || langText) && (
-                  <div className="lp-about-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
-                    {lawyer.education.length > 0 && (
-                      <div>
-                        <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <SchoolOutlined sx={{ fontSize: 15 }} /> {t('lawyerProfile.education')}
-                        </div>
-                        <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>
-                          {lawyer.education.map((edu, i) => (
-                             <div key={edu.id || i}>{typeof edu === 'string' ? edu : `${edu.university || edu.title || edu.name || ''}${edu.specialty ? ` — ${edu.specialty}` : ''}${edu.degree ? ` (${edu.degree})` : ''}`}</div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                    {langText && (
-                      <div>
-                        <div style={{ fontSize: 12, letterSpacing: '0.05em', textTransform: 'uppercase', color: 'var(--text3)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                          <TranslateOutlined sx={{ fontSize: 15 }} /> {t('lawyerProfile.languages')}
-                        </div>
-                        <div style={{ fontSize: 14, color: 'var(--text)', lineHeight: 1.6 }}>{langText}</div>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {lawyer.certifications.length > 0 && (
-                  <>
-                    <div style={{ height: 1, background: 'var(--card-brd)', margin: '24px 0' }} />
-                    <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', marginBottom: 16 }}>
-                      {t('lawyerProfile.achievements')}
-                    </div>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }} className="lp-ach">
-                      {lawyer.certifications.map((ach, i) => {
-                        const title = typeof ach === 'string' ? ach : (ach.title || ach.name || '');
-                        const sub = typeof ach === 'string' ? '' : (ach.organization || ach.sub || ach.description || '');
-                        return (
-                          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 13, background: 'rgba(184,149,110,0.06)', border: '1px solid var(--card-brd)', borderRadius: 'var(--radius)', padding: '16px 18px' }}>
-                            <div style={{ width: 38, height: 38, borderRadius: '50%', background: 'linear-gradient(135deg, rgba(184,149,110,0.22), rgba(154,123,90,0.14))', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--accent)' }}>
-                              <WorkspacePremiumOutlined sx={{ fontSize: 20 }} />
-                            </div>
-                            <div style={{ minWidth: 0, flex: 1 }}>
-                              <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', lineHeight: 1.4 }}>{title}</div>
-                              {sub && <div style={{ fontSize: 12, color: 'var(--text2)', marginTop: 3, lineHeight: 1.5 }}>{sub}</div>}
-                            </div>
-                            <ChevronRightOutlined sx={{ fontSize: 18, color: 'var(--text3)', flexShrink: 0, mt: '2px' }} />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </>
-                )}
-                {(lawyer.licenseNumber || lawyer.linkedinUrl || lawyer.consultationFormats.length > 0) && (
-                  <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid var(--border)', display: 'grid', gap: 8 }}>
-                    {lawyer.licenseNumber && <div><strong>Лицензия:</strong> {lawyer.licenseNumber}{lawyer.licenseIssuer ? ` · ${lawyer.licenseIssuer}` : ''}</div>}
-                    {lawyer.consultationFormats.length > 0 && <div><strong>Форматы:</strong> {lawyer.consultationFormats.join(', ')} · {lawyer.consultationDurations.join('/')} мин</div>}
-                    {lawyer.linkedinUrl && <a href={lawyer.linkedinUrl} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-dark)' }}>LinkedIn</a>}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Reviews — list only (rating/count live in the left column) */}
-            {tab === 'reviews' && (
-              reviews.length === 0 ? (
-                <div id="lawyer-panel-reviews" role="tabpanel" aria-labelledby="lawyer-tab-reviews" style={{ ...glassCard, padding: 48, textAlign: 'center' }}>
-                  <div style={{ fontSize: 15, fontWeight: 300, color: 'var(--text)', marginBottom: 6 }}>{t('lawyerProfile.noReviews')}</div>
-                  <div style={{ fontSize: 13, color: 'var(--text3)' }}>{t('lawyerProfile.noReviewsSub')}</div>
-                </div>
-              ) : (
-                <div id="lawyer-panel-reviews" role="tabpanel" aria-labelledby="lawyer-tab-reviews" style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {reviews.map((rv, i) => (
-                    <div key={rv.id || i} style={{ ...glassCard, padding: '20px 22px' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap', marginBottom: 10 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                          <div style={{ width: 38, height: 38, borderRadius: '50%', background: AV_BG[i % AV_BG.length], display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF', fontSize: 13 }}>
-                            {initialsOf(rv.name)}
-                          </div>
-                          <div style={{ fontSize: 14, fontWeight: 500, color: 'var(--text)', overflowWrap: 'anywhere' }}>{rv.name}</div>
-                        </div>
-                        <Rating value={Number(rv.rating) || 0} precision={0.5} readOnly size="small" aria-label={t('lawyerProfile.reviewRatingAria').replace('{rating}', Number(rv.rating || 0).toFixed(1))} sx={{ '& .MuiRating-iconFilled': { color: 'var(--accent)' }, '& .MuiRating-iconEmpty': { color: 'var(--border)' } }} />
-                      </div>
-                      <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text2)' }}>{rv.text}</p>
-                    </div>
-                  ))}
-                </div>
-              )
-            )}
-
-            {/* Portfolio */}
-            {tab === 'portfolio' && (
-              <div id="lawyer-panel-portfolio" role="tabpanel" aria-labelledby="lawyer-tab-portfolio" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 16 }} className="lp-port">
-                {portfolioMetrics.map((po, i) => (
-                  <div key={i} style={{ ...glassCard, padding: 24 }}>
-                    <div style={{ fontSize: 30, fontWeight: 300, color: 'var(--accent)' }}>{po.value}</div>
-                    <div style={{ fontSize: 13, color: 'var(--text2)', marginTop: 6 }}>{po.label}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <aside className="lpv2-card lpv2-book-card" aria-label={t('lawyerProfileV2.bookingCard')}>
+            <span className="lpv2-eyebrow">{t('lawyerProfileV2.rate60')}</span>
+            <div className="lpv2-price">{lawyer.priceFrom.toLocaleString(LOCALES[language])} <small>{t('lawyerProfile.sum')}</small></div>
+            {lawyer.consultationDurations.length > 0 && <div><h3>{t('lawyerProfileV2.duration')}</h3><div className="lpv2-duration-list">{lawyer.consultationDurations.map((duration) => <span key={duration}><strong>{duration} {t('lawyerProfileV2.min')}</strong>{lawyer.priceFrom > 0 && <small>{Math.round(lawyer.priceFrom * duration / 60).toLocaleString(LOCALES[language])} {t('lawyerProfile.sum')}</small>}</span>)}</div></div>}
+            {lawyer.consultationFormats.length > 0 && <div><h3>{t('lawyerProfileV2.formats')}</h3><div className="lpv2-format-list">{lawyer.consultationFormats.map((format) => { const Icon = FORMAT_ICONS[format] || ChatBubbleOutline; return <span key={format}><Icon />{formatName(format)}</span>; })}</div></div>}
+            <div className="lpv2-next-slot"><CalendarMonthOutlined /><div><span>{t('lawyerProfileV2.nearestSlot')}</span>{slots.loading ? <SkeletonLine width={150} height={14} style={{ marginTop: 6 }} /> : slots.error ? <button type="button" onClick={() => setSlotsRetry((value) => value + 1)}>{t('lawyerProfileV2.retry')}</button> : <strong>{nearestLabel || t('lawyerProfileV2.noSlots')}</strong>}</div></div>
+            <button type="button" className="lpv2-btn lpv2-btn-primary" disabled={!canBook} onClick={openBooking}>{canBook ? t('lawyerProfile.book') : t('lawyerProfile.unavailable')}</button>
+            {trustedDocumentTypes.length > 0 && <p className="lpv2-trust-note"><CheckCircleOutline />{t('lawyerProfile.verifiedDocuments').replace('{documents}', trustedDocumentTypes.map((type) => t(`lawyerProfile.doc_${type}`)).join(', '))}</p>}
+          </aside>
         </div>
+
+        <div className="lpv2-mobile-book" aria-label={t('lawyerProfileV2.bookingCard')}><div><span>{t('lawyerProfileV2.rate60')}</span><strong>{lawyer.priceFrom.toLocaleString(LOCALES[language])} {t('lawyerProfile.sum')}</strong></div><button type="button" disabled={!canBook} onClick={openBooking}>{canBook ? t('lawyerProfileV2.bookShort') : t('lawyerProfile.unavailable')}</button></div>
       </div>
-
-      <BookingModal
-        open={bookingOpen}
-        onClose={() => setBookingOpen(false)}
-        lawyer={lawyer}
-      />
-
-      <style>{`@media (max-width: 900px){
-        .lp-grid { grid-template-columns: 1fr !important; }
-        .lp-ach, .lp-port { grid-template-columns: 1fr !important; }
-        .lp-left { position: static !important; }
-      }
-      @media (max-width: 600px){
-        .lp-about-grid { grid-template-columns: 1fr !important; }
-        .lp-tabs { overflow-x: auto; }
-        .lp-tabs [role="tab"] { min-width: max-content; }
-      }`}</style>
+      <BookingModal open={bookingOpen} onClose={() => setBookingOpen(false)} lawyer={lawyer} />
     </GlassShell>
   );
 };

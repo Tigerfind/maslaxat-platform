@@ -1,123 +1,78 @@
-import React, { useState, useEffect } from 'react';
-import {
-  GavelOutlined,
-  WorkspacePremiumOutlined,
-  ReceiptLongOutlined,
-} from '@mui/icons-material';
-import clientService from '../../services/clientService';
+import React, { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Box, Button, Chip, Tab, Tabs, Typography } from '@mui/material';
+import { Download, Gavel, ReceiptLong, Refresh } from '@mui/icons-material';
+import { toast } from 'react-toastify';
 import GlassShell from '../../components/GlassKit/GlassShell';
+import { cabinetCardSx, formatDateTime, OfflineAlert, PagePagination, PageState } from '../../components/Client/CabinetUI';
+import clientService from '../../services/clientService';
 import { useTranslation } from '../../i18n';
+import useOnlineStatus from '../../hooks/useOnlineStatus';
 
-const glassCard = {
-  background: 'var(--card-glass)',
-  backdropFilter: 'blur(24px) saturate(180%)',
-  WebkitBackdropFilter: 'blur(24px) saturate(180%)',
-  border: '1px solid var(--card-brd)',
-  boxShadow: 'var(--card-shadow)',
-  borderRadius: 'var(--radius)',
-};
-
-const STATUS = {
-  paid: { key: 'statusPaid', color: '#7A9A6B', bg: 'rgba(122,154,107,0.14)' },
-  pending: { key: 'statusPending', color: '#C4A35A', bg: 'rgba(196,163,90,0.14)' },
-  failed: { key: 'statusFailed', color: '#B07070', bg: 'rgba(176,112,112,0.14)' },
-  refunded: { key: 'statusRefunded', color: '#6A8A9A', bg: 'rgba(106,138,154,0.14)' },
+const TABS = ['all', 'pending', 'paid', 'refunds', 'failed'];
+const STATUS_COLOR = { paid: 'success', pending: 'warning', failed: 'error', refunded: 'info', refund_pending: 'warning', refund_failed: 'error' };
+export const displayStatus = (payment) => {
+  if (payment.refundStatus === 'requested') return 'refund_pending';
+  if (payment.refundStatus === 'completed') return 'refunded';
+  if (payment.refundStatus === 'failed') return 'refund_failed';
+  return payment.status || 'pending';
 };
 
 const PaymentsPageGlass = () => {
-  const { t } = useTranslation();
-  const [payments, setPayments] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-
-  const loadPayments = async () => {
-    setLoading(true);
-    setError(false);
+  const { t, language } = useTranslation();
+  const navigate = useNavigate();
+  const online = useOnlineStatus();
+  const [params, setParams] = useSearchParams();
+  const tab = TABS.includes(params.get('tab')) ? params.get('tab') : 'all';
+  const page = Math.max(1, Number(params.get('page')) || 1);
+  const [state, setState] = useState({ loading: true, error: null, payments: [], totalPages: 1 });
+  const [busy, setBusy] = useState(null);
+  const load = async () => {
+    setState((current) => ({ ...current, loading: true, error: null }));
     try {
-      const data = await clientService.payments.getMy();
-      setPayments(Array.isArray(data) ? data : []);
-    } catch (e) {
-      setError(true);
-    } finally {
-      setLoading(false);
-    }
+      const data = await clientService.payments.getMy({ status: tab === 'all' ? undefined : tab, page, limit: 15 });
+      setState({ loading: false, error: null, payments: data.payments, totalPages: data.totalPages || 1 });
+    } catch (error) { setState((current) => ({ ...current, loading: false, error })); }
+  };
+  useEffect(() => { load(); }, [tab, page]); // eslint-disable-line react-hooks/exhaustive-deps
+  const change = (nextTab, nextPage = 1) => setParams({ tab: nextTab, ...(nextPage > 1 ? { page: String(nextPage) } : {}) });
+  const refreshStatus = async (id) => { setBusy(id); try { await clientService.payments.getStatus(id); await load(); } catch { toast.error(t('payments.loadError')); } finally { setBusy(null); } };
+  const pay = async (payment) => {
+    setBusy(payment.id);
+    try {
+      const result = await clientService.lawyers.payConsultation(payment.consultationId || payment.consultation?.id);
+      if (result.redirectUrl) window.location.assign(result.redirectUrl); else await refreshStatus(payment.id);
+    } catch (error) { toast.error(error.response?.data?.error || t('common.error')); setBusy(null); }
+  };
+  const receipt = async (payment) => {
+    setBusy(payment.id);
+    try {
+      const text = await clientService.payments.getReceipt(payment.id);
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url; anchor.download = `receipt-${payment.id}.txt`; anchor.click(); URL.revokeObjectURL(url);
+    } catch { toast.error(t('payments.loadError')); } finally { setBusy(null); }
   };
 
-  useEffect(() => { loadPayments(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const fmtDate = (d) => {
-    if (!d) return '';
-    const dt = new Date(d);
-    return `${dt.toLocaleDateString('ru-RU')} · ${dt.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}`;
-  };
-
-  const renderCard = (p) => {
-    const st = STATUS[p.status] || STATUS.pending;
-    const isSub = p.providerResponse && p.providerResponse.subscription;
-    const consultation = p.Consultation;
-    const lawyerName = consultation?.lawyer?.name;
-    const title = isSub
-      ? `${t('payments.subscription')} · ${p.providerResponse.subscription.toUpperCase()}`
-      : `${t('payments.consultation')}${lawyerName ? ' · ' + lawyerName : ''}`;
-    const Icon = isSub ? WorkspacePremiumOutlined : GavelOutlined;
-
-    return (
-      <div key={p.id} className="payment-row" style={{ ...glassCard, padding: 20, display: 'flex', alignItems: 'center', gap: 16 }}>
-        <div style={{
-          width: 46, height: 46, flexShrink: 0, borderRadius: 12,
-          background: 'rgba(184,149,110,0.14)', color: 'var(--accent)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>
-          <Icon sx={{ fontSize: 22 }} />
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 15, fontWeight: 500, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
-          <div style={{ fontSize: 12.5, color: 'var(--text3)', marginTop: 3 }}>{fmtDate(p.createdAt)}</div>
-        </div>
-        <div className="payment-total" style={{ textAlign: 'right', flexShrink: 0, maxWidth: '100%' }}>
-          <div style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>
-            {(p.amount || 0).toLocaleString('ru-RU')} <span style={{ fontSize: 12, fontWeight: 400, color: 'var(--text3)' }}>{t('payments.sum')}</span>
-          </div>
-          <span style={{
-            display: 'inline-block', marginTop: 5, fontSize: 11, letterSpacing: '0.05em', textTransform: 'uppercase',
-            color: st.color, background: st.bg, padding: '3px 9px', borderRadius: 12,
-          }}>
-            {t('payments.' + st.key)}
-          </span>
-        </div>
-      </div>
-    );
-  };
-
-  return (
-    <GlassShell active="/payments" title={t('payments.title')} subtitle={t('payments.subtitle')}>
-      <div style={{ maxWidth: 820, margin: '0 auto' }}>
-        {loading ? (
-          <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: 'var(--text3)', fontSize: 14 }}>
-            {t('common.loading')}
-          </div>
-        ) : error ? (
-          <div style={{ ...glassCard, padding: 40, textAlign: 'center', color: '#B07070', fontSize: 14 }}>
-            <div>{t('payments.loadError')}</div>
-            <button type="button" onClick={loadPayments} style={{ marginTop: 16, minHeight: 44, padding: '9px 18px', border: '1px solid var(--border)', borderRadius: 10, background: 'transparent', color: 'var(--text)' }}>{t('common.retry')}</button>
-          </div>
-        ) : payments.length === 0 ? (
-          <div style={{ ...glassCard, padding: '48px 24px', textAlign: 'center' }}>
-            <div style={{ width: 64, height: 64, margin: '0 auto 16px', borderRadius: '50%', background: 'rgba(184,149,110,0.12)', color: 'var(--accent)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-              <ReceiptLongOutlined sx={{ fontSize: 30 }} />
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 400, color: 'var(--text)', marginBottom: 6 }}>{t('payments.empty')}</div>
-            <div style={{ fontSize: 13, color: 'var(--text3)' }}>{t('payments.emptySub')}</div>
-          </div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-            {payments.map(renderCard)}
-          </div>
-        )}
-      </div>
-      <style>{`@media(max-width:420px){.payment-row{align-items:flex-start !important;flex-wrap:wrap;padding:16px !important}.payment-row>div:nth-child(2){flex-basis:calc(100% - 62px)}.payment-total{margin-left:62px;text-align:left !important;overflow-wrap:anywhere}.payment-total>div{font-size:15px !important}}`}</style>
-    </GlassShell>
-  );
+  return <GlassShell active="/payments" title={t('payments.title')} subtitle={t('payments.subtitle')}>
+    <Box sx={{ maxWidth: 980, mx: 'auto' }}><OfflineAlert online={online} text={t('cabinet.offline')} />
+      <Tabs value={tab} onChange={(_, value) => change(value)} variant="scrollable" scrollButtons="auto" aria-label={t('payments.title')} sx={{ mb: 2 }}>{TABS.map((item) => <Tab value={item} key={item} label={t(`payments.tab_${item}`)} />)}</Tabs>
+      <PageState loading={state.loading} error={state.error} onRetry={load} empty={!state.payments.length} emptyIcon={<ReceiptLong />} emptyTitle={t('payments.empty')} emptySubtitle={t('payments.emptySub')}>
+        <Box sx={{ display: 'grid', gap: 1.5 }}>{state.payments.map((payment) => {
+          const consultation = payment.consultation || payment.Consultation;
+          const currentStatus = displayStatus(payment);
+          return <Box key={payment.id} sx={{ ...cabinetCardSx, display: 'flex', alignItems: { xs: 'flex-start', sm: 'center' }, flexDirection: { xs: 'column', sm: 'row' }, gap: 2 }}>
+            <Gavel sx={{ color: 'var(--accent)' }} />
+            <Box sx={{ flex: 1, minWidth: 0 }}><Typography fontWeight={600} noWrap>{consultation?.lawyer?.name || payment.description || t('payments.consultation')}</Typography><Typography variant="body2" color="text.secondary">{formatDateTime(payment.createdAt, language)}</Typography><Chip size="small" color={STATUS_COLOR[currentStatus] || 'default'} label={t(`payments.status_${currentStatus}`)} sx={{ mt: .7 }} /></Box>
+            <Typography fontWeight={700}>{Number(payment.amount || 0).toLocaleString(language)} {payment.currency || 'UZS'}</Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: .5 }}>{['pending', 'failed'].includes(payment.status) && (!payment.refundStatus || payment.refundStatus === 'none') && consultation?.status === 'payment_pending' && <Button disabled={busy === payment.id} onClick={() => pay(payment)}>{payment.status === 'failed' ? t('payments.retryPayment') : t('payments.continuePayment')}</Button>}<Button startIcon={<Refresh />} disabled={busy === payment.id} onClick={() => refreshStatus(payment.id)}>{t('payments.checkStatus')}</Button>{payment.status === 'paid' && <Button startIcon={<Download />} disabled={busy === payment.id} onClick={() => receipt(payment)}>{t('payments.receipt')}</Button>}{consultation?.id && <Button onClick={() => navigate(`/consultations/${consultation.id}`)}>{t('cabinet.details')}</Button>}</Box>
+          </Box>;
+        })}</Box>
+        <PagePagination page={page} totalPages={state.totalPages} onChange={(value) => change(tab, value)} label={t('cabinet.pagination')} />
+      </PageState>
+    </Box>
+  </GlassShell>;
 };
 
 export default PaymentsPageGlass;

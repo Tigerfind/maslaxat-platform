@@ -21,16 +21,18 @@ const TYPES = {
   CASE_DOCUMENT: 'case_document',            // новый документ по делу → другой стороне
 };
 
-async function createNotification(userId, type, title, message, metadata = {}) {
+async function createNotification(userId, type, title, message, metadata = {}, options = {}) {
   try {
     const notification = await Notification.create({ userId, type, title, message, metadata });
     // Мгновенный пуш через socket (если пользователь онлайн) — без ожидания опроса
     emitToUser(userId, 'notification:new', notification.toJSON());
     // Web-push на устройства (работает и когда вкладка закрыта). Fire-and-forget,
     // no-op если VAPID не настроен. Ошибки не должны ломать создание уведомления.
-    pushService
-      .sendToUser(userId, { title, body: message, type, metadata })
-      .catch((err) => logger.error('[NotificationService] push failed:', err.message));
+    if (options.push !== false) {
+      pushService
+        .sendToUser(userId, { title, body: message, type, metadata })
+        .catch((err) => logger.error('[NotificationService] push failed:', err.message));
+    }
     return notification;
   } catch (err) {
     logger.error('[NotificationService] Error creating notification:', err.message);

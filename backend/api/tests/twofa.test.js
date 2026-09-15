@@ -98,6 +98,12 @@ describe('2FA (TOTP)', () => {
     // С challenge-токеном нельзя ходить по защищённым роутам (иначе обход 2FA)
     const res = await request(app).get('/api/2fa/status').set('Authorization', `Bearer ${tempToken}`);
     expect(res.status).toBe(401);
+    const emailVerify = await request(app).post('/api/auth/verify-email')
+      .set('Authorization', `Bearer ${tempToken}`).send({ code: '123456' });
+    const emailResend = await request(app).post('/api/auth/resend-verification')
+      .set('Authorization', `Bearer ${tempToken}`);
+    expect(emailVerify.status).toBe(401);
+    expect(emailResend.status).toBe(401);
   });
 
   test('клиенту 2FA setup запрещён → 403', async () => {

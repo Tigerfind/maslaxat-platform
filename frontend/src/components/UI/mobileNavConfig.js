@@ -1,10 +1,10 @@
 export const MOBILE_NAV_ITEMS = {
   client: [
-    { path: '/dashboard', tKey: 'nav.dashboard', icon: 'dashboard' },
-    { path: '/lawyers', tKey: 'nav.lawyers', icon: 'lawyers' },
+    { path: '/dashboard', tKey: 'nav.overview', icon: 'dashboard' },
     { path: '/consultations', tKey: 'nav.consultations', icon: 'consultations' },
-    { path: '/documents', tKey: 'nav.documents', icon: 'documents' },
-    { path: '/profile', tKey: 'nav.profile', icon: 'profile' },
+    { path: '/my-lawyers', tKey: 'nav.myLawyers', icon: 'lawyers' },
+    { path: '/messages', tKey: 'nav.messages', icon: 'messages' },
+    { path: '#more', tKey: 'nav.more', icon: 'more' },
   ],
   lawyer: [
     { path: '/lawyer/dashboard', tKey: 'nav.dashboard', icon: 'dashboard' },

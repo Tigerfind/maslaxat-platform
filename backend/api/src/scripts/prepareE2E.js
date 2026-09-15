@@ -20,7 +20,11 @@ async function main() {
   fs.mkdirSync(EXPECTED_UPLOAD_DIR, { recursive: true });
 
   const { resetDb, models } = require('../../tests/helpers');
-  const { sequelize, User, LawyerProfile, Specialization, Consultation, ConsultationMeeting } = models;
+  const {
+    sequelize, User, LawyerProfile, LawyerExperience, LawyerEducation, LawyerCertificate,
+    LawyerDocument, Review, Specialization, Consultation, ConsultationMeeting,
+    ClientCase, CaseDeadline, DeadlineReminder, FavoriteLawyer, Message,
+  } = models;
   await resetDb();
 
   await Specialization.bulkCreate([
@@ -38,7 +42,7 @@ async function main() {
     phone: '+998900000002', role: 'lawyer', isVerified: true, isActive: true,
     legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
   });
-  await LawyerProfile.create({
+  const profile = await LawyerProfile.create({
     userId: lawyer.id, specialization: 'Гражданское право', specializations: ['Гражданское право'],
     description: 'Тестовый юрист Playwright с заполненным профилем для проверки каталога и бронирования.',
     professionalTitle: 'Адвокат по гражданскому праву', location: 'Ташкент', region: 'Ташкент',
@@ -48,6 +52,12 @@ async function main() {
     schedule: { mon: { enabled: true, from: '09:00', to: '18:00' } },
     isAvailable: true, verificationStatus: 'approved', balance: 300000, pendingBalance: 0,
   });
+  await Promise.all([
+    LawyerExperience.create({ userId: lawyer.id, organization: 'E2E Legal', position: 'Адвокат', startDate: '2020-01-01', isCurrent: true, description: 'Представительство клиентов в гражданских спорах.', displayOrder: 0 }),
+    LawyerEducation.create({ userId: lawyer.id, university: 'ТГЮУ', specialty: 'Юриспруденция', degree: 'Магистр', startYear: 2014, endYear: 2020, city: 'Ташкент', country: 'Узбекистан', displayOrder: 0 }),
+    LawyerCertificate.create({ userId: lawyer.id, title: 'Медиация', organization: 'Центр медиации', issuedAt: '2024-04-01', credentialUrl: 'https://example.com/e2e-credential', displayOrder: 0 }),
+    LawyerDocument.create({ userId: lawyer.id, type: 'license', name: 'e2e-license.pdf', path: '/tmp/e2e-license.pdf', mimeType: 'application/pdf', size: 100, verifiedAt: new Date() }),
+  ]);
   const refundLawyer = await User.create({
     email: 'refund-lawyer.e2e@maslaxat.uz', password: 'E2eRefund123!', name: 'E2E Refund Lawyer',
     role: 'lawyer', isVerified: true, isActive: true,
@@ -58,6 +68,10 @@ async function main() {
     description: 'Изолированный профиль для E2E возврата.', experience: 5, price: 120000,
     schedule: {}, isAvailable: false, verificationStatus: 'approved', balance: 0, pendingBalance: 0,
   });
+  const clientCase = await ClientCase.create({ clientId: client.id, title: 'Спор по договору', description: 'Тестовое дело для клиентского кабинета', status: 'in_progress' });
+  const deadline = await CaseDeadline.create({ clientCaseId: clientCase.id, title: 'Подать документы', dueAt: new Date(Date.now() + 3 * 86400000), timezone: 'Asia/Tashkent', priority: 'high', source: 'manual' });
+  await DeadlineReminder.create({ deadlineId: deadline.id, channel: 'in_app', intervalMinutes: 60, remindAt: new Date(deadline.dueAt.getTime() - 3600000), nextAttemptAt: new Date(deadline.dueAt.getTime() - 3600000), idempotencyKey: `${deadline.id}:in_app:60` });
+  await FavoriteLawyer.create({ clientId: client.id, lawyerId: lawyer.id });
   const videoStartsAt = new Date(Date.now() + 5 * 60 * 1000);
   await Consultation.bulkCreate([
     {
@@ -88,7 +102,25 @@ async function main() {
       question: 'E2E refund fixture', duration: 60, price: 120000, isFree: false, billingStatus: 'none',
       legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
     },
+    {
+      id: '55555555-5555-4555-8555-555555555555',
+      clientId: client.id, lawyerId: lawyer.id, clientCaseId: clientCase.id, type: 'chat', status: 'completed',
+      question: 'E2E reviewed consultation', duration: 60, price: 100000, isFree: false, billingStatus: 'released',
+      legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
+    {
+      id: '66666666-6666-4666-8666-666666666666',
+      clientId: client.id, lawyerId: lawyer.id, type: 'chat', status: 'completed',
+      question: 'E2E second reviewed consultation', duration: 60, price: 100000, isFree: false, billingStatus: 'released',
+      legalAcceptedAt: new Date(), legalVersion: '2026-08-13',
+    },
   ]);
+  await Review.bulkCreate([
+    { clientId: client.id, lawyerId: lawyer.id, consultationId: '55555555-5555-4555-8555-555555555555', rating: 5, text: 'Полезная и понятная консультация', helpfulCount: 2 },
+    { clientId: client.id, lawyerId: lawyer.id, consultationId: '66666666-6666-4666-8666-666666666666', rating: 4, text: 'Хорошая консультация', helpfulCount: 1 },
+  ]);
+  await Message.create({ consultationId: '55555555-5555-4555-8555-555555555555', senderId: lawyer.id, text: 'Документы по делу готовы к проверке', isRead: false });
+  await profile.update({ rating: 4.5, reviewsCount: 2, completedCases: 2 });
   const secretBox = require('../services/secretBox');
   const zoomMeeting = await ConsultationMeeting.create({ consultationId: '44444444-4444-4444-8444-444444444444', provider: 'zoom', externalMeetingId: '123456789', status: 'ready', scheduledAt: videoStartsAt, duration: 30 });
   await zoomMeeting.update({

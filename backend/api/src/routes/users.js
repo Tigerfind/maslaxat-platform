@@ -1,6 +1,5 @@
 const router = require('express').Router();
 const jwt = require('jsonwebtoken');
-const crypto = require('crypto');
 const multer = require('multer');
 const path = require('path');
 const { Op, UniqueConstraintError } = require('sequelize');
@@ -12,8 +11,7 @@ const { disconnectUserSockets } = require('../socket/io');
 const { AVATAR_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles } = require('../services/uploadSecurity');
 const { distributedRateLimit } = require('../middleware/distributedRateLimit');
 const smsService = require('../services/smsService');
-
-const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
+const { createVerificationCode } = require('../services/emailVerificationService');
 
 const emailChangeLimiter = distributedRateLimit({
   prefix: 'email-change-user', windowSeconds: 60 * 60,
@@ -143,32 +141,35 @@ router.put('/email', authenticate, emailChangeLimiter, async (req, res, next) =>
     const exists = await User.findOne({ where: { email: { [Op.iLike]: email }, id: { [Op.ne]: user.id } } });
     if (exists) return res.status(409).json({ error: 'Этот email уже используется' });
 
-    const verificationToken = crypto.randomBytes(32).toString('hex');
     const previousEmail = user.email;
     const previousToken = user.verificationToken;
     const previousExpiry = user.verificationTokenExpiry;
+    const previousAttempts = user.verificationAttempts;
+    const previousSentAt = user.verificationSentAt;
     const previousVerified = user.isVerified;
+    const verification = createVerificationCode(user.id, email);
     user.email = email;
-    user.verificationToken = verificationToken;
-    user.verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
+    user.set(verification);
     user.isVerified = false;
     await user.save();
 
     try {
-      const delivery = await sendVerificationEmail(email, verificationToken);
+      const delivery = await sendVerificationEmail(email, verification.code);
       if (delivery?.skipped) throw new Error('EMAIL_UNAVAILABLE');
     } catch (e) {
       await User.update({
         email: previousEmail,
         verificationToken: previousToken,
         verificationTokenExpiry: previousExpiry,
+        verificationAttempts: previousAttempts,
+        verificationSentAt: previousSentAt,
         isVerified: previousVerified,
-      }, { where: { id: user.id, verificationToken } });
+      }, { where: { id: user.id, verificationToken: verification.verificationToken } });
       if (e.message !== 'EMAIL_UNAVAILABLE') logger.error('Failed to send verification email (email change):', e.message);
       return res.status(503).json({ error: 'Не удалось отправить письмо подтверждения' });
     }
 
-    res.json({ success: true, user: user.toJSON(), message: 'Email обновлён. Подтвердите по ссылке в письме.' });
+    res.json({ success: true, user: user.toJSON(), message: 'Email обновлён. Введите код из письма.' });
   } catch (err) {
     if (err instanceof UniqueConstraintError) {
       return res.status(409).json({ error: 'Этот email уже используется' });

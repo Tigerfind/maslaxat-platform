@@ -232,7 +232,7 @@ router.patch('/:id/status', authenticate, authorize('lawyer', 'admin'), async (r
       setImmediate(() => zoomMeetingService.maybeProvision(consultation.id).catch(() => {}));
     }
 
-    res.json({ consultation });
+    res.json({ consultation: serializeConsultation(consultation, req.userRole, new Date()) });
   } catch (err) {
     next(err);
   }
@@ -299,7 +299,7 @@ router.patch('/:id/archive', authenticate, authorize('client'), async (req, res,
     }
     const changed = req.body.archived ? !consultation.archivedAt : Boolean(consultation.archivedAt);
     if (changed) await consultation.update({ archivedAt: req.body.archived ? new Date() : null });
-    return res.json({ consultation });
+    return res.json({ consultation: serializeConsultation(consultation, req.userRole, new Date()) });
   } catch (error) { return next(error); }
 });
 
@@ -331,7 +331,7 @@ router.post('/:id/join', authenticate, async (req, res, next) => {
     // юрист делал /join (pending/accepted → in_progress), затем /status=completed
     // и забирал эскроу без реального звонка. В in_progress переводит только
     // реальное соединение видеозвонка (video /start по peer-connect).
-    res.json({ consultation, access });
+    res.json({ consultation: serializeConsultation(consultation, req.userRole, new Date()), access });
   } catch (err) {
     next(err);
   }
@@ -430,7 +430,7 @@ router.patch('/:id/reschedule', authenticate, async (req, res, next) => {
     const byName = (isClient ? consultation.client?.name : consultation.lawyer?.name) || 'Участник';
     notificationService.notifyConsultationRescheduled(otherId, byName, consultation);
 
-    res.json({ consultation });
+    res.json({ consultation: serializeConsultation(consultation, req.userRole, new Date()) });
   } catch (err) {
     next(err);
   }
@@ -491,7 +491,7 @@ router.post('/:id/cancel', authenticate, async (req, res, next) => {
     await Promise.all(recipients.map((userId) => notificationService.notifyConsultationCancelled(userId, canceller?.name || 'Пользователь', consultation)));
     if (consultation.meetingProvider === 'zoom') zoomMeetingService.cancelMeeting(consultation.id).catch(() => {});
 
-    res.json({ message: 'Консультация отменена', consultation });
+    res.json({ message: 'Консультация отменена', consultation: serializeConsultation(consultation, req.userRole, new Date()) });
   } catch (err) {
     next(err);
   }
@@ -556,7 +556,7 @@ router.post('/:id/complete', authenticate, authorize('client'), async (req, res,
       notificationService.notifyConsultationCompleted(updated.lawyerId, client?.name || 'Клиент', updated);
     }
 
-    res.json({ message: 'Консультация завершена', consultation: updated });
+    res.json({ message: 'Консультация завершена', consultation: serializeConsultation(updated, req.userRole, new Date()) });
   } catch (err) {
     if (err.status && err.code) return res.status(err.status).json({ error: err.message, code: err.code });
     next(err);

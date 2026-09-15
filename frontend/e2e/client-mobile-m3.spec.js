@@ -2,11 +2,11 @@ const { test, expect } = require('@playwright/test');
 const { login } = require('./helpers');
 
 const routes = [
-  { path: '/dashboard', action: (page) => page.getByRole('button', { name: /Спросить AI-помощника/i }) },
+  { path: '/dashboard', action: (page) => page.getByRole('button', { name: /AI-помощник/i }) },
   { path: '/ai-chat', action: (page) => page.getByPlaceholder(/юридический вопрос/i) },
   { path: '/documents', action: (page) => page.getByRole('button', { name: /Загрузить документ/i }).first() },
   { path: '/portfolio', action: (page) => page.locator('main.screen').getByRole('button', { name: 'Документы', exact: true }) },
-  { path: '/favorites', action: (page) => page.getByRole('button', { name: /Найти юриста|Смотреть профиль/i }).first() },
+  { path: '/my-lawyers', action: (page) => page.getByRole('button', { name: /Профиль|Записаться снова/i }).first() },
   { path: '/payments', action: (page) => page.getByText(/Платежей пока нет|Консультация|Подписка/i).first() },
   { path: '/profile', action: (page) => page.getByRole('button', { name: /Редактировать/i }) },
   { path: '/settings', action: (page) => page.getByRole('button', { name: /Сохранить изменения/i }) },

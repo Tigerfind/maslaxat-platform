@@ -15,6 +15,10 @@ export const resolvePublicAssetUrl = (value) => {
 
 // Client Dashboard Service
 export const clientDashboardService = {
+  getDashboard: async (options = {}) => {
+    const response = await api.get('/client/dashboard', { signal: options.signal });
+    return response.data;
+  },
   // Get dashboard stats
   // Бросаем ошибку наружу — дашборд покажет состояние ошибки, а не тихие нули
   // (иначе сбой бэкенда выглядит как «0 консультаций»).
@@ -137,14 +141,19 @@ export const clientLawyerService = {
   },
 
   // Get lawyer details
-  getLawyerDetails: async (lawyerId) => {
+  getLawyerDetails: async (lawyerId, options = {}) => {
     try {
-      const response = await api.get(`/client/lawyers/${lawyerId}`);
+      const response = await api.get(`/client/lawyers/${lawyerId}`, { signal: options.signal });
       return response.data;
     } catch (error) {
       console.error('Error fetching lawyer details:', error);
       throw error;
     }
+  },
+
+  getAvailableSlots: async (lawyerId, params = {}, options = {}) => {
+    const response = await api.get(`/lawyers/${lawyerId}/available-slots`, { params, signal: options.signal });
+    return response.data;
   },
 
   getBookableLawyerDetails: async (lawyerId) => {
@@ -200,9 +209,11 @@ export const clientLawyerService = {
   },
 
   // Get lawyer reviews
-  getReviews: async (lawyerId) => {
-    const response = await api.get(`/client/lawyers/${lawyerId}/reviews`);
-    return response.data.reviews || response.data || [];
+  getReviews: async (lawyerId, params = {}, options = {}) => {
+    const response = await api.get(`/client/lawyers/${lawyerId}/reviews`, { params, signal: options.signal });
+    return Array.isArray(response.data)
+      ? { reviews: response.data, page: 1, totalPages: 1, total: response.data.length, summary: null }
+      : response.data;
   },
 
   // Leave review
@@ -278,14 +289,12 @@ export const clientConsultationService = {
 // Client Documents Service
 export const clientDocumentService = {
   // Get all documents
-  getDocuments: async () => {
-    try {
-      const response = await api.get('/client/documents');
-      return response.data;
-    } catch (error) {
-      console.error('Error fetching documents:', error);
-      return [];
-    }
+  getDocuments: async (params = {}, options = {}) => {
+    const response = await api.get('/client/documents', { params, signal: options.signal });
+    const data = response.data;
+    return Array.isArray(data)
+      ? { documents: data, page: 1, totalPages: 1, total: data.length }
+      : { ...data, documents: data.documents || data.items || [] };
   },
 
   // Upload document
@@ -333,6 +342,14 @@ export const clientDocumentService = {
       console.error('Error checking document:', error);
       throw error;
     }
+  },
+  archive: async (documentId, archived = true) => {
+    const response = await api.patch(`/client/documents/${documentId}/archive`, { archived });
+    return response.data;
+  },
+  linkCase: async (documentId, caseId, currentCaseId = null) => {
+    const response = await api.patch(`/client/documents/${documentId}/case`, { caseId, currentCaseId });
+    return response.data;
   },
 };
 
@@ -386,8 +403,8 @@ export const clientAIChatService = {
 // Client Favorites Service
 export const clientFavoritesService = {
   // Get all favorite lawyers
-  getFavorites: async () => {
-    const response = await api.get('/client/favorites');
+  getFavorites: async (options = {}) => {
+    const response = await api.get('/client/favorites', { signal: options.signal });
     return response.data;
   },
 
@@ -457,10 +474,55 @@ export const clientPromoService = {
 
 export const clientPaymentService = {
   // Бросает ошибку наружу, чтобы страница показала состояние ошибки (а не пустоту как «нет платежей»)
-  getMy: async () => {
-    const response = await api.get('/payments/my');
-    return Array.isArray(response.data) ? response.data : (response.data.payments || []);
+  getMy: async (params = {}, options = {}) => {
+    const response = await api.get('/payments/my', { params, signal: options.signal });
+    const data = response.data;
+    return Array.isArray(data)
+      ? { payments: data, page: 1, totalPages: 1, total: data.length }
+      : { ...data, payments: data.payments || data.items || [] };
   },
+  getStatus: async (paymentId) => (await api.get(`/payments/${paymentId}/status`)).data,
+  getReceipt: async (paymentId) => (await api.get(`/payments/${paymentId}/receipt`, { responseType: 'blob' })).data,
+};
+
+const normalizePage = (data, key) => {
+  if (Array.isArray(data)) return { [key]: data, page: 1, totalPages: 1, total: data.length };
+  return { ...data, [key]: data?.[key] || data?.items || [] };
+};
+
+export const clientCabinetService = {
+  getLawyerHistory: async (params = {}, options = {}) => normalizePage(
+    (await api.get('/client/lawyers/history', { params, signal: options.signal })).data,
+    'lawyers',
+  ),
+  getMessages: async (params = {}, options = {}) => normalizePage(
+    (await api.get('/client/messages', { params, signal: options.signal })).data,
+    'conversations',
+  ),
+  getCases: async (params = {}, options = {}) => normalizePage(
+    (await api.get('/client/cases', { params, signal: options.signal })).data,
+    'cases',
+  ),
+  getCase: async (caseId, options = {}) => (await api.get(`/client/cases/${caseId}`, { signal: options.signal })).data,
+  createCase: async (payload) => (await api.post('/client/cases', payload)).data,
+  updateCase: async (caseId, payload) => (await api.patch(`/client/cases/${caseId}`, payload)).data,
+  archiveCase: async (caseId, archived = true) => (await api.patch(`/client/cases/${caseId}/archive`, { archived })).data,
+  linkCaseItem: async (caseId, payload) => {
+    const segment = payload.type === 'consultation' ? 'consultations' : 'documents';
+    return (await api.put(`/client/cases/${caseId}/${segment}/${payload.id}`)).data;
+  },
+  unlinkCaseItem: async (caseId, type, itemId) => {
+    const segment = type === 'consultation' ? 'consultations' : 'documents';
+    return (await api.delete(`/client/cases/${caseId}/${segment}/${itemId}`)).data;
+  },
+  getDeadlines: async (params = {}, options = {}) => normalizePage(
+    (await api.get('/client/deadlines', { params, signal: options.signal })).data,
+    'deadlines',
+  ),
+  createDeadline: async (caseId, payload) => (await api.post(`/client/cases/${caseId}/deadlines`, payload)).data,
+  updateDeadline: async (caseId, deadlineId, payload) => (await api.patch(`/client/cases/${caseId}/deadlines/${deadlineId}`, payload)).data,
+  completeDeadline: async (caseId, deadlineId) => (await api.patch(`/client/cases/${caseId}/deadlines/${deadlineId}/complete`)).data,
+  deleteDeadline: async (caseId, deadlineId) => (await api.delete(`/client/cases/${caseId}/deadlines/${deadlineId}`)).data,
 };
 
 const clientService = {
@@ -472,6 +534,7 @@ const clientService = {
   favorites: clientFavoritesService,
   subscription: clientSubscriptionService,
   payments: clientPaymentService,
+  cabinet: clientCabinetService,
   promo: clientPromoService,
 };
 

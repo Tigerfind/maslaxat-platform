@@ -9,8 +9,13 @@ const { sequelize, User, LawyerProfile, PhoneOtp } = require('../models');
 const { isEmailConfigured, sendPasswordResetEmail, sendVerificationEmail } = require('../services/emailService');
 const smsService = require('../services/smsService');
 const { distributedRateLimit } = require('../middleware/distributedRateLimit');
+const {
+  OTP_MAX_ATTEMPTS,
+  OTP_RESEND_COOLDOWN_MS,
+  createVerificationCode,
+  matchesVerificationCode,
+} = require('../services/emailVerificationService');
 const LEGAL_VERSION = '2026-08-13';
-const VERIFICATION_TOKEN_TTL_MS = 24 * 60 * 60 * 1000;
 const productionMax = (value) => process.env.NODE_ENV === 'production' ? value : 1000;
 const normalizedEmailKey = (req) => String(req.body?.email || '').trim().toLowerCase() || req.ip;
 const normalizedPhoneKey = (req) => smsService.normalizePhone(req.body?.phone) || req.ip;
@@ -20,6 +25,7 @@ const phoneVerifyLimiter = distributedRateLimit({ prefix: 'phone-verify', window
 const forgotAccountLimiter = distributedRateLimit({ prefix: 'forgot-account', windowSeconds: 60 * 60, max: productionMax(5), keyGenerator: normalizedEmailKey });
 const resetTokenLimiter = distributedRateLimit({ prefix: 'reset-token', windowSeconds: 60 * 60, max: productionMax(10), keyGenerator: (req) => req.body?.token || req.ip });
 const resendUserLimiter = distributedRateLimit({ prefix: 'resend-user', windowSeconds: 60 * 60, max: productionMax(5), keyGenerator: (req) => req.userId || req.ip });
+const emailVerifyLimiter = distributedRateLimit({ prefix: 'email-verify-user', windowSeconds: 15 * 60, max: productionMax(10), keyGenerator: (req) => req.userId || req.ip });
 const twoFactorChallengeLimiter = distributedRateLimit({ prefix: 'twofa-challenge', windowSeconds: 15 * 60, max: productionMax(10), keyGenerator: (req) => req.body?.tempToken || req.ip });
 router.use('/linkedin', require('./linkedin-auth'));
 
@@ -114,8 +120,6 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       });
     }
 
-    const verificationToken = crypto.randomBytes(32).toString('hex');
-    const verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
     const { specialization, specializations, phone: _rawPhone, acceptedTerms: _acceptedTerms, legalVersion, ...userData } = value;
     const raw = Array.isArray(specializations) && specializations.length
       ? specializations
@@ -136,8 +140,6 @@ router.post('/register', emailLimiter, async (req, res, next) => {
       const created = await User.create({
         ...userData,
         phone: null,
-        verificationToken,
-        verificationTokenExpiry,
         legalAcceptedAt: new Date(),
         legalVersion,
       }, { transaction });
@@ -152,22 +154,35 @@ router.post('/register', emailLimiter, async (req, res, next) => {
           verificationStatus: 'draft',
         }, { transaction });
       }
-      return created;
+      const verification = createVerificationCode(created.id, created.email);
+      created.set(verification);
+      await created.save({ transaction });
+      return { created, verificationCode: verification.code };
     });
 
-    // Отправляем письмо верификации в фоне — НЕ блокируем ответ регистрации.
-    // Без SMTP (или при медленном/недоступном почтовом сервере) ответ клиенту
-    // не должен ждать сеть: письмо уходит асинхронно, ошибки только логируем.
-    Promise.resolve()
-      .then(() => sendVerificationEmail(user.email, verificationToken))
-      .catch((emailErr) => logger.error('Failed to send verification email:', emailErr.message));
+    let verificationDelivery = 'sent';
+    try {
+      const delivery = await sendVerificationEmail(user.created.email, user.verificationCode);
+      if (delivery?.skipped) throw new Error('EMAIL_UNAVAILABLE');
+    } catch (emailErr) {
+      verificationDelivery = 'failed';
+      logger.error('Failed to send verification email:', emailErr.message);
+      await User.update({
+        verificationToken: null,
+        verificationTokenExpiry: null,
+        verificationAttempts: 0,
+        verificationSentAt: null,
+      }, { where: { id: user.created.id, verificationToken: user.created.verificationToken } });
+    }
 
-    const token = signToken(user);
+    const token = signToken(user.created);
 
     res.status(201).json({
-      user: user.toJSON(),
+      user: user.created.toJSON(),
       token,
-      role: user.role,
+      role: user.created.role,
+      verificationRequired: true,
+      verificationDelivery,
     });
   } catch (err) {
     if (err.status === 409) return res.status(409).json({ error: err.message, code: err.code });
@@ -552,7 +567,56 @@ router.post('/reset-password', resetTokenLimiter, async (req, res, next) => {
   }
 });
 
-// GET /api/auth/verify-email/:token
+// POST /api/auth/verify-email — подтверждение коротким кодом из письма.
+router.post('/verify-email', authenticate, emailVerifyLimiter, async (req, res, next) => {
+  try {
+    const { error, value } = Joi.object({ code: Joi.string().pattern(/^\d{6}$/).required() }).validate(req.body);
+    if (error) return res.status(400).json({ error: 'Введите 6-значный код', code: 'OTP_INVALID' });
+
+    const result = await sequelize.transaction(async (transaction) => {
+      const user = await User.findByPk(req.userId, { transaction, lock: transaction.LOCK.UPDATE });
+      if (!user) return { status: 404, error: 'Пользователь не найден' };
+      if (user.isVerified) return { status: 200, user };
+      if (!user.verificationToken || !user.verificationTokenExpiry
+        || new Date(user.verificationTokenExpiry) <= new Date()) {
+        user.verificationToken = null;
+        user.verificationTokenExpiry = null;
+        user.verificationSentAt = null;
+        await user.save({ transaction });
+        return { status: 400, error: 'Код истёк. Запросите новый код.', code: 'OTP_EXPIRED' };
+      }
+      if ((user.verificationAttempts || 0) >= OTP_MAX_ATTEMPTS) {
+        return { status: 429, error: 'Слишком много попыток. Запросите новый код.', code: 'OTP_ATTEMPTS_EXCEEDED' };
+      }
+      if (!matchesVerificationCode(user, value.code)) {
+        user.verificationAttempts = (user.verificationAttempts || 0) + 1;
+        if (user.verificationAttempts >= OTP_MAX_ATTEMPTS) {
+          user.verificationToken = null;
+          user.verificationTokenExpiry = null;
+          user.verificationSentAt = null;
+        }
+        await user.save({ transaction });
+        return user.verificationAttempts >= OTP_MAX_ATTEMPTS
+          ? { status: 429, error: 'Слишком много попыток. Запросите новый код.', code: 'OTP_ATTEMPTS_EXCEEDED' }
+          : { status: 400, error: 'Неверный код', code: 'OTP_INVALID' };
+      }
+      user.isVerified = true;
+      user.verificationToken = null;
+      user.verificationTokenExpiry = null;
+      user.verificationAttempts = 0;
+      user.verificationSentAt = null;
+      await user.save({ transaction });
+      return { status: 200, user };
+    });
+
+    if (result.error) return res.status(result.status).json({ error: result.error, code: result.code });
+    return res.json({ message: 'Email успешно подтверждён', user: result.user.toJSON() });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/auth/verify-email/:token — временная совместимость со старыми письмами.
 router.get('/verify-email/:token', async (req, res, next) => {
   try {
     const verified = await sequelize.transaction(async (transaction) => {
@@ -568,6 +632,8 @@ router.get('/verify-email/:token', async (req, res, next) => {
       user.isVerified = true;
       user.verificationToken = null;
       user.verificationTokenExpiry = null;
+      user.verificationAttempts = 0;
+      user.verificationSentAt = null;
       await user.save({ transaction });
       return true;
     });
@@ -590,32 +656,42 @@ router.post('/resend-verification', emailLimiter, authenticate, resendUserLimite
       if (!user) return { status: 404, error: 'Пользователь не найден' };
       if (user.isVerified) return { status: 400, error: 'Email уже подтверждён' };
 
-      const hasUsableToken = user.verificationToken
-        && user.verificationTokenExpiry
-        && new Date(user.verificationTokenExpiry) > new Date();
-      const verificationToken = hasUsableToken
-        ? user.verificationToken
-        : crypto.randomBytes(32).toString('hex');
-      if (!hasUsableToken) {
-        user.verificationToken = verificationToken;
-        user.verificationTokenExpiry = new Date(Date.now() + VERIFICATION_TOKEN_TTL_MS);
-        await user.save({ transaction });
+      const elapsed = user.verificationSentAt ? Date.now() - new Date(user.verificationSentAt).getTime() : Infinity;
+      if (elapsed < OTP_RESEND_COOLDOWN_MS) {
+        return {
+          status: 429,
+          error: 'Новый код можно запросить через минуту',
+          code: 'OTP_RESEND_COOLDOWN',
+          retryAfter: Math.ceil((OTP_RESEND_COOLDOWN_MS - elapsed) / 1000),
+        };
       }
-      return { email: user.email, verificationToken };
+      const verification = createVerificationCode(user.id, user.email);
+      user.set(verification);
+      await user.save({ transaction });
+      return { email: user.email, ...verification };
     });
-    if (tokenState.error) return res.status(tokenState.status).json({ error: tokenState.error });
+    if (tokenState.error) {
+      if (tokenState.retryAfter) res.set('Retry-After', String(tokenState.retryAfter));
+      return res.status(tokenState.status).json({ error: tokenState.error, code: tokenState.code, retryAfter: tokenState.retryAfter });
+    }
 
     try {
-      const delivery = await sendVerificationEmail(tokenState.email, tokenState.verificationToken);
+      const delivery = await sendVerificationEmail(tokenState.email, tokenState.code);
       if (delivery?.skipped) throw new Error('EMAIL_UNAVAILABLE');
     } catch (emailError) {
       if (emailError.message !== 'EMAIL_UNAVAILABLE') {
         logger.error('Failed to resend verification email:', emailError.message);
       }
-      return res.status(503).json({ error: 'Отправка email временно недоступна' });
+      await User.update({
+        verificationToken: null,
+        verificationTokenExpiry: null,
+        verificationAttempts: 0,
+        verificationSentAt: null,
+      }, { where: { id: req.userId, verificationToken: tokenState.verificationToken } });
+      return res.status(503).json({ error: 'Отправка email временно недоступна', code: 'EMAIL_UNAVAILABLE' });
     }
 
-    res.json({ message: 'Письмо отправлено повторно' });
+    res.json({ message: 'Новый код отправлен', retryAfter: 60 });
   } catch (err) {
     next(err);
   }

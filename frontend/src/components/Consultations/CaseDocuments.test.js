@@ -15,6 +15,33 @@ const renderDocuments = (props = {}) => render(
   </LanguageProvider>,
 );
 
+const caseDocument = {
+  id: 'document-1',
+  name: 'contract.pdf',
+  uploaderId: 'client-1',
+  uploader: { name: 'Клиент' },
+  size: 2048,
+};
+
+const completedAnalysis = {
+  id: 'analysis-1',
+  status: 'completed',
+  model: 'claude-sonnet',
+  promptVersion: 'v1',
+  completedAt: '2026-09-14T09:30:00.000Z',
+  cached: true,
+  result: {
+    documentType: 'Договор аренды',
+    parties: [{ name: 'ООО Арендодатель', role: 'Арендодатель' }, { name: 'Иван Иванов', role: 'Арендатор' }],
+    keyDates: [{ date: '2026-10-01', description: 'Начало аренды' }],
+    amounts: [{ amount: '5000000', currency: 'UZS', purpose: 'Ежемесячная аренда' }],
+    subject: 'Аренда офисного помещения',
+    obligations: ['Оплачивать аренду до пятого числа'],
+    risks: ['Одностороннее изменение ставки'],
+    summary: 'Договор регулирует аренду офиса. Арендатору следует уточнить порядок изменения ставки.',
+  },
+};
+
 describe('CaseDocuments states', () => {
   beforeEach(() => {
     localStorage.setItem('language', 'ru');
@@ -55,5 +82,79 @@ describe('CaseDocuments states', () => {
     Object.defineProperty(oversized, 'size', { value: 10 * 1024 * 1024 + 1 });
     fireEvent.change(input, { target: { files: [oversized] } });
     expect(api.post).not.toHaveBeenCalled();
+  });
+
+  test('shows analysis action only when the server allows the assigned lawyer to analyze', async () => {
+    api.get.mockResolvedValue({ data: { documents: [caseDocument], writable: false, canAnalyze: true } });
+    const view = renderDocuments();
+    expect(await screen.findByRole('button', { name: 'Разобрать документ contract.pdf' })).toBeInTheDocument();
+    view.unmount();
+
+    api.get.mockResolvedValue({ data: { documents: [caseDocument], writable: true, canAnalyze: false } });
+    renderDocuments();
+    await screen.findByText('contract.pdf');
+    expect(screen.queryByText('Разобрать документ')).not.toBeInTheDocument();
+  });
+
+  test('disables analysis for the document and protects the POST from duplicate clicks', async () => {
+    let resolveAnalysis;
+    api.get.mockResolvedValue({ data: { documents: [caseDocument], writable: false, canAnalyze: true } });
+    api.post.mockImplementation(() => new Promise((resolve) => { resolveAnalysis = resolve; }));
+    renderDocuments();
+
+    const analyze = await screen.findByRole('button', { name: 'Разобрать документ contract.pdf' });
+    fireEvent.click(analyze);
+    fireEvent.click(analyze);
+
+    expect(api.post).toHaveBeenCalledTimes(1);
+    expect(analyze).toBeDisabled();
+    expect(screen.getByRole('status')).toHaveTextContent('Документ анализируется');
+
+    resolveAnalysis({ data: { analysis: completedAnalysis } });
+    expect(await screen.findByText('Договор аренды')).toBeInTheDocument();
+  });
+
+  test('renders the successful analysis as structured sections', async () => {
+    api.get.mockResolvedValue({ data: { documents: [caseDocument], writable: false, canAnalyze: true } });
+    api.post.mockResolvedValue({ data: { analysis: completedAnalysis } });
+    renderDocuments();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Разобрать документ contract.pdf' }));
+
+    expect(await screen.findByRole('heading', { name: 'Тип документа' })).toBeInTheDocument();
+    expect(screen.getByText('Договор аренды')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Стороны' })).toBeInTheDocument();
+    expect(screen.getByText('ООО Арендодатель')).toBeInTheDocument();
+    expect(screen.getByText('Начало аренды')).toBeInTheDocument();
+    expect(screen.getByText('Аренда офисного помещения')).toBeInTheDocument();
+    expect(screen.getByText('Оплачивать аренду до пятого числа')).toBeInTheDocument();
+    expect(screen.getByText('Одностороннее изменение ставки')).toBeInTheDocument();
+    expect(screen.getByText(completedAnalysis.result.summary)).toBeInTheDocument();
+    expect(screen.getByText('Результат из кэша')).toBeInTheDocument();
+  });
+
+  test('opens an existing completed analysis without starting another POST', async () => {
+    api.get.mockResolvedValue({ data: { documents: [{ ...caseDocument, analysis: completedAnalysis }], writable: false, canAnalyze: true } });
+    renderDocuments();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Разобрать документ contract.pdf' }));
+
+    expect(await screen.findByText('Договор аренды')).toBeInTheDocument();
+    expect(api.post).not.toHaveBeenCalled();
+  });
+
+  test('shows a localized service error and retries the analysis', async () => {
+    api.get.mockResolvedValue({ data: { documents: [caseDocument], writable: false, canAnalyze: true } });
+    api.post
+      .mockRejectedValueOnce({ response: { status: 503, data: {} } })
+      .mockResolvedValueOnce({ data: { analysis: completedAnalysis } });
+    renderDocuments();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Разобрать документ contract.pdf' }));
+    expect(await screen.findByText('AI-анализ временно недоступен.')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Повторить' }));
+    expect(await screen.findByText('Договор аренды')).toBeInTheDocument();
+    expect(api.post).toHaveBeenCalledTimes(2);
   });
 });

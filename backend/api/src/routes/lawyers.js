@@ -33,12 +33,19 @@ const CATALOG_PROFILE_ATTRIBUTES = [
 const PUBLIC_REVIEW_ATTRIBUTES = [
   'id', 'rating', 'text', 'replyText', 'repliedAt', 'helpfulCount', 'createdAt',
 ];
+const PUBLIC_REVIEW_QUERY_ATTRIBUTES = [...PUBLIC_REVIEW_ATTRIBUTES, 'consultationId'];
 const anonymizeReviewer = (review) => {
   const plain = review?.toJSON ? review.toJSON() : review;
   if (!plain?.client) return plain;
   const parts = String(plain.client.name || '').trim().split(/\s+/).filter(Boolean);
-  const name = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : (parts[0] || 'Клиент');
+  const name = parts.length > 1 ? `${parts[0]} ${parts[1][0]}.` : 'Клиент';
   return { ...plain, client: { name, avatar: null } };
+};
+const serializePublicReview = (review) => {
+  const plain = anonymizeReviewer(review);
+  const verifiedConsultation = Boolean(plain?.consultationId);
+  if (plain) delete plain.consultationId;
+  return { ...plain, verifiedConsultation };
 };
 
 /**
@@ -409,7 +416,7 @@ router.get('/:id', async (req, res, next) => {
         {
           model: Review,
           as: 'receivedReviews',
-          attributes: PUBLIC_REVIEW_ATTRIBUTES,
+          attributes: PUBLIC_REVIEW_QUERY_ATTRIBUTES,
           where: { isHidden: false },
           required: false,
           include: [{ model: User, as: 'client', attributes: ['name'] }],
@@ -426,7 +433,7 @@ router.get('/:id', async (req, res, next) => {
     }
 
     const plainLawyer = lawyer.toJSON();
-    plainLawyer.receivedReviews = (plainLawyer.receivedReviews || []).map(anonymizeReviewer);
+    plainLawyer.receivedReviews = (plainLawyer.receivedReviews || []).map(serializePublicReview);
     const plainProfile = plainLawyer.profile && typeof plainLawyer.profile.toJSON === 'function'
       ? plainLawyer.profile.toJSON()
       : plainLawyer.profile;
@@ -440,6 +447,7 @@ router.get('/:id', async (req, res, next) => {
       consultationFormats: (plainProfile.consultationFormats || []).filter((format) => format !== 'zoom' || hasZoom),
       verifiedDocumentTypes: documentTypes.get(lawyer.id) || [],
       medianResponseMinutes: responseTimes.get(lawyer.id),
+      isVerifiedLawyer: true,
     };
     const presenceSnapshot = await presenceService.getSnapshot('lawyer');
     plainLawyer.presence = presenceService.getPresenceFromSnapshot(lawyer.id, presenceSnapshot);
@@ -452,14 +460,52 @@ router.get('/:id', async (req, res, next) => {
 // GET /api/lawyers/:id/reviews — отзывы конкретного юриста
 router.get('/:id/reviews', async (req, res, next) => {
   try {
-    const reviews = await Review.findAll({
-      where: { lawyerId: req.params.id, isHidden: false },
-      attributes: PUBLIC_REVIEW_ATTRIBUTES,
-      include: [{ model: User, as: 'client', attributes: ['name'] }],
-      order: [['createdAt', 'DESC']],
-      limit: 50,
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(20, Math.max(1, Number.parseInt(req.query.limit, 10) || 6));
+    const sort = req.query.sort === 'helpful' ? 'helpful' : 'newest';
+    const lawyer = await User.findOne({
+      where: { id: req.params.id, role: 'lawyer', isActive: true },
+      attributes: ['id'],
+      include: [{ model: LawyerProfile, as: 'profile', attributes: ['rating', 'reviewsCount'], where: { verificationStatus: 'approved' }, required: true }],
     });
-    res.json({ reviews: reviews.map(anonymizeReviewer) });
+    if (!lawyer) return res.status(404).json({ error: 'Юрист не найден' });
+
+    const { count, rows } = await Review.findAndCountAll({
+      where: { lawyerId: req.params.id, isHidden: false },
+      attributes: PUBLIC_REVIEW_QUERY_ATTRIBUTES,
+      include: [{ model: User, as: 'client', attributes: ['name'] }],
+      order: sort === 'helpful'
+        ? [['helpfulCount', 'DESC'], ['createdAt', 'DESC'], ['id', 'ASC']]
+        : [['createdAt', 'DESC'], ['id', 'ASC']],
+      limit,
+      offset: (page - 1) * limit,
+      distinct: true,
+    });
+    const distributionRows = await Review.findAll({
+      where: { lawyerId: req.params.id, isHidden: false },
+      attributes: ['rating', [fn('COUNT', col('id')), 'count']],
+      group: ['rating'],
+      raw: true,
+    });
+    const distribution = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+    distributionRows.forEach((item) => { distribution[Math.round(Number(item.rating))] = Number(item.count); });
+    const reviewsCount = Object.values(distribution).reduce((sum, value) => sum + value, 0);
+    const rating = reviewsCount
+      ? Object.entries(distribution).reduce((sum, [stars, value]) => sum + Number(stars) * value, 0) / reviewsCount
+      : 0;
+    return res.json({
+      reviews: rows.map(serializePublicReview),
+      page,
+      limit,
+      total: count,
+      totalPages: Math.max(1, Math.ceil(count / limit)),
+      sort,
+      summary: {
+        rating: Number(rating.toFixed(2)),
+        reviewsCount,
+        distribution,
+      },
+    });
   } catch (err) {
     next(err);
   }

@@ -64,6 +64,8 @@ const SupportFAB = () => {
   return (
     <>
       <Fab
+        className="support-fab"
+        aria-label={t('support.title')}
         onClick={() => setOpen(true)}
         sx={{
           position: 'fixed',
@@ -99,7 +101,7 @@ const SupportFAB = () => {
           <Typography variant="h6" sx={{ fontWeight: 400, color: axelionColors.textDark }}>
             {t('support.title')}
           </Typography>
-          <IconButton onClick={() => setOpen(false)} size="small">
+          <IconButton onClick={() => setOpen(false)} size="small" aria-label={t('common.close')}>
             <Close />
           </IconButton>
         </DialogTitle>

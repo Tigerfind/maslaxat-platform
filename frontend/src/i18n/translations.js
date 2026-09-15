@@ -39,6 +39,8 @@ const translations = {
       required: 'Обязательное поле',
       optional: 'Необязательно',
       retry: 'Повторить',
+      refresh: 'Обновить',
+      previous: 'Назад',
       loadFailed: 'Не удалось загрузить данные',
       loadFailedHint: 'Проверьте соединение и попробуйте ещё раз. Это ошибка загрузки, а не пустой список.',
     },
@@ -66,6 +68,8 @@ const translations = {
       required: 'Мажбурий майдон',
       optional: 'Ихтиёрий',
       retry: 'Қайта уриниш',
+      refresh: 'Янгилаш',
+      previous: 'Олдинги',
       loadFailed: 'Маълумотларни юклаб бўлмади',
       loadFailedHint: 'Уланишни текширинг ва қайта уриниб кўринг. Бу юклаш хатоси, бўш рўйхат эмас.',
     },
@@ -93,6 +97,8 @@ const translations = {
       required: 'Required field',
       optional: 'Optional',
       retry: 'Retry',
+      refresh: 'Refresh',
+      previous: 'Previous',
       loadFailed: 'Could not load data',
       loadFailedHint: 'Check your connection and try again. This is a load error, not an empty list.',
     },
@@ -262,6 +268,7 @@ const translations = {
   nav: {
     ru: {
       dashboard: 'Главная',
+      overview: 'Обзор', myLawyers: 'Мои юристы', messages: 'Сообщения', more: 'Ещё', deadlines: 'Сроки', cases: 'Мои дела',
       lawyers: 'Юристы',
       consultations: 'Консультации',
       documents: 'Документы',
@@ -281,6 +288,7 @@ const translations = {
     },
     uz: {
       dashboard: 'Бош саҳифа',
+      overview: 'Умумий', myLawyers: 'Менинг юристларим', messages: 'Хабарлар', more: 'Яна', deadlines: 'Муддатлар', cases: 'Менинг ишларим',
       lawyers: 'Юристлар',
       consultations: 'Консультациялар',
       documents: 'Ҳужжатлар',
@@ -300,6 +308,7 @@ const translations = {
     },
     en: {
       dashboard: 'Dashboard',
+      overview: 'Overview', myLawyers: 'My lawyers', messages: 'Messages', more: 'More', deadlines: 'Deadlines', cases: 'My cases',
       lawyers: 'Lawyers',
       consultations: 'Consultations',
       documents: 'Documents',
@@ -680,6 +689,11 @@ const translations = {
       upload: 'Загрузить документ', empty: 'Пока нет документов по делу',
       download: 'Скачать', delete: 'Удалить', mine: 'Мой', close: 'Закрыть',
       confirmDelete: 'Удалить этот документ?', uploaded: 'Документ добавлен', error: 'Ошибка. Попробуйте ещё раз', loadError: 'Не удалось загрузить документы', retry: 'Повторить',
+      analyze: 'Разобрать документ', analyzeAria: 'Разобрать документ {{name}}', analysisTitle: 'AI-разбор документа',
+      analysisProcessing: 'Документ анализируется…', analysisPersistedProcessing: 'Анализ выполняется. Обновите статус через некоторое время.', analysisRefresh: 'Обновить',
+      analysisFailed: 'Не удалось завершить анализ документа.', analysisError: 'Не удалось проанализировать документ. Попробуйте ещё раз.', analysisUnavailable: 'AI-анализ временно недоступен.', analysisRateLimit: 'Лимит AI-анализов исчерпан. Попробуйте позже.', analysisUnsupported: 'Не удалось извлечь текст. Для сканированного PDF требуется OCR или формат не поддерживается.', analysisNoResult: 'Результат анализа пока недоступен.',
+      analysisType: 'Тип документа', analysisParties: 'Стороны', analysisDates: 'Ключевые даты', analysisAmountsSubject: 'Суммы и предмет', analysisObligations: 'Обязательства', analysisRisks: 'Риски', analysisSummary: 'Краткое резюме',
+      analysisMetadata: 'Данные анализа', analysisStatus: 'Статус', analysisStatus_completed: 'Завершён', analysisStatus_processing: 'Выполняется', analysisStatus_pending: 'В очереди', analysisStatus_failed: 'Ошибка', analysisModel: 'Модель', analysisPromptVersion: 'Версия анализа', analysisCompletedAt: 'Завершён', analysisCached: 'Результат из кэша', analysisRerun: 'Запустить заново',
     },
     uz: {
       fileTooBig: 'Файл жуда катта. Максимум 10 МБ.', unsupportedFormat: 'Бу файл тури қўллаб-қувватланмайди. PDF, DOC, DOCX, TXT, JPG, PNG ёки WEBP ишлатинг.',
@@ -688,6 +702,11 @@ const translations = {
       upload: 'Ҳужжат юклаш', empty: 'Ҳали иш бўйича ҳужжат йўқ',
       download: 'Юклаб олиш', delete: 'Ўчириш', mine: 'Меники', close: 'Ёпиш',
       confirmDelete: 'Ушбу ҳужжатни ўчирасизми?', uploaded: 'Ҳужжат қўшилди', error: 'Хатолик. Қайта уриниб кўринг', loadError: 'Ҳужжатларни юклаб бўлмади', retry: 'Қайта уриниш',
+      analyze: 'Ҳужжатни таҳлил қилиш', analyzeAria: '{{name}} ҳужжатини таҳлил қилиш', analysisTitle: 'Ҳужжатнинг AI таҳлили',
+      analysisProcessing: 'Ҳужжат таҳлил қилинмоқда…', analysisPersistedProcessing: 'Таҳлил давом этмоқда. Бироздан сўнг ҳолатни янгиланг.', analysisRefresh: 'Янгилаш',
+      analysisFailed: 'Ҳужжат таҳлилини тугаллаб бўлмади.', analysisError: 'Ҳужжатни таҳлил қилиб бўлмади. Қайта уриниб кўринг.', analysisUnavailable: 'AI таҳлили вақтинча ишламайди.', analysisRateLimit: 'AI таҳлил лимити тугади. Кейинроқ қайта урининг.', analysisUnsupported: 'Матнни ажратиб бўлмади. Сканерланган PDF учун OCR керак ёки формат қўллаб-қувватланмайди.', analysisNoResult: 'Таҳлил натижаси ҳали тайёр эмас.',
+      analysisType: 'Ҳужжат тури', analysisParties: 'Томонлар', analysisDates: 'Муҳим саналар', analysisAmountsSubject: 'Суммалар ва предмет', analysisObligations: 'Мажбуриятлар', analysisRisks: 'Хавфлар', analysisSummary: 'Қисқача хулоса',
+      analysisMetadata: 'Таҳлил маълумотлари', analysisStatus: 'Ҳолат', analysisStatus_completed: 'Тугалланган', analysisStatus_processing: 'Бажарилмоқда', analysisStatus_pending: 'Навбатда', analysisStatus_failed: 'Хатолик', analysisModel: 'Модель', analysisPromptVersion: 'Таҳлил версияси', analysisCompletedAt: 'Тугалланган', analysisCached: 'Кэшдан олинган натижа', analysisRerun: 'Қайта ишга тушириш',
     },
     en: {
       fileTooBig: 'The file is too large. The maximum is 10 MB.', unsupportedFormat: 'This file type is not supported. Use PDF, DOC, DOCX, TXT, JPG, PNG, or WEBP.',
@@ -696,6 +715,11 @@ const translations = {
       upload: 'Upload document', empty: 'No case documents yet',
       download: 'Download', delete: 'Delete', mine: 'Mine', close: 'Close',
       confirmDelete: 'Delete this document?', uploaded: 'Document added', error: 'Error. Please try again', loadError: 'Could not load documents', retry: 'Retry',
+      analyze: 'Analyze document', analyzeAria: 'Analyze document {{name}}', analysisTitle: 'AI document analysis',
+      analysisProcessing: 'Analyzing the document…', analysisPersistedProcessing: 'Analysis is in progress. Refresh the status in a moment.', analysisRefresh: 'Refresh',
+      analysisFailed: 'The document analysis could not be completed.', analysisError: 'Could not analyze the document. Please try again.', analysisUnavailable: 'AI analysis is temporarily unavailable.', analysisRateLimit: 'The AI analysis limit has been reached. Try again later.', analysisUnsupported: 'Text could not be extracted. A scanned PDF requires OCR, or the format is unsupported.', analysisNoResult: 'The analysis result is not available yet.',
+      analysisType: 'Document type', analysisParties: 'Parties', analysisDates: 'Key dates', analysisAmountsSubject: 'Amounts and subject', analysisObligations: 'Obligations', analysisRisks: 'Risks', analysisSummary: 'Summary',
+      analysisMetadata: 'Analysis metadata', analysisStatus: 'Status', analysisStatus_completed: 'Completed', analysisStatus_processing: 'Processing', analysisStatus_pending: 'Queued', analysisStatus_failed: 'Failed', analysisModel: 'Model', analysisPromptVersion: 'Analysis version', analysisCompletedAt: 'Completed', analysisCached: 'Cached result', analysisRerun: 'Run again',
     },
   },
 
@@ -996,6 +1020,36 @@ const translations = {
     },
   },
 
+  lawyerProfileV2: {
+    ru: {
+      loadError: 'Не удалось загрузить профиль', loadErrorHint: 'Проверьте соединение и попробуйте ещё раз.', offlineTitle: 'Нет подключения к интернету', offlineHint: 'Восстановите соединение и повторите попытку.', unavailableDesc: 'Профиль не существует, недоступен или ещё не прошёл проверку.', retry: 'Повторить',
+      verifiedLawyer: 'Проверенный юрист', consultations: 'консультаций', hoursToReply: 'ч. до ответа', viewTimes: 'Посмотреть время', retryFavorite: 'Повторить загрузку избранного',
+      experience: 'Опыт работы', certificates: 'Лицензии и сертификаты', specializations: 'Специализации', workRegion: 'Регион работы', formats: 'Форматы консультации', expand: 'Показать полностью', collapse: 'Свернуть',
+      yearShort: 'г.', monthShort: 'мес.', current: 'Работает сейчас', present: 'по настоящее время', license: 'Лицензия', expired: 'Срок истёк', documentVerified: 'Документ проверен', statusNotShown: 'Статус не указан', issued: 'Выдан', validUntil: 'Действителен до', openCredential: 'Открыть подтверждение',
+      reviewSort: 'Сортировка отзывов', newest: 'Новые', helpful: 'Полезные', verifiedConsultation: 'Подтверждённая консультация', lawyerReply: 'Ответ юриста', helpfulCount: 'Полезно: {count}', showMore: 'Показать ещё', reviewsError: 'Не удалось загрузить отзывы. Профиль по-прежнему доступен.', loadingReviews: 'Загрузка отзывов',
+      bookingCard: 'Запись на консультацию', rate60: 'Тариф за 60 минут', duration: 'Длительность и цена', min: 'мин', nearestSlot: 'Ближайшее свободное время', noSlots: 'Свободных окон пока нет', bookShort: 'Записаться',
+      format_chat: 'Текстовый чат', format_audio: 'Аудиозвонок', format_webrtc: 'Видеозвонок', format_zoom: 'Zoom',
+    },
+    uz: {
+      loadError: 'Профилни юклаб бўлмади', loadErrorHint: 'Алоқани текшириб, қайта уриниб кўринг.', offlineTitle: 'Интернет алоқаси йўқ', offlineHint: 'Алоқани тиклаб, қайта уриниб кўринг.', unavailableDesc: 'Профил мавжуд эмас, очиқ эмас ёки ҳали текширилмаган.', retry: 'Қайта уриниш',
+      verifiedLawyer: 'Текширилган юрист', consultations: 'консультация', hoursToReply: 'соатда жавоб', viewTimes: 'Бўш вақтни кўриш', retryFavorite: 'Танланганларни қайта юклаш',
+      experience: 'Иш тажрибаси', certificates: 'Лицензия ва сертификатлар', specializations: 'Мутахассисликлар', workRegion: 'Иш ҳудуди', formats: 'Консультация форматлари', expand: 'Тўлиқ кўрсатиш', collapse: 'Йиғиш',
+      yearShort: 'йил', monthShort: 'ой', current: 'Ҳозир ишламоқда', present: 'ҳозиргача', license: 'Лицензия', expired: 'Муддати ўтган', documentVerified: 'Ҳужжат текширилган', statusNotShown: 'Ҳолат кўрсатилмаган', issued: 'Берилган', validUntil: 'Амал қилади', openCredential: 'Тасдиқни очиш',
+      reviewSort: 'Шарҳларни саралаш', newest: 'Янгилари', helpful: 'Фойдалилари', verifiedConsultation: 'Тасдиқланган консультация', lawyerReply: 'Юрист жавоби', helpfulCount: 'Фойдали: {count}', showMore: 'Яна кўрсатиш', reviewsError: 'Шарҳларни юклаб бўлмади. Профилдан фойдаланиш мумкин.', loadingReviews: 'Шарҳлар юкланмоқда',
+      bookingCard: 'Консультацияга ёзилиш', rate60: '60 дақиқалик тариф', duration: 'Давомийлик ва нарх', min: 'дақ', nearestSlot: 'Энг яқин бўш вақт', noSlots: 'Ҳозирча бўш вақт йўқ', bookShort: 'Ёзилиш',
+      format_chat: 'Матнли чат', format_audio: 'Аудио қўнғироқ', format_webrtc: 'Видео қўнғироқ', format_zoom: 'Zoom',
+    },
+    en: {
+      loadError: 'Could not load the profile', loadErrorHint: 'Check your connection and try again.', offlineTitle: 'You are offline', offlineHint: 'Reconnect to the internet and try again.', unavailableDesc: 'This profile does not exist, is unavailable, or has not been approved yet.', retry: 'Retry',
+      verifiedLawyer: 'Verified lawyer', consultations: 'consultations', hoursToReply: 'h to reply', viewTimes: 'View available times', retryFavorite: 'Retry loading favorites',
+      experience: 'Work experience', certificates: 'Licenses and certificates', specializations: 'Specializations', workRegion: 'Service region', formats: 'Consultation formats', expand: 'Show full text', collapse: 'Collapse',
+      yearShort: 'yr', monthShort: 'mo', current: 'Currently working', present: 'present', license: 'License', expired: 'Expired', documentVerified: 'Document verified', statusNotShown: 'Status not provided', issued: 'Issued', validUntil: 'Valid until', openCredential: 'Open credential',
+      reviewSort: 'Review sorting', newest: 'Newest', helpful: 'Helpful', verifiedConsultation: 'Verified consultation', lawyerReply: 'Lawyer response', helpfulCount: 'Helpful: {count}', showMore: 'Show more', reviewsError: 'Reviews could not be loaded. The profile is still available.', loadingReviews: 'Loading reviews',
+      bookingCard: 'Book a consultation', rate60: 'Rate for 60 minutes', duration: 'Duration and price', min: 'min', nearestSlot: 'Next available time', noSlots: 'No available times yet', bookShort: 'Book',
+      format_chat: 'Text chat', format_audio: 'Audio call', format_webrtc: 'Video call', format_zoom: 'Zoom',
+    },
+  },
+
   rating: {
     ru: {
       title: 'Как прошла консультация?', rateWith: 'Оцените консультацию с юристом {{name}}',
@@ -1119,21 +1173,60 @@ const translations = {
       },
   },
 
+  cabinet: {
+    ru: {
+      reminderMinutesHint: 'За сколько минут напомнить (10, 60, 1440 или своё значение)',
+      overview: 'Обзор', greeting: 'Здравствуйте, {{name}}', client: 'Клиент', offline: 'Нет подключения. Показаны последние загруженные данные.', widgetError: 'Этот блок временно недоступен.', pendingPayments: 'Ожидают оплаты', activeCases: 'Активные дела', unreadMessages: 'Непрочитанные', documentsAttention: 'Документы требуют внимания', nextConsultation: 'Следующая консультация', details: 'Подробнее', join: 'Присоединиться', noNextConsultation: 'Ближайших консультаций нет', quickActions: 'Быстрые действия', findLawyer: 'Найти юриста', uploadDocument: 'Загрузить документ', createCase: 'Создать дело', deadlines: 'Сроки', noDeadlines: 'Ближайших сроков нет', viewAll: 'Смотреть все', onboarding: 'Начало работы', onboardingComplete: 'Все шаги выполнены', onboarding_profile: 'Заполнить профиль', onboarding_document: 'Загрузить документ', onboarding_consultation: 'Записаться на консультацию', onboarding_email: 'Подтвердить email', recentPayments: 'Последние платежи', myLawyers: 'Мои юристы', myLawyersSubtitle: 'Избранные юристы и история консультаций', removeFavorite: 'Удалить из избранного', latestConsultation: 'Последняя консультация', profile: 'Профиль', bookAgain: 'Записаться снова', bookingUnavailable: 'Юрист сейчас недоступен для записи', favorites: 'Избранные', consultedLawyers: 'Ранее консультировали', noLawyers: 'У вас пока нет юристов', noLawyersHint: 'Добавьте юриста в избранное или запишитесь на консультацию.', pagination: 'Навигация по страницам', messages: 'Сообщения', unreadTotal: 'Непрочитанных: {{count}}', noMessages: 'Сообщений пока нет', noMessagesHint: 'Переписки с юристами появятся после начала консультации.', noMessagePreview: 'Нет сообщений', cases: 'Мои дела', casesSubtitle: 'Организуйте консультации, документы и сроки', newCase: 'Новое дело', noCases: 'Дел пока нет', noCasesHint: 'Создайте дело, чтобы собрать связанные материалы в одном месте.', caseTitle: 'Название дела', description: 'Описание', status: 'Статус', caseStatus_active: 'Активно', caseStatus_on_hold: 'Приостановлено', caseStatus_closed: 'Закрыто', noDescription: 'Без описания', open: 'Открыть', archive: 'В архив', timezone: 'Часовой пояс', overdue: 'Просроченные', upcoming: 'Предстоящие', completed: 'Завершённые', newDeadline: 'Новый срок', noDeadlinesHint: 'Добавьте важную дату к делу.', complete: 'Завершить', editDeadline: 'Изменить срок', caseLabel: 'Дело', deadlineTitle: 'Название срока', dueAt: 'Дата и время', reminder: 'Напоминание', reminder_60: 'За 1 час', reminder_1440: 'За 1 день', reminder_4320: 'За 3 дня', reminder_10080: 'За 7 дней', aiDeadlineWarning: 'Предложено AI, проверьте дату', aiDeadlineWarningLong: 'Этот срок определён AI. Сверьте дату с документом или юристом.', caseDetails: 'Детали дела', assignedLawyer: 'Юрист по делу', consultations: 'Консультации', documents: 'Документы', linkExisting: 'Связать существующее', sectionEmpty: 'В этом разделе пока ничего нет.', editCase: 'Редактировать дело', itemId: 'ID записи', itemIdHint: 'Укажите ID доступной вам консультации или документа', link: 'Связать'
+    },
+    uz: {
+      reminderMinutesHint: 'Неча дақиқа олдин эслатиш (10, 60, 1440 ёки ўз қийматингиз)',
+      overview: 'Умумий', greeting: 'Ассалому алайкум, {{name}}', client: 'Мижоз', offline: 'Интернет йўқ. Охирги юкланган маълумотлар кўрсатилмоқда.', widgetError: 'Бу бўлим вақтинча ишламайди.', pendingPayments: 'Кутилаётган тўловлар', activeCases: 'Фаол ишлар', unreadMessages: 'Ўқилмаганлар', documentsAttention: 'Эътибор талаб қилувчи ҳужжатлар', nextConsultation: 'Кейинги консультация', details: 'Батафсил', join: 'Қўшилиш', noNextConsultation: 'Яқин консультациялар йўқ', quickActions: 'Тезкор амаллар', findLawyer: 'Юрист топиш', uploadDocument: 'Ҳужжат юклаш', createCase: 'Иш яратиш', deadlines: 'Муддатлар', noDeadlines: 'Яқин муддатлар йўқ', viewAll: 'Барчаси', onboarding: 'Ишни бошлаш', onboardingComplete: 'Барча қадамлар бажарилди', onboarding_profile: 'Профилни тўлдириш', onboarding_document: 'Ҳужжат юклаш', onboarding_consultation: 'Консультацияга ёзилиш', onboarding_email: 'Email ни тасдиқлаш', recentPayments: 'Сўнгги тўловлар', myLawyers: 'Менинг юристларим', myLawyersSubtitle: 'Танланганлар ва консультациялар тарихи', removeFavorite: 'Танланганлардан олиб ташлаш', latestConsultation: 'Сўнгги консультация', profile: 'Профил', bookAgain: 'Қайта ёзилиш', bookingUnavailable: 'Юристга ҳозир ёзилиб бўлмайди', favorites: 'Танланганлар', consultedLawyers: 'Аввал консультация берганлар', noLawyers: 'Ҳали юристлар йўқ', noLawyersHint: 'Юристни танланганларга қўшинг ёки консультацияга ёзилинг.', pagination: 'Саҳифалар', messages: 'Хабарлар', unreadTotal: 'Ўқилмаган: {{count}}', noMessages: 'Хабарлар йўқ', noMessagesHint: 'Юрист билан ёзишмалар консультация бошлангач пайдо бўлади.', noMessagePreview: 'Хабарлар йўқ', cases: 'Менинг ишларим', casesSubtitle: 'Консультация, ҳужжат ва муддатларни бирлаштиринг', newCase: 'Янги иш', noCases: 'Ишлар йўқ', noCasesHint: 'Материалларни бир жойда сақлаш учун иш яратинг.', caseTitle: 'Иш номи', description: 'Тавсиф', status: 'Ҳолат', caseStatus_active: 'Фаол', caseStatus_on_hold: 'Тўхтатилган', caseStatus_closed: 'Ёпилган', noDescription: 'Тавсифсиз', open: 'Очиш', archive: 'Архивга', timezone: 'Вақт минтақаси', overdue: 'Муддати ўтган', upcoming: 'Келгуси', completed: 'Якунланган', newDeadline: 'Янги муддат', noDeadlinesHint: 'Ишга муҳим санани қўшинг.', complete: 'Якунлаш', editDeadline: 'Муддатни ўзгартириш', caseLabel: 'Иш', deadlineTitle: 'Муддат номи', dueAt: 'Сана ва вақт', reminder: 'Эслатма', reminder_60: '1 соат олдин', reminder_1440: '1 кун олдин', reminder_4320: '3 кун олдин', reminder_10080: '7 кун олдин', aiDeadlineWarning: 'AI таклиф қилди, санани текширинг', aiDeadlineWarningLong: 'Бу муддат AI томонидан аниқланган. Санани ҳужжат ёки юрист билан текширинг.', caseDetails: 'Иш тафсилотлари', assignedLawyer: 'Иш юристи', consultations: 'Консультациялар', documents: 'Ҳужжатлар', linkExisting: 'Мавжудини боғлаш', sectionEmpty: 'Бу бўлим ҳозирча бўш.', editCase: 'Ишни таҳрирлаш', itemId: 'Ёзув ID си', itemIdHint: 'Консультация ёки ҳужжат ID сини киритинг', link: 'Боғлаш'
+    },
+    en: {
+      reminderMinutesHint: 'Minutes before the deadline (10, 60, 1440, or a custom value)',
+      overview: 'Overview', greeting: 'Hello, {{name}}', client: 'Client', offline: 'You are offline. Showing the last loaded data.', widgetError: 'This widget is temporarily unavailable.', pendingPayments: 'Pending payments', activeCases: 'Active cases', unreadMessages: 'Unread messages', documentsAttention: 'Documents need attention', nextConsultation: 'Next consultation', details: 'Details', join: 'Join', noNextConsultation: 'No upcoming consultations', quickActions: 'Quick actions', findLawyer: 'Find a lawyer', uploadDocument: 'Upload a document', createCase: 'Create case', deadlines: 'Deadlines', noDeadlines: 'No upcoming deadlines', viewAll: 'View all', onboarding: 'Getting started', onboardingComplete: 'All steps completed', onboarding_profile: 'Complete profile', onboarding_document: 'Upload a document', onboarding_consultation: 'Book a consultation', onboarding_email: 'Verify email', recentPayments: 'Recent payments', myLawyers: 'My lawyers', myLawyersSubtitle: 'Favorites and consultation history', removeFavorite: 'Remove from favorites', latestConsultation: 'Latest consultation', profile: 'Profile', bookAgain: 'Book again', bookingUnavailable: 'This lawyer is not currently bookable', favorites: 'Favorites', consultedLawyers: 'Previously consulted', noLawyers: 'No lawyers yet', noLawyersHint: 'Favorite a lawyer or book a consultation.', pagination: 'Page navigation', messages: 'Messages', unreadTotal: 'Unread: {{count}}', noMessages: 'No messages yet', noMessagesHint: 'Lawyer conversations appear after a consultation starts.', noMessagePreview: 'No messages', cases: 'My cases', casesSubtitle: 'Organize consultations, documents and deadlines', newCase: 'New case', noCases: 'No cases yet', noCasesHint: 'Create a case to keep related materials together.', caseTitle: 'Case title', description: 'Description', status: 'Status', caseStatus_active: 'Active', caseStatus_on_hold: 'On hold', caseStatus_closed: 'Closed', noDescription: 'No description', open: 'Open', archive: 'Archive', timezone: 'Time zone', overdue: 'Overdue', upcoming: 'Upcoming', completed: 'Completed', newDeadline: 'New deadline', noDeadlinesHint: 'Add an important date to a case.', complete: 'Complete', editDeadline: 'Edit deadline', caseLabel: 'Case', deadlineTitle: 'Deadline title', dueAt: 'Date and time', reminder: 'Reminder', reminder_60: '1 hour before', reminder_1440: '1 day before', reminder_4320: '3 days before', reminder_10080: '7 days before', aiDeadlineWarning: 'Suggested by AI, verify date', aiDeadlineWarningLong: 'This deadline was identified by AI. Verify it against the document or with a lawyer.', caseDetails: 'Case details', assignedLawyer: 'Case lawyer', consultations: 'Consultations', documents: 'Documents', linkExisting: 'Link existing', sectionEmpty: 'Nothing in this section yet.', editCase: 'Edit case', itemId: 'Record ID', itemIdHint: 'Enter an accessible consultation or document ID', link: 'Link'
+    },
+  },
+
+  caseStatus: {
+    ru: { draft: 'Черновик', collecting_documents: 'Сбор документов', lawyer_review: 'Проверка юристом', consultation_scheduled: 'Консультация назначена', in_progress: 'В работе', waiting_for_client: 'Ожидает клиента', waiting_for_lawyer: 'Ожидает юриста', resolved: 'Решено', closed: 'Закрыто', archived: 'В архиве' },
+    uz: { draft: 'Қоралама', collecting_documents: 'Ҳужжатлар йиғилмоқда', lawyer_review: 'Юрист текшируви', consultation_scheduled: 'Консультация белгиланган', in_progress: 'Жараёнда', waiting_for_client: 'Мижоз кутилмоқда', waiting_for_lawyer: 'Юрист кутилмоқда', resolved: 'Ҳал қилинган', closed: 'Ёпилган', archived: 'Архивда' },
+    en: { draft: 'Draft', collecting_documents: 'Collecting documents', lawyer_review: 'Lawyer review', consultation_scheduled: 'Consultation scheduled', in_progress: 'In progress', waiting_for_client: 'Waiting for client', waiting_for_lawyer: 'Waiting for lawyer', resolved: 'Resolved', closed: 'Closed', archived: 'Archived' },
+  },
+
+  caseEvents: {
+    ru: { case_created: 'Дело создано', case_updated: 'Дело обновлено', case_archived: 'Дело перемещено в архив', case_unarchived: 'Дело восстановлено', consultation_linked: 'Консультация добавлена', consultation_unlinked: 'Консультация отвязана', consultation_status_changed: 'Статус консультации изменён', document_linked: 'Документ добавлен', document_unlinked: 'Документ отвязан', document_renamed: 'Документ переименован', document_archived: 'Документ архивирован', document_unarchived: 'Документ восстановлен', document_accessed: 'Документ открыт', deadline_created: 'Срок добавлен', deadline_updated: 'Срок изменён', deadline_completed: 'Срок выполнен', deadline_deleted: 'Срок отменён', payment_status_changed: 'Статус платежа изменён', refund_status_changed: 'Статус возврата изменён' },
+    uz: { case_created: 'Иш яратилди', case_updated: 'Иш янгиланди', case_archived: 'Иш архивга ўтказилди', case_unarchived: 'Иш тикланди', consultation_linked: 'Консультация қўшилди', consultation_unlinked: 'Консультация ажратилди', consultation_status_changed: 'Консультация ҳолати ўзгарди', document_linked: 'Ҳужжат қўшилди', document_unlinked: 'Ҳужжат ажратилди', document_renamed: 'Ҳужжат номи ўзгарди', document_archived: 'Ҳужжат архивланди', document_unarchived: 'Ҳужжат тикланди', document_accessed: 'Ҳужжат очилди', deadline_created: 'Муддат қўшилди', deadline_updated: 'Муддат ўзгарди', deadline_completed: 'Муддат бажарилди', deadline_deleted: 'Муддат бекор қилинди', payment_status_changed: 'Тўлов ҳолати ўзгарди', refund_status_changed: 'Қайтариш ҳолати ўзгарди' },
+    en: { case_created: 'Case created', case_updated: 'Case updated', case_archived: 'Case archived', case_unarchived: 'Case restored', consultation_linked: 'Consultation linked', consultation_unlinked: 'Consultation unlinked', consultation_status_changed: 'Consultation status changed', document_linked: 'Document linked', document_unlinked: 'Document unlinked', document_renamed: 'Document renamed', document_archived: 'Document archived', document_unarchived: 'Document restored', document_accessed: 'Document opened', deadline_created: 'Deadline added', deadline_updated: 'Deadline updated', deadline_completed: 'Deadline completed', deadline_deleted: 'Deadline cancelled', payment_status_changed: 'Payment status changed', refund_status_changed: 'Refund status changed' },
+  },
+
+  cabinetDetail: {
+    ru: { conversations: 'Диалоги', timeline: 'Хронология', caseLawyers: 'Юристы дела', unlink: 'Отвязать' },
+    uz: { conversations: 'Суҳбатлар', timeline: 'Хронология', caseLawyers: 'Иш юристлари', unlink: 'Ажратиш' },
+    en: { conversations: 'Conversations', timeline: 'Timeline', caseLawyers: 'Case lawyers', unlink: 'Unlink' },
+  },
+
+  onboardingStatus: {
+    ru: { emailVerified: 'Подтвердить email', phoneVerified: 'Подтвердить телефон', profileComplete: 'Заполнить профиль', hasCases: 'Создать первое дело' },
+    uz: { emailVerified: 'Email ни тасдиқлаш', phoneVerified: 'Телефонни тасдиқлаш', profileComplete: 'Профилни тўлдириш', hasCases: 'Биринчи ишни яратиш' },
+    en: { emailVerified: 'Verify email', phoneVerified: 'Verify phone', profileComplete: 'Complete profile', hasCases: 'Create your first case' },
+  },
+
   payments: {
     ru: {
       title: 'Платежи', subtitle: 'История ваших оплат и чеки', consultation: 'Консультация', subscription: 'Подписка',
       sum: 'сум', empty: 'Платежей пока нет', loadError: 'Не удалось загрузить платежи', emptySub: 'Здесь появятся ваши оплаты консультаций и подписок',
-      statusPaid: 'Оплачено', statusPending: 'Ожидание', statusFailed: 'Ошибка', statusRefunded: 'Возврат',
+      statusPaid: 'Оплачено', statusPending: 'Ожидание', statusFailed: 'Ошибка', statusRefunded: 'Возврат', tab_all: 'Все', tab_pending: 'Ожидают', tab_paid: 'Оплачены', tab_refunds: 'Возвраты', tab_failed: 'Ошибки', status_paid: 'Оплачено', status_pending: 'Ожидание', status_failed: 'Ошибка', status_refunded: 'Возвращено', status_refund_pending: 'Возврат обрабатывается', status_refund_requested: 'Возврат запрошен', status_refund_failed: 'Ошибка возврата', continuePayment: 'Продолжить оплату', retryPayment: 'Повторить оплату', checkStatus: 'Проверить статус', receipt: 'Чек',
     },
     uz: {
       title: 'Тўловлар', subtitle: 'Тўловлар тарихи ва чеклар', consultation: 'Консультация', subscription: 'Обуна',
       sum: 'сўм', empty: 'Ҳали тўловлар йўқ', loadError: 'Тўловларни юклаб бўлмади', emptySub: 'Бу ерда консультация ва обуна тўловларингиз пайдо бўлади',
-      statusPaid: 'Тўланган', statusPending: 'Кутилмоқда', statusFailed: 'Хатолик', statusRefunded: 'Қайтарилди',
+      statusPaid: 'Тўланган', statusPending: 'Кутилмоқда', statusFailed: 'Хатолик', statusRefunded: 'Қайтарилди', tab_all: 'Барчаси', tab_pending: 'Кутилмоқда', tab_paid: 'Тўланган', tab_refunds: 'Қайтаришлар', tab_failed: 'Хатолар', status_paid: 'Тўланган', status_pending: 'Кутилмоқда', status_failed: 'Хатолик', status_refunded: 'Қайтарилди', status_refund_pending: 'Қайтариш бажарилмоқда', status_refund_requested: 'Қайтариш сўралди', status_refund_failed: 'Қайтариш хатоси', continuePayment: 'Тўловни давом эттириш', retryPayment: 'Қайта тўлаш', checkStatus: 'Ҳолатни текшириш', receipt: 'Чек',
     },
     en: {
       title: 'Payments', subtitle: 'Your payment history and receipts', consultation: 'Consultation', subscription: 'Subscription',
       sum: 'UZS', empty: 'No payments yet', loadError: 'Could not load payments', emptySub: 'Your consultation and subscription payments will appear here',
-      statusPaid: 'Paid', statusPending: 'Pending', statusFailed: 'Failed', statusRefunded: 'Refunded',
+      statusPaid: 'Paid', statusPending: 'Pending', statusFailed: 'Failed', statusRefunded: 'Refunded', tab_all: 'All', tab_pending: 'Pending', tab_paid: 'Paid', tab_refunds: 'Refunds', tab_failed: 'Failed', status_paid: 'Paid', status_pending: 'Pending', status_failed: 'Failed', status_refunded: 'Refunded', status_refund_pending: 'Refund processing', status_refund_requested: 'Refund requested', status_refund_failed: 'Refund failed', continuePayment: 'Continue payment', retryPayment: 'Retry payment', checkStatus: 'Check status', receipt: 'Receipt',
     },
   },
 
@@ -1192,9 +1285,9 @@ const translations = {
   },
 
   emailBanner: {
-    ru: { prompt: 'Пожалуйста, подтвердите ваш email. Проверьте входящие письма.', resend: 'Отправить снова', sending: 'Отправка…', sent: 'Письмо отправлено — проверьте почту', error: 'Не удалось отправить письмо. Попробуйте ещё раз.' },
-    uz: { prompt: 'Илтимос, email манзилингизни тасдиқланг. Кирувчи хатларни текширинг.', resend: 'Қайта юбориш', sending: 'Юборилмоқда…', sent: 'Хат юборилди — почтани текширинг', error: 'Хатни юбориб бўлмади. Қайта уриниб кўринг.' },
-    en: { prompt: 'Please verify your email. Check your inbox.', resend: 'Resend', sending: 'Sending…', sent: 'Email sent — check your inbox', error: 'Could not send the email. Please try again.' },
+    ru: { prompt: 'Подтвердите email 6-значным кодом из письма.', enterCode: 'Ввести код' },
+    uz: { prompt: 'Email-ни хатдаги 6 хонали код билан тасдиқланг.', enterCode: 'Кодни киритиш' },
+    en: { prompt: 'Verify your email with the 6-digit code from the email.', enterCode: 'Enter code' },
   },
 
   specNames: {
@@ -1293,9 +1386,9 @@ const translations = {
   },
 
   authFlow: {
-    ru: { forgotTitle: 'Сброс пароля', sentTitle: 'Письмо отправлено', sentText: 'Если аккаунт с этим email существует, вы получите ссылку для сброса пароля.', backToLogin: 'Вернуться к входу', forgotIntro: 'Введите email, указанный при регистрации. Мы отправим ссылку для сброса пароля.', sending: 'Отправка…', sendLink: 'Отправить ссылку', error: 'Произошла ошибка', resetInvalid: 'Недействительная ссылка для сброса пароля', requestNew: 'Запросить новую ссылку', resetTitle: 'Новый пароль', resetDoneTitle: 'Пароль изменён', resetDoneText: 'Вы можете войти с новым паролем.', login: 'Войти', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите пароль', pwMin: 'Пароль должен быть минимум 8 символов', pwMismatch: 'Пароли не совпадают', saving: 'Сохранение…', savePassword: 'Сохранить пароль', verifyNoToken: 'Токен верификации не найден', verifyChecking: 'Проверяем токен…', verifyOkTitle: 'Email подтверждён', verifyOk: 'Email успешно подтверждён!', verifyBad: 'Недействительная или просроченная ссылка', verifyErrTitle: 'Ошибка верификации', goDashboard: 'Перейти в личный кабинет', goHome: 'На главную' },
-    uz: { forgotTitle: 'Паролни тиклаш', sentTitle: 'Хат юборилди', sentText: 'Агар ушбу email билан ҳисоб мавжуд бўлса, паролни тиклаш ҳаволасини оласиз.', backToLogin: 'Киришга қайтиш', forgotIntro: 'Рўйхатдан ўтишда кўрсатилган email-ни киритинг. Паролни тиклаш ҳаволасини юборамиз.', sending: 'Юборилмоқда…', sendLink: 'Ҳавола юбориш', error: 'Хатолик юз берди', resetInvalid: 'Паролни тиклаш ҳаволаси нотўғри', requestNew: 'Янги ҳавола сўраш', resetTitle: 'Янги парол', resetDoneTitle: 'Парол ўзгартирилди', resetDoneText: 'Янги парол билан кириши мумкин.', login: 'Кириш', newPassword: 'Янги парол', confirmPassword: 'Паролни тасдиқланг', pwMin: 'Парол камида 8 белги бўлиши керак', pwMismatch: 'Пароллар мос келмайди', saving: 'Сақланмоқда…', savePassword: 'Паролни сақлаш', verifyNoToken: 'Тасдиқлаш токени топилмади', verifyChecking: 'Токен текширилмоқда…', verifyOkTitle: 'Email тасдиқланди', verifyOk: 'Email муваффақиятли тасдиқланди!', verifyBad: 'Нотўғри ёки муддати ўтган ҳавола', verifyErrTitle: 'Тасдиқлашда хатолик', goDashboard: 'Шахсий кабинетга ўтиш', goHome: 'Бош саҳифага' },
-    en: { forgotTitle: 'Reset password', sentTitle: 'Email sent', sentText: 'If an account with this email exists, you will receive a password reset link.', backToLogin: 'Back to login', forgotIntro: 'Enter the email you registered with. We will send a password reset link.', sending: 'Sending…', sendLink: 'Send link', error: 'An error occurred', resetInvalid: 'Invalid password reset link', requestNew: 'Request a new link', resetTitle: 'New password', resetDoneTitle: 'Password changed', resetDoneText: 'You can now log in with your new password.', login: 'Log in', newPassword: 'New password', confirmPassword: 'Confirm password', pwMin: 'Password must be at least 8 characters', pwMismatch: 'Passwords do not match', saving: 'Saving…', savePassword: 'Save password', verifyNoToken: 'Verification token not found', verifyChecking: 'Verifying token…', verifyOkTitle: 'Email verified', verifyOk: 'Email verified successfully!', verifyBad: 'Invalid or expired link', verifyErrTitle: 'Verification error', goDashboard: 'Go to dashboard', goHome: 'Home' },
+    ru: { forgotTitle: 'Сброс пароля', sentTitle: 'Письмо отправлено', sentText: 'Если аккаунт с этим email существует, вы получите ссылку для сброса пароля.', backToLogin: 'Вернуться к входу', forgotIntro: 'Введите email, указанный при регистрации. Мы отправим ссылку для сброса пароля.', sending: 'Отправка…', sendLink: 'Отправить ссылку', error: 'Произошла ошибка', resetInvalid: 'Недействительная ссылка для сброса пароля', requestNew: 'Запросить новую ссылку', resetTitle: 'Новый пароль', resetDoneTitle: 'Пароль изменён', resetDoneText: 'Вы можете войти с новым паролем.', login: 'Войти', newPassword: 'Новый пароль', confirmPassword: 'Подтвердите пароль', pwMin: 'Пароль должен быть минимум 8 символов', pwMismatch: 'Пароли не совпадают', saving: 'Сохранение…', savePassword: 'Сохранить пароль', verifyNoToken: 'Токен верификации не найден', verifyChecking: 'Проверяем ссылку…', verifyOkTitle: 'Email подтверждён', verifyOk: 'Email успешно подтверждён!', verifyBad: 'Недействительная или просроченная ссылка', verifyErrTitle: 'Ошибка верификации', goDashboard: 'Перейти в личный кабинет', goHome: 'На главную', verifyCodeTitle: 'Подтвердите email', verifyCodeText: 'Мы отправили 6-значный код на', verifyCodeLabel: 'Код из письма', verifySubmit: 'Подтвердить', verifyResend: 'Отправить новый код', verifyResendIn: 'Повторная отправка через, сек.:', verifyCodeSent: 'Новый код отправлен. Проверьте почту и папку «Спам».', verifyDeliveryFailed: 'Письмо не отправлено. Нажмите «Отправить новый код».', verifyBadCode: 'Неверный или просроченный код', verifyLoginTitle: 'Войдите в аккаунт', verifyLoginText: 'Для безопасного подтверждения email сначала войдите в аккаунт.' },
+    uz: { forgotTitle: 'Паролни тиклаш', sentTitle: 'Хат юборилди', sentText: 'Агар ушбу email билан ҳисоб мавжуд бўлса, паролни тиклаш ҳаволасини оласиз.', backToLogin: 'Киришга қайтиш', forgotIntro: 'Рўйхатдан ўтишда кўрсатилган email-ни киритинг. Паролни тиклаш ҳаволасини юборамиз.', sending: 'Юборилмоқда…', sendLink: 'Ҳавола юбориш', error: 'Хатолик юз берди', resetInvalid: 'Паролни тиклаш ҳаволаси нотўғри', requestNew: 'Янги ҳавола сўраш', resetTitle: 'Янги парол', resetDoneTitle: 'Парол ўзгартирилди', resetDoneText: 'Янги парол билан кириши мумкин.', login: 'Кириш', newPassword: 'Янги парол', confirmPassword: 'Паролни тасдиқланг', pwMin: 'Парол камида 8 белги бўлиши керак', pwMismatch: 'Пароллар мос келмайди', saving: 'Сақланмоқда…', savePassword: 'Паролни сақлаш', verifyNoToken: 'Тасдиқлаш токени топилмади', verifyChecking: 'Ҳавола текширилмоқда…', verifyOkTitle: 'Email тасдиқланди', verifyOk: 'Email муваффақиятли тасдиқланди!', verifyBad: 'Нотўғри ёки муддати ўтган ҳавола', verifyErrTitle: 'Тасдиқлашда хатолик', goDashboard: 'Шахсий кабинетга ўтиш', goHome: 'Бош саҳифага', verifyCodeTitle: 'Email-ни тасдиқланг', verifyCodeText: '6 хонали код қуйидаги манзилга юборилди:', verifyCodeLabel: 'Хатдаги код', verifySubmit: 'Тасдиқлаш', verifyResend: 'Янги код юбориш', verifyResendIn: 'Қайта юборишга, сония:', verifyCodeSent: 'Янги код юборилди. Почта ва «Спам» папкасини текширинг.', verifyDeliveryFailed: 'Хат юборилмади. «Янги код юбориш» тугмасини босинг.', verifyBadCode: 'Код нотўғри ёки муддати ўтган', verifyLoginTitle: 'Аккаунтга киринг', verifyLoginText: 'Email-ни хавфсиз тасдиқлаш учун аввал аккаунтга киринг.' },
+    en: { forgotTitle: 'Reset password', sentTitle: 'Email sent', sentText: 'If an account with this email exists, you will receive a password reset link.', backToLogin: 'Back to login', forgotIntro: 'Enter the email you registered with. We will send a password reset link.', sending: 'Sending…', sendLink: 'Send link', error: 'An error occurred', resetInvalid: 'Invalid password reset link', requestNew: 'Request a new link', resetTitle: 'New password', resetDoneTitle: 'Password changed', resetDoneText: 'You can now log in with your new password.', login: 'Log in', newPassword: 'New password', confirmPassword: 'Confirm password', pwMin: 'Password must be at least 8 characters', pwMismatch: 'Passwords do not match', saving: 'Saving…', savePassword: 'Save password', verifyNoToken: 'Verification token not found', verifyChecking: 'Verifying link…', verifyOkTitle: 'Email verified', verifyOk: 'Email verified successfully!', verifyBad: 'Invalid or expired link', verifyErrTitle: 'Verification error', goDashboard: 'Go to dashboard', goHome: 'Home', verifyCodeTitle: 'Verify your email', verifyCodeText: 'We sent a 6-digit code to', verifyCodeLabel: 'Email code', verifySubmit: 'Verify', verifyResend: 'Send a new code', verifyResendIn: 'Resend in seconds:', verifyCodeSent: 'A new code was sent. Check your inbox and spam folder.', verifyDeliveryFailed: 'The email was not sent. Select “Send a new code”.', verifyBadCode: 'Invalid or expired code', verifyLoginTitle: 'Log in to your account', verifyLoginText: 'Log in first to verify your email securely.' },
   },
 
   analytics: {

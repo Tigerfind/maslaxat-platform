@@ -8,6 +8,10 @@ import {
   Snackbar,
   CircularProgress,
   Tooltip,
+  TextField,
+  MenuItem,
+  DialogActions,
+  Button,
 } from '@mui/material';
 import {
   CloudUploadOutlined,
@@ -21,6 +25,8 @@ import {
   LightbulbOutlined,
   VisibilityOutlined,
   FolderOutlined,
+  ArchiveOutlined,
+  LinkOutlined,
 } from '@mui/icons-material';
 import clientService from '../../services/clientService';
 import GlassShell from '../../components/GlassKit/GlassShell';
@@ -108,6 +114,9 @@ const DocumentsPageGlass = () => {
   const [selectedFile, setSelectedFile] = useState(null);
   const [selectedCategory, setSelectedCategory] = useState(null);
   const [filterCategory, setFilterCategory] = useState(null); // null = все категории
+  const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
   const [uploadDialogOpen, setUploadDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [aiDialogOpen, setAiDialogOpen] = useState(false);
@@ -119,14 +128,11 @@ const DocumentsPageGlass = () => {
   const [previewUrl, setPreviewUrl] = useState(null);
   const [previewKind, setPreviewKind] = useState(null); // 'image' | 'pdf' | 'other'
   const [previewLoading, setPreviewLoading] = useState(false);
+  const [caseDialogOpen, setCaseDialogOpen] = useState(false);
+  const [cases, setCases] = useState([]);
+  const [caseId, setCaseId] = useState('');
 
   const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-
-  useEffect(() => {
-    fetchDocuments();
-    // Initial load only; upload/delete actions refresh explicitly.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   useEffect(() => () => {
     if (previewUrl) window.URL.revokeObjectURL(previewUrl);
@@ -136,8 +142,9 @@ const DocumentsPageGlass = () => {
     try {
       setIsLoading(true);
       setLoadError(null);
-      const data = await clientService.documents.getDocuments();
-      setDocuments(Array.isArray(data) ? data : []);
+      const data = await clientService.documents.getDocuments({ page, limit: 12, search: search || undefined, category: filterCategory || undefined });
+      setDocuments(data.documents || []);
+      setTotalPages(data.totalPages || 1);
     } catch (error) {
       console.error('Error fetching documents:', error);
       setLoadError(error);
@@ -145,6 +152,45 @@ const DocumentsPageGlass = () => {
       setDocuments([]);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const timer = setTimeout(fetchDocuments, 300);
+    return () => clearTimeout(timer);
+    // Server-side list controls refresh independently from upload/delete actions.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [page, search, filterCategory]);
+
+  const handleArchive = async (doc) => {
+    try {
+      await clientService.documents.archive(doc.id, true);
+      setDocuments((items) => items.filter((item) => item.id !== doc.id));
+    } catch (error) {
+      showSnackbar(error.response?.data?.message || t('common.error'), 'error');
+    }
+  };
+
+  const openCaseDialog = async (doc) => {
+    setSelectedDocument(doc);
+    setCaseId(doc.clientCaseId || doc.caseId || '');
+    setCaseDialogOpen(true);
+    try {
+      const data = await clientService.cabinet.getCases({ limit: 100 });
+      setCases(data.cases);
+    } catch (error) {
+      setCaseDialogOpen(false);
+      showSnackbar(error.response?.data?.message || t('common.error'), 'error');
+    }
+  };
+
+  const handleLinkCase = async () => {
+    try {
+      await clientService.documents.linkCase(selectedDocument.id, caseId || null, selectedDocument.clientCaseId || selectedDocument.caseId || null);
+      setCaseDialogOpen(false);
+      await fetchDocuments();
+    } catch (error) {
+      showSnackbar(error.response?.data?.message || t('common.error'), 'error');
     }
   };
 
@@ -348,6 +394,8 @@ const DocumentsPageGlass = () => {
       subtitle={t('documents.subtitle')}
     >
       <div style={{ maxWidth: 1120, margin: '0 auto' }}>
+        <label htmlFor="documents-search" style={{ display: 'block', fontSize: 12, color: 'var(--text3)', marginBottom: 6 }}>{t('common.search')}</label>
+        <input id="documents-search" type="search" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} style={{ width: '100%', minHeight: 44, marginBottom: 16, padding: '10px 14px', border: '1px solid var(--border)', borderRadius: 10, background: 'var(--surface)', color: 'var(--text)' }} />
         {/* Upload CTA */}
         <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 22 }}>
           <button
@@ -484,6 +532,7 @@ const DocumentsPageGlass = () => {
                         </span>
                       </div>
                     )}
+                    {(doc.case?.title || doc.caseTitle) && <div style={{ marginTop: 8, fontSize: 12, color: 'var(--text3)' }}>{t('cabinet.caseLabel')}: {doc.case?.title || doc.caseTitle}</div>}
 
                     {/* AI score */}
                     {score !== null && score !== undefined && (
@@ -552,6 +601,12 @@ const DocumentsPageGlass = () => {
                           <DeleteOutlined sx={{ fontSize: 18 }} />
                         </button>
                       </Tooltip>
+                      <Tooltip title={t('cabinet.archive')}>
+                        <button type="button" aria-label={`${t('cabinet.archive')}: ${doc.name}`} onClick={() => handleArchive(doc)} style={{ width: 44, height: 44, flexShrink: 0, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><ArchiveOutlined sx={{ fontSize: 18 }} /></button>
+                      </Tooltip>
+                      <Tooltip title={t('cabinet.linkExisting')}>
+                        <button type="button" aria-label={`${t('cabinet.linkExisting')}: ${doc.name}`} onClick={() => openCaseDialog(doc)} style={{ width: 44, height: 44, flexShrink: 0, background: 'transparent', border: '1px solid var(--border)', color: 'var(--text2)', borderRadius: 'var(--radius)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><LinkOutlined sx={{ fontSize: 18 }} /></button>
+                      </Tooltip>
                     </div>
                   </div>
                 </Grid>
@@ -559,6 +614,7 @@ const DocumentsPageGlass = () => {
             })}
           </Grid>
         )}
+        {totalPages > 1 && <div style={{ display: 'flex', justifyContent: 'center', gap: 8, marginTop: 24 }}><button disabled={page <= 1} onClick={() => setPage((x) => x - 1)} style={{ ...ghostBtn, minHeight: 44, padding: '8px 16px' }}>{t('common.previous')}</button><span style={{ padding: 12 }}>{page} / {totalPages}</span><button disabled={page >= totalPages} onClick={() => setPage((x) => x + 1)} style={{ ...ghostBtn, minHeight: 44, padding: '8px 16px' }}>{t('common.next')}</button></div>}
       </div>
 
       {/* ── Upload dialog (07 CTA → 08 layout) ─────────────────── */}
@@ -887,6 +943,11 @@ const DocumentsPageGlass = () => {
       </Dialog>
 
       {/* Snackbar */}
+      <Dialog open={caseDialogOpen} onClose={() => setCaseDialogOpen(false)} fullWidth maxWidth="xs">
+        <DialogContent><TextField select fullWidth label={t('cabinet.caseLabel')} value={caseId} onChange={(event) => setCaseId(event.target.value)} sx={{ mt: 1 }}><MenuItem value="">{t('common.noData')}</MenuItem>{cases.map((item) => <MenuItem key={item.id} value={item.id}>{item.title}</MenuItem>)}</TextField></DialogContent>
+        <DialogActions><Button onClick={() => setCaseDialogOpen(false)}>{t('common.cancel')}</Button><Button variant="contained" onClick={handleLinkCase}>{t('common.save')}</Button></DialogActions>
+      </Dialog>
+
       <Snackbar
         open={snackbar.open}
         autoHideDuration={4000}

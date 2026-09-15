@@ -17,6 +17,9 @@ const getTransporter = async () => {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASS,
       },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 15000,
     });
   } else {
     // Dev fallback: Ethereal test account
@@ -36,7 +39,7 @@ const getTransporter = async () => {
   return transporter;
 };
 
-const sendMail = async ({ to, subject, html }) => {
+const sendMail = async ({ to, subject, html, text }) => {
   // В проде без настроенного SMTP не пытаемся слать через Ethereal (внешний
   // сетевой вызов, которого в проде быть не должно) — тихо пропускаем.
   if (process.env.NODE_ENV === 'production' && !process.env.SMTP_HOST) {
@@ -46,7 +49,7 @@ const sendMail = async ({ to, subject, html }) => {
   const t = await getTransporter();
   const from = process.env.SMTP_FROM || '"MaslaXat" <noreply@maslaxat.uz>';
 
-  const info = await t.sendMail({ from, to, subject, html });
+  const info = await t.sendMail({ from, to, subject, html, text });
 
   // In dev, log the preview URL from Ethereal
   if (!process.env.SMTP_HOST) {
@@ -89,13 +92,11 @@ const sendPasswordResetEmail = async (email, token) => {
   });
 };
 
-const sendVerificationEmail = async (email, token) => {
-  const baseUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
-  const verifyUrl = `${baseUrl}/verify-email?token=${token}`;
-
+const sendVerificationEmail = async (email, code) => {
   return sendMail({
     to: email,
-    subject: 'Подтвердите ваш email — MaslaXat',
+    subject: `${code} — код подтверждения MaslaXat`,
+    text: `Код подтверждения MaslaXat: ${code}. Код действует 10 минут. Никому не сообщайте этот код.`,
     html: `
       <div style="font-family: 'Inter', Arial, sans-serif; max-width: 520px; margin: 0 auto; padding: 40px 24px; color: #2D2D2D;">
         <div style="text-align: center; margin-bottom: 32px;">
@@ -103,15 +104,13 @@ const sendVerificationEmail = async (email, token) => {
         </div>
         <h2 style="font-size: 18px; font-weight: 400; margin-bottom: 16px;">Подтверждение email</h2>
         <p style="color: #6B6B6B; line-height: 1.6; margin-bottom: 24px;">
-          Добро пожаловать на MaslaXat! Пожалуйста, подтвердите ваш email адрес, нажав на кнопку ниже:
+          Добро пожаловать на MaslaXat! Введите этот код на странице подтверждения email:
         </p>
-        <div style="text-align: center; margin: 32px 0;">
-          <a href="${verifyUrl}" style="display: inline-block; background: #B8956E; color: white; padding: 14px 40px; border-radius: 8px; text-decoration: none; font-weight: 500; letter-spacing: 0.1em; text-transform: uppercase; font-size: 14px;">
-            Подтвердить email
-          </a>
+        <div style="text-align: center; margin: 32px 0; padding: 20px; background: #F5F1EB; border-radius: 8px;">
+          <span style="color: #2D2D2D; font-size: 32px; font-weight: 600; letter-spacing: 0.3em;">${code}</span>
         </div>
         <p style="color: #9A9A9A; font-size: 13px; line-height: 1.6;">
-          Если вы не регистрировались на MaslaXat, просто проигнорируйте это письмо.
+          Код действует 10 минут. Никому не сообщайте его. Если вы не регистрировались на MaslaXat, просто проигнорируйте это письмо.
         </p>
         <hr style="border: none; border-top: 1px solid #E8E4DE; margin: 32px 0;" />
         <p style="color: #9A9A9A; font-size: 12px; text-align: center;">

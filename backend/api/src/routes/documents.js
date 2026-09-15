@@ -5,7 +5,8 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const rateLimit = require('express-rate-limit');
-const { Document } = require('../models');
+const { Op } = require('sequelize');
+const { sequelize, Document, ClientCase, CaseAuditEvent } = require('../models');
 const { authenticate } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { DOCUMENT_EXTENSIONS, fileFilterFor, validateUploadSignatures, cleanupUploadedFiles, createWithinUploadQuota } = require('../services/uploadSecurity');
@@ -61,14 +62,77 @@ const upload = multer({
 // GET /api/documents — list user documents
 router.get('/', authenticate, async (req, res, next) => {
   try {
-    const documents = await Document.findAll({
-      where: { userId: req.userId },
+    const paged = req.query.page !== undefined || req.query.limit !== undefined;
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const where = { userId: req.userId };
+    if (req.query.status && ['pending', 'verified', 'issues', 'rejected'].includes(req.query.status)) where.status = req.query.status;
+    if (req.query.category) where.category = String(req.query.category).trim().slice(0, 50);
+    if (req.query.caseId) where.clientCaseId = req.query.caseId;
+    if (req.query.archived === 'true') where.archivedAt = { [Op.ne]: null };
+    else if (req.query.archived !== 'all') where.archivedAt = null;
+    const search = typeof req.query.search === 'string' ? req.query.search.trim().slice(0, 100) : '';
+    if (search) where.name = { [Op.iLike]: `%${search.replace(/[\\%_]/g, '\\$&')}%` };
+    const query = {
+      where,
       order: [['createdAt', 'DESC']],
-    });
-    res.json(documents);
+    };
+    if (paged) Object.assign(query, { limit, offset: (page - 1) * limit });
+    const { rows, count } = await Document.findAndCountAll(query);
+    res.json(paged ? { documents: rows, page, limit, total: count, totalPages: Math.ceil(count / limit) } : rows);
   } catch (err) {
     next(err);
   }
+});
+
+router.patch('/:id/rename', authenticate, async (req, res, next) => {
+  try {
+    const name = typeof req.body.name === 'string' ? req.body.name.trim().slice(0, 255) : '';
+    if (!name) return res.status(400).json({ error: 'Название документа обязательно' });
+    const document = await Document.findOne({ where: { id: req.params.id, userId: req.userId } });
+    if (!document) return res.status(404).json({ error: 'Документ не найден' });
+    const previousName = document.name;
+    await document.update({ name });
+    if (document.clientCaseId) await CaseAuditEvent.create({ clientCaseId: document.clientCaseId, actorUserId: req.userId, eventType: 'document_renamed', metadata: { documentId: document.id, previousName, name } });
+    res.json(document);
+  } catch (error) { next(error); }
+});
+
+router.patch('/:id/archive', authenticate, async (req, res, next) => {
+  try {
+    if (typeof req.body.archived !== 'boolean') return res.status(400).json({ error: 'Поле archived должно быть boolean' });
+    const document = await Document.findOne({ where: { id: req.params.id, userId: req.userId } });
+    if (!document) return res.status(404).json({ error: 'Документ не найден' });
+    await document.update({ archivedAt: req.body.archived ? new Date() : null });
+    if (document.clientCaseId) await CaseAuditEvent.create({ clientCaseId: document.clientCaseId, actorUserId: req.userId, eventType: req.body.archived ? 'document_archived' : 'document_unarchived', metadata: { documentId: document.id } });
+    res.json(document);
+  } catch (error) { next(error); }
+});
+
+router.patch('/:id/case', authenticate, async (req, res, next) => {
+  try {
+    const caseId = req.body.caseId || null;
+    const result = await sequelize.transaction(async (transaction) => {
+      const document = await Document.findOne({ where: { id: req.params.id, userId: req.userId }, transaction, lock: transaction.LOCK.UPDATE });
+      if (!document) return { missing: true };
+      if (caseId) {
+        const destination = await ClientCase.findOne({ where: { id: caseId, clientId: req.userId }, transaction, lock: transaction.LOCK.UPDATE });
+        if (!destination) return { missingCase: true };
+      }
+      const previousCaseId = document.clientCaseId;
+      await document.update({ clientCaseId: caseId }, { transaction });
+      if (previousCaseId && previousCaseId !== caseId) {
+        await CaseAuditEvent.create({ clientCaseId: previousCaseId, actorUserId: req.userId, eventType: 'document_unlinked', metadata: { documentId: document.id } }, { transaction });
+      }
+      if (caseId && previousCaseId !== caseId) {
+        await CaseAuditEvent.create({ clientCaseId: caseId, actorUserId: req.userId, eventType: 'document_linked', metadata: { documentId: document.id } }, { transaction });
+      }
+      return { document };
+    });
+    if (result.missing) return res.status(404).json({ error: 'Документ не найден' });
+    if (result.missingCase) return res.status(404).json({ error: 'Дело не найдено' });
+    return res.json(result.document);
+  } catch (error) { return next(error); }
 });
 
 // POST /api/documents/upload — upload a document
@@ -147,6 +211,8 @@ router.get('/:id/download', authenticate, async (req, res, next) => {
     if (!document.path || !fs.existsSync(document.path)) {
       return res.status(404).json({ error: 'Файл не найден на сервере' });
     }
+
+    if (document.clientCaseId) await CaseAuditEvent.create({ clientCaseId: document.clientCaseId, actorUserId: req.userId, eventType: 'document_accessed', metadata: { documentId: document.id } });
 
     res.download(document.path, document.name || path.basename(document.path));
   } catch (err) {

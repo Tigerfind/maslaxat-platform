@@ -12,7 +12,7 @@
 |---|---|---|
 | `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys | AI работает в фолбэк-режиме (шаблонные ответы по законам РУз), не реальный Claude |
 | `PAYME_KEY` + `PAYME_MERCHANT_ID` | merchant.payme.uz (регистрация мерчанта) | Реальная оплата отключена; в dev доступен тест-платёж (`/payments/simulate`) |
-| `SMTP_HOST/PORT/USER/PASS/FROM` | Любой SMTP: Gmail App Password, SendGrid, Mailgun, Yandex 360 | Письма (сброс пароля, верификация) уходят только в тестовый Ethereal (dev), реальные юзеры их не получают |
+| `SMTP_HOST/PORT/USER/PASS/FROM`, `EMAIL_OTP_SECRET` | Любой SMTP: Gmail App Password, SendGrid, Mailgun, Yandex 360; `openssl rand -hex 32` для OTP secret | Письма (сброс пароля, 6-значный код верификации) уходят только в тестовый Ethereal (dev), реальные юзеры их не получают |
 | `SMS_PROVIDER` + `ESKIZ_EMAIL/ESKIZ_PASSWORD` (или `PLAYMOBILE_*`) | Eskiz.uz (регистрация → API-пароль) или Play Mobile | Вход/регистрация по телефону: в dev код возвращается в ответе (`devCode`), в проде `phone/request` вернёт ошибку — реальная SMS не уходит |
 | `JWT_SECRET` | Сгенерировать: `openssl rand -base64 48` | Слабый секрет = взлом токенов. **Обязательно заменить** |
 | `DB_PASSWORD` | Пароль вашей PostgreSQL | — |

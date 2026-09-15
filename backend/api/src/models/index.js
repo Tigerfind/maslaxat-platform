@@ -64,6 +64,14 @@ const User = sequelize.define('User', {
   verificationTokenExpiry: {
     type: DataTypes.DATE,
   },
+  verificationAttempts: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+  },
+  verificationSentAt: {
+    type: DataTypes.DATE,
+  },
   // Момент смены пароля — токены, выданные ДО него, отклоняются (сброс пароля
   // при компрометации выкидывает старые сессии).
   passwordChangedAt: {
@@ -118,6 +126,8 @@ User.prototype.toJSON = function () {
   delete values.resetTokenExpiry;
   delete values.verificationToken;
   delete values.verificationTokenExpiry;
+  delete values.verificationAttempts;
+  delete values.verificationSentAt;
   // Секрет и резервные коды 2FA не отдаём наружу никогда; флаг enabled — можно
   delete values.twoFactorSecret;
   delete values.twoFactorBackupCodes;
@@ -367,6 +377,7 @@ const Consultation = sequelize.define('Consultation', {
   noShowCheckedAt: { type: DataTypes.DATE },
   reminder24Sent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
   reminder10Sent: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: false },
+  clientCaseId: { type: DataTypes.UUID },
   // Оценка консультации живёт ТОЛЬКО в таблице Review
   // (Consultation.hasOne(Review, as: 'consultationReview')). Мёртвые столбцы
   // rating/review удалены миграцией 20260724000000-remove-dead-consultation-columns.
@@ -390,6 +401,64 @@ const AIConversation = sequelize.define('AIConversation', {
   },
   category: {
     type: DataTypes.STRING,
+  },
+});
+
+const CLIENT_CASE_STATUSES = ['draft', 'collecting_documents', 'lawyer_review', 'consultation_scheduled', 'in_progress', 'waiting_for_client', 'waiting_for_lawyer', 'resolved', 'closed', 'archived'];
+const ClientCase = sequelize.define('ClientCase', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  clientId: { type: DataTypes.UUID, allowNull: false },
+  title: { type: DataTypes.STRING(200), allowNull: false },
+  description: { type: DataTypes.TEXT },
+  status: { type: DataTypes.STRING(40), allowNull: false, defaultValue: 'draft', validate: { isIn: [CLIENT_CASE_STATUSES] } },
+  archivedAt: { type: DataTypes.DATE },
+}, { tableName: 'client_cases', indexes: [{ name: 'client_cases_client_status_updated_idx', fields: ['client_id', 'status', 'updated_at'] }] });
+
+const CaseDeadline = sequelize.define('CaseDeadline', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  clientCaseId: { type: DataTypes.UUID, allowNull: false },
+  title: { type: DataTypes.STRING(200), allowNull: false },
+  description: { type: DataTypes.TEXT },
+  dueAt: { type: DataTypes.DATE, allowNull: false },
+  timezone: { type: DataTypes.STRING(64), allowNull: false, defaultValue: 'Asia/Tashkent' },
+  status: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'pending', validate: { isIn: [['pending', 'completed', 'cancelled']] } },
+  priority: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'medium', validate: { isIn: [['low', 'medium', 'high', 'critical']] } },
+  source: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'manual', validate: { isIn: [['manual', 'consultation', 'document', 'ai']] } },
+  completedAt: { type: DataTypes.DATE },
+}, { tableName: 'case_deadlines', indexes: [{ name: 'case_deadlines_case_due_idx', fields: ['client_case_id', 'due_at'] }, { name: 'case_deadlines_status_due_idx', fields: ['status', 'due_at'] }] });
+
+const DeadlineReminder = sequelize.define('DeadlineReminder', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  deadlineId: { type: DataTypes.UUID, allowNull: false },
+  channel: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'in_app', validate: { isIn: [['in_app', 'email', 'push', 'sms']] } },
+  intervalMinutes: { type: DataTypes.INTEGER, allowNull: false, validate: { min: 0 } },
+  remindAt: { type: DataTypes.DATE, allowNull: false },
+  state: { type: DataTypes.STRING(20), allowNull: false, defaultValue: 'scheduled', validate: { isIn: [['scheduled', 'processing', 'sent', 'failed', 'cancelled']] } },
+  attemptCount: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
+  nextAttemptAt: { type: DataTypes.DATE, allowNull: false },
+  leaseOwner: { type: DataTypes.STRING(120) },
+  leaseExpiresAt: { type: DataTypes.DATE },
+  sentAt: { type: DataTypes.DATE },
+  lastError: { type: DataTypes.STRING(255) },
+  idempotencyKey: { type: DataTypes.STRING(255), allowNull: false },
+}, { tableName: 'deadline_reminders', indexes: [
+  { name: 'deadline_reminders_job_idx', fields: ['state', 'next_attempt_at', 'lease_expires_at'] },
+  { name: 'deadline_reminders_schedule_unique', unique: true, fields: ['deadline_id', 'channel', 'remind_at'] },
+  { name: 'deadline_reminders_idempotency_unique', unique: true, fields: ['idempotency_key'] },
+] });
+
+const CaseAuditEvent = sequelize.define('CaseAuditEvent', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  clientCaseId: { type: DataTypes.UUID, allowNull: false },
+  actorUserId: { type: DataTypes.UUID },
+  eventType: { type: DataTypes.STRING(80), allowNull: false },
+  metadata: { type: DataTypes.JSONB, allowNull: false, defaultValue: {} },
+}, {
+  tableName: 'case_audit_events', updatedAt: false,
+  indexes: [{ name: 'case_audit_events_case_created_idx', fields: ['client_case_id', 'created_at'] }],
+  hooks: {
+    beforeUpdate() { throw new Error('Case audit events are append-only'); },
+    beforeDestroy() { throw new Error('Case audit events are append-only'); },
   },
 });
 
@@ -493,6 +562,8 @@ const Document = sequelize.define('Document', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  clientCaseId: { type: DataTypes.UUID },
+  archivedAt: { type: DataTypes.DATE },
 });
 
 // ─── LAWYER VERIFICATION DOCUMENT ───────────────────────────
@@ -716,6 +787,30 @@ const CaseDocument = sequelize.define('CaseDocument', {
   size: {
     type: DataTypes.INTEGER,
   },
+});
+
+const CaseDocumentAnalysis = sequelize.define('CaseDocumentAnalysis', {
+  id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+  caseDocumentId: { type: DataTypes.UUID, allowNull: false },
+  consultationId: { type: DataTypes.UUID, allowNull: false },
+  requestedById: { type: DataTypes.UUID, allowNull: false },
+  status: {
+    type: DataTypes.STRING(20),
+    allowNull: false,
+    defaultValue: 'processing',
+    validate: { isIn: [['processing', 'completed', 'failed']] },
+  },
+  result: { type: DataTypes.JSONB },
+  model: { type: DataTypes.STRING(100), allowNull: false },
+  promptVersion: { type: DataTypes.STRING(40), allowNull: false },
+  completedAt: { type: DataTypes.DATE },
+  lastError: { type: DataTypes.STRING(1000) },
+}, {
+  indexes: [
+    { name: 'case_document_analyses_document_prompt_unique', unique: true, fields: ['case_document_id', 'prompt_version'] },
+    { name: 'case_document_analyses_consultation_updated_idx', fields: ['consultation_id', 'updated_at'] },
+    { name: 'case_document_analyses_requester_status_idx', fields: ['requested_by_id', 'status'] },
+  ],
 });
 
 // ─── REVIEW MODEL ───────────────────────────────────────────
@@ -1110,6 +1205,7 @@ Consultation.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
 // Lawyer <-> Consultation
 User.hasMany(Consultation, { foreignKey: 'lawyerId', as: 'lawyerConsultations' });
 Consultation.belongsTo(User, { foreignKey: 'lawyerId', as: 'lawyer' });
+Consultation.belongsTo(ClientCase, { foreignKey: 'clientCaseId', as: 'clientCase' });
 Consultation.hasOne(ConsultationMeeting, { foreignKey: 'consultationId', as: 'meeting', onDelete: 'CASCADE' });
 ConsultationMeeting.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
 ZoomConnection.hasMany(ConsultationMeeting, { foreignKey: 'zoomConnectionId', as: 'meetings' });
@@ -1133,6 +1229,42 @@ LegalChunk.belongsTo(LegalDocument, { foreignKey: 'documentId', as: 'document' }
 // User <-> Document
 User.hasMany(Document, { foreignKey: 'userId', as: 'documents' });
 Document.belongsTo(User, { foreignKey: 'userId' });
+Document.belongsTo(ClientCase, { foreignKey: 'clientCaseId', as: 'clientCase' });
+
+ClientCase.belongsTo(User, { foreignKey: 'clientId', as: 'client' });
+User.hasMany(ClientCase, { foreignKey: 'clientId', as: 'clientCases' });
+ClientCase.hasMany(Consultation, { foreignKey: 'clientCaseId', as: 'consultations' });
+ClientCase.hasMany(Document, { foreignKey: 'clientCaseId', as: 'documents' });
+ClientCase.hasMany(CaseDeadline, { foreignKey: 'clientCaseId', as: 'deadlines', onDelete: 'CASCADE' });
+CaseDeadline.belongsTo(ClientCase, { foreignKey: 'clientCaseId', as: 'clientCase' });
+CaseDeadline.hasMany(DeadlineReminder, { foreignKey: 'deadlineId', as: 'reminders', onDelete: 'CASCADE' });
+DeadlineReminder.belongsTo(CaseDeadline, { foreignKey: 'deadlineId', as: 'deadline' });
+ClientCase.hasMany(CaseAuditEvent, { foreignKey: 'clientCaseId', as: 'events', onDelete: 'RESTRICT' });
+CaseAuditEvent.belongsTo(ClientCase, { foreignKey: 'clientCaseId', as: 'clientCase' });
+CaseAuditEvent.belongsTo(User, { foreignKey: 'actorUserId', as: 'actor' });
+User.hasMany(CaseAuditEvent, { foreignKey: 'actorUserId', as: 'caseAuditEvents' });
+
+Consultation.addHook('afterUpdate', 'auditLinkedCaseLifecycle', async (consultation, options) => {
+  if (!consultation.clientCaseId || !consultation.changed('status')) return;
+  await CaseAuditEvent.create({
+    clientCaseId: consultation.clientCaseId,
+    actorUserId: options.actorUserId || null,
+    eventType: 'consultation_status_changed',
+    metadata: { consultationId: consultation.id, from: consultation.previous('status'), to: consultation.status },
+  }, { transaction: options.transaction });
+});
+
+Payment.addHook('afterUpdate', 'auditLinkedCasePayment', async (payment, options) => {
+  if (!payment.changed('status') && !payment.changed('refundStatus')) return;
+  const consultation = await Consultation.findByPk(payment.consultationId, { attributes: ['clientCaseId'], transaction: options.transaction });
+  if (!consultation?.clientCaseId) return;
+  await CaseAuditEvent.create({
+    clientCaseId: consultation.clientCaseId,
+    actorUserId: options.actorUserId || null,
+    eventType: payment.changed('refundStatus') ? 'refund_status_changed' : 'payment_status_changed',
+    metadata: { paymentId: payment.id, status: payment.status, refundStatus: payment.refundStatus },
+  }, { transaction: options.transaction });
+});
 
 // Lawyer (User) <-> LawyerDocument (верификационные документы)
 User.hasMany(LawyerDocument, { foreignKey: 'userId', as: 'lawyerDocuments' });
@@ -1145,6 +1277,12 @@ Consultation.hasMany(CaseDocument, { foreignKey: 'consultationId', as: 'caseDocu
 CaseDocument.belongsTo(Consultation, { foreignKey: 'consultationId' });
 User.hasMany(CaseDocument, { foreignKey: 'uploaderId', as: 'uploadedCaseDocuments' });
 CaseDocument.belongsTo(User, { foreignKey: 'uploaderId', as: 'uploader' });
+CaseDocument.hasMany(CaseDocumentAnalysis, { foreignKey: 'caseDocumentId', as: 'analyses', onDelete: 'CASCADE' });
+CaseDocumentAnalysis.belongsTo(CaseDocument, { foreignKey: 'caseDocumentId', as: 'caseDocument' });
+Consultation.hasMany(CaseDocumentAnalysis, { foreignKey: 'consultationId', as: 'caseDocumentAnalyses', onDelete: 'CASCADE' });
+CaseDocumentAnalysis.belongsTo(Consultation, { foreignKey: 'consultationId', as: 'consultation' });
+User.hasMany(CaseDocumentAnalysis, { foreignKey: 'requestedById', as: 'requestedCaseDocumentAnalyses' });
+CaseDocumentAnalysis.belongsTo(User, { foreignKey: 'requestedById', as: 'requestedBy' });
 
 // Client <-> Review (author)
 User.hasMany(Review, { foreignKey: 'clientId', as: 'writtenReviews' });
@@ -1222,6 +1360,7 @@ module.exports = {
   Document,
   LawyerDocument,
   CaseDocument,
+  CaseDocumentAnalysis,
   Review,
   Notification,
   Specialization,
@@ -1235,4 +1374,9 @@ module.exports = {
   FinancialEvent,
   PushSubscription,
   PhoneOtp,
+  ClientCase,
+  CaseDeadline,
+  DeadlineReminder,
+  CaseAuditEvent,
+  CLIENT_CASE_STATUSES,
 };

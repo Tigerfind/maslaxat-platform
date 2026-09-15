@@ -139,6 +139,10 @@ const NotificationCenter = ({ sx = {} }) => {
       navigate(`/consultations/chat/${metadata.consultationId}`);
       return;
     }
+    if (notif.type === 'case_deadline') {
+      navigate(metadata.clientCaseId ? `/cases/${metadata.clientCaseId}` : '/deadlines');
+      return;
+    }
     if (metadata.consultationId) {
       navigate(metadata.missedCall ? `/consultations/video/${metadata.consultationId}` : '/consultations');
     }

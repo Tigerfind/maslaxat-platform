@@ -224,7 +224,7 @@ const ConsultationsPageGlass = () => {
         toast.error(t('consultations.rebookUnavailable'));
         return;
       }
-      setRebookLawyer(lawyer);
+      setRebookLawyer({ lawyer, initialConsultation: consultation });
     } catch (requestError) {
       if (isAuthoritativeUnavailableLawyerError(requestError)) setUnavailableLawyers((current) => new Set(current).add(lawyerId));
       toast.error(safeRequestError(requestError, t('consultations.rebookRetry'), { language, t }));
@@ -435,7 +435,7 @@ const ConsultationsPageGlass = () => {
       </Dialog>
 
       <RatingDialog open={Boolean(ratingFor)} onClose={() => setRatingFor(null)} onSubmit={submitRating} lawyerName={ratingFor?.lawyer?.name} />
-      <BookingModal open={Boolean(rebookLawyer)} onClose={() => setRebookLawyer(null)} lawyer={rebookLawyer || {}} />
+      <BookingModal open={Boolean(rebookLawyer)} onClose={() => setRebookLawyer(null)} lawyer={rebookLawyer?.lawyer || rebookLawyer || {}} initialConsultation={rebookLawyer?.initialConsultation || null} />
       <CaseDocuments consultationId={docsFor?.id} open={Boolean(docsFor)} onClose={() => setDocsFor(null)} currentUserId={user?.id} readOnly={!isConsultationWritable(docsFor, 'documentsWritable')} />
       <style>{`
         .consultation-tabs{scrollbar-width:none;scroll-padding-inline:10px}.consultation-tabs::-webkit-scrollbar{display:none}.consultation-tab{min-height:44px;padding:9px 15px;border:0;border-radius:var(--radius);background:transparent;color:var(--text2);font:inherit;font-size:13px;white-space:nowrap;cursor:pointer;scroll-margin-inline:10px}.consultation-tab.active{background:var(--accent);color:#fff}.consultation-tab:focus-visible{outline:2px solid var(--text);outline-offset:2px}.consultation-select{min-height:44px;padding:8px 12px;border-radius:8px;border:1px solid var(--border);background:var(--surface);color:var(--text);font:inherit;max-width:100%}.consultation-select.full{display:block;width:100%;margin-top:6px}

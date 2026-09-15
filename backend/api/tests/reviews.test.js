@@ -2,7 +2,7 @@ const request = require('supertest');
 const app = require('../src/server');
 const { resetDb, models, tokenFor, makeClient, makeLawyer, makeAdmin } = require('./helpers');
 
-const { Consultation, LawyerProfile } = models;
+const { Consultation, LawyerProfile, Review } = models;
 
 beforeAll(async () => {
   await resetDb();
@@ -94,5 +94,41 @@ describe('reviews: рейтинг юриста пересчитывается и
     const afterShow = await LawyerProfile.findByPk(lp.id);
     expect(Number(afterShow.rating)).toBe(3);
     expect(afterShow.reviewsCount).toBe(2);
+  });
+
+  test('публичные отзывы пагинируются, сортируются и не раскрывают приватные поля', async () => {
+    const client = await makeClient('review-page-client@test.uz');
+    await client.update({ name: '998901234567' });
+    const { user: lawyer, lp } = await makeLawyer('review-page-lawyer@test.uz');
+    const consultations = await Promise.all([
+      completedConsultation(client.id, lawyer.id),
+      completedConsultation(client.id, lawyer.id),
+      completedConsultation(client.id, lawyer.id),
+    ]);
+    await Review.bulkCreate([
+      { clientId: client.id, lawyerId: lawyer.id, consultationId: consultations[0].id, rating: 5, text: 'Первый', helpfulCount: 1 },
+      { clientId: client.id, lawyerId: lawyer.id, consultationId: consultations[1].id, rating: 4, text: 'Полезный', helpfulCount: 8 },
+      { clientId: client.id, lawyerId: lawyer.id, consultationId: consultations[2].id, rating: 3, text: 'Третий', helpfulCount: 2 },
+    ]);
+    await lp.update({ rating: 4, reviewsCount: 3 });
+
+    const response = await request(app).get(`/api/lawyers/${lawyer.id}/reviews?sort=helpful&page=1&limit=2`);
+    expect(response.status).toBe(200);
+    expect(response.body).toMatchObject({ page: 1, limit: 2, total: 3, totalPages: 2, sort: 'helpful' });
+    expect(response.body.reviews).toHaveLength(2);
+    expect(response.body.reviews[0]).toMatchObject({ text: 'Полезный', helpfulCount: 8, verifiedConsultation: true });
+    expect(response.body.reviews[0]).not.toHaveProperty('consultationId');
+    expect(response.body.reviews[0].client).not.toHaveProperty('id');
+    expect(response.body.reviews[0].client.name).toBe('Клиент');
+    expect(response.body.summary).toMatchObject({ rating: 4, reviewsCount: 3, distribution: { 3: 1, 4: 1, 5: 1 } });
+
+    const secondPage = await request(app).get(`/api/lawyers/${lawyer.id}/reviews?sort=helpful&page=2&limit=2`);
+    expect(secondPage.body.reviews).toHaveLength(1);
+  });
+
+  test('отзывы неодобренного юриста публично недоступны', async () => {
+    const { user: lawyer } = await makeLawyer('review-hidden-lawyer@test.uz', { verificationStatus: 'pending' });
+    const response = await request(app).get(`/api/lawyers/${lawyer.id}/reviews`);
+    expect(response.status).toBe(404);
   });
 });

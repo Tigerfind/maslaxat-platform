@@ -2,7 +2,7 @@ import { getMobileNavItems } from './mobileNavConfig';
 
 describe('mobile navigation by role', () => {
   test.each([
-    ['client', ['/dashboard', '/lawyers', '/consultations', '/documents', '/profile']],
+    ['client', ['/dashboard', '/consultations', '/my-lawyers', '/messages', '#more']],
     ['lawyer', ['/lawyer/dashboard', '/lawyer/consultations', '/lawyer/schedule', '/lawyer/analytics', '/lawyer/profile/edit']],
     ['admin', ['/admin/dashboard', '/admin/users', '/admin/lawyers', '/admin/finance', '/settings']],
   ])('%s receives the expected five destinations', (role, paths) => {

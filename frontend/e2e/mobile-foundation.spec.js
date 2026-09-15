@@ -3,8 +3,8 @@ const { login } = require('./helpers');
 
 const roleNav = {
   client: [
-    ['Главная', '/dashboard'], ['Юристы', '/lawyers'], ['Консультации', '/consultations'],
-    ['Документы', '/documents'], ['Профиль', '/profile'],
+    ['Обзор', '/dashboard'], ['Консультации', '/consultations'], ['Мои юристы', '/my-lawyers'],
+    ['Сообщения', '/messages'], ['Ещё', '#more'],
   ],
   lawyer: [
     ['Главная', '/lawyer/dashboard'], ['Консультации', '/lawyer/consultations'],
@@ -57,4 +57,13 @@ test('fullscreen consultation routes do not mount mobile shell navigation', asyn
   await login(page, 'client');
   await page.goto('/consultations/chat/11111111-1111-4111-8111-111111111111');
   await expect(page.getByTestId('mobile-bottom-nav')).toHaveCount(0);
+});
+
+test('client More menu exposes secondary cabinet destinations', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 812 });
+  await login(page, 'client');
+  await page.getByTestId('mobile-bottom-nav').getByRole('button', { name: 'Ещё', exact: true }).click();
+  for (const label of ['Документы', 'Платежи', 'Сроки', 'Мои дела', 'Профиль']) {
+    await expect(page.getByRole('button', { name: label, exact: true })).toBeVisible();
+  }
 });

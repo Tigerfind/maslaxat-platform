@@ -4,7 +4,6 @@ import { useSelector, useDispatch } from 'react-redux';
 import { Drawer, useMediaQuery } from '@mui/material';
 import {
   GridViewOutlined,
-  AutoAwesomeOutlined,
   GavelOutlined,
   CalendarMonthOutlined,
   DescriptionOutlined,
@@ -20,6 +19,8 @@ import {
   LightModeOutlined,
   MenuOutlined,
   AccountBalanceWalletOutlined,
+  EventNoteOutlined,
+  FolderSharedOutlined,
 } from '@mui/icons-material';
 import { logout } from '../../store/slices/authSlice';
 import { useTranslation } from '../../i18n';
@@ -30,16 +31,16 @@ import MobileBottomNav from '../UI/MobileBottomNav';
 import SupportFAB from '../UI/SupportFAB';
 
 /** Nav config per role. key = route, matched against location for active state. */
-const NAV = {
+export const NAV = {
   client: [
-    { key: '/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/ai-chat', tKey: 'nav.aiChat', icon: <AutoAwesomeOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/lawyers', tKey: 'nav.lawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/dashboard', tKey: 'nav.overview', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },
     { key: '/consultations', tKey: 'nav.consultations', icon: <CalendarMonthOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/my-lawyers', tKey: 'nav.myLawyers', icon: <GavelOutlined sx={{ fontSize: 20 }} /> },
     { key: '/documents', tKey: 'nav.documents', icon: <DescriptionOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/portfolio', tKey: 'nav.portfolio', icon: <WorkOutlineOutlined sx={{ fontSize: 20 }} /> },
-    { key: '/favorites', tKey: 'nav.favorites', icon: <FavoriteBorderOutlined sx={{ fontSize: 20 }} /> },
     { key: '/payments', tKey: 'nav.payments', icon: <ReceiptLongOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/messages', tKey: 'nav.messages', icon: <ForumOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/deadlines', tKey: 'nav.deadlines', icon: <EventNoteOutlined sx={{ fontSize: 20 }} /> },
+    { key: '/cases', tKey: 'nav.cases', icon: <FolderSharedOutlined sx={{ fontSize: 20 }} /> },
   ],
   lawyer: [
     { key: '/lawyer/dashboard', tKey: 'nav.dashboard', icon: <GridViewOutlined sx={{ fontSize: 20 }} /> },

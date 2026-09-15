@@ -47,6 +47,7 @@ describe('публичный профиль (GET /lawyers/:id)', () => {
     const r2 = await request(app).get(`/api/lawyers/${approved.id}`);
     expect(r2.status).toBe(200);
     expect(r2.body.lawyer.id).toBe(approved.id);
+    expect(r2.body.lawyer.profile.isVerifiedLawyer).toBe(true);
     expect(r2.body.lawyer).not.toHaveProperty('isVerified');
     expect(r2.body.lawyer).not.toHaveProperty('createdAt');
     expect(r2.body.lawyer.profile).not.toHaveProperty('verificationStatus');

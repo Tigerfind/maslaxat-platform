@@ -29,7 +29,7 @@ const emptyForm = {
   consultationType: 'webrtc',
 };
 
-const BookingModal = ({ open, onClose, lawyer }) => {
+const BookingModal = ({ open, onClose, lawyer, initialConsultation = null }) => {
   const navigate = useNavigate();
   const { t } = useTranslation();
   const { specializations } = useSelector((state) => state.specializations);
@@ -77,12 +77,12 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   const [paymentConsent, setPaymentConsent] = useState(false);
   const slotsRequest = useRef(null);
   const offeredFormats = useMemo(() => {
-    const configured = lawyer?.consultationFormats || lawyer?.profile?.consultationFormats || ['chat', 'webrtc'];
+    const configured = lawyer?.consultationFormats ?? lawyer?.profile?.consultationFormats ?? ['chat', 'webrtc'];
     const zoomAvailable = lawyer?.zoomAvailable === true || lawyer?.profile?.zoomAvailable === true;
     return configured.filter((format) => format !== 'zoom' || zoomAvailable);
   }, [lawyer]);
   const offeredDurations = useMemo(() => {
-    const configured = lawyer?.consultationDurations || lawyer?.profile?.consultationDurations;
+    const configured = lawyer?.consultationDurations ?? lawyer?.profile?.consultationDurations;
     return configured?.length ? DURATIONS.filter((value) => configured.includes(value)) : DURATIONS;
   }, [lawyer]);
 
@@ -98,7 +98,9 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     // чтобы постоянному клиенту не переклиивать одно и то же.
     try {
       const prefs = JSON.parse(localStorage.getItem('booking:prefs') || '{}');
-      if (prefs.consultationType) setFormData((prev) => ({ ...prev, consultationType: prefs.consultationType === 'video' ? 'webrtc' : prefs.consultationType }));
+      const previousType = initialConsultation?.consultationType || initialConsultation?.type;
+      if (previousType) setFormData((prev) => ({ ...prev, consultationType: previousType === 'video' ? 'webrtc' : previousType }));
+      else if (prefs.consultationType) setFormData((prev) => ({ ...prev, consultationType: prefs.consultationType === 'video' ? 'webrtc' : prefs.consultationType }));
       if (DURATIONS.includes(prefs.duration)) setDuration(prefs.duration);
       if (prefs.payMethod) setPayMethod(prefs.payMethod);
     } catch { /* нет сохранённых предпочтений */ }
@@ -121,7 +123,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
       } catch { /* нет подписки */ }
     })();
     return () => { alive = false; };
-  }, [open]);
+  }, [open, initialConsultation]);
 
   useEffect(() => {
     if (!open) return;
@@ -160,11 +162,15 @@ const BookingModal = ({ open, onClose, lawyer }) => {
   // Префилл первой проблемы обновляется, когда догрузился справочник категорий.
   useEffect(() => {
     if (!open || !lawyerCatIds.length) return;
+    const previousSpecialization = initialConsultation?.specialization;
+    const preferredCategory = previousSpecialization
+      ? activeSpecs.find((item) => item.id === previousSpecialization || item.name === previousSpecialization)?.id
+      : null;
     setFormData((prev) => (prev.problems[0]?.categories?.length ? prev : {
       ...prev,
-      problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: [...lawyerCatIds] } : p)),
+      problems: prev.problems.map((p, i) => (i === 0 ? { ...p, categories: preferredCategory ? [preferredCategory] : [...lawyerCatIds] } : p)),
     }));
-  }, [open, lawyerCatIds]);
+  }, [open, lawyerCatIds, activeSpecs, initialConsultation]);
 
   // Закрывать выпадающий список категорий по клику вне него
   useEffect(() => {
@@ -214,7 +220,7 @@ const BookingModal = ({ open, onClose, lawyer }) => {
     .slice(0, 2)
     .join('')
     .toUpperCase();
-  const profRating = lawyer.rating || lawyer.profile?.rating || '5.0';
+  const profRating = lawyer.rating || lawyer.profile?.rating || 0;
   const durLabel = `${duration} ${t('booking.min')}`;
 
   const handleChange = (field, value) => setFormData((prev) => ({ ...prev, [field]: value }));

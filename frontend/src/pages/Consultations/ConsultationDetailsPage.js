@@ -171,7 +171,7 @@ const ConsultationDetailsPage = () => {
         toast.error(t('consultations.rebookUnavailable'));
         return;
       }
-      setRebookLawyer(lawyer);
+      setRebookLawyer({ lawyer, initialConsultation: consultation });
     } catch (requestError) {
       setRebookUnavailable(true);
       if (isAuthoritativeUnavailableLawyerError(requestError)) setRebookUnavailable(true);
@@ -275,7 +275,7 @@ const ConsultationDetailsPage = () => {
         </section>
       </div>
       <CaseDocuments consultationId={consultation.id} open={docsOpen} onClose={() => setDocsOpen(false)} currentUserId={user?.id} readOnly={!isConsultationWritable(consultation, 'documentsWritable')} />
-      <BookingModal open={Boolean(rebookLawyer)} onClose={() => setRebookLawyer(null)} lawyer={rebookLawyer || {}} />
+      <BookingModal open={Boolean(rebookLawyer)} onClose={() => setRebookLawyer(null)} lawyer={rebookLawyer?.lawyer || rebookLawyer || {}} initialConsultation={rebookLawyer?.initialConsultation || null} />
       <RatingDialog open={ratingOpen} onClose={() => setRatingOpen(false)} onSubmit={submitRating} lawyerName={consultation.lawyer?.name} />
       <Dialog open={cancelOpen} onClose={actionBusy ? undefined : () => setCancelOpen(false)} aria-labelledby="detail-cancel-consultation-title" maxWidth="sm" fullWidth PaperProps={{ sx: consultationDialogPaperSx }}>
         <DialogTitle id="detail-cancel-consultation-title" sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>{t('consultations.cancelModalTitle')}<IconButton aria-label={t('consultations.close')} onClick={() => setCancelOpen(false)} disabled={actionBusy}><CloseOutlined /></IconButton></DialogTitle>

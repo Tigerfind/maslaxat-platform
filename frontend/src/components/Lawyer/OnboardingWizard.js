@@ -7,7 +7,6 @@ import { useTranslation } from '../../i18n';
 import { SPECIALIZATION_NAMES } from '../../constants/specializations';
 import { specLabel } from '../../utils/specLabel';
 import { MIN_WEEKLY_SLOTS, countWeeklySlots } from '../../utils/schedulePolicy';
-import EmailVerificationBanner from '../Auth/EmailVerificationBanner';
 
 const DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
 const emptyExperience = { organization: '', position: '', startDate: '', endDate: '', isCurrent: false, description: '' };
@@ -182,7 +181,6 @@ const OnboardingWizard = ({ onComplete }) => {
       aria-labelledby="lawyer-onboarding-title"
       PaperProps={{ sx: { background: 'var(--canvas)', backgroundImage: 'none', color: 'var(--text)' } }}
     >
-      <EmailVerificationBanner />
       <div className="onboarding-scroll" style={{ minHeight: '100dvh', overflowY: 'auto', padding: 'max(24px, env(safe-area-inset-top)) max(16px, env(safe-area-inset-right)) max(80px, calc(24px + env(safe-area-inset-bottom))) max(16px, env(safe-area-inset-left))' }}>
       <div style={{ maxWidth: 900, minWidth: 0, margin: '0 auto' }}>
         <h1 id="lawyer-onboarding-title" style={{ fontWeight: 400 }}>{t('onboarding.title')}</h1>

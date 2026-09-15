@@ -129,6 +129,7 @@ app.get('/api/health/ready', async (req, res) => {
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/system', require('./routes/system'));
 app.use('/api/users', require('./routes/users'));
+app.use('/api/client', require('./routes/client-cabinet'));
 app.use('/api/client/users', require('./routes/users'));
 app.use('/api/lawyers', require('./routes/lawyers'));
 app.use('/api/consultations', require('./routes/consultations'));
@@ -279,6 +280,7 @@ async function start() {
       require('./services/zoomMeetingService').startReconciliationJob();
       require('./services/consultationTimingService').startTimingJob();
       require('./services/reservationExpiryService').startReservationExpiryJob();
+      require('./services/deadlineReminderService').startDeadlineReminderJob();
     });
   } catch (error) {
     logger.error('Failed to start server', { stack: error.stack });

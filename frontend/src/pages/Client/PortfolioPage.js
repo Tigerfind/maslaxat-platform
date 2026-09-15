@@ -107,7 +107,7 @@ const PortfolioPage = () => {
         clientService.favorites.getFavorites(),
       ]);
       const [docs, cons, ai, favs] = results;
-      setDocuments(docs.status === 'fulfilled' && Array.isArray(docs.value) ? docs.value : []);
+      setDocuments(docs.status === 'fulfilled' ? (docs.value?.documents || (Array.isArray(docs.value) ? docs.value : [])) : []);
       setConsultations(cons.status === 'fulfilled' && Array.isArray(cons.value?.consultations) ? cons.value.consultations : []);
       setAiConversations(ai.status === 'fulfilled' && Array.isArray(ai.value) ? ai.value : []);
       setFavorites(favs.status === 'fulfilled' && Array.isArray(favs.value) ? favs.value : []);

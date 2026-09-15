@@ -321,6 +321,7 @@ const ProfilePageGlass = () => {
       if (res.data?.user) dispatch(updateProfile(res.data.user));
       setEmailInput('');
       toast.success(res.data?.message || t('profile.emailUpdated'));
+      navigate('/verify-email', { state: { verificationDelivery: 'sent' } });
     } catch (e) {
       toast.error(e.response?.data?.error || t('profile.emailError'));
     } finally { setEmailSaving(false); }

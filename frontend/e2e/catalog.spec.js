@@ -74,6 +74,19 @@ test('профиль показывает честное AI-действие и 
   await expect(page.getByRole('heading', { name: 'E2E Lawyer' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Спросить AI' })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Написать' })).toHaveCount(0);
+  await expect(page.getByText('Проверенный юрист')).toBeVisible();
+  await expect(page.getByText('Тариф за 60 минут').first()).toBeVisible();
+  if (process.env.PROFILE_SCREENSHOTS === '1') {
+    await page.waitForTimeout(400);
+    await page.screenshot({ path: 'test-results/lawyer-profile-desktop.png', fullPage: true });
+  }
+  await page.getByRole('tab', { name: 'Опыт работы' }).click();
+  await expect(page.getByText('E2E Legal')).toBeVisible();
+  await page.getByRole('tab', { name: 'Образование' }).click();
+  await expect(page.getByText('ТГЮУ')).toBeVisible();
+  await page.getByRole('tab', { name: 'Отзывы' }).click();
+  await expect(page.getByText('Полезная и понятная консультация')).toBeVisible();
+  await expect(page.getByText('Подтверждённая консультация').first()).toBeVisible();
 });
 
 test('каталог и профиль не выходят за экран на контрольных ширинах', async ({ page, request }) => {
@@ -81,7 +94,7 @@ test('каталог и профиль не выходят за экран на 
   const lawyers = await request.get('http://127.0.0.1:3101/api/lawyers?limit=1');
   const lawyer = (await lawyers.json()).lawyers[0];
 
-  for (const width of [320, 375, 768, 1440]) {
+  for (const width of [320, 375, 768, 1024, 1440]) {
     await page.setViewportSize({ width, height: 844 });
     await page.goto('/lawyers');
     await expect(page.getByText('E2E Lawyer').first()).toBeVisible();
@@ -97,7 +110,7 @@ test('каталог и профиль не выходят за экран на 
       await expect(page.getByRole('button', { name: 'Показать результаты' })).toBeHidden();
     }
     if (width === 320) {
-      const favorite = page.getByRole('button', { name: /E2E Lawyer.*избранное/ });
+      const favorite = page.getByRole('button', { name: /избранн/i }).first();
       const booking = page.getByRole('button', { name: 'Записаться', exact: true }).first();
       expect((await favorite.boundingBox()).height).toBeGreaterThanOrEqual(43.9);
       expect((await booking.boundingBox()).height).toBeGreaterThanOrEqual(43.9);
@@ -105,17 +118,38 @@ test('каталог и профиль не выходят за экран на 
 
     await page.goto(`/lawyers/${lawyer.id}`);
     await expect(page.getByRole('heading', { name: 'E2E Lawyer' })).toBeVisible();
+    if (width === 375 && process.env.PROFILE_SCREENSHOTS === '1') {
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: 'test-results/lawyer-profile-mobile.png', fullPage: true });
+    }
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     if (width === 320) {
       const aboutTab = page.getByRole('tab', { name: 'О юристе' });
       expect((await aboutTab.boundingBox()).height).toBeGreaterThanOrEqual(43.9);
       await aboutTab.focus();
       await aboutTab.press('ArrowRight');
-      await expect(page.getByRole('tab', { name: 'Отзывы' })).toHaveAttribute('aria-selected', 'true');
+      await expect(page.getByRole('tab', { name: 'Опыт работы' })).toHaveAttribute('aria-selected', 'true');
       await expect(page.getByRole('tabpanel')).toBeVisible();
+      const stickyBooking = page.locator('.lpv2-mobile-book');
+      await expect(stickyBooking).toBeVisible();
+      const bookingBox = await stickyBooking.boundingBox();
+      expect(bookingBox.height).toBeGreaterThanOrEqual(43.9);
+      expect(bookingBox.y + bookingBox.height).toBeLessThanOrEqual(844 - 64 + 1);
       expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
     }
   }
+});
+
+test('профиль сохраняет тёмную тему и отключает анимации по системной настройке', async ({ page, request }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await login(page, 'client');
+  const lawyers = await request.get('http://127.0.0.1:3101/api/lawyers?limit=1');
+  const lawyer = (await lawyers.json()).lawyers[0];
+  await page.evaluate(() => localStorage.setItem('theme', 'dark'));
+  await page.goto(`/lawyers/${lawyer.id}`);
+  await expect(page.getByRole('heading', { name: 'E2E Lawyer' })).toBeVisible();
+  await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
+  expect(await page.locator('.lpv2-panel').evaluate((element) => getComputedStyle(element).animationName)).toBe('none');
 });
 
 test('API бронирования требует consent и сохраняет корректную бронь', async ({ page, request }) => {
@@ -144,11 +178,11 @@ test('API бронирования требует consent и сохраняет 
 test.describe('mobile', () => {
   test.use({ viewport: { width: 390, height: 844 } });
 
-  test('нижняя навигация доступна и открывает каталог', async ({ page }) => {
+  test('нижняя навигация доступна и открывает моих юристов', async ({ page }) => {
     await login(page, 'client');
-    await expect(page.getByRole('button', { name: 'Юристы' })).toBeVisible();
-    await page.getByRole('button', { name: 'Юристы' }).click();
-    await expect(page).toHaveURL(/\/lawyers$/);
+    await expect(page.getByRole('button', { name: 'Мои юристы' })).toBeVisible();
+    await page.getByRole('button', { name: 'Мои юристы' }).click();
+    await expect(page).toHaveURL(/\/my-lawyers$/);
     await expect(page.getByText('E2E Lawyer').first()).toBeVisible();
   });
 });

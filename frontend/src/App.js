@@ -59,12 +59,16 @@ const AdminSupportPage = lazy(() => import('./pages/Admin/AdminSupportPage'));
 const AdminReviewsPage = lazy(() => import('./pages/Admin/AdminReviewsPage'));
 const AdminFinancePage = lazy(() => import('./pages/Admin/AdminFinancePage'));
 const AdminConsultationsPage = lazy(() => import('./pages/Admin/AdminConsultationsPage'));
-const FavoritesPage = lazy(() => import('./pages/Client/FavoritesPage'));
 const PortfolioPage = lazy(() => import('./pages/Client/PortfolioPage'));
 const PaymentsPageGlass = lazy(() => import('./pages/Payments/PaymentsPageGlass'));
 const VerifyEmailPage = lazy(() => import('./pages/Auth/VerifyEmailPage'));
 const LandingPage = lazy(() => import('./pages/Landing/LandingPage'));
 const LegalPage = lazy(() => import('./pages/Legal/LegalPage'));
+const MyLawyersPage = lazy(() => import('./pages/Client/MyLawyersPage'));
+const MessagesPage = lazy(() => import('./pages/Client/MessagesPage'));
+const DeadlinesPage = lazy(() => import('./pages/Client/DeadlinesPage'));
+const CasesPage = lazy(() => import('./pages/Client/CasesPage'));
+const CaseDetailsPage = lazy(() => import('./pages/Client/CaseDetailsPage'));
 
 const theme = axelionTheme;
 
@@ -131,7 +135,7 @@ const AppContent = () => {
         } />
 
         <Route path="/login" element={!isAuthenticated ? <LoginPage /> : <Navigate to="/dashboard" />} />
-        <Route path="/register" element={!isAuthenticated ? <RegisterPage /> : <Navigate to="/dashboard" />} />
+        <Route path="/register" element={<RegisterPage />} />
         <Route path="/oauth/linkedin" element={<LinkedInCallbackPage />} />
         <Route path="/forgot-password" element={!isAuthenticated ? <ForgotPasswordPage /> : <Navigate to="/dashboard" />} />
         <Route path="/reset-password" element={!isAuthenticated ? <ResetPasswordPage /> : <Navigate to="/dashboard" />} />
@@ -152,7 +156,12 @@ const AppContent = () => {
           <Route path="lawyers" element={<LawyersPageGlass />} />
           <Route path="lawyers/:lawyerId" element={<LawyerProfilePage />} />
           <Route path="documents" element={<DocumentsPageGlass />} />
-          <Route path="favorites" element={<FavoritesPage />} />
+          <Route path="favorites" element={<Navigate to="/my-lawyers" replace />} />
+          <Route path="my-lawyers" element={<MyLawyersPage />} />
+          <Route path="messages" element={<MessagesPage />} />
+          <Route path="deadlines" element={<DeadlinesPage />} />
+          <Route path="cases" element={<CasesPage />} />
+          <Route path="cases/:caseId" element={<CaseDetailsPage />} />
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="payments" element={<PaymentsPageGlass />} />
           <Route path="profile" element={<ProfilePageGlass />} />

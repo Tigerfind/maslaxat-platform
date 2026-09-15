@@ -1,7 +1,7 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { toast } from 'react-toastify';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { useDispatch } from 'react-redux';
+import { useDispatch, useSelector } from 'react-redux';
 import {
   Container, Box, Typography, TextField, Button, Alert, CircularProgress,
   InputAdornment, IconButton, Card, Checkbox,
@@ -35,6 +35,7 @@ const getPasswordScore = (pw) => {
 const RegisterPage = () => {
   const navigate = useNavigate();
   const dispatch = useDispatch();
+  const { isAuthenticated, role: authenticatedRole } = useSelector((state) => state.auth);
   const { t } = useTranslation();
 
   const [searchParams] = useSearchParams();
@@ -51,6 +52,13 @@ const RegisterPage = () => {
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [error, setError] = useState('');
   const submittingRef = useRef(false);
+  const registeredHereRef = useRef(false);
+
+  useEffect(() => {
+    if (isAuthenticated && !registeredHereRef.current) {
+      navigate(authenticatedRole === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
+    }
+  }, [isAuthenticated, authenticatedRole, navigate]);
 
   // Шаги зависят от роли: у юриста добавляется выбор специализации.
   const steps = role === 'lawyer'
@@ -103,9 +111,10 @@ const RegisterPage = () => {
         ...(role === 'lawyer' && formData.specializations.length ? { specializations: formData.specializations } : {}),
       };
       const response = await api.post('/auth/register', payload);
-      const { user, token } = response.data;
+      const { user, token, verificationDelivery } = response.data;
+      registeredHereRef.current = true;
+      navigate('/verify-email', { replace: true, state: { verificationDelivery } });
       dispatch(loginSuccess({ user, token, role: user.role }));
-      navigate(user.role === 'lawyer' ? '/lawyer/dashboard' : '/dashboard', { replace: true });
     } catch (err) {
       const errorKey = {
         EMAIL_EXISTS: 'register.emailExists',

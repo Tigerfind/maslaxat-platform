@@ -34,7 +34,8 @@ test('refund request и withdrawal проходят финансовые workflo
     paymentsResponse = await request.get(`${API}/payments/my`, { headers: auth(clientToken) });
     payment = (await paymentsResponse.json()).find((item) => item.consultationId === REFUND_CONSULTATION_ID);
   }
-  expect(payment).toMatchObject({ status: 'paid', refundStatus: 'requested', escrowReleased: false });
+  expect(payment).toMatchObject({ status: 'paid', refundStatus: 'requested' });
+  expect(payment).not.toHaveProperty('escrowReleased');
   const refundBalance = await request.get(`${API}/payments/balance`, { headers: auth(refundLawyerToken) });
   expect((await refundBalance.json()).pendingBalance).toBe(0);
 

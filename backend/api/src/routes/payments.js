@@ -7,6 +7,7 @@ const { authenticate, authorize } = require('../middleware/auth');
 const notificationService = require('../services/notificationService');
 const { isPaymentReservationExpired } = require('../services/availabilityService');
 const { expireLockedReservation, expireReservationById } = require('../services/reservationExpiryService');
+const { safePayment } = require('../services/clientCabinetSerializers');
 
 // ─── Payme JSON-RPC Error Codes ───────────────────────────────
 const ERRORS = {
@@ -501,19 +502,64 @@ router.post('/webhook', verifyPayme, async (req, res) => {
 // История платежей текущего пользователя
 router.get('/my', authenticate, async (req, res, next) => {
   try {
-    const payments = await Payment.findAll({
-      where: { userId: req.userId },
+    const page = Math.max(1, Number.parseInt(req.query.page, 10) || 1);
+    const limit = Math.min(100, Math.max(1, Number.parseInt(req.query.limit, 10) || 20));
+    const paged = req.query.page !== undefined || req.query.limit !== undefined;
+    const where = { userId: req.userId };
+    if (req.query.status && ['pending', 'paid', 'failed', 'refunded'].includes(req.query.status)) where.status = req.query.status;
+    if (req.query.status === 'refunds') where.refundStatus = { [Op.in]: ['requested', 'completed', 'failed'] };
+    if (req.query.status === 'paid') where.refundStatus = { [Op.in]: ['none', null] };
+    if (req.query.provider && ['payme', 'click', 'uzcard'].includes(req.query.provider)) where.provider = req.query.provider;
+    if (req.query.from || req.query.to) {
+      const from = req.query.from ? new Date(req.query.from) : null;
+      const to = req.query.to ? new Date(req.query.to) : null;
+      if ((from && Number.isNaN(from.getTime())) || (to && Number.isNaN(to.getTime()))) return res.status(400).json({ error: 'Некорректный диапазон дат' });
+      where.createdAt = { ...(from ? { [Op.gte]: from } : {}), ...(to ? { [Op.lte]: to } : {}) };
+    }
+    const query = {
+      where,
       include: [{
         model: Consultation,
-        attributes: ['id', 'type', 'preferredDate', 'preferredTime'],
+        attributes: ['id', 'type', 'status', 'paymentExpiresAt', 'preferredDate', 'preferredTime'],
         include: [{ model: User, as: 'lawyer', attributes: ['id', 'name', 'avatar'] }],
       }],
       order: [['createdAt', 'DESC']],
-    });
-    res.json(payments);
+    };
+    if (paged) Object.assign(query, { limit, offset: (page - 1) * limit });
+    const { rows, count } = await Payment.findAndCountAll(query);
+    const payments = rows.map(safePayment);
+    res.json(paged ? { payments, page, limit, total: count, totalPages: Math.ceil(count / limit) } : payments);
   } catch (err) {
     next(err);
   }
+});
+
+router.get('/:id/status', authenticate, authorize('client'), async (req, res, next) => {
+  try {
+    const payment = await Payment.findOne({ where: { id: req.params.id, userId: req.userId } });
+    if (!payment) return res.status(404).json({ error: 'Платёж не найден' });
+    res.json(safePayment(payment));
+  } catch (error) { next(error); }
+});
+
+router.get('/:id/receipt', authenticate, authorize('client'), async (req, res, next) => {
+  try {
+    const payment = await Payment.findOne({
+      where: { id: req.params.id, userId: req.userId },
+      include: [{ model: Consultation, attributes: ['id', 'type', 'preferredDate', 'preferredTime'], include: [{ model: User, as: 'lawyer', attributes: ['name'] }] }],
+    });
+    if (!payment) return res.status(404).json({ error: 'Платёж не найден' });
+    const dto = safePayment(payment);
+    const receipt = [
+      'MaslaXat - payment receipt', `Payment: ${dto.id}`, `Status: ${dto.status}`,
+      `Amount: ${dto.amount} ${dto.currency}`, `Provider: ${dto.provider}`,
+      `Consultation: ${dto.consultationId}`, `Lawyer: ${payment.Consultation?.lawyer?.name || '-'}`,
+      `Created: ${new Date(dto.createdAt).toISOString()}`,
+    ].join('\n');
+    res.type('text/plain; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="receipt-${payment.id}.txt"`);
+    res.send(`${receipt}\n`);
+  } catch (error) { next(error); }
 });
 
 // ─── GET /api/payments/balance ────────────────────────────────

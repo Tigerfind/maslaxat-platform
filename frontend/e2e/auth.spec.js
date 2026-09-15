@@ -14,9 +14,10 @@ test('регистрация требует legal consent и создаёт кл
 
   await page.getByRole('checkbox', { name: 'Примите условия и политику конфиденциальности' }).check();
   await page.getByRole('button', { name: 'Зарегистрироваться' }).click();
-  await expect(page).toHaveURL(/\/dashboard$/);
-  await expect(page.getByRole('alert')).toContainText('подтвердите ваш email');
-  await page.getByRole('button', { name: 'Отправить снова' }).click();
+  await expect(page).toHaveURL(/\/verify-email$/);
+  await expect(page.getByRole('heading', { name: 'Подтвердите email' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('Письмо не отправлено');
+  await page.getByRole('button', { name: 'Отправить новый код' }).click();
   await expect(page.getByRole('alert')).toContainText('Отправка email временно недоступна');
 });
 
@@ -35,8 +36,9 @@ test('полная регистрация юриста требует специ
   await page.getByRole('button', { name: 'Гражданское право' }).click();
   await page.getByRole('button', { name: 'Зарегистрироваться как юрист' }).click();
 
-  await expect(page).toHaveURL(/\/lawyer\/dashboard$/);
-  await expect(page.getByRole('alert')).toContainText('подтвердите ваш email');
+  await expect(page).toHaveURL(/\/verify-email$/);
+  await expect(page.getByRole('heading', { name: 'Подтвердите email' })).toBeVisible();
+  await expect(page.getByRole('alert')).toContainText('Письмо не отправлено');
 });
 
 test('регистрация нормализует пробелы и показывает понятную ошибку занятого email', async ({ page, playwright }) => {

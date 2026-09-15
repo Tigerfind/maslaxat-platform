@@ -1,6 +1,6 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
-import { Box, Typography } from '@mui/material';
+import { Box, Typography, Drawer, List, ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
 import {
   Dashboard,
   Gavel,
@@ -12,6 +12,11 @@ import {
   People,
   AccountBalanceWallet,
   Settings,
+  Forum,
+  MoreHoriz,
+  ReceiptLong,
+  EventNote,
+  FolderShared,
 } from '@mui/icons-material';
 import { useSelector } from 'react-redux';
 import { useTranslation } from '../../i18n';
@@ -28,7 +33,17 @@ const ICONS = {
   users: People,
   finance: AccountBalanceWallet,
   settings: Settings,
+  messages: Forum,
+  more: MoreHoriz,
 };
+
+const MORE_ITEMS = [
+  { path: '/documents', tKey: 'nav.documents', icon: Description },
+  { path: '/payments', tKey: 'nav.payments', icon: ReceiptLong },
+  { path: '/deadlines', tKey: 'nav.deadlines', icon: EventNote },
+  { path: '/cases', tKey: 'nav.cases', icon: FolderShared },
+  { path: '/profile', tKey: 'nav.profile', icon: Person },
+];
 
 const MobileBottomNav = () => {
   const { t } = useTranslation();
@@ -36,10 +51,12 @@ const MobileBottomNav = () => {
   const location = useLocation();
   const role = useSelector((state) => state.auth.role);
   const navItems = getMobileNavItems(role);
+  const [moreOpen, setMoreOpen] = useState(false);
 
   const isActive = (path) => location.pathname === path || location.pathname.startsWith(path + '/');
 
-  return (
+  const moreActive = MORE_ITEMS.some((item) => isActive(item.path));
+  return (<>
     <Box
       component="nav"
       aria-label={t('nav.mobileNavigation')}
@@ -67,14 +84,14 @@ const MobileBottomNav = () => {
       }}
     >
       {navItems.map((item) => {
-        const active = isActive(item.path);
+        const active = item.path === '#more' ? moreActive : isActive(item.path);
         const Icon = ICONS[item.icon];
 
         return (
           <Box
             component="button"
             key={item.path}
-            onClick={() => navigate(item.path)}
+            onClick={() => item.path === '#more' ? setMoreOpen(true) : navigate(item.path)}
             aria-label={t(item.tKey)}
             aria-current={active ? 'page' : undefined}
             sx={{
@@ -117,6 +134,27 @@ const MobileBottomNav = () => {
         );
       })}
     </Box>
+    {role === 'client' && (
+      <Drawer
+        anchor="bottom"
+        open={moreOpen}
+        onClose={() => setMoreOpen(false)}
+        PaperProps={{ sx: { bgcolor: 'var(--surface)', color: 'var(--text)', borderRadius: '18px 18px 0 0', pb: 'calc(12px + env(safe-area-inset-bottom))' } }}
+      >
+        <Box sx={{ width: 44, height: 4, borderRadius: 2, bgcolor: 'var(--border-strong)', mx: 'auto', mt: 1.5 }} />
+        <Typography variant="h6" sx={{ px: 2.5, pt: 2, pb: 1 }}>{t('nav.more')}</Typography>
+        <List aria-label={t('nav.more')}>
+          {MORE_ITEMS.map((item) => {
+            const Icon = item.icon;
+            return <ListItemButton key={item.path} selected={isActive(item.path)} onClick={() => { setMoreOpen(false); navigate(item.path); }} sx={{ minHeight: 52, mx: 1, borderRadius: 2 }}>
+              <ListItemIcon sx={{ minWidth: 40, color: 'inherit' }}><Icon /></ListItemIcon>
+              <ListItemText primary={t(item.tKey)} />
+            </ListItemButton>;
+          })}
+        </List>
+      </Drawer>
+    )}
+  </>
   );
 };
 

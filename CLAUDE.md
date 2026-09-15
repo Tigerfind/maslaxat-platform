@@ -369,6 +369,8 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - [x] E5 — Минимальные размеры кнопок 44px (MuiButton minHeight:48, MuiIconButton 44x44)
 - [x] F1 — Сброс пароля (nodemailer + forgot/reset endpoints + frontend pages)
 - [x] F2 — Верификация email (verificationToken + sendVerificationEmail + VerifyEmailPage + баннер)
+- [x] Email OTP 10.09.2026: регистрация и смена email используют 6-значный код вместо ссылки;
+      HMAC-хеш, TTL 10 минут, 5 попыток, resend cooldown 60 секунд, legacy-ссылки временно поддерживаются.
 - [x] F3 — Rate limiting AI (3 req/day FREE via Redis counter, BASIC/PRO безлимит)
 - [x] F4 — Логирование (winston: error.log + combined.log, HTTP middleware, signaling.js)
 - [x] Попап оценки после консультации (RatingDialog.js)
@@ -478,6 +480,13 @@ MuiIconButton: { styleOverrides: { root: { minWidth: 44, minHeight: 44 } } }
 - server.js экспортирует app и не слушает порт при импорте (require.main===module); logger silent в test.
 
 ### Исправленные баги:
+- Lawyer case-document AI digest 14.09.2026: назначенный юрист может безопасно разобрать
+  PDF с текстовым слоем, DOCX/TXT или JPG/PNG/WEBP через Claude; versioned cache, strict JSON Schema,
+  concurrency lock, rate limit и приватный RU/UZ/EN UI. Сканированные PDF fail-closed до OCR.
+- Клиентский профиль юриста 11.09.2026: премиальный responsive hero, truthful verified/presence,
+  реальные слоты/тарифы/форматы, favorite с rollback, динамическое резюме, лицензии и сертификаты,
+  независимые пагинируемые отзывы с распределением/сортировкой и безопасной анонимизацией.
+  Mobile sticky booking не перекрывает bottom navigation; dark/reduced-motion поддержаны.
 - P0.2 production migrations 09.09.2026: Docker включает `migrations/`; dependency-free runtime
   runner выполняет только forward-файлы после гарантированного anchor под PostgreSQL advisory lock.
   Railway predeploy применяет миграции, а production startup gate блокирует запуск при pending или
