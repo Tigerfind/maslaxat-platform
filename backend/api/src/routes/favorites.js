@@ -93,6 +93,8 @@ router.get('/', authenticate, authorize('client'), async (req, res, next) => {
       reviewsCount: fav.lawyer.profile?.reviewsCount || 0,
       experience: fav.lawyer.profile?.experience || 0,
       priceFrom: fav.lawyer.profile?.price || 0,
+      consultationDurations: fav.lawyer.profile?.consultationDurations || [],
+      durationPrices: fav.lawyer.profile?.durationPrices || {},
       location: fav.lawyer.profile?.location,
       isAvailable: fav.lawyer.profile?.isAvailable,
       completedConsultations: fav.lawyer.profile?.completedCases || 0,

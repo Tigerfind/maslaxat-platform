@@ -207,7 +207,8 @@ const BookingModal = ({ open, onClose, lawyer, initialConsultation = null }) => 
 
   // ---- Расчёт цены (акция/промо; total уходит в оплату) ----
   const basePrice = lawyer.priceFrom || lawyer.price || lawyer.profile?.price || 0;
-  const subtotal = Math.round((basePrice * duration) / 60);
+  const durationPrice = Number(lawyer.durationPrices?.[String(duration)] ?? lawyer.profile?.durationPrices?.[String(duration)]);
+  const subtotal = Number.isSafeInteger(durationPrice) && durationPrice >= 0 ? durationPrice : Math.round((basePrice * duration) / 60);
   const discount = promoApplied && promoPercent ? Math.round((subtotal * promoPercent) / 100) : 0;
   const freeBooking = useFree || useSubFree; // бесплатно (акция ИЛИ подписка)
   const total = freeBooking ? 0 : Math.max(0, subtotal - discount);

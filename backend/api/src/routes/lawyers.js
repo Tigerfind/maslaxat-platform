@@ -23,12 +23,12 @@ const PUBLIC_PROFILE_ATTRIBUTES = [
   'professionalTitle', 'specialization', 'specializations', 'description', 'experience', 'price',
   'rating', 'reviewsCount', 'completedCases', 'location', 'languages',
   'region', 'linkedinUrl', 'licenseNumber', 'licenseIssuer', 'licenseIssuedAt', 'licenseExpiresAt',
-  'consultationFormats', 'consultationDurations', 'timezone', 'isAvailable',
+  'consultationFormats', 'consultationDurations', 'durationPrices', 'timezone', 'isAvailable',
 ];
 const CATALOG_PROFILE_ATTRIBUTES = [
   'professionalTitle', 'specialization', 'specializations', 'experience', 'price',
   'rating', 'reviewsCount', 'completedCases', 'location', 'region', 'languages',
-  'education', 'consultationFormats', 'consultationDurations', 'isAvailable',
+  'education', 'consultationFormats', 'consultationDurations', 'durationPrices', 'isAvailable',
 ];
 const PUBLIC_REVIEW_ATTRIBUTES = [
   'id', 'rating', 'text', 'replyText', 'repliedAt', 'helpfulCount', 'createdAt',
@@ -598,7 +598,10 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
 
     // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
     // не доверяем). Базовая (платная) цена — по длительности.
-    const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
+    const configuredDurationPrice = Number(lawyer.profile.durationPrices?.[String(duration)]);
+    const fullPrice = Number.isSafeInteger(configuredDurationPrice) && configuredDurationPrice >= 0
+      ? configuredDurationPrice
+      : Math.round((lawyer.profile.price * duration) / 60);
     const requestedFormat = req.body.consultationType || 'webrtc';
     if (!['chat', 'audio', 'webrtc', 'video', 'zoom'].includes(requestedFormat)) return res.status(400).json({ error: 'Некорректный формат консультации' });
     const normalizedFormat = requestedFormat === 'video' ? 'webrtc' : requestedFormat;

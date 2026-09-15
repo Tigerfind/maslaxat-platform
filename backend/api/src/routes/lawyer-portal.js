@@ -33,6 +33,21 @@ const STARTABLE_FROM = ['accepted']; // начать можно только п�
 // чтобы часы совпадали во всех редакторах (раньше форматы клобберили друг друга в
 // одной колонке profile.schedule).
 const SCHEDULE_DAYS = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'];
+const PRICE_DURATIONS = [30, 60, 90];
+function normalizeDurationPrices(raw) {
+  if (raw === undefined) return undefined;
+  let source = raw;
+  try { if (typeof source === 'string') source = JSON.parse(source); } catch { return null; }
+  if (!source || typeof source !== 'object' || Array.isArray(source)) return null;
+  const result = {};
+  for (const duration of PRICE_DURATIONS) {
+    if (source[duration] === undefined && source[String(duration)] === undefined) continue;
+    const amount = Number(source[duration] ?? source[String(duration)]);
+    if (!Number.isSafeInteger(amount) || amount < 0 || amount > 10000000) return null;
+    result[String(duration)] = amount;
+  }
+  return result;
+}
 const isHHmm = (v) => typeof v === 'string' && /^([01]\d|2[0-3]):[0-5]\d$/.test(v);
 function normalizeSchedule(raw) {
   const src = raw && typeof raw === 'object' ? raw : {};
@@ -808,6 +823,8 @@ router.patch('/profile/draft', async (req, res, next) => {
       || durations.some((duration) => ![30, 60, 90].includes(Number(duration))))) {
       return res.status(400).json({ error: 'Допустимая длительность: 30, 60 или 90 минут' });
     }
+    const durationPrices = normalizeDurationPrices(body.durationPrices);
+    if (durationPrices === null) return res.status(400).json({ error: 'Некорректный список цен' });
     const experiences = body.experiences;
     if (experiences !== undefined && (!Array.isArray(experiences) || experiences.some((item) => (
       !cleanText(item.organization, 255) || !cleanText(item.position, 255)
@@ -857,7 +874,8 @@ router.patch('/profile/draft', async (req, res, next) => {
         licenseExpiresAt: Object.prototype.hasOwnProperty.call(body, 'licenseExpiresAt') ? (body.licenseExpiresAt || null) : undefined,
         timezone: body.timezone,
         consultationFormats: formats,
-        consultationDurations: durations?.map(Number),
+      consultationDurations: durations?.map(Number),
+        durationPrices,
         experience: body.experience !== undefined ? experienceYears : undefined,
         price: body.price !== undefined ? price : undefined,
         languages: body.languages,
@@ -955,6 +973,8 @@ router.put('/profile', upload.single('avatar'), validateUploadSignatures(AVATAR_
       education,
       certificates,
       schedule,
+      consultationDurations: rawConsultationDurations,
+      durationPrices: rawDurationPrices,
     } = req.body;
 
     // Специализации: принимаем массив (мультивыбор) ИЛИ одиночную строку (legacy).
@@ -984,7 +1004,26 @@ router.put('/profile', upload.single('avatar'), validateUploadSignatures(AVATAR_
       profile.greeting = g ? g.slice(0, 1000) : null;
     }
     if (experience !== undefined) profile.experience = parseInt(experience, 10) || 0;
+    let parsedConsultationDurations;
+    if (rawConsultationDurations !== undefined) {
+      try { parsedConsultationDurations = typeof rawConsultationDurations === 'string' ? JSON.parse(rawConsultationDurations) : rawConsultationDurations; }
+      catch { return res.status(400).json({ error: 'Некорректный список длительностей' }); }
+      parsedConsultationDurations = [...new Set((Array.isArray(parsedConsultationDurations) ? parsedConsultationDurations : []).map(Number))].sort((a, b) => a - b);
+      if (!parsedConsultationDurations.includes(60) || parsedConsultationDurations.some((duration) => !PRICE_DURATIONS.includes(duration))) {
+        return res.status(400).json({ error: 'Тариф на 60 минут обязателен; доступны 30, 60 и 90 минут' });
+      }
+    }
+    const parsedDurationPrices = normalizeDurationPrices(rawDurationPrices);
+    if (parsedDurationPrices === null) return res.status(400).json({ error: 'Некорректный список цен' });
+    if (parsedDurationPrices && (parsedConsultationDurations || profile.consultationDurations || [60]).some((duration) => !Number(parsedDurationPrices[String(duration)]))) {
+      return res.status(400).json({ error: 'Укажите цену для каждой выбранной длительности' });
+    }
     if (price !== undefined) profile.price = parseInt(price, 10) || 0;
+    if (parsedConsultationDurations !== undefined) profile.consultationDurations = parsedConsultationDurations;
+    if (parsedDurationPrices !== undefined) {
+      profile.durationPrices = parsedDurationPrices;
+      if (parsedDurationPrices['60'] !== undefined) profile.price = parsedDurationPrices['60'];
+    }
     if (location !== undefined) profile.location = location;
 
     // Parse JSON fields sent as strings (from multipart form)

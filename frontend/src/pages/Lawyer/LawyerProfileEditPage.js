@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useDispatch, useSelector } from 'react-redux';
-import { Slider, Chip, TextField, CircularProgress } from '@mui/material';
+import { Slider, Chip, TextField, CircularProgress, Checkbox, InputAdornment } from '@mui/material';
 import {
   PhotoCameraOutlined,
   GavelOutlined,
@@ -100,6 +100,8 @@ const LawyerProfileEditPage = () => {
     greeting: '',
     experience: 0,
     price: 200000,
+    consultationDurations: [30, 60],
+    durationPrices: { 30: 100000, 60: 200000, 90: 300000 },
     location: 'Ташкент',
     specialization: '',
     specializations: [],
@@ -119,6 +121,12 @@ const LawyerProfileEditPage = () => {
           greeting: p.greeting || '',
           experience: p.experience || 0,
           price: p.price || 200000,
+          consultationDurations: Array.isArray(p.consultationDurations) && p.consultationDurations.length ? p.consultationDurations : [30, 60],
+          durationPrices: {
+            30: Number(p.durationPrices?.['30']) || Math.round((p.price || 200000) * 0.5),
+            60: Number(p.durationPrices?.['60']) || p.price || 200000,
+            90: Number(p.durationPrices?.['90']) || Math.round((p.price || 200000) * 1.5),
+          },
           location: p.location || 'Ташкент',
           specialization: p.specialization || '',
           specializations: Array.isArray(p.specializations) && p.specializations.length
@@ -178,7 +186,7 @@ const LawyerProfileEditPage = () => {
       toast.error(t('lawyerPanel.specRequired'));
       return;
     }
-    if (form.price < 50000) {
+    if (form.durationPrices[60] < 50000 || form.consultationDurations.some((duration) => Number(form.durationPrices[duration]) <= 0)) {
       toast.error(t('lawyerPanel.priceMin'));
       return;
     }
@@ -190,7 +198,9 @@ const LawyerProfileEditPage = () => {
       formData.append('greeting', form.greeting || '');
       formData.append('experience', String(form.experience));
       formData.append('specializations', JSON.stringify(form.specializations));
-      formData.append('price', String(form.price));
+      formData.append('price', String(form.durationPrices[60]));
+      formData.append('consultationDurations', JSON.stringify(form.consultationDurations));
+      formData.append('durationPrices', JSON.stringify(form.durationPrices));
       formData.append('location', form.location);
       formData.append('schedule', JSON.stringify(form.schedule));
       if (form.avatarFile) formData.append('avatar', form.avatarFile);
@@ -337,17 +347,18 @@ const LawyerProfileEditPage = () => {
                 sx={inputSx}
               />
             </div>
-            <div style={{ flex: 1 }}>
+            <div style={{ flex: 1.2 }}>
               <div style={fieldLabel}>{t('lawyerPanel.priceSum')}</div>
-              <TextField
-                fullWidth
-                size="small"
-                type="text"
-                value={formatMoneyInput(form.price, language)}
-                onChange={(e) => handleChange('price', parseMoneyInput(e.target.value))}
-                inputProps={{ inputMode: 'numeric', pattern: '[0-9 ]*', maxLength: 13, 'aria-label': t('lawyerPanel.priceSum') }}
-                sx={inputSx}
-              />
+              <div style={{ display: 'grid', gap: 10 }}>
+                {[30, 60, 90].map((duration) => {
+                  const enabled = form.consultationDurations.includes(duration);
+                  return <div key={duration} style={{ display: 'grid', gridTemplateColumns: '44px minmax(72px,auto) minmax(130px,1fr)', gap: 8, alignItems: 'center' }}>
+                    <Checkbox checked={enabled} disabled={duration === 60} inputProps={{ 'aria-label': `${duration} ${t('booking.min')}` }} onChange={() => handleChange('consultationDurations', enabled ? form.consultationDurations.filter((item) => item !== duration) : [...form.consultationDurations, duration].sort((a, b) => a - b))} />
+                    <span style={{ fontSize: 13, color: 'var(--text2)', whiteSpace: 'nowrap' }}>{duration} {t('booking.min')}</span>
+                    <TextField fullWidth size="small" type="text" disabled={!enabled} value={formatMoneyInput(form.durationPrices[duration], language)} onChange={(e) => handleChange('durationPrices', { ...form.durationPrices, [duration]: parseMoneyInput(e.target.value) })} inputProps={{ inputMode: 'numeric', pattern: '[0-9 ]*', maxLength: 13, 'aria-label': `${t('lawyerPanel.priceSum')}: ${duration} ${t('booking.min')}` }} InputProps={{ endAdornment: <InputAdornment position="end">{t('lawyerPanel.sum')}</InputAdornment> }} sx={inputSx} />
+                  </div>;
+                })}
+              </div>
             </div>
           </div>
 

@@ -71,6 +71,19 @@ test('две параллельные брони одного слота даю�
   expect(await models.Consultation.count({ where: { lawyerId: lawyer.id, preferredDate: date, preferredTime: '10:00' } })).toBe(1);
 });
 
+test('бронирование использует точную цену выбранной длительности', async () => {
+  const { user: lawyer, lp } = await setupLawyer('duration-price-lawyer@test.uz');
+  await lp.update({ price: 200000, durationPrices: { 30: 75000, 60: 200000, 90: 350000 } });
+  const client = await makeClient('duration-price-client@test.uz');
+  await models.Consultation.create({ clientId: client.id, lawyerId: lawyer.id, type: 'chat', status: 'completed', question: 'prior', duration: 30, price: 0, isFree: true });
+  const date = nextWeekday(1);
+  const response = await request(app).post(`/api/lawyers/${lawyer.id}/book`)
+    .set('Authorization', `Bearer ${tokenFor(client)}`)
+    .send({ preferredDate: date, preferredTime: '09:00', duration: 30, consultationType: 'chat', problems: [{ text: 'Точная цена', categories: ['civil'] }], acceptedTerms: true, legalVersion: '2026-08-13' });
+  expect(response.status).toBe(201);
+  expect(response.body.consultation.price).toBe(75000);
+});
+
 test('один клиент не может параллельно занять пересекающиеся слоты у разных юристов', async () => {
   const [{ user: firstLawyer }, { user: secondLawyer }] = await Promise.all([
     setupLawyer('slots-client-race-first@test.uz'),

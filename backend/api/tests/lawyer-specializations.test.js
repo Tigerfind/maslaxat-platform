@@ -42,6 +42,20 @@ describe('PUT /lawyer/profile сохраняет несколько специа
     expect(lp.specializations).toEqual(['Уголовное право']);
     expect(lp.specialization).toBe('Уголовное право');
   });
+
+  test('список тарифов сохраняет длительности и точные цены', async () => {
+    const { user } = await makeLawyer('duration-list@test.uz');
+    const response = await request(app)
+      .put('/api/lawyer/profile')
+      .set('Authorization', `Bearer ${tokenFor(user)}`)
+      .field('consultationDurations', JSON.stringify([30, 60, 90]))
+      .field('durationPrices', JSON.stringify({ 30: 80000, 60: 150000, 90: 260000 }));
+    expect(response.status).toBe(200);
+    const profile = await LawyerProfile.findOne({ where: { userId: user.id } });
+    expect(profile.consultationDurations).toEqual([30, 60, 90]);
+    expect(profile.durationPrices).toEqual({ 30: 80000, 60: 150000, 90: 260000 });
+    expect(profile.price).toBe(150000);
+  });
 });
 
 describe('каталог фильтрует по любой из специализаций юриста', () => {

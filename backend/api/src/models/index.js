@@ -178,6 +178,11 @@ const LawyerProfile = sequelize.define('LawyerProfile', {
     allowNull: false,
     defaultValue: [30, 60, 90],
   },
+  durationPrices: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {},
+  },
   onboardingStep: { type: DataTypes.INTEGER, allowNull: false, defaultValue: 0 },
   verificationSubmittedAt: { type: DataTypes.DATE },
   schedulePolicyAcceptedAt: { type: DataTypes.DATE },

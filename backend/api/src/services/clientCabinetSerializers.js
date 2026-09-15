@@ -15,6 +15,7 @@ function safeLawyer(user) {
     experience: Number(profile?.experience) || 0,
     languages: profile?.languages || [],
     price: Number(profile?.price) || 0,
+    durationPrices: profile?.durationPrices || {},
     isAvailable: profile?.isAvailable === true,
   };
 }
