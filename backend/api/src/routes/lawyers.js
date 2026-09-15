@@ -598,10 +598,7 @@ router.post('/:id/book', authenticate, authorize('client'), async (req, res, nex
 
     // Право на скидку/бесплатное ВСЕГДА пересчитываем на сервере (клиентскому флагу
     // не доверяем). Базовая (платная) цена — по длительности.
-    const configuredDurationPrice = Number(lawyer.profile.durationPrices?.[String(duration)]);
-    const fullPrice = Number.isSafeInteger(configuredDurationPrice) && configuredDurationPrice >= 0
-      ? configuredDurationPrice
-      : Math.round((lawyer.profile.price * duration) / 60);
+    const fullPrice = Math.round((lawyer.profile.price * duration) / 60);
     const requestedFormat = req.body.consultationType || 'webrtc';
     if (!['chat', 'audio', 'webrtc', 'video', 'zoom'].includes(requestedFormat)) return res.status(400).json({ error: 'Некорректный формат консультации' });
     const normalizedFormat = requestedFormat === 'video' ? 'webrtc' : requestedFormat;

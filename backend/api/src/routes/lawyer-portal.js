@@ -1018,7 +1018,10 @@ router.put('/profile', upload.single('avatar'), validateUploadSignatures(AVATAR_
     if (parsedDurationPrices && (parsedConsultationDurations || profile.consultationDurations || [60]).some((duration) => !Number(parsedDurationPrices[String(duration)]))) {
       return res.status(400).json({ error: 'Укажите цену для каждой выбранной длительности' });
     }
-    if (price !== undefined) profile.price = parseInt(price, 10) || 0;
+    if (price !== undefined) {
+      profile.price = parseInt(price, 10) || 0;
+      if (rawDurationPrices === undefined) profile.durationPrices = {};
+    }
     if (parsedConsultationDurations !== undefined) profile.consultationDurations = parsedConsultationDurations;
     if (parsedDurationPrices !== undefined) {
       profile.durationPrices = parsedDurationPrices;

@@ -43,18 +43,17 @@ describe('PUT /lawyer/profile сохраняет несколько специа
     expect(lp.specialization).toBe('Уголовное право');
   });
 
-  test('список тарифов сохраняет длительности и точные цены', async () => {
-    const { user } = await makeLawyer('duration-list@test.uz');
+  test('единая цена заменяет старый список тарифов', async () => {
+    const { user, lp } = await makeLawyer('single-price@test.uz');
+    await lp.update({ durationPrices: { 30: 80000, 60: 150000, 90: 260000 } });
     const response = await request(app)
       .put('/api/lawyer/profile')
       .set('Authorization', `Bearer ${tokenFor(user)}`)
-      .field('consultationDurations', JSON.stringify([30, 60, 90]))
-      .field('durationPrices', JSON.stringify({ 30: 80000, 60: 150000, 90: 260000 }));
+      .field('price', '300000');
     expect(response.status).toBe(200);
     const profile = await LawyerProfile.findOne({ where: { userId: user.id } });
-    expect(profile.consultationDurations).toEqual([30, 60, 90]);
-    expect(profile.durationPrices).toEqual({ 30: 80000, 60: 150000, 90: 260000 });
-    expect(profile.price).toBe(150000);
+    expect(profile.durationPrices).toEqual({});
+    expect(profile.price).toBe(300000);
   });
 });
 
